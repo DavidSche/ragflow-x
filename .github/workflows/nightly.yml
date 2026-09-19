@@ -64,7 +64,7 @@ jobs:
         working-directory: web
 
       - name: Restore query plan trend history
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: test-results/query-plan-trend-history.json
           key: query-plan-trend-v1-${{ github.run_id }}
@@ -131,7 +131,7 @@ jobs:
 
       - name: Save query plan trend history
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: test-results/query-plan-trend-history.json
           key: query-plan-trend-v1-${{ github.run_id }}
