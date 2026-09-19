@@ -66,7 +66,7 @@ database:
 # mock is only for local development and tests
 ragflow:
   provider: http
-  base_url: http://192.168.4.151:8001
+  base_url: http://127.0.0.1:80
   api_key: ragflow-xxx
   timeout: 30           # seconds
   max_conns: 20
