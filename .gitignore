@@ -24,9 +24,49 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
-.env
+# Runtime config carries real credentials (DB password, RAGFlow API key).
+# Secrets must be injected via RGX_* environment variables, never committed.
+config/config.yaml
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# Local secrets and environment files
+.env
+.env.*
+.env.local
+*.secret
+
+# Runtime data and databases
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Encrypted runtime secrets and keys created by the first-run wizard
+config/runtime.secrets.json
+config/.master.key
+config/rsa_setup.pem
+
+# Logs
+logs/
+*.log
+
+# Build artifacts
+web/dist/
+web/dist2/
+web/dist3/
+web/web.rar
+web/node_modules/
+web/coverage/
+web/coverage-report/
+web/test-results/
+web/playwright-report/
+.gocache/
+bin/
+test-results/
+ragflow-x-server
+.go-test-service.json
+run/
+
+# IDE / OS
+.idea/
+.vscode/
