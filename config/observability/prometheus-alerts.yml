@@ -1,0 +1,69 @@
+groups:
+  - name: ragflow-x-operational-contracts
+    interval: 30s
+    rules:
+      - alert: AlertDeliveryCompensationSkippedHigh
+        expr: "increase(ragflow_x_alert_delivery_compensation_skipped_total[15m]) > 50"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Alert delivery compensation skipped rows are accumulating"
+          description: "More than 50 delivery compensation rows were skipped in 15 minutes. Inspect lease TTLs and compensation worker concurrency."
+          runbook: "doc/08_部署运维与可观测性.md"
+
+      - alert: AlertDeliveryAbandoned
+        expr: "increase(ragflow_x_alert_delivery_compensation_abandoned_total[15m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Alert deliveries were abandoned"
+          description: "A delivery exhausted its compensation policy. Check webhook targets and delivery attempts, then perform manual recovery."
+          runbook: "doc/08_部署运维与可观测性.md"
+
+      - alert: AlertDeliveryFencedResult
+        expr: "increase(ragflow_x_alert_delivery_compensation_fenced_total[5m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Stale alert delivery result was fenced"
+          description: "A stale worker attempted to write a delivery result. Preserve worker diagnostics and lease audit evidence before restarting."
+          runbook: "doc/08_部署运维与可观测性.md"
+
+      - alert: ResourceSyncItemsFailedHigh
+        expr: "increase(ragflow_x_resource_sync_items_total{status=\"failed\"}[15m]) > 5"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Resource sync failure rate is elevated"
+          description: "More than five resource sync items failed in 15 minutes. Inspect RAGFlow connectivity, mappings, and item errors."
+          runbook: "doc/08_部署运维与可观测性.md"
+
+      - alert: ResourceSyncStaleRunRecovered
+        expr: "increase(ragflow_x_resource_sync_stale_runs_total[15m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "A stale resource sync run was recovered"
+          description: "A sync worker stopped refreshing its lease. Check worker liveness and scan duration before resuming imports."
+          runbook: "doc/08_部署运维与可观测性.md"
+
+      - alert: ResourceSyncProgressStalled
+        expr: "ragflow_x_resource_sync_run_progress{kind=\"total\"} > 0 and on(source_id) sum by (source_id) (increase(ragflow_x_resource_sync_items_total[30m])) == 0"
+        for: 10m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Resource sync progress is stalled"
+          description: "A run reported work but no resource sync item has been processed for 30 minutes. Inspect the worker, lease, and current run."
+          runbook: "doc/08_部署运维与可观测性.md"

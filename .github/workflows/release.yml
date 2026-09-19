@@ -1,0 +1,176 @@
+# Release workflow for ragflow-x
+#
+# Triggers:
+#   - Push a version tag (v1.2.3 etc.) -> build release packages and create GitHub Release
+#   - workflow_dispatch manual trigger -> requires the `version` input
+#
+# Flow:
+#   1. build job: cross-compile Go binary (linux/amd64, linux/arm64, darwin/amd64, windows/amd64),
+#      build frontend, package everything into tarballs with SHA256SUMS
+#   2. release job: download artifacts, verify SHA256 checksums (integrity gate),
+#      then create GitHub Release and upload
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.2.3; tag pushes take the tag)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            if [ -z "$VERSION" ]; then
+              echo "::error::workflow_dispatch requires the version input"
+              exit 1
+            fi
+            case "$VERSION" in
+              *[!0-9A-Za-z._-]*) echo "::error::version contains invalid characters"; exit 1 ;;
+            esac
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION#v}" >> "$GITHUB_OUTPUT"
+          echo "Building version: v$VERSION"
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+
+      - name: Build Go binaries (cross-platform)
+        run: |
+          TAG="${{ steps.meta.outputs.version }}"
+          mkdir -p dist
+
+          # linux/amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -ldflags="-s -w" -o dist/ragflow-x-linux-amd64 ./cmd/server/
+
+          # linux/arm64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+            go build -ldflags="-s -w" -o dist/ragflow-x-linux-arm64 ./cmd/server/
+
+          # darwin/amd64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
+            go build -ldflags="-s -w" -o dist/ragflow-x-darwin-amd64 ./cmd/server/
+
+          # windows/amd64
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -ldflags="-s -w" -o dist/ragflow-x-windows-amd64.exe ./cmd/server/
+
+      - name: Package release artifacts
+        run: |
+          TAG="${{ steps.meta.outputs.version }}"
+          cd dist
+
+          # Package each binary
+          for f in ragflow-x-*; do
+            if [[ "$f" == *.exe ]]; then
+              zip -j "ragflow-x-${TAG}-$(echo $f | sed 's/ragflow-x-//').zip" "$f"
+            else
+              chmod +x "$f"
+              tar czf "ragflow-x-${TAG}-$(echo $f | sed 's/ragflow-x-//').tar.gz" "$f"
+            fi
+          done
+
+          # Package frontend build
+          tar czf "ragflow-x-${TAG}-web.tar.gz" -C ../web dist/
+
+          # Source snapshot
+          cd ..
+          git archive --format=tar.gz --prefix="ragflow-x-${TAG}/" -o "dist/ragflow-x-${TAG}-src.tar.gz" HEAD
+
+          # SHA256SUMS
+          cd dist
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+          echo "--- Release artifacts ---"
+          ls -lh *.tar.gz *.zip SHA256SUMS
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository (release notes template)
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: artifacts
+
+      - name: Verify SHA256 checksums
+        run: |
+          set -euo pipefail
+          cd artifacts/dist
+          [ -f SHA256SUMS ] || { echo "::error::SHA256SUMS missing"; exit 1; }
+          sha256sum -c SHA256SUMS
+
+      - name: Create GitHub Release and upload artifacts
+        run: |
+          TAG="${{ needs.build.outputs.tag }}"
+          echo "Creating release: $TAG"
+          ls -lh artifacts/dist/*.tar.gz artifacts/dist/*.zip artifacts/dist/SHA256SUMS
+          gh release create "$TAG" \
+            artifacts/dist/*.tar.gz \
+            artifacts/dist/*.zip \
+            artifacts/dist/SHA256SUMS \
+            --notes-template "$GITHUB_WORKSPACE/.github/release-notes-template.md" \
+            --title "ragflow-x $TAG"

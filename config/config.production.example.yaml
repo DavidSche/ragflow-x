@@ -1,0 +1,252 @@
+server:
+  port: 9191
+  mode: release      # production template: use release
+  read_timeout: 30
+  write_timeout: 60
+
+app:
+  name: ragflow-x
+  # JWT signing secret. Security baseline (enforced at startup):
+  #   - Empty value: a strong random secret is generated and persisted to the
+  #     encrypted secrets file automatically (single-instance installs).
+  #   - Explicit values must be >= 32 bytes and are rejected if they match a
+  #     known placeholder. Multi-replica deployments MUST pin it:
+  #       RGX_JWT_SECRET=$(openssl rand -hex 32)
+  jwt_secret: ""
+  jwt_expire_hours: 24
+  refresh_expire_hours: 168   # refresh token lifetime (rotation)
+  log_level: info
+  encryption_key: ""          # prefer RGX_ENCRYPTION_KEY
+  request_id_header: X-Request-Id
+
+logging:
+  level: info            # debug | info | warn | error
+  format: json           # json | console
+  output: ./logs/ragflow-x.log   # file path -> daily/size rotation; stdout = no rotation
+  rotate_daily: true     # name files by date: ragflow-x-20260820.log
+  max_size_mb: 50        # rotate by size per file (0 disables)
+  max_backups: 7         # keep this many rotated files
+  retention_days: 0      # alternative to max_backups: keep files for N days
+
+setup:
+  enabled: true          # first-run bootstrap wizard when no config is present
+  secrets_file: ./config/runtime.secrets.json
+  master_key: ""         # prefer RGX_MASTER_KEY; empty auto-generates a local key
+  rsa_key_path: ./config/rsa_setup.pem
+  rate_limit_per_min: 10 # setup wizard brute-force guard
+  #
+  # Back up the master key before any production deployment:
+  #  - Pin RGX_MASTER_KEY (env) so it survives restarts and re-deploys.
+  #  - Or store it in a KMS / secret manager and inject at boot.
+  #  - Locally generated .master.key must be backed up; losing it means
+  #    runtime.secrets.json cannot be decrypted -> re-initialize the system.
+
+database:
+  driver: postgres     # postgres | sqlite
+  host: localhost
+  port: 5432
+  # Runtime role: DML only. The migration role below must be different and is
+  # used only for schema bootstrap/upgrade. See
+  # scripts/postgres/configure-runtime-role.sql.
+  user: ragflow_x_runtime
+  password: change-me
+  name: ragflow_x
+  sslmode: require
+  migration_user: ragflow_x_migration
+  migration_password: ""      # prefer RGX_DB_MIGRATION_PASSWORD
+  enforce_runtime_privileges: true
+  max_open_conns: 25              # (RGX_DB_MAX_OPEN_CONNS)
+  max_idle_conns: 5               # (RGX_DB_MAX_IDLE_CONNS)
+  conn_max_lifetime_sec: 1800     # 0 disables; (RGX_DB_CONN_MAX_LIFETIME_SEC)
+  conn_max_idle_time_sec: 300     # 0 disables; (RGX_DB_CONN_MAX_IDLE_TIME_SEC)
+  # when driver == sqlite, use dsn below
+  dsn: "file:./ragflow-x.db?cache=shared"
+
+# select the ragflow provider implementation: http | mock
+# mock is only for local development and tests
+ragflow:
+  provider: http
+  base_url: http://192.168.4.151:8001
+  api_key: ragflow-xxx
+  timeout: 30           # seconds
+  max_conns: 20
+  auto_register: true   # 创建模型供应商时自动同步注册到 RAGFlow
+  task_poll_seconds: 15
+  retry_max_retries: 3 # 幂等请求(GET/PUT/DELETE/HEAD)最大重试次数 (RGX_RAGFLOW_RETRY_MAX_RETRIES)
+  retry_backoff_ms: 100 # 重试退避基准毫秒数，随尝试次数线性增长 (RGX_RAGFLOW_RETRY_BACKOFF_MS)
+
+# Optional distributed rate-limit backend. Disabled (default) uses the
+# process-local in-memory limiter; enable for multi-replica deployments.
+redis:
+  enabled: false        # (RGX_REDIS_ENABLED)
+  addr: localhost:6379  # (RGX_REDIS_ADDR)
+  username: default     # (RGX_REDIS_USERNAME; ACL user, blank if none)
+  password: ""          # (RGX_REDIS_PASSWORD)
+  db: 0                 # (RGX_REDIS_DB)
+  pool_size: 10         # (RGX_REDIS_POOL_SIZE)
+
+# Controlled auto routing remains recommend-only until the M2.5 gate passes.
+conversation_routing:
+  mode: recommend_only
+  confidence_threshold: 0.86
+  confidence_margin: 0.12
+  minimum_candidates: 2
+  readiness_threshold: 0.80
+  catalog_ttl_sec: 300
+  total_timeout_ms: 1500
+  rerank:
+    enabled: false
+    distribution_validated: false
+    provider_name: ""
+    instance_name: ""
+    model_name: ""
+    timeout_ms: 1200
+    top_k: 5
+    min_base_score: 0.05
+  gate:
+    pilot:
+      min_high_confidence_samples: 24
+      min_wilson_95_lower_bound: 0.85
+      max_ece: 0.07
+    production:
+      min_high_confidence_samples: 24
+      min_wilson_95_lower_bound: 0.99
+      max_ece: 0.05
+
+# Gateway outbound timeouts (seconds) and rate limiting
+# (requests per minute per client IP on /v1/chat/completions).
+gateway:
+  non_stream_timeout_sec: 120
+  stream_header_timeout_sec: 30
+  stream_timeout_sec: 0      # 0 = no ceiling on SSE streams
+  max_conns: 20
+  rate_limit_per_min: 120    # 0 disables (RGX_GATEWAY_RATE_LIMIT)
+
+# CORS + security response headers. Empty allowed_origins = same-origin only.
+security:
+  allowed_origins: []          # e.g. ["https://app.example.com"] (RGX_CORS_ALLOWED_ORIGINS)
+  allow_credentials: true      # (RGX_SECURITY_ALLOW_CREDENTIALS)
+  max_age_sec: 600             # (RGX_SECURITY_CORS_MAX_AGE)
+  hsts_enabled: true           # required behind the production TLS terminator (RGX_SECURITY_HSTS_ENABLED)
+  hsts_max_age_sec: 31536000   # (RGX_SECURITY_HSTS_MAX_AGE)
+  content_security_policy: "default-src 'none'"   # (RGX_SECURITY_CSP)
+  frame_options: DENY          # DENY | SAMEORIGIN (RGX_SECURITY_FRAME_OPTIONS)
+  max_request_bytes: 26214400  # 25 MiB; (RGX_SECURITY_MAX_REQUEST_BYTES)
+  allow_private_provider_base_url: true  # required for isolated intranet model gateways # enable only for internal LLM gateways
+
+# Enterprise SSO. Pre-provision users with the same verified email before
+# enabling OIDC. Keep client_secret out of version control.
+oidc:
+  enabled: false
+  issuer: "https://sso.example.internal/realms/enterprise"
+  tenant_id: ""              # set the workspace UUID to enforce a tenant binding
+  client_id: "ragflow-x"
+  client_secret: ""          # set via RGX_OIDC_CLIENT_SECRET
+  redirect_url: "https://ragflow-x.example.com/api/v1/auth/oidc/callback"
+  scopes: ["openid", "profile", "email"]
+  allowed_email_domains: ["example.com"]
+  require_email_verified: true
+  post_login_path: "/"
+  http_timeout_sec: 10
+
+# Observability: Prometheus metrics are on by default; OpenTelemetry tracing
+# is opt-in and needs an OTLP collector endpoint.
+observability:
+  metrics_enabled: true         # (RGX_METRICS_ENABLED)
+  metrics_path: /metrics       # (RGX_METRICS_PATH)
+  metrics_namespace: ragflow_x # (RGX_METRICS_NAMESPACE)
+  metrics_token: ""            # required to expose /metrics; empty disables it
+                              # production must set RGX_METRICS_TOKEN or RGX_METRICS_ALLOW_CIDRS
+  tracing_enabled: false       # (RGX_TRACING_ENABLED)
+  otel_endpoint: ""            # e.g. http://otel-collector:4318 (RGX_OTEL_ENDPOINT)
+  service_name: ragflow-x      # (RGX_OTEL_SERVICE_NAME)
+  sample_ratio: 1.0            # (RGX_OTEL_SAMPLE_RATIO)
+
+# Usage governance: estimated cost is derived from metered tokens at report
+# time and is not a financial settlement mechanism.
+usage:
+  cost_per_1k_tokens: 0.0002  # (RGX_USAGE_COST_PER_1K)
+  currency: CNY               # (RGX_USAGE_CURRENCY)
+
+# Alert delivery. Generic Webhook, WeCom robot, DingTalk robot and SMTP Email
+# share the same lifecycle, retry, throttle and delivery audit model.
+alerting:
+  enabled: false              # (RGX_ALERTING_ENABLED)
+  throttle_sec: 60            # (RGX_ALERTING_THROTTLE)
+  webhooks: []                # type: generic | wecom | dingtalk; or set RGX_ALERTING_WEBHOOK_URL/NAME/SECRET
+  email:
+    enabled: false            # (RGX_ALERTING_EMAIL_ENABLED)
+    host: ""                  # SMTP host; STARTTLS required
+    port: 587                 # (RGX_ALERTING_EMAIL_PORT)
+    username: ""              # (RGX_ALERTING_EMAIL_USERNAME)
+    password: ""              # set via RGX_ALERTING_EMAIL_PASSWORD
+    from: ""                  # (RGX_ALERTING_EMAIL_FROM)
+    to: ""                    # comma-separated recipients
+    timeout_sec: 5
+    max_attempts: 3
+    backoff_initial_ms: 250
+    backoff_max_ms: 2000
+  compensation_interval_sec: 60
+  compensation_max_attempts: 12
+  compensation_initial_delay_sec: 30
+  compensation_max_delay_sec: 3600
+  compensation_lease_sec: 300
+  compensation_jitter_percent: 20
+  # Per webhook defaults: timeout_sec 5, max_attempts 3,
+  # backoff_initial_ms 250, backoff_max_ms 2000.
+
+# Immutable audit-chain tail anchoring. Production should anchor at a cadence
+# consistent with the external compliance-copy schedule.
+audit_anchor:
+  enabled: true               # (RGX_AUDIT_ANCHOR_ENABLED)
+  interval_sec: 3600          # (RGX_AUDIT_ANCHOR_INTERVAL_SEC; 0 -> 1h)
+  export_dir: /mnt/worm/ragflow-x/audit-anchors # mount a WORM/object-storage target
+
+# Data retention (A5, doc/33 Sprint P1-2). When enabled, the async worker's
+# janitor purges operational data whose record age exceeds the per-class TTL.
+# Retention is OFF by default: no row is deleted until you opt in here or via
+# RGX_RETENTION_*. Each deleted batch is written to the audit log with counts,
+# and the audit hash chain is re-anchored after an audit purge so the retained
+# chain stays tamper-verifiable. Toggling enabled=false stops further purges.
+retention:
+  enabled: false               # (RGX_RETENTION_ENABLED) master switch
+  audit_days: 365              # rgx_audit_log (RGX_RETENTION_AUDIT_DAYS)
+  usage_days: 180              # rgx_cost_metric / rgx_quota_usage / rgx_meter_request
+  feedback_days: 180           # rgx_message_feedback (RGX_RETENTION_FEEDBACK_DAYS)
+  job_days: 90                 # terminal rgx_job / rgx_task records
+  interval_sec: 86400          # janitor cadence (RGX_RETENTION_INTERVAL_SEC; 0 -> 24h)
+
+# Production approval baseline. Enable this only after creating at least one
+# tenant-scoped policy in the UI or by seeding it here. The windows below are
+# explicit so restarts/redeployments do not fall back to temporary variables.
+approval:
+  enabled: true
+  default_expire_hours: 72
+  execution_max_retries: 3           # failed executor replay budget
+  expire_scan_interval_sec: 600      # 10-minute expiry/retry scan
+  reminder_before_hours: 24          # remind approvers 24h before expiry
+  retention_days: 365                # keep completed approvals/audit trail
+  policy_cache_ttl_sec: 30           # refresh policy changes promptly
+  notify_webhook: "https://approvals.example.internal/webhooks/approvals"  # replace with real HTTPS endpoint
+  notify_webhook_secret: ""          # set via RGX_APPROVAL_NOTIFY_WEBHOOK_SECRET
+  # Seed at least one policy before enabling approval. Example:
+  # policies:
+  #   - object_type: model-provider
+  #     action: create
+  #     enabled: true
+
+# Multi-instance Runtime Apply reporting. Production must set a unique,
+# deployment-managed report token (prefer RGX_RUNTIME_REPORT_TOKEN). Instances
+# that stop reporting for this interval are shown stale and make the desired
+# revision degraded.
+runtime:
+  report_token: ""
+  heartbeat_timeout_sec: 60
+  #     priority: 10
+  #     expire_hours: 72
+  #     steps:
+  #       - name: platform-security-review
+  #         approver_type: role
+  #         approver_value: platform_admin
+  #         required_approvals: 1
+  policies: []

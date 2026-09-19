@@ -1,0 +1,248 @@
+name: Nightly Quality Audit
+
+on:
+  schedule:
+    - cron: "0 17 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: 1
+
+jobs:
+  quality-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ragflow_x_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RGX_DB_DSN: "postgres://postgres:postgres@localhost:5432/ragflow_x_test?sslmode=disable"
+      RGX_TEST_POSTGRES_DSN: "postgres://postgres:postgres@localhost:5432/ragflow_x_test?sslmode=disable"
+      RGX_QUERY_PLAN_REPORT_DIR: ${{ github.workspace }}/test-results
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Restore query plan trend history
+        uses: actions/cache/restore@v4
+        with:
+          path: test-results/query-plan-trend-history.json
+          key: query-plan-trend-v1-${{ github.run_id }}
+          restore-keys: |
+            query-plan-trend-v1-
+
+      - name: Start runtime measurement
+        run: echo "NIGHTLY_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Build and vet backend
+        run: |
+          go build ./...
+          go vet ./...
+
+      - name: Validate Prometheus rules
+        run: |
+          prometheus_version=3.14.0
+          curl --fail --silent --show-error --location \
+            "https://github.com/prometheus/prometheus/releases/download/v${prometheus_version}/prometheus-${prometheus_version}.linux-amd64.tar.gz" \
+            -o /tmp/prometheus.tar.gz
+          tar -xzf /tmp/prometheus.tar.gz -C /tmp
+          /tmp/prometheus-${prometheus_version}.linux-amd64/promtool check rules config/observability/prometheus-alerts.yml
+
+      - name: Run backend tests with PostgreSQL and coverage
+        run: |
+          mkdir -p test-results
+          set -o pipefail
+          go test -json -count=1 -shuffle=on -coverpkg=./... -coverprofile=test-results/go-coverage.out -covermode=atomic ./... | tee test-results/go-test.json
+          go tool cover -html=test-results/go-coverage.out -o test-results/go-coverage.html
+
+      - name: Run 100x query plan warning probe
+        run: make test-warning-contracts
+
+      - name: Run backend race gate
+        run: go test -race -count=1 -shuffle=on ./...
+
+      - name: Run frontend typecheck, unit and coverage tests
+        run: |
+          npm run typecheck
+          npm run build
+          npm run test:coverage
+          npm run test:coverage:report
+        working-directory: web
+
+      - name: Run frontend E2E smoke
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+        working-directory: web
+
+      - name: Generate test quality reports
+        if: always()
+        run: |
+          make test-quality-report
+          make test-changed-coverage
+
+      - name: Generate coverage trend report
+        if: always()
+        run: make test-coverage-trend
+
+      - name: Generate query plan trend report
+        if: always()
+        run: make test-query-plan-trend
+
+      - name: Save query plan trend history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: test-results/query-plan-trend-history.json
+          key: query-plan-trend-v1-${{ github.run_id }}
+
+      - name: Generate flake evidence report
+        if: always()
+        run: |
+          mkdir -p test-results
+          go run ./cmd/testquality-flake \
+            -catalogue internal/testquality/testdata/scenario_catalogue.json \
+            -output test-results/flake-report.json \
+            -commit "$GITHUB_SHA" \
+            -job "$GITHUB_JOB" \
+            -environment "$RUNNER_OS-$RUNNER_ARCH" \
+            -input test-results/go-test.json \
+            -input test-results/vitest.json \
+            -input test-results/playwright.json
+
+      - name: Generate governance report
+        if: always()
+        run: make test-governance-report
+
+      - name: Record nightly runtime and flake status
+        if: always()
+        run: |
+          mkdir -p test-results
+          end_epoch=$(date +%s)
+          duration_seconds=$((end_epoch - NIGHTLY_START_EPOCH))
+          flake_status="NOT_COLLECTED"
+          flake_result="FAILED"
+          p0_active_flake="0"
+          p1_active_flake="0"
+          mutation_status="NOT_COLLECTED"
+          mutation_next_review_at="UNKNOWN"
+          coverage_trend_status="NOT_COLLECTED"
+          coverage_trend_result="FAILED"
+          query_plan_trend_status="NOT_COLLECTED"
+          query_plan_trend_result="FAILED"
+          query_plan_trend_review_required="false"
+          query_plan_trend_sustained_regressions="0"
+          query_plan_report_1x=""
+          query_plan_report_10x=""
+          query_plan_report_100x=""
+          if [ -f test-results/flake-report.json ]; then
+            flake_status="COLLECTED"
+            flake_result=$(node -pe "JSON.parse(require('fs').readFileSync('test-results/flake-report.json','utf8')).passed ? 'PASSED' : 'FAILED'")
+            p0_active_flake=$(node -pe "JSON.parse(require('fs').readFileSync('test-results/flake-report.json','utf8')).summary.p0ActiveFlake")
+            p1_active_flake=$(node -pe "JSON.parse(require('fs').readFileSync('test-results/flake-report.json','utf8')).summary.p1ActiveFlake")
+          fi
+          if [ -f test-results/governance-report.json ]; then
+            mutation_status=$(node -pe "JSON.parse(require('fs').readFileSync('test-results/governance-report.json','utf8')).mutation.passed ? 'COLLECTED' : 'FAILED'")
+            mutation_next_review_at=$(node -pe "JSON.parse(require('fs').readFileSync('test-results/governance-report.json','utf8')).mutation.nextReviewAt || 'UNKNOWN'")
+            coverage_trend_status="COLLECTED"
+            coverage_trend_result=$(node -pe "JSON.parse(require('fs').readFileSync('test-results/governance-report.json','utf8')).coverageTrend.passed ? 'PASSED' : 'FAILED'")
+          fi
+          if [ -f test-results/postgres-query-plan-report-1x.json ]; then
+            query_plan_report_1x="test-results/postgres-query-plan-report-1x.json"
+          fi
+          if [ -f test-results/postgres-query-plan-report-10x.json ]; then
+            query_plan_report_10x="test-results/postgres-query-plan-report-10x.json"
+          fi
+          if [ -f test-results/postgres-query-plan-report-100x.json ]; then
+            query_plan_report_100x="test-results/postgres-query-plan-report-100x.json"
+          fi
+          if [ -f test-results/query-plan-trend.json ]; then
+            query_plan_trend_status="COLLECTED"
+            query_plan_trend_result=$(node -pe "JSON.parse(require('fs').readFileSync('test-results/query-plan-trend.json','utf8')).passed ? 'PASSED' : 'FAILED'")
+            query_plan_trend_review_required=$(node -pe "JSON.parse(require('fs').readFileSync('test-results/query-plan-trend.json','utf8')).reviewRequired")
+            query_plan_trend_sustained_regressions=$(node -pe "(JSON.parse(require('fs').readFileSync('test-results/query-plan-trend.json','utf8')).sustainedRegressions || []).length")
+          fi
+          cat > test-results/nightly-audit.json <<EOF
+          {
+            "coverageStatus": "COLLECTED",
+            "goCoverageProfile": "test-results/go-coverage.out",
+            "frontendCoverageProfile": "web/coverage/coverage-final.json",
+            "frontendCoverageReportProfile": "web/coverage-report/coverage-report-final.json",
+            "changedCoverageReport": "test-results/scenario-quality-report-changed.json",
+            "flakeStatus": "${flake_status}",
+            "flakeResult": "${flake_result}",
+            "flakeReport": "test-results/flake-report.json",
+            "p0ActiveFlake": ${p0_active_flake},
+            "p1ActiveFlake": ${p1_active_flake},
+            "flakePolicy": "P0/P1 suspected flakes require 24h classification",
+            "governanceReport": "test-results/governance-report.json",
+            "mutationStatus": "${mutation_status}",
+            "mutationNextReviewAt": "${mutation_next_review_at}",
+            "runtimeStatus": "COLLECTED",
+            "runtimeSeconds": ${duration_seconds},
+            "coverageTrendStatus": "${coverage_trend_status}",
+            "coverageTrendResult": "${coverage_trend_result}",
+            "coverageTrendReport": "test-results/coverage-trend.json",
+            "queryPlanTrendStatus": "${query_plan_trend_status}",
+            "queryPlanTrendResult": "${query_plan_trend_result}",
+            "queryPlanTrendReviewRequired": "${query_plan_trend_review_required}",
+            "queryPlanTrendSustainedRegressions": ${query_plan_trend_sustained_regressions},
+            "queryPlanTrendReport": "test-results/query-plan-trend.json",
+            "queryPlanTrendHistory": "test-results/query-plan-trend-history.json",
+            "queryPlanReport1x": "${query_plan_report_1x}",
+            "queryPlanReport10x": "${query_plan_report_10x}",
+            "queryPlanReport100x": "${query_plan_report_100x}"
+          }
+          EOF
+
+      - name: Upload nightly quality artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-quality-audit-${{ github.run_id }}
+          path: |
+            test-results/
+            web/coverage/
+            web/coverage-report/
+          retention-days: 90
+          if-no-files-found: warn

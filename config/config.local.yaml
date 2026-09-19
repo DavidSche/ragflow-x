@@ -1,0 +1,32 @@
+# Local development without external services (sqlite + mock ragflow).
+server:
+  port: 9191
+  mode: debug
+  read_timeout: 30
+  write_timeout: 60
+
+app:
+  name: ragflow-x
+  jwt_secret: local-dev-secret-change-me
+  jwt_expire_hours: 24
+  log_level: debug
+  request_id_header: X-Request-Id
+
+logging:
+  level: debug           # match local dev intent; slog reads logging.level only
+  format: json
+  output: ./logs/ragflow-x.log
+  rotate_daily: true
+  max_size_mb: 50
+  max_backups: 7
+
+database:
+  driver: sqlite
+  dsn: "file:./ragflow-x-local.db?cache=shared"
+
+ragflow:
+  provider: mock
+  base_url: ""
+  api_key: ""
+  timeout: 30
+  max_conns: 20
