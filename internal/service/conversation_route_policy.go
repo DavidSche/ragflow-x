@@ -68,6 +68,7 @@ func (s *Service) SetTenantRoutePolicy(ctx context.Context, actorID, tenantID st
 	if tenant == nil {
 		return nil, httperr.NotFound("tenant not found")
 	}
+	previousMode := normalizeRouteMode(tenant.AutoRouteMode)
 	tenant.AutoRouteMode = mode
 	if err := s.Store.UpdateTenant(ctx, tenant); err != nil {
 		return nil, err
@@ -76,6 +77,11 @@ func (s *Service) SetTenantRoutePolicy(ctx context.Context, actorID, tenantID st
 		"auto_route_mode": mode,
 	}); err != nil {
 		return nil, err
+	}
+	if previousMode != mode {
+		if err := s.rerunRouteEvaluationForChange(ctx, actorID, tenantID, routeEvaluationSourcePolicyChange); err != nil {
+			return nil, err
+		}
 	}
 	return &RoutePolicyResponse{AutoRouteMode: mode}, nil
 }

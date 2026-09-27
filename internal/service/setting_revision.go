@@ -162,6 +162,13 @@ var settingKeyPolicies = map[string]SettingSourcePolicy{
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: true, RiskLevel: "high", Impact: "sends traces to external collector", EffectiveMode: "pending_restart",
 	},
+	// Read-only deployment-controlled template (doc/104 §15): the deep-link
+	// shape is part of the tracing deployment, so it stays yaml/env only and
+	// cannot be edited through the settings API (same posture as server.port).
+	"observability.otel_trace_ui_url_template": {
+		Source: "yaml_env", Editable: false, DatabaseOverride: false,
+		RestartRequired: true, RiskLevel: "low", Impact: "changes trace deep-link target persisted in evidence pointers", EffectiveMode: "deployment_controlled",
+	},
 	"observability.service_name": {
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: true, RiskLevel: "low", Impact: "changes trace service identity", EffectiveMode: "pending_restart",
@@ -221,48 +228,49 @@ var settingKeyPolicies = map[string]SettingSourcePolicy{
 }
 
 var settingKeyValidators = map[string]SettingKeyMetadata{
-	"server.port":                       {Group: "server", Field: "port", Type: "number", Min: 1, Max: 65535},
-	"server.data_dir":                   {Group: "server", Field: "data_dir", Type: "string"},
-	"server.log_path":                   {Group: "server", Field: "log_path", Type: "string"},
-	"gateway.non_stream_timeout_sec":    {Group: "gateway", Field: "non_stream_timeout_sec", Type: "number", Min: 1, Max: 3600},
-	"gateway.stream_header_timeout_sec": {Group: "gateway", Field: "stream_header_timeout_sec", Type: "number", Min: 1, Max: 600},
-	"gateway.stream_total_timeout_sec":  {Group: "gateway", Field: "stream_total_timeout_sec", Type: "number", Min: 1, Max: 86400},
-	"gateway.max_conns":                 {Group: "gateway", Field: "max_conns", Type: "number", Min: 1, Max: 10000},
-	"gateway.rate_limit_per_minute":     {Group: "gateway", Field: "rate_limit_per_minute", Type: "number", Min: 1, Max: 1000000},
-	"retention.audit_days":              {Group: "retention", Field: "audit_days", Type: "number", Min: 1, Max: 3650},
-	"retention.usage_days":              {Group: "retention", Field: "usage_days", Type: "number", Min: 1, Max: 3650},
-	"routing.default_mode":              {Group: "routing", Field: "default_mode", Type: "enum", Allowed: []string{"disabled", "recommend_only", "auto_low_risk"}},
-	"security.allowed_origins":          {Group: "security", Field: "allowed_origins", Type: "origin_list"},
-	"security.allowed_methods":          {Group: "security", Field: "allowed_methods", Type: "method_list"},
-	"security.allowed_headers":          {Group: "security", Field: "allowed_headers", Type: "string_list"},
-	"security.allow_credentials":        {Group: "security", Field: "allow_credentials", Type: "bool"},
-	"security.max_age_sec":              {Group: "security", Field: "max_age_sec", Type: "number", Min: 0, Max: 86400},
-	"security.hsts_enabled":             {Group: "security", Field: "hsts_enabled", Type: "bool"},
-	"security.hsts_max_age_sec":         {Group: "security", Field: "hsts_max_age_sec", Type: "number", Min: 0, Max: 31536000},
-	"security.hsts_include_subdomains":  {Group: "security", Field: "hsts_include_subdomains", Type: "bool"},
-	"security.content_security_policy":  {Group: "security", Field: "content_security_policy", Type: "string"},
-	"security.frame_options":            {Group: "security", Field: "frame_options", Type: "enum", Allowed: []string{"DENY", "SAMEORIGIN"}},
-	"security.max_request_bytes":        {Group: "security", Field: "max_request_bytes", Type: "number", Min: 1024, Max: 104857600},
-	"observability.metrics_enabled":     {Group: "observability", Field: "metrics_enabled", Type: "bool"},
-	"observability.metrics_path":        {Group: "observability", Field: "metrics_path", Type: "metrics_path"},
-	"observability.metrics_namespace":   {Group: "observability", Field: "metrics_namespace", Type: "string"},
-	"observability.metrics_allow_cidrs": {Group: "observability", Field: "metrics_allow_cidrs", Type: "cidr_list"},
-	"observability.tracing_enabled":     {Group: "observability", Field: "tracing_enabled", Type: "bool"},
-	"observability.otlp_endpoint":       {Group: "observability", Field: "otlp_endpoint", Type: "url"},
-	"observability.service_name":        {Group: "observability", Field: "service_name", Type: "string"},
-	"observability.sample_ratio":        {Group: "observability", Field: "sample_ratio", Type: "number", Min: 0, Max: 1},
-	"approval.enabled":                  {Group: "approval", Field: "enabled", Type: "bool"},
-	"approval.default_expire_hours":     {Group: "approval", Field: "default_expire_hours", Type: "number", Min: 1, Max: 8760},
-	"approval.execution_max_retries":    {Group: "approval", Field: "execution_max_retries", Type: "number", Min: 0, Max: 10},
-	"approval.expire_scan_interval_sec": {Group: "approval", Field: "expire_scan_interval_sec", Type: "number", Min: 10, Max: 86400},
-	"approval.reminder_before_hours":    {Group: "approval", Field: "reminder_before_hours", Type: "number", Min: 0, Max: 168},
-	"approval.retention_days":           {Group: "approval", Field: "retention_days", Type: "number", Min: 1, Max: 3650},
-	"approval.policy_cache_ttl_sec":     {Group: "approval", Field: "policy_cache_ttl_sec", Type: "number", Min: 0, Max: 3600},
-	"approval.notify_webhook":           {Group: "approval", Field: "notify_webhook", Type: "url"},
-	"runtime.heartbeat_timeout_sec":     {Group: "runtime", Field: "heartbeat_timeout_sec", Type: "number", Min: 10, Max: 86400},
-	"alerting.enabled":                  {Group: "alerting", Field: "enabled", Type: "bool"},
-	"alerting.throttle_sec":             {Group: "alerting", Field: "throttle_sec", Type: "number", Min: 1, Max: 86400},
-	"alerting.webhooks":                 {Group: "alerting", Field: "webhooks", Type: "webhook_list"},
+	"server.port":                              {Group: "server", Field: "port", Type: "number", Min: 1, Max: 65535},
+	"server.data_dir":                          {Group: "server", Field: "data_dir", Type: "string"},
+	"server.log_path":                          {Group: "server", Field: "log_path", Type: "string"},
+	"gateway.non_stream_timeout_sec":           {Group: "gateway", Field: "non_stream_timeout_sec", Type: "number", Min: 1, Max: 3600},
+	"gateway.stream_header_timeout_sec":        {Group: "gateway", Field: "stream_header_timeout_sec", Type: "number", Min: 1, Max: 600},
+	"gateway.stream_total_timeout_sec":         {Group: "gateway", Field: "stream_total_timeout_sec", Type: "number", Min: 1, Max: 86400},
+	"gateway.max_conns":                        {Group: "gateway", Field: "max_conns", Type: "number", Min: 1, Max: 10000},
+	"gateway.rate_limit_per_minute":            {Group: "gateway", Field: "rate_limit_per_minute", Type: "number", Min: 1, Max: 1000000},
+	"retention.audit_days":                     {Group: "retention", Field: "audit_days", Type: "number", Min: 1, Max: 3650},
+	"retention.usage_days":                     {Group: "retention", Field: "usage_days", Type: "number", Min: 1, Max: 3650},
+	"routing.default_mode":                     {Group: "routing", Field: "default_mode", Type: "enum", Allowed: []string{"disabled", "recommend_only", "auto_low_risk"}},
+	"security.allowed_origins":                 {Group: "security", Field: "allowed_origins", Type: "origin_list"},
+	"security.allowed_methods":                 {Group: "security", Field: "allowed_methods", Type: "method_list"},
+	"security.allowed_headers":                 {Group: "security", Field: "allowed_headers", Type: "string_list"},
+	"security.allow_credentials":               {Group: "security", Field: "allow_credentials", Type: "bool"},
+	"security.max_age_sec":                     {Group: "security", Field: "max_age_sec", Type: "number", Min: 0, Max: 86400},
+	"security.hsts_enabled":                    {Group: "security", Field: "hsts_enabled", Type: "bool"},
+	"security.hsts_max_age_sec":                {Group: "security", Field: "hsts_max_age_sec", Type: "number", Min: 0, Max: 31536000},
+	"security.hsts_include_subdomains":         {Group: "security", Field: "hsts_include_subdomains", Type: "bool"},
+	"security.content_security_policy":         {Group: "security", Field: "content_security_policy", Type: "string"},
+	"security.frame_options":                   {Group: "security", Field: "frame_options", Type: "enum", Allowed: []string{"DENY", "SAMEORIGIN"}},
+	"security.max_request_bytes":               {Group: "security", Field: "max_request_bytes", Type: "number", Min: 1024, Max: 104857600},
+	"observability.metrics_enabled":            {Group: "observability", Field: "metrics_enabled", Type: "bool"},
+	"observability.metrics_path":               {Group: "observability", Field: "metrics_path", Type: "metrics_path"},
+	"observability.metrics_namespace":          {Group: "observability", Field: "metrics_namespace", Type: "string"},
+	"observability.metrics_allow_cidrs":        {Group: "observability", Field: "metrics_allow_cidrs", Type: "cidr_list"},
+	"observability.tracing_enabled":            {Group: "observability", Field: "tracing_enabled", Type: "bool"},
+	"observability.otlp_endpoint":              {Group: "observability", Field: "otlp_endpoint", Type: "url"},
+	"observability.otel_trace_ui_url_template": {Group: "observability", Field: "otel_trace_ui_url_template", Type: "string"},
+	"observability.service_name":               {Group: "observability", Field: "service_name", Type: "string"},
+	"observability.sample_ratio":               {Group: "observability", Field: "sample_ratio", Type: "number", Min: 0, Max: 1},
+	"approval.enabled":                         {Group: "approval", Field: "enabled", Type: "bool"},
+	"approval.default_expire_hours":            {Group: "approval", Field: "default_expire_hours", Type: "number", Min: 1, Max: 8760},
+	"approval.execution_max_retries":           {Group: "approval", Field: "execution_max_retries", Type: "number", Min: 0, Max: 10},
+	"approval.expire_scan_interval_sec":        {Group: "approval", Field: "expire_scan_interval_sec", Type: "number", Min: 10, Max: 86400},
+	"approval.reminder_before_hours":           {Group: "approval", Field: "reminder_before_hours", Type: "number", Min: 0, Max: 168},
+	"approval.retention_days":                  {Group: "approval", Field: "retention_days", Type: "number", Min: 1, Max: 3650},
+	"approval.policy_cache_ttl_sec":            {Group: "approval", Field: "policy_cache_ttl_sec", Type: "number", Min: 0, Max: 3600},
+	"approval.notify_webhook":                  {Group: "approval", Field: "notify_webhook", Type: "url"},
+	"runtime.heartbeat_timeout_sec":            {Group: "runtime", Field: "heartbeat_timeout_sec", Type: "number", Min: 10, Max: 86400},
+	"alerting.enabled":                         {Group: "alerting", Field: "enabled", Type: "bool"},
+	"alerting.throttle_sec":                    {Group: "alerting", Field: "throttle_sec", Type: "number", Min: 1, Max: 86400},
+	"alerting.webhooks":                        {Group: "alerting", Field: "webhooks", Type: "webhook_list"},
 }
 
 func defaultSystemSettingsSnapshot() map[string]interface{} {
@@ -294,14 +302,15 @@ func defaultSystemSettingsSnapshot() map[string]interface{} {
 				"allow_private_provider_base_url": false,
 			},
 			"observability": map[string]interface{}{
-				"metrics_enabled":     true,
-				"metrics_path":        "/metrics",
-				"metrics_namespace":   "ragflow_x",
-				"metrics_allow_cidrs": []interface{}{},
-				"tracing_enabled":     false,
-				"otlp_endpoint":       "",
-				"service_name":        "ragflow-x",
-				"sample_ratio":        1.0,
+				"metrics_enabled":            true,
+				"metrics_path":               "/metrics",
+				"metrics_namespace":          "ragflow_x",
+				"metrics_allow_cidrs":        []interface{}{},
+				"tracing_enabled":            false,
+				"otlp_endpoint":              "",
+				"otel_trace_ui_url_template": "",
+				"service_name":               "ragflow-x",
+				"sample_ratio":               1.0,
 			},
 			"approval": map[string]interface{}{
 				"enabled":                  false,
@@ -357,14 +366,15 @@ func systemSettingsSnapshotFromConfig(cfg config.Config) map[string]interface{} 
 		"allow_private_provider_base_url": cfg.Security.AllowPrivateProviderBaseURL,
 	}
 	groups["observability"] = map[string]interface{}{
-		"metrics_enabled":     cfg.Observability.MetricsEnabled,
-		"metrics_path":        cfg.Observability.MetricsPath,
-		"metrics_namespace":   cfg.Observability.MetricsNamespace,
-		"metrics_allow_cidrs": interfaceSlice(cfg.Observability.MetricsAllowCIDRs),
-		"tracing_enabled":     cfg.Observability.TracingEnabled,
-		"otlp_endpoint":       cfg.Observability.OTLPEndpoint,
-		"service_name":        cfg.Observability.ServiceName,
-		"sample_ratio":        cfg.Observability.SampleRatio,
+		"metrics_enabled":            cfg.Observability.MetricsEnabled,
+		"metrics_path":               cfg.Observability.MetricsPath,
+		"metrics_namespace":          cfg.Observability.MetricsNamespace,
+		"metrics_allow_cidrs":        interfaceSlice(cfg.Observability.MetricsAllowCIDRs),
+		"tracing_enabled":            cfg.Observability.TracingEnabled,
+		"otlp_endpoint":              cfg.Observability.OTLPEndpoint,
+		"otel_trace_ui_url_template": cfg.Observability.TraceUIURLTemplate,
+		"service_name":               cfg.Observability.ServiceName,
+		"sample_ratio":               cfg.Observability.SampleRatio,
 	}
 	groups["approval"] = map[string]interface{}{
 		"enabled":                  cfg.Approval.Enabled,
@@ -548,6 +558,13 @@ func (s *Service) ApplySystemSettingsSnapshot(snapshot map[string]interface{}) e
 	observability.MetricsAllowCIDRs = settingStringList(snapshot, "observability", "metrics_allow_cidrs", observability.MetricsAllowCIDRs)
 	observability.TracingEnabled = settingBool(snapshot, "observability", "tracing_enabled", observability.TracingEnabled)
 	observability.OTLPEndpoint = settingString(snapshot, "observability", "otlp_endpoint", observability.OTLPEndpoint)
+	// The trace UI template is deployment-controlled (read-only policy above):
+	// an empty DB value must never clobber the configured template.
+	if configured := strings.TrimSpace(observability.TraceUIURLTemplate); configured != "" {
+		observability.TraceUIURLTemplate = configured
+	} else if fromSnapshot := strings.TrimSpace(settingString(snapshot, "observability", "otel_trace_ui_url_template", "")); fromSnapshot != "" {
+		observability.TraceUIURLTemplate = fromSnapshot
+	}
 	observability.ServiceName = settingString(snapshot, "observability", "service_name", observability.ServiceName)
 	if value, err := toFloat64(settingGroup(snapshot, "observability")["sample_ratio"]); err == nil {
 		observability.SampleRatio = value
@@ -1171,6 +1188,7 @@ func (s *Service) EffectiveSystemSettingsConfig(ctx context.Context, cfg config.
 	observability.MetricsAllowCIDRs = settingStringList(snapshot, "observability", "metrics_allow_cidrs", observability.MetricsAllowCIDRs)
 	observability.TracingEnabled = settingBool(snapshot, "observability", "tracing_enabled", observability.TracingEnabled)
 	observability.OTLPEndpoint = settingString(snapshot, "observability", "otlp_endpoint", observability.OTLPEndpoint)
+	observability.TraceUIURLTemplate = settingString(snapshot, "observability", "otel_trace_ui_url_template", observability.TraceUIURLTemplate)
 	observability.ServiceName = settingString(snapshot, "observability", "service_name", observability.ServiceName)
 	if value, err := toFloat64(settingGroup(snapshot, "observability")["sample_ratio"]); err == nil {
 		observability.SampleRatio = value

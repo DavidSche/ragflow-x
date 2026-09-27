@@ -191,9 +191,20 @@ func (m *Mock) ListChatSessionMessages(ctx context.Context, chatID, sessionID st
 	return items, next, nil
 }
 
+// effectiveMetadataCondition resolves the condition a request carries:
+// extra_body.metadata_condition wins over the top-level field (OpenAI-
+// compatible semantics, doc/123 §6.1).
+func effectiveMetadataCondition(req CompletionRequest) *MetadataCondition {
+	if req.ExtraBody != nil && req.ExtraBody.MetadataCondition != nil {
+		return req.ExtraBody.MetadataCondition
+	}
+	return req.MetadataCondition
+}
+
 func (m *Mock) ChatCompletion(ctx context.Context, chatID string, req CompletionRequest) (*CompletionResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.lastChatCondition = effectiveMetadataCondition(req)
 	db := m.chatDB()
 	if _, ok := db.chats[chatID]; !ok {
 		return nil, fmt.Errorf("chat not found: %s", chatID)
@@ -201,15 +212,24 @@ func (m *Mock) ChatCompletion(ctx context.Context, chatID string, req Completion
 	s := m.mockEnsureSessionLocked(db, chatID, req.SessionID)
 	s.messages = append(s.messages, req.Messages...)
 	return &CompletionResponse{
-		ID:      "mock-cmpl-" + chatID,
-		Choices: []CompletionChoice{{Message: Message{Role: "assistant", Content: "ok (mock chat)"}}},
-		Usage:   &CompletionUsage{PromptTokens: 10, CompletionTokens: 5},
+		ID:        "mock-cmpl-" + chatID,
+		SessionID: s.id,
+		Choices:   []CompletionChoice{{Message: Message{Role: "assistant", Content: "ok (mock chat)"}}},
+		Usage:     &CompletionUsage{PromptTokens: 10, CompletionTokens: 5},
+		// Non-streaming completions mirror the streaming citation contract so
+		// answer snapshots carry the same evidence (doc/118 F-10).
+		Reference: []map[string]interface{}{{
+			"id": "mock-citation-1", "content": "mock citation evidence",
+			"document_name": "mock-doc", "dataset_id": "mock-dataset",
+			"document_id": "mock-document", "chunk_id": "mock-chunk",
+		}},
 	}, nil
 }
 
 func (m *Mock) StreamChatCompletion(ctx context.Context, chatID string, req CompletionRequest, w io.Writer) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.lastChatCondition = effectiveMetadataCondition(req)
 	db := m.chatDB()
 	if _, ok := db.chats[chatID]; !ok {
 		return fmt.Errorf("chat not found: %s", chatID)
@@ -250,6 +270,14 @@ func (m *Mock) UpdateChatSession(ctx context.Context, chatID, sessionID, name st
 func (m *Mock) GetChunk(ctx context.Context, datasetID, documentID, chunkID string) (*Chunk, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for _, chunk := range m.chunks[datasetID] {
+		if chunk.id == chunkID && chunk.documentID == documentID {
+			return &Chunk{
+				ID: chunk.id, Content: chunk.content, DocumentID: chunk.documentID,
+				DocName: chunk.docName, ImageID: chunk.imageID, Available: chunk.available,
+			}, nil
+		}
+	}
 	for _, d := range m.datasets {
 		if d.id != datasetID {
 			continue

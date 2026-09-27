@@ -68,6 +68,16 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		h.ReportRuntimeSettingState,
 	)
 
+	wecom := api.Group("/im/wecom")
+	wecom.GET("/callback", middleware.RateLimit(limiter, middleware.ClientIPKey, 120, time.Minute), h.WeComCallback)
+	wecom.POST("/callback", middleware.RateLimit(limiter, middleware.ClientIPKey, 120, time.Minute), h.WeComCallback)
+
+	feishu := api.Group("/im/feishu")
+	feishu.POST("/callback", middleware.RateLimit(limiter, middleware.ClientIPKey, 120, time.Minute), h.FeishuCallback)
+
+	dingtalk := api.Group("/im/dingtalk")
+	dingtalk.POST("/callback", middleware.RateLimit(limiter, middleware.ClientIPKey, 120, time.Minute), h.DingTalkCallback)
+
 	protected := api.Group("/")
 	protected.Use(middleware.DynamicCookieCSRF(func() []string {
 		return h.Service.CurrentSecurityConfig().AllowedOrigins
@@ -79,6 +89,8 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.PUT("/conversation/assistants/:kind/:targetId", h.UpdateConversationAssistant)
 		protected.PUT("/conversation/assistants/:kind/:targetId/governance", h.UpdateConversationAssistantGovernance)
 		handler.RegisterReleaseGovernanceRoutes(protected, h)
+		handler.RegisterAssistantReleaseRoutes(protected, h)
+		handler.RegisterTemplateInstanceRoutes(protected, h)
 		protected.POST("/conversation/route", h.RouteConversation)
 		protected.POST("/conversation/route/:routeId/select", h.SelectRouteCandidate)
 		protected.POST("/conversation/route-selections/:routeSelectionId/bootstrap", h.BootstrapRouteSelection)
@@ -148,6 +160,15 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.GET("/knowledge-ops/top-queries", h.KnowledgeOpsTopQueries)
 		protected.GET("/knowledge-ops/events", h.KnowledgeOpsEvents)
 		protected.PATCH("/knowledge-ops/events/:id/review", h.ReviewKnowledgeOpsEvent)
+		protected.POST("/knowledge-ops/trace-runs", h.CreateTraceRun)
+		protected.GET("/knowledge-ops/trace-runs", h.ListTraceRuns)
+		protected.GET("/knowledge-ops/trace-runs/:id", h.GetTraceRun)
+		protected.GET("/knowledge-ops/metrics-contract", h.MetricsContract)
+		protected.GET("/knowledge-tasks", h.ListKnowledgeTasks)
+		protected.POST("/knowledge-tasks", h.CreateKnowledgeTask)
+		protected.GET("/knowledge-tasks/summary", h.KnowledgeTaskSummary)
+		protected.GET("/knowledge-tasks/:id", h.GetKnowledgeTask)
+		protected.PATCH("/knowledge-tasks/:id", h.UpdateKnowledgeTask)
 		protected.GET("/workbench/recent-sessions", h.RecentCrossAppSessions)
 		protected.GET("/tasks/jobs", h.ListJobs)
 		protected.GET("/tasks", h.ListTasks)
@@ -155,6 +176,7 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.POST("/tasks/sync", h.SyncTasks)
 		protected.GET("/usage", h.Usage)
 		protected.GET("/usage/details", h.UsageDetail)
+		protected.GET("/usage/attribution", h.OperationalAttribution)
 		protected.GET("/usage/export", h.ExportUsageReport)
 		protected.GET("/audit", h.ListAudits)
 		protected.GET("/audit/export", h.ExportAudits)
@@ -275,7 +297,19 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.POST("/agents/:id/chat/completions", h.AgentChatCompletion)
 		protected.POST("/agents/:id/chat/completions/stream", h.StreamAgentChatCompletion)
 		protected.PUT("/roles/:id/permissions", h.SetRolePermissions)
+		protected.GET("/answer-snapshots/:snapshotId", h.GetAnswerSnapshot)
+		protected.GET("/answer-snapshots/by-request/:requestId", h.GetAnswerSnapshotByRequest)
+		protected.POST("/answer-snapshots/:snapshotId/export", h.CreateAnswerExport)
+		protected.GET("/answer-snapshots/:snapshotId/audit-export", h.GetAnswerSnapshotAuditExport)
+		protected.GET("/answer-snapshots/export-jobs/:jobId", h.GetAnswerExportJob)
+		protected.POST("/answer-snapshots/export-jobs/:jobId/retry", h.RetryAnswerExportJob)
+		protected.GET("/answer-snapshots/artifacts/:artifactId/download", h.DownloadAnswerExport)
 		handler.RegisterGovernanceRoutes(protected, h)
+		protected.POST("/knowledge-impact-reports", h.CreateKnowledgeImpactReport)
+		protected.GET("/knowledge-impact-reports", h.ListKnowledgeImpactReports)
+		protected.POST("/knowledge-duplicate-candidates", h.CreateDuplicateCandidate)
+		protected.GET("/knowledge-duplicate-candidates", h.ListDuplicateCandidates)
+		protected.POST("/knowledge-duplicate-candidates/:id/decision", h.DecideDuplicateCandidate)
 
 		if cfg.Approval.Enabled {
 			protected.GET("/approvals", h.ListApprovals)

@@ -1192,6 +1192,58 @@ func (s *Service) resolveApprovalTarget(ctx context.Context, tenantID, actorID s
 		}
 		target.Snapshot = enterpriseTarget.Snapshot
 		attrs = enterpriseTarget.Attrs
+	case model.ApprovalObjectReleaseCandidate:
+		if req.Action != model.ApprovalActionRelease {
+			return nil, nil, nil, httperr.BadRequest(40094, "unsupported release candidate action")
+		}
+		if err := s.Authorize(ctx, actorID, "manage", "release-governance"); err != nil {
+			return nil, nil, nil, err
+		}
+		candidateID, _ := req.Payload["candidate_id"].(string)
+		candidateVersionFloat, _ := req.Payload["candidate_version"].(float64)
+		candidateVersion := int64(candidateVersionFloat)
+		if strings.TrimSpace(candidateID) == "" || candidateVersion <= 0 {
+			return nil, nil, nil, httperr.BadRequest(40094, "candidate_id and candidate_version are required")
+		}
+		candidate, err := s.Store.GetReleaseCandidateVersion(ctx, tenantID, candidateID, candidateVersion)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if candidate == nil {
+			return nil, nil, nil, httperr.NotFound("release candidate not found")
+		}
+		target.Snapshot = map[string]any{
+			"candidate_id":      candidate.CandidateID,
+			"candidate_version": candidate.CandidateVersion,
+			"target_type":       candidate.TargetType,
+			"target_id":         candidate.TargetID,
+			"target_version":    candidate.TargetVersion,
+			"candidate_hash":    candidate.CandidateHash,
+			"status":            candidate.Status,
+		}
+		attrs["candidate_version"] = candidate.CandidateVersion
+	case model.ApprovalObjectKnowledgeTask:
+		if req.Action != model.ApprovalActionResolve {
+			return nil, nil, nil, httperr.BadRequest(40097, "unsupported knowledge task action")
+		}
+		task, taskErr := s.Store.GetKnowledgeTask(ctx, tenantID, req.ObjectID, false)
+		if taskErr != nil {
+			return nil, nil, nil, taskErr
+		}
+		if task.ID == "" {
+			return nil, nil, nil, httperr.NotFound("knowledge task not found")
+		}
+		if err := s.Authorize(ctx, actorID, "manage", "knowledge-ops"); err != nil {
+			return nil, nil, nil, err
+		}
+		target.Snapshot = map[string]any{
+			"title": task.Title, "status": task.Status, "owner_id": task.OwnerID,
+			"regression_eval_set_id":  task.RegressionEvalSetID,
+			"regression_eval_case_id": task.RegressionEvalCaseID,
+			"regression_status":       task.RegressionStatus,
+		}
+		attrs["knowledge_task_title"] = task.Title
+		attrs["knowledge_task_owner"] = task.OwnerID
 	default:
 		return nil, nil, nil, httperr.BadRequest(40094, "unsupported approval object")
 	}

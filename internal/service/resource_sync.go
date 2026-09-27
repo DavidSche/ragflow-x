@@ -1038,14 +1038,6 @@ func (s *Service) listAllMemories(ctx context.Context, pageSize, maxCount int) (
 	}
 }
 
-func unixTime(seconds int64) *time.Time {
-	if seconds <= 0 {
-		return nil
-	}
-	value := time.Unix(seconds, 0).UTC()
-	return &value
-}
-
 func ragflowUpdateTime(value int64) *time.Time {
 	if value <= 0 {
 		return nil

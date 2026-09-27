@@ -9,12 +9,13 @@ import (
 
 // FeedbackRequest carries a user's rating on a chat turn.
 type FeedbackRequest struct {
-	ChatID    string
-	SessionID string
-	MessageID string
-	Rating    string
-	Comment   string
-	RequestID string
+	ChatID      string
+	SessionID   string
+	MessageID   string
+	Rating      string
+	Attribution string
+	Comment     string
+	RequestID   string
 }
 
 // RecordMessageFeedback records a user's like/dislike on a chat turn, scoped to
@@ -27,6 +28,14 @@ func (s *Service) RecordMessageFeedback(ctx context.Context, tenantID, userID st
 	if req.Rating != model.FeedbackPositive && req.Rating != model.FeedbackNegative {
 		return nil, httperr.BadRequest(40091, "rating must be positive or negative")
 	}
+	attribution := req.Attribution
+	if req.Rating == model.FeedbackNegative {
+		if !validFeedbackAttribution(attribution) {
+			return nil, httperr.BadRequest(40096, "negative feedback attribution must be knowledge, retrieval, template, model, routing or tool")
+		}
+	} else {
+		attribution = ""
+	}
 	cs, err := s.getOwnedChat(ctx, tenantID, req.ChatID, false)
 	if err != nil {
 		return nil, err
@@ -37,7 +46,7 @@ func (s *Service) RecordMessageFeedback(ctx context.Context, tenantID, userID st
 	f := &model.MessageFeedback{
 		TenantID: tenantID, UserID: userID, ChatID: req.ChatID,
 		SessionID: req.SessionID, MessageID: req.MessageID, RequestID: req.RequestID,
-		Rating: req.Rating, Comment: req.Comment,
+		Rating: req.Rating, Attribution: attribution, Comment: req.Comment,
 	}
 	if err := s.Store.UpsertMessageFeedback(ctx, f); err != nil {
 		return nil, err
@@ -46,4 +55,15 @@ func (s *Service) RecordMessageFeedback(ctx context.Context, tenantID, userID st
 		return nil, err
 	}
 	return f, nil
+}
+
+func validFeedbackAttribution(attribution string) bool {
+	switch attribution {
+	case model.FeedbackAttributionKnowledge, model.FeedbackAttributionRetrieval,
+		model.FeedbackAttributionTemplate, model.FeedbackAttributionModel,
+		model.FeedbackAttributionRouting, model.FeedbackAttributionTool:
+		return true
+	default:
+		return false
+	}
 }

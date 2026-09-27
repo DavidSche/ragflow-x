@@ -182,3 +182,21 @@ type CostMetric struct {
 
 // TableName is the physical table name.
 func (CostMetric) TableName() string { return "rgx_cost_metric" }
+
+// OperationalAttributionRow aggregates request quality, usage, latency and cost
+// by the governance context carried by TraceRun. It is a read-only report type.
+type OperationalAttributionRow struct {
+	TenantID            string  `json:"tenant_id"`
+	ProjectID           string  `json:"project_id"`
+	AssistantID         string  `json:"assistant_id"`
+	AssistantReleaseID  string  `json:"assistant_release_id"`
+	Scenario            string  `json:"scenario"`
+	Requests            int64   `json:"requests"`
+	Failed              int64   `json:"failed"`
+	NoAnswer            int64   `json:"no_answer"`
+	TokensIn            int64   `json:"tokens_in"`
+	TokensOut           int64   `json:"tokens_out"`
+	EstimatedCost       float64 `json:"estimated_cost"`
+	AvgLatencyMs        float64 `json:"avg_latency_ms"`
+	QuotaConsumedTokens int64   `json:"quota_consumed_tokens"`
+}

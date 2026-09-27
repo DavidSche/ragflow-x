@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -404,9 +406,98 @@ func (c *HTTPClient) SetDocumentsStatus(ctx context.Context, datasetID string, d
 }
 
 func (c *HTTPClient) UpdateDocumentMetadata(ctx context.Context, datasetID, documentID string, metadata map[string]interface{}) error {
-	body, _ := json.Marshal(map[string]interface{}{"metadata": metadata})
-	path := "/datasets/" + url.PathEscape(datasetID) + "/documents/" + url.PathEscape(documentID) + "/metadata/config"
-	return c.do(ctx, http.MethodPut, path, bytes.NewReader(body), "application/json", nil)
+	docs, err := c.ListDocuments(ctx, datasetID)
+	if err != nil {
+		return fmt.Errorf("read document metadata: %w", err)
+	}
+	var current map[string]interface{}
+	for _, doc := range docs {
+		if doc.ID == documentID {
+			current = doc.Metadata
+			break
+		}
+	}
+	if current == nil {
+		current = map[string]interface{}{}
+	}
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+
+	updates := make([]map[string]interface{}, 0, len(metadata))
+	changedKeys := make([]string, 0, len(metadata))
+	for key, value := range metadata {
+		if !reflect.DeepEqual(current[key], value) {
+			changedKeys = append(changedKeys, key)
+		}
+	}
+	sort.Strings(changedKeys)
+	for _, key := range changedKeys {
+		updates = append(updates, map[string]interface{}{"key": key, "value": metadata[key]})
+	}
+
+	deletedKeys := make([]string, 0)
+	for key := range current {
+		if _, exists := metadata[key]; !exists {
+			deletedKeys = append(deletedKeys, key)
+		}
+	}
+	sort.Strings(deletedKeys)
+	deletes := make([]map[string]interface{}, 0, len(deletedKeys))
+	for _, key := range deletedKeys {
+		deletes = append(deletes, map[string]interface{}{"key": key})
+	}
+	if len(updates) == 0 && len(deletes) == 0 {
+		return nil
+	}
+
+	body, err := json.Marshal(map[string]interface{}{
+		"selector": map[string]interface{}{"document_ids": []string{documentID}},
+		"updates":  updates,
+		"deletes":  deletes,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal document metadata update: %w", err)
+	}
+	path := "/datasets/" + url.PathEscape(datasetID) + "/documents/metadatas"
+	return c.do(ctx, http.MethodPatch, path, bytes.NewReader(body), "application/json", nil)
+}
+
+// MetadataUpdate carries one key replacement for the documented
+// POST /datasets/{id}/metadata/update API (docs v0.27.2 §Update or delete
+// metadata). Match, when set, only replaces documents whose current value
+// equals match.
+type MetadataUpdate struct {
+	Key   string
+	Value string
+	Match string
+}
+
+// BatchUpdateDatasetMetadata replaces one metadata key across the given
+// documents via the documented POST /datasets/{id}/metadata/update endpoint.
+// documentIDs must be non-empty; an empty slice would select the whole
+// dataset, which this call must never do implicitly.
+func (c *HTTPClient) BatchUpdateDatasetMetadata(ctx context.Context, datasetID string, documentIDs []string, updates []MetadataUpdate) error {
+	if len(documentIDs) == 0 || len(updates) == 0 {
+		return nil
+	}
+	payload := make([]map[string]interface{}, 0, len(updates))
+	for _, u := range updates {
+		item := map[string]interface{}{"key": u.Key, "value": u.Value}
+		if u.Match != "" {
+			item["match"] = u.Match
+		}
+		payload = append(payload, item)
+	}
+	body, err := json.Marshal(map[string]interface{}{
+		"selector": map[string]interface{}{"document_ids": documentIDs},
+		"updates":  payload,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal dataset metadata update: %w", err)
+	}
+	path := "/datasets/" + url.PathEscape(datasetID) + "/metadata/update"
+	return c.do(ctx, http.MethodPost, path, bytes.NewReader(body), "application/json", nil)
 }
 
 func (c *HTTPClient) ListDocumentChunks(ctx context.Context, datasetID, documentID string, page, pageSize int) ([]Chunk, int64, error) {

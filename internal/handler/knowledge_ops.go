@@ -67,6 +67,7 @@ func (h *Handler) KnowledgeOpsEvents(c *gin.Context) {
 		Search:       c.Query("search"),
 		DateFrom:     c.Query("date_from"),
 		DateTo:       c.Query("date_to"),
+		Attribution:  c.Query("attribution"),
 	})
 	if err != nil {
 		response.Err(c, err)
@@ -102,4 +103,20 @@ func (h *Handler) ReviewKnowledgeOpsEvent(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"id": c.Param("id"), "status": req.Status})
+}
+
+// MetricsContract returns the frozen metric contract board (doc/107 §3.3.2):
+// the latest route evaluation gate plus the 30-day answer/operations KPIs.
+func (h *Handler) MetricsContract(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, _ := knowledgeOpsScope(h, c)
+	out, err := h.Service.MetricsContractSummary(c.Request.Context(), tenantID)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, out)
 }

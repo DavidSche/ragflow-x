@@ -170,6 +170,7 @@ func (m *Mock) DeleteSearchApp(ctx context.Context, searchAppID string) error {
 func (m *Mock) SearchAppCompletion(ctx context.Context, searchAppID string, req SearchAppCompletionRequest) (*SearchAppCompletionResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.lastSearchCondition = req.MetadataCondition
 	_, ok := m.searchApps[searchAppID]
 	if !ok {
 		return nil, fmt.Errorf("search app not found: %s", searchAppID)

@@ -7,6 +7,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
+	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 )
 
 const (
@@ -38,6 +42,7 @@ type RAGFlowCapability struct {
 
 type RAGFlowCapabilityReport struct {
 	Provider             string              `json:"provider"`
+	ProviderVersion      string              `json:"provider_version"`
 	PinnedVersion        string              `json:"pinned_version"`
 	DetectedVersion      string              `json:"detected_version,omitempty"`
 	RuntimeHealth        string              `json:"runtime_health"`
@@ -47,6 +52,20 @@ type RAGFlowCapabilityReport struct {
 	UpgradeReason        string              `json:"upgrade_reason,omitempty"`
 	BlockingCapabilities []string            `json:"blocking_capabilities,omitempty"`
 	TrialCapabilities    []string            `json:"trial_capabilities,omitempty"`
+	ScenarioRequirements map[string][]string `json:"scenario_requirements"`
+	// EndpointCoverage summarizes the provider endpoint stability registry
+	// (doc/121 B2): how many upstream endpoints RAGFlow-X depends on are
+	// documented in the official API reference versus learned from source and
+	// therefore gated by the internal-endpoint live contract drill.
+	EndpointCoverage ragflow.EndpointCoverage `json:"endpoint_coverage"`
+}
+
+const ragflowAdapterContractVersion = "adapter.v1"
+
+var capabilityScenarioRequirements = map[string][]string{
+	model.CapabilityKnowledgeChat:  {"chat", "session", "references"},
+	model.CapabilityAgenticTask:    {"agent", "agent_session"},
+	model.CapabilityExplicitSearch: {"search_app"},
 }
 
 type capabilityRegistry struct {
@@ -151,12 +170,18 @@ func (r *capabilityRegistry) snapshot() RAGFlowCapabilityReport {
 
 func (r *capabilityRegistry) snapshotLocked() RAGFlowCapabilityReport {
 	report := RAGFlowCapabilityReport{
-		Provider:        r.provider,
-		PinnedVersion:   r.pinnedVersion,
-		DetectedVersion: r.detectedVersion,
-		RuntimeHealth:   r.runtimeHealth,
-		VerifiedAt:      r.verifiedAt,
-		Items:           make([]RAGFlowCapability, 0, len(r.items)),
+		Provider:             r.provider,
+		ProviderVersion:      ragflowAdapterContractVersion,
+		PinnedVersion:        r.pinnedVersion,
+		DetectedVersion:      r.detectedVersion,
+		RuntimeHealth:        r.runtimeHealth,
+		VerifiedAt:           r.verifiedAt,
+		Items:                make([]RAGFlowCapability, 0, len(r.items)),
+		ScenarioRequirements: make(map[string][]string),
+		EndpointCoverage:     ragflow.EndpointCoverageSummary(),
+	}
+	for scenario, requirements := range capabilityScenarioRequirements {
+		report.ScenarioRequirements[scenario] = append([]string(nil), requirements...)
 	}
 	for _, item := range r.items {
 		report.Items = append(report.Items, *item)
@@ -181,6 +206,28 @@ func (r *capabilityRegistry) markRuntimeUnavailable(err error) RAGFlowCapability
 		item.Evidence = err.Error()
 	}
 	return r.snapshotLocked()
+}
+
+func (s *Service) EnsureCapabilityCompatibility(ctx context.Context, capability string) (RAGFlowCapabilityReport, error) {
+	required, ok := capabilityScenarioRequirements[capability]
+	if !ok {
+		return RAGFlowCapabilityReport{}, httperr.New(422, 42260, "unsupported capability")
+	}
+	report, err := s.VerifyRAGFlowCapabilities(ctx)
+	if err != nil {
+		return report, httperr.New(422, 42260, "capability runtime is unavailable")
+	}
+	items := make(map[string]RAGFlowCapability, len(report.Items))
+	for _, item := range report.Items {
+		items[item.Name] = item
+	}
+	for _, name := range required {
+		item, ok := items[name]
+		if !ok || item.Status != CapabilityVerified || item.RuntimeHealth != RuntimeHealthy {
+			return report, httperr.New(422, 42260, "capability contract is not verified for production release")
+		}
+	}
+	return report, nil
 }
 
 func (r *capabilityRegistry) verify(version string) RAGFlowCapabilityReport {

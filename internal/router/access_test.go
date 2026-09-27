@@ -65,6 +65,7 @@ func protectedRoutes() []string {
 		"POST /api/v1/tasks/sync",
 		"GET /api/v1/usage",
 		"GET /api/v1/usage/details",
+		"GET /api/v1/usage/attribution",
 		"GET /api/v1/usage/export",
 		"GET /api/v1/audit",
 		"GET /api/v1/audit/export",
@@ -87,6 +88,26 @@ func protectedRoutes() []string {
 		"POST /api/v1/chat/completions",
 		"GET /api/v1/chat/reference",
 		"POST /api/v1/chat/feedback",
+		"POST /api/v1/knowledge-ops/trace-runs",
+		"GET /api/v1/knowledge-ops/trace-runs",
+		"GET /api/v1/knowledge-ops/trace-runs/:id",
+		"GET /api/v1/knowledge-tasks",
+		"POST /api/v1/knowledge-tasks",
+		"GET /api/v1/knowledge-tasks/summary",
+		"GET /api/v1/knowledge-tasks/:id",
+		"PATCH /api/v1/knowledge-tasks/:id",
+		"GET /api/v1/answer-snapshots/:snapshotId",
+		"GET /api/v1/answer-snapshots/by-request/:requestId",
+		"POST /api/v1/answer-snapshots/:snapshotId/export",
+		"GET /api/v1/answer-snapshots/:snapshotId/audit-export",
+		"GET /api/v1/answer-snapshots/export-jobs/:jobId",
+		"POST /api/v1/answer-snapshots/export-jobs/:jobId/retry",
+		"GET /api/v1/answer-snapshots/artifacts/:artifactId/download",
+		"POST /api/v1/knowledge-impact-reports",
+		"GET /api/v1/knowledge-impact-reports",
+		"POST /api/v1/knowledge-duplicate-candidates",
+		"GET /api/v1/knowledge-duplicate-candidates",
+		"POST /api/v1/knowledge-duplicate-candidates/:id/decision",
 		"POST /api/v1/chats",
 		"POST /api/v1/chats/batch-status",
 		"DELETE /api/v1/chats",
@@ -122,6 +143,22 @@ func protectedRoutes() []string {
 		"GET /api/v1/keys",
 		"POST /api/v1/keys",
 		"POST /api/v1/keys/:id/revoke",
+		// Template instance API family (doc/107 §3.1.5, doc/124 §2).
+		"POST /api/v1/template-instances",
+		"GET /api/v1/template-instances",
+		"GET /api/v1/template-instances/:id",
+		"POST /api/v1/template-instances/:id/dry-run",
+		"POST /api/v1/template-instances/:id/evaluate",
+		"POST /api/v1/template-instances/:id/release",
+		"POST /api/v1/template-instances/:id/releases/:releaseId/activate",
+		"POST /api/v1/template-instances/:id/rollback",
+		"GET /api/v1/template-instances/:id/health",
+		"GET /api/v1/template-instances/:id/releases",
+		"POST /api/v1/template-instances/:id/releases/:releaseId/reconcile",
+		// Rollout policy management (doc/124 §3).
+		"GET /api/v1/assistants/:id/rollout-policies",
+		"POST /api/v1/assistants/:id/rollout-policies",
+		"PUT /api/v1/assistants/:id/rollout-policies/:policyId",
 	}
 }
 
@@ -142,6 +179,35 @@ func TestProtectedRoutesAllRegistered(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		t.Fatalf("protected routes missing from accessRules (would be denied by default): %v", missing)
+	}
+}
+
+// TestAnswerDeliveryRoutesCoveredByAccessRules pins the 11 answer delivery
+// contract routes (doc/118 F-03): if any of them is removed from accessRules
+// the RBAC middleware would silently 403 PDF/DOCX exports again.
+func TestAnswerDeliveryRoutesCoveredByAccessRules(t *testing.T) {
+	answerDeliveryRoutes := []string{
+		"GET /api/v1/answer-snapshots/:snapshotId",
+		"GET /api/v1/answer-snapshots/by-request/:requestId",
+		"POST /api/v1/answer-snapshots/:snapshotId/export",
+		"GET /api/v1/answer-snapshots/:snapshotId/audit-export",
+		"GET /api/v1/answer-snapshots/export-jobs/:jobId",
+		"POST /api/v1/answer-snapshots/export-jobs/:jobId/retry",
+		"GET /api/v1/answer-snapshots/artifacts/:artifactId/download",
+		"POST /api/v1/knowledge-impact-reports",
+		"GET /api/v1/knowledge-impact-reports",
+		"POST /api/v1/knowledge-duplicate-candidates",
+		"GET /api/v1/knowledge-duplicate-candidates",
+		"POST /api/v1/knowledge-duplicate-candidates/:id/decision",
+	}
+	rules := map[string]bool{}
+	for _, r := range accessRules(nil) {
+		rules[r.Method+" "+r.Path] = true
+	}
+	for _, route := range answerDeliveryRoutes {
+		if !rules[route] {
+			t.Errorf("answer delivery route %q is not covered by accessRules (default-deny would 403 it)", route)
+		}
 	}
 }
 

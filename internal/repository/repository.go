@@ -49,10 +49,14 @@ type Store interface {
 	AuditAnchorRepo
 	GovernanceRepo
 	ReleaseGovernanceRepo
+	AssistantReleaseRepo
 	EnterpriseConnectionRepo
 	ModelRoutePinRepo
 	ResourceSyncRepo
 	SettingRevisionRepo
+	AnswerDeliveryRepo
+	KnowledgeImpactRepo
+	KnowledgeAssetRepo
 }
 
 // ConversationAgentListFilter is kept beside the repository aggregate to avoid
@@ -117,6 +121,14 @@ type DatasetRepo interface {
 	GetIncrementalLedgerByDocument(ctx context.Context, tenantID, ragflowDocumentID string) (*model.IncrementalLedger, error)
 	CreateCitationReference(ctx context.Context, reference *model.CitationReference) error
 	ListCitationReferences(ctx context.Context, tenantID, requestID string) ([]model.CitationReference, error)
+	CreateKnowledgeTask(ctx context.Context, task *model.KnowledgeTask) error
+	GetKnowledgeTask(ctx context.Context, tenantID, taskID string, scopeAll bool) (*model.KnowledgeTask, error)
+	ListKnowledgeTasks(ctx context.Context, tenantID string, scopeAll bool, page, pageSize int, filter KnowledgeTaskFilter) ([]model.KnowledgeTask, int64, error)
+	UpdateKnowledgeTask(ctx context.Context, tenantID, taskID string, scopeAll bool, updates map[string]interface{}) (bool, error)
+	KnowledgeTaskSummary(ctx context.Context, tenantID string, scopeAll bool) (*model.KnowledgeTaskSummary, error)
+	UpsertTraceRun(ctx context.Context, run *model.TraceRun) error
+	GetTraceRunByTraceID(ctx context.Context, tenantID, traceID string, scopeAll bool) (*model.TraceRun, error)
+	ListTraceRuns(ctx context.Context, tenantID string, scopeAll bool, page, pageSize int, filter TraceRunFilter) ([]model.TraceRun, int64, error)
 }
 
 type store struct {

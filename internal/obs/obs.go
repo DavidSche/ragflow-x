@@ -6,6 +6,7 @@ package obs
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,6 +66,14 @@ type Observability struct {
 	tracer    trace.Tracer
 	hasTracer bool
 	shutdown  func(context.Context) error
+
+	// otlpEndpoint keeps the configured collector host (sans scheme and path)
+	// so persisted trace pointers can build deep links to the tracing UI.
+	otlpEndpoint string
+
+	// traceUIURLTemplate is the configured deep-link template (doc/104 §15);
+	// empty when unset so evidence only carries raw ids.
+	traceUIURLTemplate string
 }
 
 var (
@@ -217,6 +226,9 @@ func New(cfg config.Observability) *Observability {
 
 func (o *Observability) setupTracer(cfg config.Observability) {
 	o.tracer = noop.NewTracerProvider().Tracer("ragflow-x")
+	// The deep-link template is pure configuration: it must be available even
+	// when local tracing is off but an upstream system publishes otel ids.
+	o.traceUIURLTemplate = normalizeTraceUIURLTemplate(cfg.TraceUIURLTemplate)
 	if !cfg.TracingEnabled || cfg.OTLPEndpoint == "" {
 		return
 	}
@@ -245,7 +257,68 @@ func (o *Observability) setupTracer(cfg config.Observability) {
 	)
 	o.tracer = tp.Tracer(cfg.ServiceName)
 	o.hasTracer = true
+	o.otlpEndpoint = otlpEndpointHost(cfg.OTLPEndpoint)
 	o.shutdown = func(ctx context.Context) error { return tp.Shutdown(ctx) }
+}
+
+// normalizeTraceUIURLTemplate keeps only http(s) templates: anything else
+// (javascript:, data:, ...) must never become a persisted deep link.
+func normalizeTraceUIURLTemplate(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	lower := strings.ToLower(value)
+	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
+		return ""
+	}
+	if !strings.Contains(value, "{trace_id}") {
+		return ""
+	}
+	return value
+}
+
+// OTelTraceUILink renders the configured trace UI deep link for a trace/span
+// pair; empty when no template is configured (doc/104 §15).
+func OTelTraceUILink(traceID, spanID string) string {
+	template := Get().traceUIURLTemplate
+	if template == "" || traceID == "" || spanID == "" {
+		return ""
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(template,
+		"{trace_id}", traceID), "{span_id}", spanID)
+}
+
+// otlpEndpointHost strips scheme, userinfo and path so only the host:port of
+// the collector remains — safe to persist as a deep-link pointer.
+func otlpEndpointHost(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	value = strings.TrimPrefix(strings.TrimPrefix(value, "https://"), "http://")
+	if index := strings.IndexAny(value, "/?#"); index >= 0 {
+		value = value[:index]
+	}
+	return value
+}
+
+// SpanContextFromContext returns the hex trace and span ids of the current
+// span so persistence layers can store deep-link pointers without depending
+// on the trace SDK directly. valid is false when tracing is disabled or no
+// valid span is attached to ctx.
+func SpanContextFromContext(ctx context.Context) (traceID, spanID string, valid bool) {
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsValid() {
+		return "", "", false
+	}
+	return sc.TraceID().String(), sc.SpanID().String(), true
+}
+
+// OTelEndpointHost exposes the configured collector host for trace pointers;
+// empty when tracing is not configured.
+func OTelEndpointHost() string {
+	return Get().otlpEndpoint
 }
 
 // Set installs the process-wide instance (e.g. at startup).

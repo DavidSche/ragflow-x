@@ -18,6 +18,8 @@ const (
 	ApprovalObjectModelModel           = "model-model"
 	ApprovalObjectEnterpriseConnection = "enterprise-connection"
 	ApprovalObjectEnterpriseBinding    = "enterprise-binding"
+	ApprovalObjectKnowledgeTask        = "knowledge-task"
+	ApprovalObjectReleaseCandidate     = "release-candidate"
 
 	ApprovalActionCreate           = "create"
 	ApprovalActionUpdate           = "update"
@@ -32,6 +34,8 @@ const (
 	ApprovalActionStop             = "stop"
 	ApprovalActionEnable           = "enable"
 	ApprovalActionDisable          = "disable"
+	ApprovalActionResolve          = "resolve"
+	ApprovalActionRelease          = "release"
 
 	ApprovalStatusPendingApproval = "pending_approval"
 	ApprovalStatusApproved        = "approved"

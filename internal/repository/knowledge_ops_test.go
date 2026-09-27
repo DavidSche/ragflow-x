@@ -52,6 +52,9 @@ func TestKnowledgeOpsSummaryTopQueriesAndReview(t *testing.T) {
 	if summary.Positive != 1 || summary.Negative != 1 || summary.SatisfactionRate != 0.5 {
 		t.Fatalf("unexpected feedback summary: %+v", summary)
 	}
+	if summary.AttributionSummary["unclassified"] != 1 {
+		t.Fatalf("legacy negative feedback must be counted as unclassified: %+v", summary.AttributionSummary)
+	}
 	if summary.AvgLatencyMs <= 0 {
 		t.Fatalf("expected average latency, got %f", summary.AvgLatencyMs)
 	}
@@ -122,5 +125,47 @@ func TestKnowledgeOpsResolutionDuration(t *testing.T) {
 	}
 	if summary.AvgResolutionHours <= 0 || summary.AvgResolutionHours > 3 {
 		t.Fatalf("unexpected resolution duration: %f", summary.AvgResolutionHours)
+	}
+}
+
+func TestKnowledgeOpsAttributionSummaryAndFilter(t *testing.T) {
+	ctx := context.Background()
+	store := newFilterStore(t)
+	event := &model.KnowledgeOpsEvent{
+		RequestID: "request-attribution", TenantID: "t1", UserID: "u1", AppType: "chat",
+		AppID: "chat-1", SessionID: "session-1", Question: "为什么错误", QuestionHash: "hash",
+		AnswerExcerpt: "bad answer", Status: model.KnowledgeOpsCompleted,
+	}
+	if err := store.UpsertKnowledgeOpsEvent(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	feedback := &model.MessageFeedback{
+		TenantID: "t1", ChatID: "chat-1", SessionID: "session-1", MessageID: "message-1",
+		UserID: "u1", RequestID: "request-attribution", Rating: model.FeedbackNegative,
+		Attribution: model.FeedbackAttributionRetrieval, Comment: "没有检索到制度",
+	}
+	if err := store.UpsertMessageFeedback(ctx, feedback); err != nil {
+		t.Fatal(err)
+	}
+	attached, err := store.AttachMessageFeedbackToKnowledgeOpsEvent(ctx, "t1", feedback.RequestID, feedback)
+	if err != nil || !attached {
+		t.Fatalf("attach attribution: attached=%v err=%v", attached, err)
+	}
+	events, _, err := store.ListKnowledgeOpsEvents(ctx, "t1", false, 1, 10, KnowledgeOpsFilter{
+		Attribution: model.FeedbackAttributionRetrieval,
+	})
+	if err != nil || len(events) != 1 || events[0].FeedbackAttribution != model.FeedbackAttributionRetrieval {
+		t.Fatalf("attribution filter: events=%d err=%v", len(events), err)
+	}
+	unclassified, _, err := store.ListKnowledgeOpsEvents(ctx, "t1", false, 1, 10, KnowledgeOpsFilter{Attribution: "unclassified"})
+	if err != nil || len(unclassified) != 0 {
+		t.Fatalf("unclassified filter: events=%d err=%v", len(unclassified), err)
+	}
+	summary, err := store.KnowledgeOpsSummary(ctx, "t1", false, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Negative != 1 || summary.AttributionSummary[model.FeedbackAttributionRetrieval] != 1 || summary.AttributionSummary["unclassified"] != 0 {
+		t.Fatalf("unexpected attribution summary: %+v", summary)
 	}
 }

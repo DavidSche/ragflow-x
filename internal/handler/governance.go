@@ -561,6 +561,40 @@ func listKnowledgeLifecycle(c *gin.Context) {
 	response.OK(c, out)
 }
 
+func listKnowledgeAssetMap(c *gin.Context) {
+	if err := authorizeResource(c, "knowledge-lifecycle", "read"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, _, _ := governanceContext(c)
+	h := c.MustGet("handler").(*Handler)
+	out, err := h.Service.ListKnowledgeAssetMap(c.Request.Context(), tenantID, repository.GovernanceFilter{
+		OwnerID: c.Query("owner_id"), OwnerTeamID: c.Query("owner_team_id"),
+		ReviewStatus: c.Query("review_status"), Search: c.Query("search"),
+	})
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	governanceAudit(c, "knowledge.asset_map.read", "knowledge-lifecycle", "asset-map", "")
+	response.OK(c, out)
+}
+
+func knowledgeHealth(c *gin.Context) {
+	if err := authorizeResource(c, "knowledge-lifecycle", "read"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, _, _ := governanceContext(c)
+	h := c.MustGet("handler").(*Handler)
+	out, err := h.Service.KnowledgeHealth(c.Request.Context(), tenantID)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, out)
+}
+
 func updateDatasetLifecycle(c *gin.Context) {
 	if err := authorizeResource(c, "knowledge-lifecycle", "manage"); err != nil {
 		response.Err(c, err)
@@ -740,6 +774,8 @@ func RegisterGovernanceRoutes(group *gin.RouterGroup, h *Handler) {
 	group.DELETE("/prompt-policies/:id", deletePromptPolicy)
 
 	group.GET("/knowledge-lifecycle", listKnowledgeLifecycle)
+	group.GET("/knowledge-lifecycle/asset-map", listKnowledgeAssetMap)
+	group.GET("/knowledge-lifecycle/health", knowledgeHealth)
 	group.PUT("/datasets/:id/lifecycle", updateDatasetLifecycle)
 
 	group.GET("/eval-sets", listEvalSets)

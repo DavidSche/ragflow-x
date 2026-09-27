@@ -65,7 +65,7 @@ func (h *Handler) OIDCCallback(c *gin.Context) {
 	clearOIDCFlowCookies(c)
 	if code == "" || state == "" || storedState == "" || nonce == "" ||
 		state != storedState || len(state) < 32 || len(nonce) < 32 {
-		response.Fail(c, http.StatusBadRequest, 40141, "invalid OIDC callback state")
+		response.Fail(c, http.StatusBadRequest, 40151, "invalid OIDC callback state")
 		return
 	}
 	res, cfg, err := h.Service.LoginWithOIDC(c.Request.Context(), code, nonce, c.ClientIP())

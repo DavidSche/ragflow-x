@@ -202,17 +202,24 @@ func (s *Service) SearchAppCompletion(ctx context.Context, tenantID, searchAppID
 	if err != nil {
 		return nil, err
 	}
-	resp, err := s.RAGFlow.SearchAppCompletion(ctx, searchAppID, ragflow.SearchAppCompletionRequest{Question: question, KbIDs: kbIDs})
+	searchReq := ragflow.SearchAppCompletionRequest{Question: question, KbIDs: kbIDs}
+	pushdown := s.applySearchPushdown(ctx, tenantID, nil, &searchReq)
+	resp, err := s.RAGFlow.SearchAppCompletion(ctx, searchAppID, searchReq)
 	if err != nil {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, "", 0, 0, 0, int64(time.Since(startedAt).Milliseconds())))
+		s.recordFailedAnswerDelivery(ctx, tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, "", err.Error())
 		return nil, httperr.New(502, 50265, "ragflow search completion failed")
 	}
 	answer, citations := "", int64(0)
 	if resp != nil {
+		resp.Answer = visibleRAGFlowAnswer(resp.Answer)
 		answer = resp.Answer
 		citations = citationCountFromMaps(resp.Reference)
 	}
 	s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, answer, citations, int64(len([]rune(question))), int64(len([]rune(answer))), int64(time.Since(startedAt).Milliseconds())))
+	if resp != nil {
+		s.recordAnswerDeliveryWithPushdown(ctx, tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, answer, citationsFromProviderReferences(resp.Reference), pushdown)
+	}
 	s.MeterSearchCompletion(ctx, tenantID, sa.OwnerID, requestID, int64(len([]rune(question))))
 	return resp, nil
 }
@@ -237,13 +244,20 @@ func (s *Service) StreamSearchAppCompletion(ctx context.Context, tenantID, searc
 	if err != nil {
 		return err
 	}
+	streamReq := ragflow.SearchAppCompletionRequest{Question: question, KbIDs: kbIDs}
+	streamPushdown := s.applySearchPushdown(ctx, tenantID, nil, &streamReq)
 	capture := &knowledgeOpsStreamCapture{w: w}
-	err = s.RAGFlow.StreamSearchAppCompletion(ctx, searchAppID, ragflow.SearchAppCompletionRequest{Question: question, KbIDs: kbIDs}, capture)
+	err = s.RAGFlow.StreamSearchAppCompletion(ctx, searchAppID, streamReq, capture)
+	if flushErr := capture.Flush(); flushErr != nil {
+		err = flushErr
+	}
 	if err != nil {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, "", 0, 0, 0, int64(time.Since(startedAt).Milliseconds())))
+		s.recordFailedAnswerDelivery(ctx, tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, capture.answer.String(), err.Error())
 		return err
 	}
 	s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, capture.answer.String(), int64(capture.citations), int64(len([]rune(question))), capture.tokensOut, int64(time.Since(startedAt).Milliseconds())))
+	s.recordAnswerDeliveryWithPushdown(ctx, tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, capture.answer.String(), citationsFromProviderReferences(capture.reference), streamPushdown)
 	s.MeterSearchCompletion(ctx, tenantID, sa.OwnerID, requestID, int64(len([]rune(question))))
 	return nil
 }
@@ -306,5 +320,6 @@ func (s *Service) MeterSearchCompletion(ctx context.Context, tenantID, userID, r
 		TenantID: tenantID, UserID: userID, RequestID: requestID, KeyID: "",
 		Date: date, Model: "search-app", Scenario: "search", TokensIn: tIn, TokensOut: tOut,
 		EstimatedCost: (float64(tIn) + float64(tOut)) / 1000 * s.EstimatedCostPer1K,
+		Estimated:     tIn+tOut == 0, EstimationPolicyVersion: "v1",
 	})
 }

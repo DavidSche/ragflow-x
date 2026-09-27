@@ -496,6 +496,11 @@ func (s *Service) DecideApproval(ctx context.Context, actorID, actorTenantID, ap
 		return nil, err
 	}
 	s.emitApprovalEvent(ctx, action, "approval decision", updated, "info")
+	if updated.Status == model.ApprovalStatusRejected {
+		if err := reopenKnowledgeTaskAfterApprovalDecision(ctx, s, updated, actorID, actorTenantID); err != nil {
+			return nil, err
+		}
+	}
 	if final {
 		if _, err := s.enqueueApprovalExecution(ctx, updated); err != nil {
 			return nil, err
@@ -649,6 +654,9 @@ func (s *Service) CancelApproval(ctx context.Context, actorID, actorTenantID, ap
 		return nil, err
 	}
 	s.emitApprovalEvent(ctx, "approval.canceled", "approval canceled", updated, "info")
+	if err := reopenKnowledgeTaskAfterApprovalDecision(ctx, s, updated, actorID, actorTenantID); err != nil {
+		return nil, err
+	}
 	return updated, nil
 }
 

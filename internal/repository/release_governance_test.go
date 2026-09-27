@@ -100,3 +100,36 @@ func TestListReleaseCandidatesPostgreSQLPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPostgresEvaluationRunStateTransitions(t *testing.T) {
+	testStore := newPostgresContractStore(t)
+	ctx := context.Background()
+
+	run := &model.EvaluationRun{
+		ID: id.New(), TenantID: id.New(), ReleaseCandidateID: id.New(), CandidateVersion: 1,
+		EvalSetID: id.New(), EvalSetVersion: 1, EvalSetHash: id.New(),
+		EvaluationPolicyVersion: "v1", EvaluationPolicyHash: id.New(),
+		AggregationPolicyVersion: "v1", AggregationPolicyHash: id.New(),
+		ExecutionSnapshotID: id.New(), Status: model.EvaluationRunQueued,
+		Actor: id.New(), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	if err := testStore.CreateEvaluationRun(ctx, run); err != nil {
+		t.Fatalf("create evaluation run: %v", err)
+	}
+	if err := testStore.StartEvaluationRun(ctx, run.ID); err != nil {
+		t.Fatalf("start evaluation run: %v", err)
+	}
+	started, err := testStore.GetEvaluationRun(ctx, run.TenantID, run.ID)
+	if err != nil || started == nil || started.Status != model.EvaluationRunRunning {
+		t.Fatalf("run did not start: got=%+v err=%v", started, err)
+	}
+
+	pass := true
+	if err := testStore.CompleteEvaluationRun(ctx, run.ID, model.EvaluationRunCompleted, `{"pass_rate":1}`, &pass); err != nil {
+		t.Fatalf("complete evaluation run: %v", err)
+	}
+	completed, err := testStore.GetEvaluationRun(ctx, run.TenantID, run.ID)
+	if err != nil || completed == nil || completed.Status != model.EvaluationRunCompleted || completed.Pass == nil || !*completed.Pass {
+		t.Fatalf("evaluation run did not complete: got=%+v err=%v", completed, err)
+	}
+}

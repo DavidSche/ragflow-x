@@ -34,8 +34,12 @@ type Client interface {
 	DeleteDocuments(ctx context.Context, datasetID string, documentIDs []string) error
 	// SetDocumentsStatus enables (status "1") or disables (status "0") documents.
 	SetDocumentsStatus(ctx context.Context, datasetID string, documentIDs []string, enabled bool) error
-	// UpdateDocumentMetadata replaces a document's metadata configuration.
+	// UpdateDocumentMetadata applies a complete metadata map by sending the
+	// current-versus-desired changes to RAGFlow's batch metadata API.
 	UpdateDocumentMetadata(ctx context.Context, datasetID, documentID string, metadata map[string]interface{}) error
+	// BatchUpdateDatasetMetadata replaces one metadata key on the given
+	// documents via the documented POST /datasets/{id}/metadata/update API.
+	BatchUpdateDatasetMetadata(ctx context.Context, datasetID string, documentIDs []string, updates []MetadataUpdate) error
 	// ListDocumentChunks lists the parsed chunks of a document.
 	ListDocumentChunks(ctx context.Context, datasetID, documentID string, page, pageSize int) ([]Chunk, int64, error)
 	// GetDocumentContent returns a document's raw file bytes and content type.
@@ -55,7 +59,8 @@ type Client interface {
 	// UpsertModelProvider registers an LLM provider (factory + instance + model)
 	// into the engine so chat configurations can use it.
 	UpsertModelProvider(ctx context.Context, req RegisterModelProviderRequest) error
-	// Name returns the provider implementation name (http|mock).
+	// Name returns the provider implementation name (http|mock); it performs
+	// no upstream call, so it has no endpoint registry entry by design.
 	Name() string
 
 	// ListProviders lists all available system factories (available=true) or the
@@ -285,6 +290,28 @@ type DefaultModel struct {
 	Type    string `json:"model_type"`
 }
 
+// MetadataCondition mirrors RAGFlow's retrieval metadata filter
+// (docs v0.27.2 §Retrieve chunks / OpenAI-Compatible chat completions
+// extra_body.metadata_condition / §Update or delete metadata selector).
+type MetadataCondition struct {
+	// Logic is "and" (default) or "or".
+	Logic      string                `json:"logic,omitempty"`
+	Conditions []MetadataConditionOp `json:"conditions,omitempty"`
+}
+
+// MetadataConditionOp is a single metadata filter condition.
+type MetadataConditionOp struct {
+	Name               string `json:"name"`
+	ComparisonOperator string `json:"comparison_operator"`
+	Value              string `json:"value,omitempty"`
+}
+
+// Empty reports whether the condition carries no operator, so callers can
+// omit it from requests entirely.
+func (m *MetadataCondition) Empty() bool {
+	return m == nil || len(m.Conditions) == 0
+}
+
 // Dataset mirrors the RAGFlow dataset fields used by RAGFlow-X.
 type Dataset struct {
 	ID            string `json:"id"`
@@ -332,13 +359,14 @@ type Document struct {
 	ChunkCount int64      `json:"chunk_count"`
 	TokenCount int64      `json:"token_count"`
 
-	ProcessBeginAt  flexString `json:"process_begin_at"`
-	ProcessDuration flexString `json:"process_duration"`
-	Progress        float64    `json:"progress"`
-	ProgressMsg     string     `json:"progress_msg"`
-	CreateTime      int64      `json:"create_time"`
-	UpdateTime      int64      `json:"update_time"`
-	Size            int64      `json:"size"`
+	ProcessBeginAt  flexString             `json:"process_begin_at"`
+	ProcessDuration flexString             `json:"process_duration"`
+	Progress        float64                `json:"progress"`
+	ProgressMsg     string                 `json:"progress_msg"`
+	Metadata        map[string]interface{} `json:"meta_fields"`
+	CreateTime      int64                  `json:"create_time"`
+	UpdateTime      int64                  `json:"update_time"`
+	Size            int64                  `json:"size"`
 }
 
 // flexString decodes either a JSON string or a number into a string, because
@@ -369,6 +397,7 @@ type Chunk struct {
 	Content    string   `json:"content"`
 	DocumentID string   `json:"document_id"`
 	DocName    string   `json:"docnm_kwd"`
+	ImageID    string   `json:"image_id"`
 	Keywords   []string `json:"important_keywords"`
 	Questions  []string `json:"questions"`
 	Available  bool     `json:"available"`
@@ -569,15 +598,30 @@ type CompletionRequest struct {
 	Messages  []Message                `json:"messages"`
 	Files     []map[string]interface{} `json:"files,omitempty"`
 	Stream    bool                     `json:"stream"`
+	// ExtraBody carries OpenAI-compatible extension parameters
+	// (docs: extra_body.metadata_condition). When nil, MetadataCondition is
+	// serialized at the top level for the unified /chat/completions endpoint
+	// (source-aligned behavior; see endpoint_registry.go note).
+	ExtraBody         *CompletionExtraBody `json:"extra_body,omitempty"`
+	MetadataCondition *MetadataCondition   `json:"metadata_condition,omitempty"`
+}
+
+// CompletionExtraBody mirrors the OpenAI-compatible extra_body object.
+type CompletionExtraBody struct {
+	MetadataCondition *MetadataCondition `json:"metadata_condition,omitempty"`
 }
 
 // CompletionResponse mirrors the OpenAI-shaped non-streaming completion.
+// Reference carries RAGFlow's per-turn citation chunks so non-streaming
+// answers feed the same citation pipeline as streaming ones (doc/118 F-10).
 type CompletionResponse struct {
-	ID      string             `json:"id"`
-	Model   string             `json:"model,omitempty"`
-	Answer  string             `json:"answer,omitempty"`
-	Choices []CompletionChoice `json:"choices"`
-	Usage   *CompletionUsage   `json:"usage,omitempty"`
+	ID        string                   `json:"id"`
+	SessionID string                   `json:"session_id,omitempty"`
+	Model     string                   `json:"model,omitempty"`
+	Answer    string                   `json:"answer,omitempty"`
+	Choices   []CompletionChoice       `json:"choices"`
+	Usage     *CompletionUsage         `json:"usage,omitempty"`
+	Reference []map[string]interface{} `json:"reference,omitempty"`
 }
 
 // CompletionChoice is a single completion choice.

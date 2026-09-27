@@ -599,6 +599,9 @@ func (m *Manager) buildEngine(cfg *config.Config, sec *secretstore.Secrets) (htt
 	svc.SetObservabilityConfig(cfg.Observability)
 	svc.SetAlertingConfig(cfg.Alerting)
 	svc.SetOIDCConfig(cfg.OIDC)
+	svc.SetWeComConfig(cfg.IM.WeCom)
+	svc.SetFeishuConfig(cfg.IM.Feishu)
+	svc.SetDingTalkConfig(cfg.IM.DingTalk)
 	svc.StartCapabilityVerification(context.Background())
 	routeState, routeStateErr := m.buildRouteState(sec)
 	if routeStateErr != nil {

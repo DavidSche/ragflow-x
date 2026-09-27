@@ -99,6 +99,13 @@ func (s *Service) ChatImage(
 	if err := s.assertRAGFlowDocument(ctx, ragflowDatasetID, docID); err != nil {
 		return nil, "", err
 	}
+	chunk, err := s.RAGFlow.GetChunk(ctx, ragflowDatasetID, docID, chunkID)
+	if err != nil {
+		return nil, "", httperr.New(502, 50249, "ragflow get chunk failed")
+	}
+	if chunk == nil || chunk.ID != chunkID || chunk.DocumentID != docID || chunk.ImageID != imageID {
+		return nil, "", httperr.Forbidden("chunk image binding is invalid")
+	}
 	data, ct, err := s.RAGFlow.GetChunkImage(ctx, imageID)
 	if err != nil {
 		return nil, "", httperr.New(502, 50255, "ragflow get chunk image failed")

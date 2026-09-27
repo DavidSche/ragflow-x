@@ -49,6 +49,59 @@ func TestSystemSettingsRuntimeApplyAndImmutableBaseline(t *testing.T) {
 	}
 }
 
+func TestEditableNumericSystemSettingsHaveRangesAndRejectBoundaryViolations(t *testing.T) {
+	for key, policy := range settingKeyPolicies {
+		if !policy.Editable {
+			continue
+		}
+		metadata, ok := settingKeyValidators[key]
+		if !ok {
+			t.Fatalf("editable setting %s has no validation metadata", key)
+		}
+		if metadata.Group == "" || metadata.Field == "" {
+			t.Fatalf("editable setting %s has incomplete metadata: %+v", key, metadata)
+		}
+		if key != metadata.Group+"."+metadata.Field {
+			t.Fatalf("setting %s has mismatched metadata key %s.%s", key, metadata.Group, metadata.Field)
+		}
+	}
+
+	defaultSnapshot := defaultSystemSettingsSnapshot()
+	groups := defaultSnapshot["groups"].(map[string]interface{})
+	for key, metadata := range settingKeyValidators {
+		if metadata.Type != "number" {
+			continue
+		}
+		if metadata.Min > metadata.Max {
+			t.Fatalf("setting %s has invalid range [%v, %v]", key, metadata.Min, metadata.Max)
+		}
+		groupKey, _, _ := strings.Cut(key, ".")
+		defaultGroup, ok := groups[groupKey].(map[string]interface{})
+		if !ok {
+			t.Fatalf("setting %s references missing default group %s", key, groupKey)
+		}
+		defaultValue, err := toFloat64(defaultGroup[metadata.Field])
+		if err != nil {
+			t.Fatalf("setting %s has non-numeric default %v", key, defaultGroup[metadata.Field])
+		}
+		if defaultValue < metadata.Min || defaultValue > metadata.Max {
+			t.Fatalf("setting %s default %v is outside [%v, %v]", key, defaultValue, metadata.Min, metadata.Max)
+		}
+		if err := validateSettingChange(key, metadata.Min-1); err == nil {
+			t.Fatalf("setting %s accepted value below minimum", key)
+		}
+		if err := validateSettingChange(key, metadata.Max+1); err == nil {
+			t.Fatalf("setting %s accepted value above maximum", key)
+		}
+		if err := validateSettingChange(key, metadata.Min); err != nil {
+			t.Fatalf("setting %s rejected minimum: %v", key, err)
+		}
+		if err := validateSettingChange(key, metadata.Max); err != nil {
+			t.Fatalf("setting %s rejected maximum: %v", key, err)
+		}
+	}
+}
+
 func TestSettingSecretVersionRollbackKeepsReferenceAndNoPlaintext(t *testing.T) {
 	svc := newAuthzSvc(t)
 	ctx := context.Background()
@@ -286,5 +339,87 @@ func TestP0_SETTING_001_SystemSettingsRequiresHighRiskConfirmation(t *testing.T)
 	}
 	if revision.Revision != view.Revision+1 || svc.RoutePolicy.Mode != "auto_low_risk" {
 		t.Fatalf("confirmed high-risk settings were not applied: %+v", revision)
+	}
+}
+
+// ScenarioID: SC-SETTING-001
+// The trace UI deep-link template (doc/104 §15) is deployment-controlled:
+// GET /system/settings must expose it read-only and PATCH must reject edits.
+func TestSystemSettingsExposesTraceUITemplateReadOnly(t *testing.T) {
+	svc := newAuthzSvc(t)
+	ctx := context.Background()
+	cfg := config.Config{}
+	cfg.Observability = config.Observability{
+		TracingEnabled:     true,
+		OTLPEndpoint:       "http://collector:4318",
+		TraceUIURLTemplate: "https://grafana.example.com/trace/{trace_id}?span={span_id}",
+		ServiceName:        "ragflow-x",
+	}
+	svc.SetObservabilityConfig(cfg.Observability)
+	if err := svc.InitializeSystemSettingsFromConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.GetSystemSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemValue, ok := view.Groups["observability"]["otel_trace_ui_url_template"]
+	if !ok {
+		t.Fatal("otel_trace_ui_url_template missing from system settings view")
+	}
+	item, ok := itemValue.(map[string]interface{})
+	if !ok {
+		t.Fatalf("unexpected setting item shape: %+v", itemValue)
+	}
+	if item["effective"] != "https://grafana.example.com/trace/{trace_id}?span={span_id}" {
+		t.Fatalf("unexpected effective template: %+v", item["effective"])
+	}
+	if editable, _ := item["editable"].(bool); editable {
+		t.Fatalf("trace ui template must be read-only: %+v", item)
+	}
+	if item["source"] != "yaml_env" {
+		t.Fatalf("trace ui template source must be yaml_env: %+v", item["source"])
+	}
+
+	// PATCH must reject the read-only key (40098 unsupported/forbidden).
+	if _, err := svc.UpdateSystemSettings(ctx, "admin", SystemSettingsPatchRequest{
+		ExpectedRevision: view.Revision,
+		Changes:          map[string]interface{}{"observability.otel_trace_ui_url_template": "https://evil.example.com/{trace_id}"},
+		Note:             "attempt to override deployment-controlled trace ui template",
+		Confirmed:        true,
+	}); err == nil {
+		t.Fatal("trace ui template must not be editable via the settings API")
+	}
+	if got := svc.CurrentObservabilityConfig().TraceUIURLTemplate; got != "https://grafana.example.com/trace/{trace_id}?span={span_id}" {
+		t.Fatalf("runtime template changed through settings API: %q", got)
+	}
+}
+
+// An empty database snapshot must never clobber a configured template: the
+// template comes from yaml/env and stays stable across revisions.
+func TestSystemSettingsKeepsTraceUITemplateAcrossRevisions(t *testing.T) {
+	svc := newAuthzSvc(t)
+	ctx := context.Background()
+	cfg := config.Config{}
+	cfg.Observability = config.Observability{
+		TraceUIURLTemplate: "https://jaeger.example.com/trace/{trace_id}?uiFind={span_id}",
+	}
+	svc.SetObservabilityConfig(cfg.Observability)
+	if err := svc.InitializeSystemSettingsFromConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.GetSystemSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateSystemSettings(ctx, "admin", SystemSettingsPatchRequest{
+		ExpectedRevision: view.Revision,
+		Changes:          map[string]interface{}{"alerting.throttle_sec": int64(90)},
+		Note:             "unrelated change keeps trace ui template",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.CurrentObservabilityConfig().TraceUIURLTemplate; got != "https://jaeger.example.com/trace/{trace_id}?uiFind={span_id}" {
+		t.Fatalf("template lost across revisions: %q", got)
 	}
 }

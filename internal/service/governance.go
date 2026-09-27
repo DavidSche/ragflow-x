@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/notify"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
@@ -131,6 +132,38 @@ type GovernanceSummary struct {
 	DueDatasets    int64 `json:"due_datasets"`
 	Expired        int64 `json:"expired_datasets"`
 	EvalSets       int64 `json:"eval_sets"`
+}
+
+// KnowledgeHealthSummary is the stage-3 health contract. Its rates have
+// explicit numerators and denominators so a blank value is distinguishable
+// from zero readiness and quality.
+type KnowledgeHealthSummary struct {
+	DatasetCount          int64 `json:"dataset_count"`
+	LifecycleStateCounts  `json:"lifecycle"`
+	ParseHealth           `json:"parse"`
+	AverageQualityScore   float64 `json:"average_quality_score"`
+	LowQualityCount       int64   `json:"low_quality_count"`
+	MissingClassification int64   `json:"missing_classification"`
+	CitationMissingCount  int64   `json:"citation_missing_count"`
+	CitationWindowDays    int     `json:"citation_window_days"`
+}
+
+type LifecycleStateCounts struct {
+	Current      int64 `json:"current"`
+	Due          int64 `json:"due"`
+	Expired      int64 `json:"expired"`
+	MissingOwner int64 `json:"missing_owner"`
+	Unreviewed   int64 `json:"unreviewed"`
+}
+
+type ParseHealth struct {
+	TaskCount int64   `json:"task_count"`
+	Done      int64   `json:"done"`
+	Running   int64   `json:"running"`
+	Queued    int64   `json:"queued"`
+	Failed    int64   `json:"failed"`
+	Stopped   int64   `json:"stopped"`
+	ReadyRate float64 `json:"ready_rate"`
 }
 
 func validAppTypes(values []string) ([]string, error) {
@@ -921,6 +954,9 @@ func (s *Service) ResolvePromptPolicy(ctx context.Context, tenantID, scope, obje
 
 func datasetLifecycleStatus(dataset *model.DatasetLink) string {
 	now := time.Now().UTC()
+	if dataset.ReviewStatus == model.KnowledgeReviewExpired {
+		return model.KnowledgeReviewExpired
+	}
 	if dataset.ExpiresAt != nil && dataset.ExpiresAt.Before(now) {
 		return model.KnowledgeReviewExpired
 	}
@@ -937,6 +973,21 @@ func datasetLifecycleStatus(dataset *model.DatasetLink) string {
 }
 
 // ListKnowledgeLifecycle returns dataset governance rows with derived status.
+func (s *Service) ListKnowledgeAssetMap(ctx context.Context, tenantID string, filter repository.GovernanceFilter) ([]repository.KnowledgeAssetView, error) {
+	datasets, err := s.Store.ListKnowledgeLifecycle(ctx, tenantID, filter)
+	if err != nil {
+		return nil, err
+	}
+	assets, err := s.Store.ListKnowledgeAssetViews(ctx, tenantID, datasets, 20)
+	if err != nil {
+		return nil, err
+	}
+	for index := range assets {
+		assets[index].LifecycleStatus = datasetLifecycleStatus(&assets[index].DatasetLink)
+	}
+	return assets, nil
+}
+
 func (s *Service) ListKnowledgeLifecycle(ctx context.Context, tenantID string, filter repository.GovernanceFilter) ([]DatasetLifecycleView, error) {
 	datasets, err := s.Store.ListKnowledgeLifecycle(ctx, tenantID, filter)
 	if err != nil {
@@ -992,7 +1043,28 @@ func (s *Service) UpdateKnowledgeLifecycle(ctx context.Context, tenantID, datase
 	if !updated {
 		return nil, httperr.NotFound("dataset not found")
 	}
+	// Retrieval pushdown backfill (doc/123 §5.1): keep meta_fields in sync
+	// with the governance classification, best-effort.
+	if dataset.PushdownEnabled {
+		s.syncDatasetPushdownMetadataAsync(ctx, tenantID, dataset.ID)
+	}
+	emitKnowledgeLifecycleEvent(ctx, dataset)
 	return &DatasetLifecycleView{DatasetLink: dataset, LifecycleStatus: datasetLifecycleStatus(dataset)}, nil
+}
+
+func emitKnowledgeLifecycleEvent(ctx context.Context, dataset *model.DatasetLink) {
+	if datasetLifecycleStatus(dataset) != model.KnowledgeReviewExpired {
+		return
+	}
+	notify.Emit(ctx, notify.Event{
+		Title: "knowledge dataset expired", Severity: "warn",
+		Type: "knowledge.expired", TenantID: dataset.TenantID,
+		Resource: "dataset", ResourceID: dataset.ID,
+		Fields: map[string]string{
+			"review_status": dataset.ReviewStatus,
+			"owner_id":      dataset.OwnerID,
+		},
+	})
 }
 
 func buildEvalCases(tenantID, evalSetID, userID string, inputs []EvalCaseInput) ([]model.EvalCase, error) {
@@ -1198,6 +1270,64 @@ func (s *Service) GovernanceOverview(ctx context.Context, tenantID string) (*Gov
 		case model.KnowledgeReviewExpired:
 			summary.Expired++
 		}
+	}
+	return summary, nil
+}
+
+// KnowledgeHealth aggregates lifecycle governance, parse projection and the
+// recent citation ledger into one stage-3 health contract.
+func (s *Service) KnowledgeHealth(ctx context.Context, tenantID string) (*KnowledgeHealthSummary, error) {
+	datasets, err := s.Store.ListKnowledgeLifecycle(ctx, tenantID, repository.GovernanceFilter{})
+	if err != nil {
+		return nil, err
+	}
+	parse, err := s.Store.ParseTaskStatusSummary(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	to := time.Now().UTC()
+	from := to.AddDate(0, 0, -30).Format("2006-01-02")
+	knowledge, err := s.Store.KnowledgeOpsSummary(ctx, tenantID, false, from, to.Format("2006-01-02"))
+	if err != nil {
+		return nil, err
+	}
+	summary := &KnowledgeHealthSummary{
+		DatasetCount:         int64(len(datasets)),
+		ParseHealth:          ParseHealth{TaskCount: parse.Total, Done: parse.Done, Running: parse.Running, Queued: parse.Queued, Failed: parse.Failed, Stopped: parse.Stopped},
+		CitationMissingCount: knowledge.Completed - knowledge.WithCitations,
+		CitationWindowDays:   30,
+	}
+	qualitySum := int64(0)
+	for i := range datasets {
+		dataset := &datasets[i]
+		qualitySum += int64(dataset.QualityScore)
+		if dataset.QualityScore < 80 {
+			summary.LowQualityCount++
+		}
+		if strings.TrimSpace(dataset.Sensitivity) == "" {
+			summary.MissingClassification++
+		}
+		switch datasetLifecycleStatus(dataset) {
+		case "missing_owner":
+			summary.LifecycleStateCounts.MissingOwner++
+		case model.KnowledgeReviewDue:
+			summary.LifecycleStateCounts.Due++
+		case model.KnowledgeReviewExpired:
+			summary.LifecycleStateCounts.Expired++
+		case model.KnowledgeReviewCurrent:
+			summary.LifecycleStateCounts.Current++
+		case model.KnowledgeReviewNone:
+			summary.LifecycleStateCounts.Unreviewed++
+		}
+	}
+	if len(datasets) > 0 {
+		summary.AverageQualityScore = float64(qualitySum) / float64(len(datasets))
+	}
+	if parse.Total > 0 {
+		summary.ParseHealth.ReadyRate = float64(parse.Done) / float64(parse.Total)
+	}
+	if summary.CitationMissingCount < 0 {
+		summary.CitationMissingCount = 0
 	}
 	return summary, nil
 }

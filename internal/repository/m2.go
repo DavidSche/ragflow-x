@@ -687,6 +687,7 @@ type TaskRepo interface {
 	ListTasks(ctx context.Context, tenantID string, page, pageSize int) ([]model.Task, int64, error)
 	ListTasksByDataset(ctx context.Context, tenantID, datasetID string, page, pageSize int) ([]model.Task, int64, error)
 	ListTasksByIDs(ctx context.Context, tenantID string, ids []string) ([]model.Task, error)
+	ParseTaskStatusSummary(ctx context.Context, tenantID string) (model.KnowledgeParseTaskSummary, error)
 	DeleteTerminalTasks(ctx context.Context, tenantID string, ids []string) (int64, error)
 	SyncParseTask(ctx context.Context, docID, status string, progress int, detail string) error
 }
@@ -698,6 +699,7 @@ type QuotaRepo interface {
 	RecordUsage(ctx context.Context, u *model.QuotaUsage) (bool, error)
 	RecordCostMetric(ctx context.Context, m *model.CostMetric) (bool, error)
 	ListCostMetrics(ctx context.Context, tenantID string, scopeAll bool, page, pageSize int, filter CostMetricFilter) ([]model.CostMetric, int64, error)
+	SummarizeOperationsByAttribution(ctx context.Context, tenantID string, scopeAll bool, filter OperationalReportFilter) ([]model.OperationalAttributionRow, error)
 	SumCostMetricByChat(ctx context.Context, tenantID, chatID string) (*ChatUsageAgg, error)
 	SummarizeUsageRange(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string) ([]model.QuotaUsage, error)
 
@@ -743,6 +745,23 @@ func (s *store) ListTasksByIDs(ctx context.Context, tenantID string, ids []strin
 		Where("tenant_id = ? AND id IN ?", tenantID, ids).
 		Find(&list).Error
 	return list, err
+}
+
+func (s *store) ParseTaskStatusSummary(ctx context.Context, tenantID string) (model.KnowledgeParseTaskSummary, error) {
+	var row model.KnowledgeParseTaskSummary
+	err := s.WithContext(ctx).Model(&model.Task{}).
+		Where("tenant_id = ? AND task_type = ?", tenantID, model.TaskTypeParse).
+		Select(`
+			COUNT(*) AS total,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS done,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS running,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS queued,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS failed,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS stopped
+		`, model.TaskStatusDone, model.TaskStatusRunning, model.TaskStatusQueued,
+			model.TaskStatusFailed, model.TaskStatusStopped).
+		Scan(&row).Error
+	return row, err
 }
 
 func (s *store) listTasks(ctx context.Context, datasetID *string, tenantID string, page, pageSize int) ([]model.Task, int64, error) {

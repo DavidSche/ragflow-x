@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -16,6 +17,8 @@ import (
 )
 
 const routeEvaluationSourceDoc41 = "doc41-real-scenarios"
+const routeEvaluationSourceMetadataChange = "assistant-metadata-change"
+const routeEvaluationSourcePolicyChange = "route-policy-change"
 
 const (
 	RouteGateEvidencePilot      = "pilot"
@@ -23,14 +26,20 @@ const (
 )
 
 type RouteEvalCaseInput struct {
-	Question     string `json:"question"`
-	ExpectedKind string `json:"expected_kind"`
-	ExpectedID   string `json:"expected_id"`
-	ExpectedName string `json:"expected_name"`
-	Split        string `json:"split"`
-	CaseType     string `json:"case_type"`
-	Routable     *bool  `json:"routable"`
-	MustDeny     bool   `json:"must_deny"`
+	Question       string   `json:"question"`
+	ExpectedKind   string   `json:"expected_kind"`
+	ExpectedID     string   `json:"expected_id"`
+	ExpectedName   string   `json:"expected_name"`
+	Split          string   `json:"split"`
+	CaseType       string   `json:"case_type"`
+	Routable       *bool    `json:"routable"`
+	MustDeny       bool     `json:"must_deny"`
+	AutoExecuted   *bool    `json:"auto_executed"`
+	WrongRoute     *bool    `json:"wrong_route"`
+	WrongExecution *bool    `json:"wrong_execution"`
+	Abstained      *bool    `json:"abstained"`
+	LatencyMs      *int64   `json:"latency_ms"`
+	RouteCost      *float64 `json:"route_cost"`
 }
 
 type RouteEvaluationRequest struct {
@@ -41,33 +50,61 @@ type RouteEvaluationRequest struct {
 }
 
 type RouteEvaluationMetrics struct {
-	CaseCount                  int                   `json:"case_count"`
-	EvaluatedCount             int                   `json:"evaluated_count"`
-	TrainCount                 int                   `json:"train_count"`
-	ValidationCount            int                   `json:"validation_count"`
-	Top1Accuracy               float64               `json:"top1_accuracy"`
-	Top3Recall                 float64               `json:"top3_recall"`
-	HighConfidenceCount        int                   `json:"high_confidence_count"`
-	HighConfidencePrecision    float64               `json:"high_confidence_precision"`
-	HighConfidenceCoverage     float64               `json:"high_confidence_coverage"`
-	HighConfidenceWilsonLower  float64               `json:"high_confidence_wilson_lower_95"`
-	HighConfidenceMinimum      int                   `json:"high_confidence_minimum"`
-	AgentFlowReadinessMinimum  float64               `json:"agent_flow_readiness_minimum"`
-	AgentFlowCheckedCount      int                   `json:"agent_flow_checked_count"`
-	AgentFlowReadyCount        int                   `json:"agent_flow_ready_count"`
-	AgentFlowBlockedCount      int                   `json:"agent_flow_blocked_count"`
-	ManualOverrideRate         float64               `json:"manual_override_rate"`
-	ClarificationAccuracy      float64               `json:"clarification_accuracy"`
-	ClarificationSampleCount   int                   `json:"clarification_sample_count"`
-	PermissionLeakage          int                   `json:"permission_leakage"`
-	OfflineErrorAutoExecutions int                   `json:"offline_error_auto_executions"`
-	ECE                        float64               `json:"ece"`
-	BrierScore                 float64               `json:"brier_score"`
-	ReliabilityCurve           []RouteReliabilityBin `json:"reliability_curve"`
-	AllowAutoLowRisk           bool                  `json:"allow_auto_low_risk"`
-	EvidenceLevel              string                `json:"evidence_level"`
-	GateState                  string                `json:"gate_state"`
-	GateFailures               []string              `json:"gate_failures"`
+	CaseCount                  int                          `json:"case_count"`
+	EvaluatedCount             int                          `json:"evaluated_count"`
+	TrainCount                 int                          `json:"train_count"`
+	ValidationCount            int                          `json:"validation_count"`
+	Top1Accuracy               float64                      `json:"top1_accuracy"`
+	Top3Recall                 float64                      `json:"top3_recall"`
+	CandidateRecall            float64                      `json:"candidate_recall"`
+	CandidateRecallCount       int                          `json:"candidate_recall_count"`
+	CandidateRecallDenominator int                          `json:"candidate_recall_denominator"`
+	NoMatchRate                float64                      `json:"no_match_rate"`
+	NoMatchCount               int                          `json:"no_match_count"`
+	NoMatchDenominator         int                          `json:"no_match_denominator"`
+	WrongRouteRate             float64                      `json:"wrong_route_rate"`
+	WrongRouteCount            int                          `json:"wrong_route_count"`
+	WrongExecutionRate         float64                      `json:"wrong_execution_rate"`
+	WrongExecutionCount        int                          `json:"wrong_execution_count"`
+	WrongExecutionDenominator  int                          `json:"wrong_execution_denominator"`
+	AutoExecuteCount           int                          `json:"auto_execute_count"`
+	AutoExecuteWrongCount      int                          `json:"auto_execute_wrong_count"`
+	AutoExecuteWrongRate       float64                      `json:"auto_execute_wrong_rate"`
+	AbstainRate                float64                      `json:"abstain_rate"`
+	AbstainCount               int                          `json:"abstain_count"`
+	RouteP95Ms                 float64                      `json:"route_p95_ms"`
+	RouteCost                  float64                      `json:"route_cost"`
+	RouteCostP95               float64                      `json:"route_cost_p95"`
+	RouteTimingSampleCount     int                          `json:"route_timing_sample_count"`
+	RouteCostSampleCount       int                          `json:"route_cost_sample_count"`
+	CandidateDistribution      []RouteCandidateDistribution `json:"candidate_distribution"`
+	HighConfidenceCount        int                          `json:"high_confidence_count"`
+	HighConfidencePrecision    float64                      `json:"high_confidence_precision"`
+	HighConfidenceCoverage     float64                      `json:"high_confidence_coverage"`
+	HighConfidenceWilsonLower  float64                      `json:"high_confidence_wilson_lower_95"`
+	HighConfidenceMinimum      int                          `json:"high_confidence_minimum"`
+	AgentFlowReadinessMinimum  float64                      `json:"agent_flow_readiness_minimum"`
+	AgentFlowCheckedCount      int                          `json:"agent_flow_checked_count"`
+	AgentFlowReadyCount        int                          `json:"agent_flow_ready_count"`
+	AgentFlowBlockedCount      int                          `json:"agent_flow_blocked_count"`
+	ManualOverrideRate         float64                      `json:"manual_override_rate"`
+	ClarificationAccuracy      float64                      `json:"clarification_accuracy"`
+	ClarificationSampleCount   int                          `json:"clarification_sample_count"`
+	PermissionLeakage          int                          `json:"permission_leakage"`
+	OfflineErrorAutoExecutions int                          `json:"offline_error_auto_executions"`
+	ECE                        float64                      `json:"ece"`
+	BrierScore                 float64                      `json:"brier_score"`
+	ReliabilityCurve           []RouteReliabilityBin        `json:"reliability_curve"`
+	AllowAutoLowRisk           bool                         `json:"allow_auto_low_risk"`
+	EvidenceLevel              string                       `json:"evidence_level"`
+	GateState                  string                       `json:"gate_state"`
+	GateFailures               []string                     `json:"gate_failures"`
+}
+
+type RouteCandidateDistribution struct {
+	CandidateKey string `json:"candidate_key"`
+	Rank         int    `json:"rank"`
+	Count        int    `json:"count"`
 }
 
 type RouteReliabilityBin struct {
@@ -126,6 +163,7 @@ type routeEvalResult struct {
 	expectedKey      string
 	predictedKey     string
 	secondKey        string
+	candidateKeys    []string
 	top1Correct      bool
 	top3Correct      bool
 	label            float64
@@ -134,10 +172,18 @@ type routeEvalResult struct {
 }
 
 type routeEvidenceThresholds struct {
-	Level             string
-	MinHighConfidence int
-	MinWilsonLower    float64
-	MaxECE            float64
+	Level                    string
+	MinHighConfidence        int
+	MinWilsonLower           float64
+	MaxECE                   float64
+	MinCandidateRecall       float64
+	MaxNoMatchRate           float64
+	MaxWrongRouteRate        float64
+	MaxAbstainRate           float64
+	MaxRouteP95Ms            int64
+	MaxRouteCost             float64
+	MaxWrongExecutionCount   int
+	MaxAutoExecuteWrongCount int
 }
 
 // RunRouteEvaluation performs the M2.5 offline discovery gate. It never turns
@@ -235,9 +281,48 @@ func routeEvidenceThresholdsForPolicy(
 	if threshold.MaxECE <= 0 || threshold.MaxECE >= 1 {
 		threshold.MaxECE = defaultECE
 	}
+	if threshold.MinCandidateRecall <= 0 {
+		if level == RouteGateEvidenceProduction {
+			threshold.MinCandidateRecall = 0.95
+		} else {
+			threshold.MinCandidateRecall = 0.90
+		}
+	}
+	if threshold.MaxNoMatchRate <= 0 {
+		if level == RouteGateEvidenceProduction {
+			threshold.MaxNoMatchRate = 0.05
+		} else {
+			threshold.MaxNoMatchRate = 0.10
+		}
+	}
+	if threshold.MaxWrongRouteRate <= 0 {
+		if level == RouteGateEvidenceProduction {
+			threshold.MaxWrongRouteRate = 0.01
+		} else {
+			threshold.MaxWrongRouteRate = 0.02
+		}
+	}
+	if threshold.MaxAbstainRate <= 0 {
+		threshold.MaxAbstainRate = 0.20
+	}
+	if threshold.MaxRouteP95Ms <= 0 {
+		if level == RouteGateEvidenceProduction {
+			threshold.MaxRouteP95Ms = 1200
+		} else {
+			threshold.MaxRouteP95Ms = 1500
+		}
+	}
+	if threshold.MaxRouteCost <= 0 {
+		threshold.MaxRouteCost = 0.01
+	}
 	return routeEvidenceThresholds{
 		Level: level, MinHighConfidence: threshold.MinHighConfidence,
 		MinWilsonLower: threshold.MinWilsonLower, MaxECE: threshold.MaxECE,
+		MinCandidateRecall: threshold.MinCandidateRecall, MaxNoMatchRate: threshold.MaxNoMatchRate,
+		MaxWrongRouteRate: threshold.MaxWrongRouteRate, MaxAbstainRate: threshold.MaxAbstainRate,
+		MaxRouteP95Ms: threshold.MaxRouteP95Ms, MaxRouteCost: threshold.MaxRouteCost,
+		MaxWrongExecutionCount:   threshold.MaxWrongExecutionCount,
+		MaxAutoExecuteWrongCount: threshold.MaxAutoExecuteWrongCount,
 	}
 }
 
@@ -256,10 +341,27 @@ func (s *Service) ListRouteEvaluationRuns(ctx context.Context, tenantID string, 
 	return s.Store.ListRouteEvaluationRuns(ctx, tenantID, page, pageSize)
 }
 
+func (s *Service) rerunRouteEvaluationForChange(ctx context.Context, actorID, tenantID, source string) error {
+	_, err := s.RunRouteEvaluation(ctx, actorID, tenantID, RouteEvaluationRequest{
+		Source: source, EvidenceLevel: RouteGateEvidencePilot, Cases: Doc41RouteEvaluationCases(),
+	})
+	return err
+}
+
 func evaluateRouteCases(catalog []ConversationAssistant, inputs []RouteEvalCaseInput, thresholds routeEvidenceThresholds, candidateLimit int) *RouteEvaluationReport {
 	results := make([]routeEvalResult, 0, len(inputs))
 	for _, input := range inputs {
+		caseInput := input
+		routeStarted := time.Now()
 		candidates := routeCandidatesFromCatalog(catalog, input.Question, candidateLimit)
+		if caseInput.LatencyMs == nil {
+			latencyMs := time.Since(routeStarted).Milliseconds()
+			caseInput.LatencyMs = &latencyMs
+		}
+		if caseInput.RouteCost == nil {
+			routeCost := 0.0
+			caseInput.RouteCost = &routeCost
+		}
 		applyRouteCompetitors(candidates)
 		expected := resolveRouteEvalTarget(catalog, input)
 		expectedKey := routeTargetKey(expected.Kind, expected.ID)
@@ -267,11 +369,20 @@ func evaluateRouteCases(catalog []ConversationAssistant, inputs []RouteEvalCaseI
 		if len(candidates) > 0 {
 			predictedKey = routeTargetKey(candidates[0].Kind, candidates[0].TargetID)
 		}
+		candidateKeys := make([]string, 0, len(candidates))
+		for _, candidate := range candidates {
+			candidateKeys = append(candidateKeys, routeTargetKey(candidate.Kind, candidate.TargetID))
+		}
 		if len(candidates) > 1 {
 			secondKey = routeTargetKey(candidates[1].Kind, candidates[1].TargetID)
 		}
 		correct := expectedKey != "" && predictedKey == expectedKey
-		top3 := expectedKey != "" && (predictedKey == expectedKey || secondKey == expectedKey)
+		top3 := expectedKey != ""
+		for _, candidateKey := range candidateKeys[:min(3, len(candidateKeys))] {
+			if candidateKey == expectedKey {
+				top3 = true
+			}
+		}
 		margin := 0.0
 		if len(candidates) > 1 && candidates[0].NormalizedMargin != nil {
 			margin = *candidates[0].NormalizedMargin
@@ -289,8 +400,8 @@ func evaluateRouteCases(catalog []ConversationAssistant, inputs []RouteEvalCaseI
 			flowReadiness = 0
 		}
 		results = append(results, routeEvalResult{
-			caseInput: input, expectedKey: expectedKey, predictedKey: predictedKey,
-			secondKey: secondKey, top1Correct: correct, top3Correct: top3,
+			caseInput: caseInput, expectedKey: expectedKey, predictedKey: predictedKey,
+			secondKey: secondKey, candidateKeys: candidateKeys, top1Correct: correct, top3Correct: top3,
 			label: boolFloat(correct), normalizedMargin: margin,
 			features: routeEvalFeatureRow{
 				normalizedScore: normalizedScore, margin: margin,
@@ -440,6 +551,13 @@ func summarizeRouteEvaluation(results []routeEvalResult, calibration RouteCalibr
 	ambiguousCount, clarified := 0, 0
 	permissionLeakage := 0
 	brierSum := 0.0
+	candidateRecallCount, noMatchCount, wrongRouteCount := 0, 0, 0
+	wrongExecutionCount, autoExecuteCount, autoExecuteWrongCount := 0, 0, 0
+	abstainCount := 0
+	latencyValues := make([]float64, 0, len(evalResults))
+	costValues := make([]float64, 0, len(evalResults))
+	candidateGroups := map[routeCandidateDistributionKey]*RouteCandidateDistribution{}
+	candidateOrder := []routeCandidateDistributionKey{}
 	reliability := make([]RouteReliabilityBin, 10)
 	for index := range reliability {
 		reliability[index].Lower = float64(index) / 10
@@ -458,6 +576,12 @@ func summarizeRouteEvaluation(results []routeEvalResult, calibration RouteCalibr
 			if result.top3Correct {
 				top3Correct++
 			}
+			for _, candidateKey := range result.candidateKeys {
+				if candidateKey == result.expectedKey {
+					candidateRecallCount++
+					break
+				}
+			}
 		} else {
 			ambiguousCount++
 		}
@@ -473,6 +597,49 @@ func summarizeRouteEvaluation(results []routeEvalResult, calibration RouteCalibr
 		}
 		if result.caseInput.MustDeny && result.features.candidates > 0 {
 			permissionLeakage++
+		}
+		isNoMatch := isExpected && result.features.candidates == 0
+		if isNoMatch {
+			noMatchCount++
+		}
+		wrongRoute := result.caseInput.WrongRoute != nil && *result.caseInput.WrongRoute
+		if !wrongRoute && result.caseInput.WrongRoute == nil && isExpected && result.predictedKey != "" && result.predictedKey != result.expectedKey {
+			wrongRoute = true
+		}
+		if wrongRoute {
+			wrongRouteCount++
+		}
+		wrongExecution := result.caseInput.WrongExecution != nil && *result.caseInput.WrongExecution
+		if wrongExecution {
+			wrongExecutionCount++
+		}
+		autoExecuted := result.caseInput.AutoExecuted != nil && *result.caseInput.AutoExecuted
+		if autoExecuted {
+			autoExecuteCount++
+			if wrongRoute || wrongExecution {
+				autoExecuteWrongCount++
+			}
+		}
+		if result.caseInput.Abstained != nil && *result.caseInput.Abstained {
+			abstainCount++
+		} else if result.caseInput.Abstained == nil && result.features.candidates == 0 {
+			abstainCount++
+		}
+		if result.caseInput.LatencyMs != nil && *result.caseInput.LatencyMs >= 0 {
+			latencyValues = append(latencyValues, float64(*result.caseInput.LatencyMs))
+		}
+		if result.caseInput.RouteCost != nil && *result.caseInput.RouteCost >= 0 {
+			costValues = append(costValues, *result.caseInput.RouteCost)
+		}
+		for rank, candidateKey := range result.candidateKeys {
+			key := routeCandidateDistributionKey{CandidateKey: candidateKey, Rank: rank + 1}
+			row, ok := candidateGroups[key]
+			if !ok {
+				row = &RouteCandidateDistribution{CandidateKey: candidateKey, Rank: key.Rank}
+				candidateGroups[key] = row
+				candidateOrder = append(candidateOrder, key)
+			}
+			row.Count++
 		}
 		if !isExpected && (result.features.candidates == 0 || result.confidence < 0.86) {
 			clarified++
@@ -496,7 +663,29 @@ func summarizeRouteEvaluation(results []routeEvalResult, calibration RouteCalibr
 	if positiveCount > 0 {
 		metrics.Top1Accuracy = float64(top1Correct) / float64(positiveCount)
 		metrics.Top3Recall = float64(top3Correct) / float64(positiveCount)
+		metrics.CandidateRecall = float64(candidateRecallCount) / float64(positiveCount)
+		metrics.NoMatchRate = float64(noMatchCount) / float64(positiveCount)
+		metrics.WrongRouteRate = float64(wrongRouteCount) / float64(positiveCount)
 	}
+	metrics.CandidateRecallCount = candidateRecallCount
+	metrics.CandidateRecallDenominator = positiveCount
+	metrics.NoMatchCount = noMatchCount
+	metrics.NoMatchDenominator = positiveCount
+	metrics.WrongRouteCount = wrongRouteCount
+	metrics.WrongExecutionRate = safeRate(wrongExecutionCount, len(evalResults))
+	metrics.WrongExecutionCount = wrongExecutionCount
+	metrics.WrongExecutionDenominator = len(evalResults)
+	metrics.AutoExecuteCount = autoExecuteCount
+	metrics.AutoExecuteWrongCount = autoExecuteWrongCount
+	metrics.AutoExecuteWrongRate = safeRate(autoExecuteWrongCount, autoExecuteCount)
+	metrics.AbstainRate = safeRate(abstainCount, len(evalResults))
+	metrics.AbstainCount = abstainCount
+	metrics.RouteP95Ms = percentile64(latencyValues, 0.95)
+	metrics.RouteCost = mean64(costValues)
+	metrics.RouteCostP95 = percentile64(costValues, 0.95)
+	metrics.RouteTimingSampleCount = len(latencyValues)
+	metrics.RouteCostSampleCount = len(costValues)
+	metrics.CandidateDistribution = routeCandidateDistribution(candidateOrder, candidateGroups)
 	for _, result := range evalResults {
 		if result.caseInput.ExpectedKind != model.AssistantKindAgent {
 			continue
@@ -562,6 +751,30 @@ func routeGateFailures(metrics RouteEvaluationMetrics, thresholds routeEvidenceT
 	if metrics.Top3Recall < 0.92 {
 		failures = append(failures, "top3_recall_below_0.92")
 	}
+	if metrics.CandidateRecall < thresholds.MinCandidateRecall {
+		failures = append(failures, fmt.Sprintf("candidate_recall_below_%.2f", thresholds.MinCandidateRecall))
+	}
+	if metrics.NoMatchRate > thresholds.MaxNoMatchRate {
+		failures = append(failures, fmt.Sprintf("no_match_rate_above_%.2f", thresholds.MaxNoMatchRate))
+	}
+	if metrics.WrongRouteRate > thresholds.MaxWrongRouteRate {
+		failures = append(failures, fmt.Sprintf("wrong_route_rate_above_%.2f", thresholds.MaxWrongRouteRate))
+	}
+	if metrics.AbstainRate > thresholds.MaxAbstainRate {
+		failures = append(failures, fmt.Sprintf("abstain_rate_above_%.2f", thresholds.MaxAbstainRate))
+	}
+	if metrics.RouteTimingSampleCount > 0 && metrics.RouteP95Ms > float64(thresholds.MaxRouteP95Ms) {
+		failures = append(failures, fmt.Sprintf("route_p95_ms_above_%d", thresholds.MaxRouteP95Ms))
+	}
+	if metrics.RouteCostSampleCount > 0 && metrics.RouteCost > thresholds.MaxRouteCost {
+		failures = append(failures, fmt.Sprintf("route_cost_above_%.2f", thresholds.MaxRouteCost))
+	}
+	if metrics.WrongExecutionCount > thresholds.MaxWrongExecutionCount {
+		failures = append(failures, "wrong_execution_count_above_0")
+	}
+	if metrics.AutoExecuteWrongCount > thresholds.MaxAutoExecuteWrongCount {
+		failures = append(failures, "auto_execute_wrong_count_not_zero")
+	}
 	if metrics.HighConfidenceCount < thresholds.MinHighConfidence {
 		failures = append(failures, fmt.Sprintf("high_confidence_samples_below_%d", thresholds.MinHighConfidence))
 	}
@@ -590,6 +803,54 @@ func routeGateFailures(metrics RouteEvaluationMetrics, thresholds routeEvidenceT
 		failures = append(failures, fmt.Sprintf("agent_flow_readiness_below_%.2f", metrics.AgentFlowReadinessMinimum))
 	}
 	return failures
+}
+
+type routeCandidateDistributionKey struct {
+	CandidateKey string
+	Rank         int
+}
+
+func routeCandidateDistribution(order []routeCandidateDistributionKey, groups map[routeCandidateDistributionKey]*RouteCandidateDistribution) []RouteCandidateDistribution {
+	rows := make([]RouteCandidateDistribution, 0, len(order))
+	for _, key := range order {
+		rows = append(rows, *groups[key])
+	}
+	return rows
+}
+
+func safeRate(numerator, denominator int) float64 {
+	if denominator == 0 {
+		return 0
+	}
+	return float64(numerator) / float64(denominator)
+}
+
+func mean64(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, value := range values {
+		sum += value
+	}
+	return sum / float64(len(values))
+}
+
+func percentile64(values []float64, percentile float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sorted := make([]float64, len(values))
+	copy(sorted, values)
+	sort.Float64s(sorted)
+	index := int(math.Ceil(percentile*float64(len(sorted)))) - 1
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(sorted) {
+		index = len(sorted) - 1
+	}
+	return sorted[index]
 }
 
 func routeBoundaryMatrix(results []routeEvalResult) RouteBoundaryMatrix {

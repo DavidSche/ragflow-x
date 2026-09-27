@@ -14,16 +14,34 @@ import (
 // It is NOT safe for production; it exists so the full service flow can run
 // without a live RAGFlow instance.
 type Mock struct {
-	mu                 sync.Mutex
-	datasets           map[string]*mockDataset
-	documents          map[string][]*mockDocument
-	providers          map[string]*mockProvider
-	metadata           map[string]map[string]map[string]interface{}
-	chunks             map[string][]*mockChunk
-	searchApps         map[string]*mockSearchApp
-	memories           map[string]*mockMemory
-	agents             map[string]*mockAgent
-	chatCreateRequests []CreateChatRequest
+	mu                  sync.Mutex
+	datasets            map[string]*mockDataset
+	documents           map[string][]*mockDocument
+	providers           map[string]*mockProvider
+	metadata            map[string]map[string]map[string]interface{}
+	chunks              map[string][]*mockChunk
+	searchApps          map[string]*mockSearchApp
+	memories            map[string]*mockMemory
+	agents              map[string]*mockAgent
+	chatCreateRequests  []CreateChatRequest
+	lastChatCondition   *MetadataCondition
+	lastSearchCondition *MetadataCondition
+}
+
+// LastChatMetadataCondition returns the metadata condition received by the
+// most recent mock chat completion (doc/123 contract assertions).
+func (m *Mock) LastChatMetadataCondition() *MetadataCondition {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastChatCondition
+}
+
+// LastSearchMetadataCondition returns the metadata condition received by the
+// most recent mock search completion.
+func (m *Mock) LastSearchMetadataCondition() *MetadataCondition {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastSearchCondition
 }
 
 // Compile-time assertion that Mock implements Client.
@@ -46,6 +64,7 @@ type mockChunk struct {
 	content    string
 	documentID string
 	docName    string
+	imageID    string
 	available  bool
 }
 
@@ -127,7 +146,11 @@ func (m *Mock) ListDocuments(ctx context.Context, datasetID string) ([]Document,
 	docs := m.documents[datasetID]
 	out := make([]Document, 0, len(docs))
 	for _, d := range docs {
-		out = append(out, Document{ID: d.id, Name: d.name, Status: d.status})
+		metadata := m.metadata[datasetID][d.id]
+		if metadata == nil {
+			metadata = map[string]interface{}{}
+		}
+		out = append(out, Document{ID: d.id, Name: d.name, Status: d.status, Metadata: metadata})
 	}
 	return out, nil
 }
@@ -211,6 +234,41 @@ func (m *Mock) UpdateDocumentMetadata(ctx context.Context, datasetID, documentID
 	return nil
 }
 
+// BatchUpdateDatasetMetadata mirrors the documented
+// POST /datasets/{id}/metadata/update endpoint.
+func (m *Mock) BatchUpdateDatasetMetadata(ctx context.Context, datasetID string, documentIDs []string, updates []MetadataUpdate) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.documents[datasetID]; !ok {
+		return fmt.Errorf("dataset not found: %s", datasetID)
+	}
+	if len(documentIDs) == 0 || len(updates) == 0 {
+		return nil
+	}
+	if m.metadata[datasetID] == nil {
+		m.metadata[datasetID] = map[string]map[string]interface{}{}
+	}
+	for _, docID := range documentIDs {
+		found := false
+		for _, doc := range m.documents[datasetID] {
+			if doc.id == docID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		if m.metadata[datasetID][docID] == nil {
+			m.metadata[datasetID][docID] = map[string]interface{}{}
+		}
+		for _, u := range updates {
+			m.metadata[datasetID][docID][u.Key] = u.Value
+		}
+	}
+	return nil
+}
+
 func (m *Mock) ListDocumentChunks(ctx context.Context, datasetID, documentID string, page, pageSize int) ([]Chunk, int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -233,7 +291,7 @@ func (m *Mock) ListDocumentChunks(ctx context.Context, datasetID, documentID str
 		}
 		out = append(out, Chunk{
 			ID: chunk.id, Content: chunk.content, DocumentID: chunk.documentID,
-			DocName: chunk.docName, Available: chunk.available,
+			DocName: chunk.docName, ImageID: chunk.imageID, Available: chunk.available,
 		})
 	}
 	return out, int64(len(chunks)), nil
@@ -280,6 +338,11 @@ func (m *Mock) SetChunksAvailable(ctx context.Context, datasetID, documentID str
 
 // SeedDocumentChunk adds a chunk to the in-memory mock engine for tests.
 func (m *Mock) SeedDocumentChunk(datasetID, documentID, chunkID, content string, available bool) {
+	m.SeedDocumentChunkWithImage(datasetID, documentID, chunkID, content, "", available)
+}
+
+// SeedDocumentChunkWithImage adds a chunk with its parsed image id for tests.
+func (m *Mock) SeedDocumentChunkWithImage(datasetID, documentID, chunkID, content, imageID string, available bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	docName := documentID
@@ -290,7 +353,8 @@ func (m *Mock) SeedDocumentChunk(datasetID, documentID, chunkID, content string,
 		}
 	}
 	m.chunks[datasetID] = append(m.chunks[datasetID], &mockChunk{
-		id: chunkID, content: content, documentID: documentID, docName: docName, available: available,
+		id: chunkID, content: content, documentID: documentID, docName: docName,
+		imageID: imageID, available: available,
 	})
 }
 

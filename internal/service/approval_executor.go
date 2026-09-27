@@ -175,6 +175,10 @@ func (s *Service) approvalExecutorRegistry() *ApprovalExecutorRegistry {
 		svc: s, objectType: model.ApprovalObjectEnterpriseConnection, action: model.ApprovalActionDeprecate,
 		validate: validateEnterpriseConnectionApproval, execute: executeEnterpriseConnectionDeprecate,
 	})
+	registry.Register(fmt.Sprintf("%s.%s", model.ApprovalObjectKnowledgeTask, model.ApprovalActionResolve), &serviceApprovalExecutor{
+		svc: s, objectType: model.ApprovalObjectKnowledgeTask, action: model.ApprovalActionResolve,
+		validate: validateKnowledgeTaskResolve, execute: executeKnowledgeTaskResolve,
+	})
 	return registry
 }
 

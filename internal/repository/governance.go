@@ -311,6 +311,7 @@ func (s *store) UpdateDatasetLifecycle(ctx context.Context, dataset *model.Datas
 			"last_reviewed_at": dataset.LastReviewedAt,
 			"review_status":    dataset.ReviewStatus,
 			"quality_score":    dataset.QualityScore,
+			"pushdown_enabled": dataset.PushdownEnabled,
 			"updated_at":       now,
 		})
 	return res.RowsAffected > 0, res.Error

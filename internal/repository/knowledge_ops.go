@@ -16,7 +16,7 @@ import (
 type KnowledgeOpsRepo interface {
 	UpsertKnowledgeOpsEvent(ctx context.Context, event *model.KnowledgeOpsEvent) error
 	KnowledgeOpsSummary(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string) (*model.KnowledgeOpsSummary, error)
-	KnowledgeOpsFeedbackSummary(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string) (positive, negative int64, err error)
+	KnowledgeOpsFeedbackSummary(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string) (positive, negative int64, attribution map[string]int64, err error)
 	TopKnowledgeQueries(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string, limit int) ([]model.KnowledgeOpsQueryRow, error)
 	ListKnowledgeOpsEvents(ctx context.Context, tenantID string, scopeAll bool, page, pageSize int, filter KnowledgeOpsFilter) ([]model.KnowledgeOpsEvent, int64, error)
 	GetKnowledgeOpsEvent(ctx context.Context, tenantID, eventID string, scopeAll bool) (*model.KnowledgeOpsEvent, error)
@@ -33,6 +33,7 @@ type KnowledgeOpsFilter struct {
 	Search       string
 	DateFrom     string
 	DateTo       string
+	Attribution  string
 }
 
 // KnowledgeOpsReview carries a badcase disposition.
@@ -123,7 +124,7 @@ func (s *store) KnowledgeOpsSummary(ctx context.Context, tenantID string, scopeA
 		return nil, err
 	}
 
-	positive, negative, err := s.KnowledgeOpsFeedbackSummary(ctx, tenantID, scopeAll, dateFrom, dateTo)
+	positive, negative, attribution, err := s.KnowledgeOpsFeedbackSummary(ctx, tenantID, scopeAll, dateFrom, dateTo)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +134,7 @@ func (s *store) KnowledgeOpsSummary(ctx context.Context, tenantID string, scopeA
 		WithCitations: row.Citations, TokensIn: row.TokensIn, TokensOut: row.TokensOut,
 		AvgLatencyMs:       row.Latency,
 		AvgResolutionHours: row.Resolution / 3600000,
-		Positive:           positive, Negative: negative,
+		Positive:           positive, Negative: negative, AttributionSummary: attribution,
 	}
 	if row.Total > 0 {
 		summary.CitationRate = float64(row.Citations) / float64(row.Total)
@@ -146,16 +147,37 @@ func (s *store) KnowledgeOpsSummary(ctx context.Context, tenantID string, scopeA
 	return summary, nil
 }
 
-func (s *store) KnowledgeOpsFeedbackSummary(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string) (int64, int64, error) {
+func (s *store) KnowledgeOpsFeedbackSummary(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string) (int64, int64, map[string]int64, error) {
 	type feedbackCounts struct {
-		Positive int64 `gorm:"column:positive"`
-		Negative int64 `gorm:"column:negative"`
+		Positive     int64 `gorm:"column:positive"`
+		Negative     int64 `gorm:"column:negative"`
+		Unclassified int64 `gorm:"column:unclassified"`
+		Knowledge    int64 `gorm:"column:knowledge"`
+		Retrieval    int64 `gorm:"column:retrieval"`
+		Template     int64 `gorm:"column:template"`
+		Model        int64 `gorm:"column:model"`
+		Routing      int64 `gorm:"column:routing"`
+		Tool         int64 `gorm:"column:tool"`
 	}
 	var row feedbackCounts
 	q := s.WithContext(ctx).Model(&model.MessageFeedback{}).Select(`
 		SUM(CASE WHEN rating = ? THEN 1 ELSE 0 END) AS positive,
-		SUM(CASE WHEN rating = ? THEN 1 ELSE 0 END) AS negative
-	`, model.FeedbackPositive, model.FeedbackNegative)
+		SUM(CASE WHEN rating = ? THEN 1 ELSE 0 END) AS negative,
+		SUM(CASE WHEN rating = ? AND (attribution = '' OR attribution IS NULL) THEN 1 ELSE 0 END) AS unclassified,
+		SUM(CASE WHEN rating = ? AND attribution = ? THEN 1 ELSE 0 END) AS knowledge,
+		SUM(CASE WHEN rating = ? AND attribution = ? THEN 1 ELSE 0 END) AS retrieval,
+		SUM(CASE WHEN rating = ? AND attribution = ? THEN 1 ELSE 0 END) AS template,
+		SUM(CASE WHEN rating = ? AND attribution = ? THEN 1 ELSE 0 END) AS model,
+		SUM(CASE WHEN rating = ? AND attribution = ? THEN 1 ELSE 0 END) AS routing,
+		SUM(CASE WHEN rating = ? AND attribution = ? THEN 1 ELSE 0 END) AS tool
+	`, model.FeedbackPositive, model.FeedbackNegative, model.FeedbackNegative,
+		model.FeedbackNegative, model.FeedbackAttributionKnowledge,
+		model.FeedbackNegative, model.FeedbackAttributionRetrieval,
+		model.FeedbackNegative, model.FeedbackAttributionTemplate,
+		model.FeedbackNegative, model.FeedbackAttributionModel,
+		model.FeedbackNegative, model.FeedbackAttributionRouting,
+		model.FeedbackNegative, model.FeedbackAttributionTool,
+	)
 	if !scopeAll {
 		q = q.Where("tenant_id = ?", tenantID)
 	}
@@ -163,9 +185,17 @@ func (s *store) KnowledgeOpsFeedbackSummary(ctx context.Context, tenantID string
 		q = q.Where("created_at >= ? AND created_at < ?", from, to)
 	}
 	if err := q.Scan(&row).Error; err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
-	return row.Positive, row.Negative, nil
+	return row.Positive, row.Negative, map[string]int64{
+		"unclassified":                     row.Unclassified,
+		model.FeedbackAttributionKnowledge: row.Knowledge,
+		model.FeedbackAttributionRetrieval: row.Retrieval,
+		model.FeedbackAttributionTemplate:  row.Template,
+		model.FeedbackAttributionModel:     row.Model,
+		model.FeedbackAttributionRouting:   row.Routing,
+		model.FeedbackAttributionTool:      row.Tool,
+	}, nil
 }
 
 func (s *store) TopKnowledgeQueries(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string, limit int) ([]model.KnowledgeOpsQueryRow, error) {
@@ -219,6 +249,13 @@ func (s *store) ListKnowledgeOpsEvents(ctx context.Context, tenantID string, sco
 	if filter.ReviewStatus != "" {
 		q = q.Where("review_status = ?", filter.ReviewStatus)
 	}
+	if filter.Attribution != "" {
+		if filter.Attribution == "unclassified" {
+			q = q.Where("feedback_rating = ? AND (feedback_attribution = '' OR feedback_attribution IS NULL)", model.FeedbackNegative)
+		} else {
+			q = q.Where("feedback_rating = ? AND feedback_attribution = ?", model.FeedbackNegative, filter.Attribution)
+		}
+	}
 	if filter.Search != "" {
 		pattern := likePattern(filter.Search)
 		q = q.Where("question LIKE ? ESCAPE '\\'", pattern)
@@ -258,11 +295,12 @@ func (s *store) AttachMessageFeedbackToKnowledgeOpsEvent(ctx context.Context, te
 		Where("tenant_id = ? AND request_id = ? AND app_type = ? AND app_id = ? AND (session_id = ? OR session_id = '')",
 			tenantID, requestID, "chat", feedback.ChatID, feedback.SessionID).
 		Updates(map[string]interface{}{
-			"feedback_id":      feedback.ID,
-			"feedback_rating":  feedback.Rating,
-			"feedback_comment": feedback.Comment,
-			"feedback_at":      feedbackAt,
-			"updated_at":       feedbackAt,
+			"feedback_id":          feedback.ID,
+			"feedback_rating":      feedback.Rating,
+			"feedback_attribution": feedback.Attribution,
+			"feedback_comment":     feedback.Comment,
+			"feedback_at":          feedbackAt,
+			"updated_at":           feedbackAt,
 		})
 	return res.RowsAffected > 0, res.Error
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,48 @@ func TestChatAppCompletionMetersUsage(t *testing.T) {
 	}
 	if rows[0].Model != chat.ID || rows[0].Scenario != "chat" || rows[0].SessionID != session.ID {
 		t.Fatalf("unexpected cost detail: %+v", rows[0])
+	}
+}
+
+// TestChatAppCompletionSnapshotCarriesCitations covers doc/118 F-10: the
+// non-streaming chat path must feed provider references into the answer
+// delivery snapshot, so the snapshot is ANSWERED with persisted citations
+// instead of INSUFFICIENT_EVIDENCE.
+func TestChatAppCompletionSnapshotCarriesCitations(t *testing.T) {
+	ctx := context.Background()
+	svc, m := chatAppSvc(t)
+
+	chat, err := m.CreateChat(ctx, ragflow.CreateChatRequest{Name: "kb-citation-assistant", DatasetIDs: []string{"d1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := svc.Store.UpsertChatShadow(ctx, &model.ChatShadow{ID: chat.ID, TenantID: "t1", Name: chat.Name, Status: model.TenantStatusActive, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := m.CreateChatSession(ctx, chat.ID, "session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := &model.APIKey{ID: "key-citation", TenantID: "t1", UserID: "u1"}
+	raw := []byte(`{"messages":[{"role":"user","content":"hi"}],"chat_id":"` + chat.ID + `"}`)
+	if _, err := svc.ChatAppCompletion(ctx, key, chat.ID, session.ID, raw, "req-chat-citation"); err != nil {
+		t.Fatalf("chat app completion: %v", err)
+	}
+
+	snapshot, err := svc.Store.GetAnswerSnapshotByRequest(ctx, "t1", "req-chat-citation")
+	if err != nil {
+		t.Fatalf("answer snapshot missing: %v", err)
+	}
+	if snapshot.AnswerStatus != model.AnswerStatusAnswered {
+		t.Fatalf("snapshot must be ANSWERED when citations exist: %+v", snapshot.AnswerStatus)
+	}
+	var citations []model.AnswerCitation
+	if err := json.Unmarshal([]byte(snapshot.CitationsJSON), &citations); err != nil {
+		t.Fatal(err)
+	}
+	if len(citations) != 1 || citations[0].DatasetID != "mock-dataset" || citations[0].Title != "mock-doc" {
+		t.Fatalf("unexpected citations from provider references: %+v", citations)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/notify"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
@@ -140,6 +141,13 @@ func TestDatasetLifecycleAndBadcaseEvalLink(t *testing.T) {
 	if err := svc.Store.CreateDatasetLink(ctx, dataset); err != nil {
 		t.Fatal(err)
 	}
+	captured := &capturedNotifier{}
+	hub := notify.NewHubWithNotifiers([]notify.Notifier{captured}, 0)
+	notify.Set(hub)
+	defer func() {
+		hub.Shutdown()
+		notify.Set(nil)
+	}()
 	past := time.Now().UTC().Add(-24 * time.Hour)
 	view, err := svc.UpdateKnowledgeLifecycle(ctx, tenant.ID, dataset.ID, DatasetLifecycleInput{
 		OwnerID: "owner-1", SourceType: "manual", Sensitivity: "internal",
@@ -150,6 +158,10 @@ func TestDatasetLifecycleAndBadcaseEvalLink(t *testing.T) {
 	}
 	if view.LifecycleStatus != model.KnowledgeReviewExpired {
 		t.Fatalf("expected expired, got %s", view.LifecycleStatus)
+	}
+	hub.Shutdown()
+	if len(captured.snapshot()) != 1 || captured.snapshot()[0].Type != "knowledge.expired" {
+		t.Fatalf("expected knowledge expiration notification, got %+v", captured.snapshot())
 	}
 
 	event := &model.KnowledgeOpsEvent{
@@ -179,6 +191,64 @@ func TestDatasetLifecycleAndBadcaseEvalLink(t *testing.T) {
 	updated, err := svc.Store.GetKnowledgeOpsEvent(ctx, tenant.ID, event.ID, false)
 	if err != nil || updated == nil || updated.EvalSetID != evalSet.ID || updated.EvalCaseID != evalCase.ID {
 		t.Fatalf("event link missing: %+v err=%v", updated, err)
+	}
+}
+
+func TestKnowledgeHealthContract(t *testing.T) {
+	ctx := context.Background()
+	svc := newAuthzSvc(t)
+	tenant, err := svc.CreateTenant(ctx, "Knowledge Health Tenant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	current := now.Add(24 * time.Hour)
+	past := current.Add(-24 * time.Hour)
+	datasets := []model.DatasetLink{
+		{ID: "health-current", TenantID: tenant.ID, RAGFlowDatasetID: "rf-current", Name: "current", OwnerID: "owner", Sensitivity: "internal", ExpiresAt: &current, LastReviewedAt: &now, ReviewStatus: model.KnowledgeReviewCurrent, QualityScore: 90},
+		{ID: "health-expired", TenantID: tenant.ID, RAGFlowDatasetID: "rf-expired", Name: "expired", ExpiresAt: &past, ReviewStatus: model.KnowledgeReviewCurrent, QualityScore: 70},
+		{ID: "health-unowned", TenantID: tenant.ID, RAGFlowDatasetID: "rf-unowned", Name: "unowned", Sensitivity: "internal", QualityScore: 60},
+	}
+	for i := range datasets {
+		if err := svc.Store.CreateDatasetLink(ctx, &datasets[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tasks := []model.Task{
+		{ID: "task-done-1", TenantID: tenant.ID, DatasetID: datasets[0].ID, DocID: "doc-1", DocName: "one", TaskType: model.TaskTypeParse, Status: model.TaskStatusDone, Progress: 100},
+		{ID: "task-done-2", TenantID: tenant.ID, DatasetID: datasets[0].ID, DocID: "doc-2", DocName: "two", TaskType: model.TaskTypeParse, Status: model.TaskStatusDone, Progress: 100},
+		{ID: "task-running", TenantID: tenant.ID, DatasetID: datasets[1].ID, DocID: "doc-3", DocName: "three", TaskType: model.TaskTypeParse, Status: model.TaskStatusRunning},
+		{ID: "task-failed", TenantID: tenant.ID, DatasetID: datasets[2].ID, DocID: "doc-4", DocName: "four", TaskType: model.TaskTypeParse, Status: model.TaskStatusFailed},
+	}
+	for i := range tasks {
+		if err := svc.Store.CreateTask(ctx, &tasks[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events := []model.KnowledgeOpsEvent{
+		{RequestID: "health-cited", TenantID: tenant.ID, UserID: "user", AppType: "chat", AppID: "chat", SessionID: "session", Question: "good", QuestionHash: "good", AnswerExcerpt: "answer", Status: model.KnowledgeOpsCompleted, CitationsCount: 2},
+		{RequestID: "health-missing", TenantID: tenant.ID, UserID: "user", AppType: "chat", AppID: "chat", SessionID: "session", Question: "missing", QuestionHash: "missing", AnswerExcerpt: "answer", Status: model.KnowledgeOpsCompleted, CitationsCount: 0},
+	}
+	for i := range events {
+		if err := svc.Store.UpsertKnowledgeOpsEvent(ctx, &events[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	summary, err := svc.KnowledgeHealth(ctx, tenant.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.DatasetCount != 3 || summary.LifecycleStateCounts.Expired != 1 || summary.LifecycleStateCounts.MissingOwner != 1 {
+		t.Fatalf("lifecycle contract mismatch: %+v", summary)
+	}
+	if summary.ParseHealth.TaskCount != 4 || summary.ParseHealth.Done != 2 || summary.ParseHealth.ReadyRate != 0.5 {
+		t.Fatalf("parse readiness contract mismatch: %+v", summary.ParseHealth)
+	}
+	if summary.AverageQualityScore != (90+70+60)/3.0 || summary.LowQualityCount != 2 || summary.MissingClassification != 1 {
+		t.Fatalf("quality contract mismatch: %+v", summary)
+	}
+	if summary.CitationMissingCount != 1 || summary.CitationWindowDays != 30 {
+		t.Fatalf("citation contract mismatch: %+v", summary)
 	}
 }
 
@@ -257,7 +327,6 @@ func TestGenerateMissingTemplateEvalSetsIsIdempotent(t *testing.T) {
 }
 
 func TestCreateChatFromScenarioTemplate(t *testing.T) {
-	ctx := context.Background()
 	svc, ctx, tenantA, _, template := newTemplateReleaseGateFixture(t, model.GateDecisionPass)
 	tenantB, err := svc.CreateTenant(ctx, "Template Isolation B")
 	if err != nil {
@@ -477,7 +546,6 @@ func TestCreateChatFromScenarioTemplateRejectsUnpublishedAndNonChat(t *testing.T
 }
 
 func TestScenarioTemplateChatApprovalExecutorCreatesPinnedVersion(t *testing.T) {
-	ctx := context.Background()
 	svc, ctx, tenant, admin, template := newTemplateReleaseGateFixture(t, model.GateDecisionPass)
 	payload, err := svc.PrepareScenarioTemplateInstantiation(ctx, tenant.ID, template.ID, ScenarioTemplateInstantiationInput{
 		CreateMissingDatasets: true,
@@ -518,5 +586,88 @@ func TestScenarioTemplateChatApprovalExecutorCreatesPinnedVersion(t *testing.T) 
 	invalid.PayloadJSON = fmt.Sprintf(`{"name":"draft","scenario_template_id":"%s","scenario_template_version":0}`, template.ID)
 	if err := validateApprovalChatCreate(ctx, svc, &invalid); err == nil {
 		t.Fatal("template approval without pinned version must fail")
+	}
+}
+
+func TestKnowledgeAssetMapContract(t *testing.T) {
+	ctx := context.Background()
+	svc := newAuthzSvc(t)
+	tenant, err := svc.CreateTenant(ctx, "Asset Map Tenant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := svc.CreateUser(ctx, tenant.ID, "", CreateUserRequest{
+		Username: "asset-admin", Password: "secret123", Role: "tenant_admin",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dataset := &model.DatasetLink{
+		ID: "dataset-map", TenantID: tenant.ID, RAGFlowDatasetID: "rag-map", Name: "Policy KB",
+		OwnerID: admin.ID, BusinessDomain: "procurement", Sensitivity: "internal",
+	}
+	if err := svc.Store.CreateDatasetLink(ctx, dataset); err != nil {
+		t.Fatal(err)
+	}
+	release := &model.AssistantRelease{
+		ID: "release-map", TenantID: tenant.ID, AssistantID: "chat-map",
+		AssistantVersionID: "version-map", ReleaseVersion: 1, ReleaseState: model.ReleaseActive,
+		DesiredStateJSON: "{}", DesiredStateHash: "hash", SnapshotManifestID: "manifest-map",
+	}
+	if err := svc.Store.CreateAssistantRelease(ctx, release); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Store.CreateDatasetBindingVersion(ctx, &model.DatasetBindingVersion{
+		ID: "binding-map", TenantID: tenant.ID, AssistantReleaseID: release.ID,
+		BindingID: "binding", Version: 1, DatasetID: dataset.ID,
+		DatasetVersion: "v1", Status: "ACTIVE",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := svc.FinalizeAnswerDelivery(ctx, AnswerDeliveryInput{
+		TenantID: tenant.ID, SessionID: "asset-session", AssistantID: "chat-map",
+		PrincipalID: admin.ID, Question: "采购流程", RequestID: "request-asset-map", TraceID: "trace-asset-map",
+		AnswerStatus: model.AnswerStatusAnswered, CompletionReason: model.CompletionReasonNormal,
+		ReasonCode: "TEST_ANSWERED", Summary: "summary", Content: "answer",
+		Citations: []model.AnswerCitation{{
+			ID: "citation-map", DatasetID: dataset.ID, DocumentID: "doc-map",
+			DocumentVersion: "v2", ChunkID: "chunk-map", CitedContentExcerpt: "chunk",
+			CitationLocator: "policy.md#L1", CitationContentHash: "hash-chunk",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateTraceRun(ctx, admin.ID, tenant.ID, TraceRunInput{
+		TraceID: answer.Run.TraceID, RequestID: answer.Run.RequestID, SessionID: "asset-session",
+		AssistantID: "chat-map", AppType: "chat", AppID: "chat-map",
+		RetrievalSummary: map[string]any{"dataset_binding_version": "binding-map"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := svc.CreateKnowledgeTask(ctx, tenant.ID, admin.ID, KnowledgeTaskInput{
+		SourceRequestID: answer.Run.RequestID, Title: "补充采购流程",
+		Category: model.FeedbackAttributionKnowledge, OwnerID: "owner",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets, err := svc.ListKnowledgeAssetMap(ctx, tenant.ID, repository.GovernanceFilter{})
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("list asset map: %d %v", len(assets), err)
+	}
+	asset := assets[0]
+	if asset.LifecycleStatus == "" || len(asset.AssistantIDs) != 1 || len(asset.AssistantReleas) != 1 {
+		t.Fatalf("asset governance projection incomplete: %+v", asset)
+	}
+	if len(asset.ChunkEvidence) != 1 || asset.ChunkEvidence[0].ChunkID != "chunk-map" ||
+		asset.ChunkEvidence[0].DocumentVersion != "v2" || asset.ChunkEvidence[0].CitationHash == "" {
+		t.Fatalf("chunk evidence incomplete: %+v", asset.ChunkEvidence)
+	}
+	if len(asset.TraceRuns) != 1 || asset.TraceRuns[0].TraceID != answer.Run.TraceID {
+		t.Fatalf("trace projection incomplete: %+v", asset.TraceRuns)
+	}
+	if len(asset.KnowledgeTasks) != 1 || asset.KnowledgeTasks[0].ID != task.ID {
+		t.Fatalf("knowledge task projection incomplete: %+v", asset.KnowledgeTasks)
 	}
 }

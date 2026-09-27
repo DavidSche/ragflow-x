@@ -24,7 +24,7 @@ func (s *store) UpsertMessageFeedback(ctx context.Context, f *model.MessageFeedb
 	}
 	f.UpdatedAt = time.Now().UTC()
 	assignments := map[string]interface{}{
-		"rating": f.Rating, "comment": f.Comment, "updated_at": f.UpdatedAt,
+		"rating": f.Rating, "attribution": f.Attribution, "comment": f.Comment, "updated_at": f.UpdatedAt,
 	}
 	if f.RequestID != "" {
 		assignments["request_id"] = f.RequestID

@@ -342,8 +342,7 @@ func (h *Handler) UploadDocument(c *gin.Context) {
 		return
 	}
 
-	buf := make([]byte, header.Size)
-	buf, err = io.ReadAll(file)
+	buf, err := io.ReadAll(file)
 	if err != nil {
 		response.Err(c, err)
 		return

@@ -1,6 +1,7 @@
 package obs
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -138,5 +139,80 @@ func TestP0_OBS_004_ResourceSyncProgressClearsAfterRun(t *testing.T) {
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if strings.Contains(w.Body.String(), "resource_sync_run_progress") {
 		t.Fatalf("completed run progress must not remain active: %s", w.Body.String())
+	}
+}
+
+func TestSpanContextFromContextWithoutSpan(t *testing.T) {
+	if _, _, valid := SpanContextFromContext(context.Background()); valid {
+		t.Fatal("plain context must not report a valid span")
+	}
+}
+
+func TestSpanContextFromContextWithLiveSpan(t *testing.T) {
+	o := New(config.Observability{TracingEnabled: true, OTLPEndpoint: "http://collector:4318"})
+	Set(o)
+	defer Set(New(config.Observability{}))
+	ctx, span := o.tracer.Start(context.Background(), "probe")
+	defer span.End()
+	traceID, spanID, valid := SpanContextFromContext(ctx)
+	if !valid {
+		t.Fatal("live span must be reported as valid")
+	}
+	if len(traceID) != 32 || len(spanID) != 16 {
+		t.Fatalf("trace/span ids must be 32/16 hex: %q %q", traceID, spanID)
+	}
+	if host := OTelEndpointHost(); host != "collector:4318" {
+		t.Fatalf("endpoint host mismatch: %q", host)
+	}
+}
+
+func TestOTelEndpointHostNormalizesSchemes(t *testing.T) {
+	for raw, want := range map[string]string{
+		"":                             "",
+		"localhost:4318":               "localhost:4318",
+		"http://localhost:4318":        "localhost:4318",
+		"https://tempo:4318/v1/traces": "tempo:4318",
+	} {
+		if got := otlpEndpointHost(raw); got != want {
+			t.Fatalf("otlpEndpointHost(%q) = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestOTelTraceUILinkFromTemplate(t *testing.T) {
+	Set(New(config.Observability{
+		TracingEnabled: true, OTLPEndpoint: "http://collector:4318",
+		TraceUIURLTemplate: "https://grafana.example.com/explore?left=%7B%22queries%22%3A%5B%7B%22queryType%22%3A%22traceql%22%22query%22%3A%22{trace_id}%22%7D%5D%7D&span={span_id}",
+	}))
+	defer Set(New(config.Observability{}))
+
+	link := OTelTraceUILink("0af7651916cd43dd8448eb211c80319c", "b7ad6b7169203331")
+	want := "https://grafana.example.com/explore?left=%7B%22queries%22%3A%5B%7B%22queryType%22%3A%22traceql%22%22query%22%3A%220af7651916cd43dd8448eb211c80319c%22%7D%5D%7D&span=b7ad6b7169203331"
+	if link != want {
+		t.Fatalf("trace ui link mismatch:\n got %q\nwant %q", link, want)
+	}
+	if OTelTraceUILink("", "span") != "" || OTelTraceUILink("trace", "") != "" {
+		t.Fatal("incomplete ids must not render a link")
+	}
+}
+
+func TestOTelTraceUILinkUnconfiguredOrUnsafe(t *testing.T) {
+	for _, template := range []string{"", "javascript:alert(1)", "data:text/html,x", "/relative/path", "https://no-placeholder.example.com"} {
+		Set(New(config.Observability{TracingEnabled: true, TraceUIURLTemplate: template}))
+		if link := OTelTraceUILink("trace-1", "span-1"); link != "" {
+			t.Fatalf("template %q must not render a link, got %q", template, link)
+		}
+	}
+	Set(New(config.Observability{}))
+}
+
+func TestOTelTraceUILinkJaegerPath(t *testing.T) {
+	Set(New(config.Observability{
+		TracingEnabled:     true,
+		TraceUIURLTemplate: "https://jaeger.example.com/trace/{trace_id}?uiFind={span_id}",
+	}))
+	defer Set(New(config.Observability{}))
+	if got := OTelTraceUILink("abc", "123"); got != "https://jaeger.example.com/trace/abc?uiFind=123" {
+		t.Fatalf("jaeger link mismatch: %q", got)
 	}
 }

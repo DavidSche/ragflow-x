@@ -37,6 +37,19 @@ func TestChatFeedbackOwnershipAndValidation(t *testing.T) {
 	if _, err := svc.RecordMessageFeedback(ctx, ta.ID, "u1", FeedbackRequest{ChatID: chat.ID, SessionID: "s1", MessageID: "m1", Rating: "meh"}); err == nil {
 		t.Fatal("invalid rating must be rejected")
 	}
+	if _, err := svc.RecordMessageFeedback(ctx, ta.ID, "u1", FeedbackRequest{
+		ChatID: chat.ID, SessionID: "s1", MessageID: "m1", Rating: model.FeedbackNegative,
+		Attribution: "unknown",
+	}); err == nil {
+		t.Fatal("invalid negative attribution must be rejected")
+	}
+	pos, err := svc.RecordMessageFeedback(ctx, ta.ID, "u1", FeedbackRequest{
+		ChatID: chat.ID, SessionID: "s1", MessageID: "m1", Rating: model.FeedbackPositive,
+		Attribution: model.FeedbackAttributionTool,
+	})
+	if err != nil || pos.Attribution != "" {
+		t.Fatalf("positive feedback must clear attribution: feedback=%+v err=%v", pos, err)
+	}
 
 	rows, total, err := svc.Store.ListMessageFeedback(ctx, ta.ID, chat.ID, 1, 20)
 	if err != nil {
@@ -70,7 +83,8 @@ func TestNegativeFeedbackBecomesKnowledgeOpsBadcase(t *testing.T) {
 
 	feedback, err := svc.RecordMessageFeedback(ctx, tenant.ID, "user-1", FeedbackRequest{
 		ChatID: chat.ID, SessionID: "session-1", MessageID: "message-1",
-		RequestID: "request-feedback", Rating: model.FeedbackNegative, Comment: "答案错误",
+		RequestID: "request-feedback", Rating: model.FeedbackNegative,
+		Attribution: model.FeedbackAttributionKnowledge, Comment: "答案错误",
 	})
 	if err != nil {
 		t.Fatalf("negative feedback: %v", err)
@@ -94,7 +108,8 @@ func TestNegativeFeedbackBecomesKnowledgeOpsBadcase(t *testing.T) {
 	}
 	ignoredFeedback, err := svc.RecordMessageFeedback(ctx, tenant.ID, "user-1", FeedbackRequest{
 		ChatID: chat.ID, SessionID: "session-1", MessageID: "message-1",
-		RequestID: "request-feedback", Rating: model.FeedbackNegative, Comment: "更新",
+		RequestID: "request-feedback", Rating: model.FeedbackNegative,
+		Attribution: model.FeedbackAttributionTemplate, Comment: "更新",
 	})
 	if err != nil {
 		t.Fatalf("update feedback: %v", err)
@@ -105,6 +120,9 @@ func TestNegativeFeedbackBecomesKnowledgeOpsBadcase(t *testing.T) {
 	}
 	if final.FeedbackID == ignoredFeedback.ID && final.FeedbackComment != "更新" {
 		t.Fatalf("feedback fields were not refreshed: %+v", final)
+	}
+	if final.FeedbackAttribution != model.FeedbackAttributionTemplate {
+		t.Fatalf("attribution was not refreshed: %+v", final)
 	}
 	if final.ReviewStatus != model.KnowledgeOpsReviewIgnored || final.ReviewedBy != "reviewer" {
 		t.Fatalf("manual review was reset by feedback: %+v", final)

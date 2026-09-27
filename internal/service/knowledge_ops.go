@@ -88,6 +88,7 @@ func knowledgeEvent(
 	citations, tokensIn, tokensOut int64,
 	durationMs ...int64,
 ) *model.KnowledgeOpsEvent {
+	answer = visibleRAGFlowAnswer(answer)
 	if requestID == "" {
 		requestID = id.New()
 	}
@@ -113,6 +114,8 @@ func (s *Service) recordKnowledgeEvent(ctx context.Context, event *model.Knowled
 	if err := s.Store.UpsertKnowledgeOpsEvent(ctx, event); err != nil {
 		// Observation must never break a completion. Failures are visible in logs.
 		logger.Warn("knowledge ops event write failed", "request_id", event.RequestID, "error", err)
+	} else if err := s.Store.UpsertTraceRun(ctx, knowledgeOpsTraceRun(ctx, event)); err != nil {
+		logger.Warn("trace run projection failed", "request_id", event.RequestID, "error", err)
 	}
 }
 

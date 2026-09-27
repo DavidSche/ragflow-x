@@ -160,6 +160,103 @@ func TestRouteEvaluationBlocksUnreadyAgentFlow(t *testing.T) {
 	}
 }
 
+func TestRouteEvaluationMetricContract(t *testing.T) {
+	catalog := []ConversationAssistant{
+		{ID: "assistant-a", Kind: model.AssistantKindChat, Name: "Policy", Keywords: []string{"policy", "audit"}, EffectiveStatus: model.AssistantEffectiveActive},
+		{ID: "assistant-b", Kind: model.AssistantKindChat, Name: "Sales", Keywords: []string{"sales", "order"}, EffectiveStatus: model.AssistantEffectiveActive},
+	}
+	executed := true
+	notExecuted := false
+	wrongExecution := true
+	latency := func(value int64) *int64 { return &value }
+	cost := func(value float64) *float64 { return &value }
+	cases := []RouteEvalCaseInput{
+		{Question: "policy audit", ExpectedKind: model.AssistantKindChat, ExpectedID: "assistant-a", Split: model.RouteEvalSplitValidation, AutoExecuted: &notExecuted, LatencyMs: latency(100), RouteCost: cost(0.002)},
+		{Question: "sales order", ExpectedKind: model.AssistantKindChat, ExpectedID: "assistant-a", Split: model.RouteEvalSplitValidation, AutoExecuted: &notExecuted, LatencyMs: latency(300), RouteCost: cost(0.003)},
+		{Question: "unknown topic", ExpectedKind: model.AssistantKindChat, ExpectedID: "assistant-a", Split: model.RouteEvalSplitValidation, AutoExecuted: &notExecuted, LatencyMs: latency(500), RouteCost: cost(0.003)},
+		{Question: "audit policy", ExpectedKind: model.AssistantKindChat, ExpectedID: "assistant-a", Split: model.RouteEvalSplitValidation, AutoExecuted: &executed, WrongExecution: &wrongExecution, LatencyMs: latency(700), RouteCost: cost(0.004)},
+	}
+	thresholds := routeEvidenceThresholds{
+		Level: RouteGateEvidencePilot, MinHighConfidence: 1, MinWilsonLower: 0,
+		MinCandidateRecall: 0.95, MaxNoMatchRate: 0.05, MaxWrongRouteRate: 0.01,
+		MaxAbstainRate: 0.05, MaxRouteP95Ms: 500, MaxRouteCost: 0.01,
+		MaxWrongExecutionCount: 0, MaxAutoExecuteWrongCount: 0,
+	}
+	report := evaluateRouteCases(catalog, cases, thresholds, 5)
+	metrics := report.Metrics
+	if metrics.CandidateRecallCount != 2 || metrics.CandidateRecallDenominator != 4 || metrics.CandidateRecall != 0.50 {
+		t.Fatalf("candidate recall contract mismatch: %+v", metrics)
+	}
+	if metrics.NoMatchCount != 1 || metrics.NoMatchRate != 0.25 || metrics.WrongRouteRate != 0.25 || metrics.WrongRouteCount != 1 {
+		t.Fatalf("no-match and wrong-route contract mismatch: %+v", metrics)
+	}
+	if metrics.WrongExecutionCount != 1 || metrics.AutoExecuteCount != 1 || metrics.AutoExecuteWrongCount != 1 || metrics.AutoExecuteWrongRate != 1 {
+		t.Fatalf("wrong execution contract mismatch: %+v", metrics)
+	}
+	if metrics.RouteP95Ms != 700 || metrics.RouteCost < 0.003 || metrics.RouteCostP95 != 0.004 {
+		t.Fatalf("route timing contract mismatch: %+v", metrics)
+	}
+	if len(metrics.CandidateDistribution) == 0 {
+		t.Fatal("candidate distribution missing")
+	}
+	for _, failure := range []string{"no_match_rate_above_0.05", "wrong_route_rate_above_0.01", "wrong_execution_count_above_0", "auto_execute_wrong_count_not_zero", "route_p95_ms_above_500"} {
+		found := false
+		for _, actual := range metrics.GateFailures {
+			if actual == failure {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("gate failure %s missing: %+v", failure, metrics.GateFailures)
+		}
+	}
+}
+
+func TestRouteEvaluationRerunsAfterPolicyAndMetadataChange(t *testing.T) {
+	ctx := context.Background()
+	svc := newRouteSvc(t)
+	tenant, err := svc.CreateTenant(ctx, "Route Evaluation Rerun")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := svc.CreateUser(ctx, tenant.ID, "", CreateUserRequest{
+		Username: "route-rerun-admin", Password: "secret123", Role: model.RoleTenantAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant, err := svc.CreateChat(ctx, tenant.ID, "Rerun Chat", []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetTenantRoutePolicy(ctx, admin.ID, tenant.ID, UpdateRoutePolicyRequest{AutoRouteMode: RouteModeAutoLowRisk}); err != nil {
+		t.Fatal(err)
+	}
+	runs, total, err := svc.ListRouteEvaluationRuns(ctx, tenant.ID, 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(runs) != 1 || runs[0].Source != routeEvaluationSourcePolicyChange {
+		t.Fatalf("policy change did not rerun evaluation: total=%d runs=%+v", total, runs)
+	}
+	keywords := []string{"rerun"}
+	if _, err := svc.UpdateConversationAssistant(ctx, admin.ID, tenant.ID, model.AssistantKindChat, assistant.ID, UpdateConversationAssistantRequest{
+		Keywords: &keywords,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runs, total, err = svc.ListRouteEvaluationRuns(ctx, tenant.ID, 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 || len(runs) != 2 || runs[0].Source != routeEvaluationSourceMetadataChange {
+		t.Fatalf("metadata change did not rerun evaluation: total=%d runs=%+v", total, runs)
+	}
+	if runs[0].GateState != model.RouteEvalGateInsuffi {
+		t.Fatalf("small rerun suite must remain fail closed: %+v", runs[0])
+	}
+}
+
 func createDoc41RouteSuite(t *testing.T, svc *Service, tenantID string) string {
 	t.Helper()
 	admin, err := svc.CreateUser(context.Background(), tenantID, "", CreateUserRequest{

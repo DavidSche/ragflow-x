@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -66,6 +67,10 @@ func (s *Service) ChatAppCompletion(ctx context.Context, key *model.APIKey, chat
 	startedAt := time.Now()
 	question := lastUserQuestion(req.Messages)
 
+	// Retrieval-layer metadata pushdown (doc/123 §8.1): the evidence rides
+	// into the projection regardless of pushdown success.
+	pushdown := s.applyChatPushdownForChat(ctx, key.TenantID, chatID, &req)
+
 	resp, err := s.RAGFlow.ChatCompletion(ctx, chatID, req)
 	if err != nil {
 		notify.Emit(ctx, notify.Event{
@@ -74,8 +79,13 @@ func (s *Service) ChatAppCompletion(ctx context.Context, key *model.APIKey, chat
 		})
 		s.ReleaseGatewayQuota(ctx, key, requestID)
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, "", 0, 0, 0, int64(time.Since(startedAt).Milliseconds())))
+		s.recordFailedAnswerDelivery(ctx, key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, "", err.Error())
 		return nil, httperr.New(502, 50230, "ragflow chat completion failed")
 	}
+	for index := range resp.Choices {
+		resp.Choices[index].Message.Content = visibleRAGFlowAnswer(resp.Choices[index].Message.Content)
+	}
+	resp.Answer = visibleRAGFlowAnswer(resp.Answer)
 	body, err := json.Marshal(resp)
 	if err != nil {
 		return nil, err
@@ -90,7 +100,9 @@ func (s *Service) ChatAppCompletion(ctx context.Context, key *model.APIKey, chat
 	if resp != nil && len(resp.Choices) > 0 {
 		answer = resp.Choices[0].Message.Content
 	}
-	s.recordKnowledgeEvent(ctx, knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, answer, 0, tIn, tOut, int64(time.Since(startedAt).Milliseconds())))
+	s.recordCitationReferences(ctx, key.TenantID, chatID, sessionID, requestID, resp.Reference)
+	s.recordKnowledgeEvent(ctx, knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, answer, citationCountFromMaps(resp.Reference), tIn, tOut, int64(time.Since(startedAt).Milliseconds())))
+	s.recordAnswerDeliveryWithPushdown(ctx, key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, answer, citationsFromProviderReferences(resp.Reference), pushdown)
 	s.bumpChatCount(ctx, chatID)
 	s.FinalizeGatewayQuota(ctx, key, requestID, tIn+tOut)
 	return &ChatCompletionResult{Status: 200, Body: body}, nil
@@ -115,22 +127,30 @@ func (s *Service) StreamChatAppCompletion(ctx context.Context, key *model.APIKey
 	startedAt := time.Now()
 	question := lastUserQuestion(req.Messages)
 
+	pushdown := s.applyChatPushdownForChat(ctx, key.TenantID, chatID, &req)
+
 	var tIn, tOut int64
 	capture := &knowledgeOpsStreamCapture{w: w}
 	if err := s.RAGFlow.StreamChatCompletion(ctx, chatID, req, capture); err != nil {
+		_ = capture.Flush()
 		notify.Emit(ctx, notify.Event{
 			Title: "ragflow stream chat completion failed", Severity: "error", TenantID: key.TenantID,
 			Resource: "chat", Type: "provider_error", ResourceID: chatID, Detail: err.Error(),
 		})
 		s.ReleaseGatewayQuota(ctx, key, requestID)
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, "", 0, capture.tokensIn, capture.tokensOut, int64(time.Since(startedAt).Milliseconds())))
+		s.recordFailedAnswerDelivery(ctx, key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, capture.answer.String(), err.Error())
 		return 0, "text/event-stream", httperr.New(502, 50231, "ragflow stream chat completion failed")
+	}
+	if err := capture.Flush(); err != nil {
+		return 0, "text/event-stream", httperr.Internal(err.Error())
 	}
 	tIn, tOut = capture.tokensIn, capture.tokensOut
 	// Streams do not expose a model name in the passthrough; attribute to the chat.
 	s.meterChat(ctx, key, chatID, chatID, sessionID, tIn, tOut, requestID)
 	s.recordCitationReferences(ctx, key.TenantID, chatID, sessionID, requestID, capture.reference)
 	s.recordKnowledgeEvent(ctx, knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, capture.answer.String(), int64(capture.citations), tIn, tOut, int64(time.Since(startedAt).Milliseconds())))
+	s.recordAnswerDeliveryWithPushdown(ctx, key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, capture.answer.String(), citationsFromProviderReferences(capture.reference), pushdown)
 	s.bumpChatCount(ctx, chatID)
 	s.FinalizeGatewayQuota(ctx, key, requestID, tIn+tOut)
 	return 200, "text/event-stream", nil
@@ -150,6 +170,8 @@ func (s *Service) meterChat(ctx context.Context, key *model.APIKey, chatID, mode
 		TenantID: key.TenantID, UserID: key.UserID, KeyID: key.ID, RequestID: requestID,
 		Date: date, ChatID: chatID, Model: modelName, Scenario: "chat", SessionID: sessionID,
 		TokensIn: tIn, TokensOut: tOut,
+		EstimatedCost: (float64(tIn) + float64(tOut)) / 1000 * s.EstimatedCostPer1K,
+		Estimated:     tIn+tOut == 0, EstimationPolicyVersion: "v1",
 	}); err != nil {
 		logger.Warn("metering detail write failed", "tenant_id", key.TenantID, "user_id", key.UserID, "request_id", requestID, "error", err)
 	}
@@ -162,8 +184,8 @@ func completionUsage(resp *ragflow.CompletionResponse) (int64, int64) {
 	return resp.Usage.PromptTokens, resp.Usage.CompletionTokens
 }
 
-// knowledgeOpsStreamCapture passes SSE through unchanged while accumulating
-// the response content, reference count and token usage for the quality ledger.
+// knowledgeOpsStreamCapture suppresses provider thinking output while
+// accumulating visible content, references and token usage for the quality ledger.
 type knowledgeOpsStreamCapture struct {
 	w         io.Writer
 	answer    strings.Builder
@@ -172,73 +194,162 @@ type knowledgeOpsStreamCapture struct {
 	tokensIn  int64
 	tokensOut int64
 	sawError  bool
+	thinking  bool
+	pending   []byte
 }
 
 func (c *knowledgeOpsStreamCapture) Write(p []byte) (int, error) {
-	for _, line := range strings.Split(string(p), "\n") {
-		c.observe(line)
+	c.pending = append(c.pending, p...)
+	for {
+		index := bytes.IndexByte(c.pending, '\n')
+		if index < 0 {
+			break
+		}
+		line := string(c.pending[:index])
+		c.pending = c.pending[index+1:]
+		if err := c.writeLine(line); err != nil {
+			return 0, err
+		}
 	}
-	return c.w.Write(p)
+	return len(p), nil
 }
 
-func (c *knowledgeOpsStreamCapture) observe(line string) {
+func (c *knowledgeOpsStreamCapture) writeLine(line string) error {
+	_, err := c.w.Write([]byte(c.sanitizeSSELine(line) + "\n"))
+	return err
+}
+
+func (c *knowledgeOpsStreamCapture) Flush() error {
+	if c.thinking {
+		c.pending = nil
+		return nil
+	}
+	if len(c.pending) == 0 {
+		return nil
+	}
+	line := string(c.pending)
+	c.pending = nil
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "data:") {
+		payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+		if payload != "" && payload != "[DONE]" {
+			var frame map[string]any
+			if json.Unmarshal([]byte(payload), &frame) != nil {
+				return nil
+			}
+		}
+	}
+	return c.writeLine(line)
+}
+
+func (c *knowledgeOpsStreamCapture) sanitizeSSELine(line string) string {
 	sseutil.TrackUsage(line, &c.tokensIn, &c.tokensOut)
 	trimmed := strings.TrimSpace(line)
 	if !strings.HasPrefix(trimmed, "data:") {
-		return
+		return line
 	}
 	payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 	if payload == "" || payload == "[DONE]" {
-		return
+		return line
 	}
 	var frame map[string]any
 	if json.Unmarshal([]byte(payload), &frame) != nil {
-		return
+		return line
 	}
 	if frame["error"] != nil {
 		c.sawError = true
-		return
+		return line
 	}
-	inner, ok := frame["data"].(map[string]any)
-	if !ok {
-		if choices, ok := frame["choices"].([]any); ok && len(choices) > 0 {
-			if choice, ok := choices[0].(map[string]any); ok {
-				if delta, ok := choice["delta"].(map[string]any); ok {
-					if content, ok := delta["content"].(string); ok {
-						c.answer.WriteString(content)
-					}
-				}
-			}
-		}
-		return
+	event := frame
+	if inner, ok := frame["data"].(map[string]any); ok {
+		event = inner
 	}
-	if content, ok := inner["content"].(string); ok {
-		c.answer.WriteString(content)
+	if c.boolFlag(event, "start_to_think") || c.boolFlag(frame, "start_to_think") {
+		c.thinking = true
 	}
-	if answer, ok := inner["answer"].(string); ok {
-		c.answer.WriteString(answer)
+	if c.boolFlag(event, "end_to_think") || c.boolFlag(frame, "end_to_think") {
+		c.thinking = false
 	}
-	if choices, ok := inner["choices"].([]any); ok && len(choices) > 0 {
-		if choice, ok := choices[0].(map[string]any); ok {
-			if delta, ok := choice["delta"].(map[string]any); ok {
-				if content, ok := delta["content"].(string); ok {
-					c.answer.WriteString(content)
-				}
-			}
-		}
+	changed := false
+	if value, changedContent := c.observeText(event["content"]); changedContent {
+		event["content"] = value
+		changed = true
 	}
-	if citations, ok := inner["reference"].([]any); ok {
+	if value, changedAnswer := c.observeText(event["answer"]); changedAnswer {
+		event["answer"] = value
+		changed = true
+	}
+	if changedChoice := c.observeChoices(event["choices"]); changedChoice {
+		changed = true
+	}
+	if citations, ok := event["reference"].([]any); ok {
 		c.citations = len(citations)
 		c.reference = appendCitationObjects(c.reference, citations)
-	} else if references, ok := inner["references"].([]any); ok {
+	} else if references, ok := event["references"].([]any); ok {
 		c.citations = len(references)
 		c.reference = appendCitationObjects(c.reference, references)
-	} else if reference, ok := inner["reference"].(map[string]any); ok {
+	} else if reference, ok := event["reference"].(map[string]any); ok {
 		if chunks, ok := reference["chunks"].([]any); ok {
 			c.citations = len(chunks)
 			c.reference = appendCitationObjects(c.reference, chunks)
 		}
 	}
+	if !changed {
+		return line
+	}
+	sanitized, err := json.Marshal(frame)
+	if err != nil {
+		return line
+	}
+	return trimmed[:len(trimmed)-len(payload)] + string(sanitized)
+}
+
+func (c *knowledgeOpsStreamCapture) boolFlag(event map[string]any, key string) bool {
+	value, ok := event[key].(bool)
+	return ok && value
+}
+
+func (c *knowledgeOpsStreamCapture) observeChoices(choices any) bool {
+	values, ok := choices.([]any)
+	if !ok || len(values) == 0 {
+		return false
+	}
+	return c.observeChoice(values[0])
+}
+
+func (c *knowledgeOpsStreamCapture) observeChoice(choice any) bool {
+	choiceMap, ok := choice.(map[string]any)
+	if !ok {
+		return false
+	}
+	delta, ok := choiceMap["delta"].(map[string]any)
+	if !ok {
+		delta, ok = choiceMap["message"].(map[string]any)
+		if !ok {
+			return false
+		}
+	}
+	if value, changed := c.observeText(delta["content"]); changed {
+		delta["content"] = value
+		return true
+	}
+	return false
+}
+
+func (c *knowledgeOpsStreamCapture) observeText(value any) (any, bool) {
+	text, ok := value.(string)
+	if !ok {
+		return value, false
+	}
+	if c.thinking {
+		return "", true
+	}
+	visible := visibleRAGFlowAnswer(text)
+	c.answer.WriteString(visible)
+	if visible == text {
+		return text, false
+	}
+	return visible, true
 }
 
 func appendCitationObjects(current []map[string]interface{}, values []any) []map[string]interface{} {

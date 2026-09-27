@@ -404,7 +404,14 @@ func (s *Service) AgentChatCompletion(ctx context.Context, tenantID, agentID, us
 	resp, err := s.RAGFlow.AgentChatCompletion(ctx, ragflow.CompletionRequest{ChatID: agentID, SessionID: sessionID, Messages: messages, Files: files})
 	if err != nil {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, "", 0, 0, 0, int64(time.Since(startedAt).Milliseconds())))
+		s.recordFailedAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, "", err.Error())
 		return nil, httperr.New(502, 50289, "ragflow agent completion failed")
+	}
+	if resp != nil {
+		for index := range resp.Choices {
+			resp.Choices[index].Message.Content = visibleRAGFlowAnswer(resp.Choices[index].Message.Content)
+		}
+		resp.Answer = visibleRAGFlowAnswer(resp.Answer)
 	}
 	if resp == nil || len(resp.Choices) == 0 || strings.TrimSpace(resp.Choices[0].Message.Content) == "" {
 		return nil, httperr.New(502, 50289, "ragflow agent completion returned no content")
@@ -418,7 +425,10 @@ func (s *Service) AgentChatCompletion(ctx context.Context, tenantID, agentID, us
 	if resp != nil && resp.Usage != nil {
 		tokensIn, tokensOut = resp.Usage.PromptTokens, resp.Usage.CompletionTokens
 	}
+	s.recordCitationReferences(ctx, tenantID, agentID, sessionID, requestID, resp.Reference)
+	citations = citationCountFromMaps(resp.Reference)
 	s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, answer, citations, tokensIn, tokensOut, int64(time.Since(startedAt).Milliseconds())))
+	s.recordAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, answer, citationsFromProviderReferences(resp.Reference))
 	return resp, nil
 }
 
@@ -439,14 +449,20 @@ func (s *Service) StreamAgentChatCompletion(ctx context.Context, tenantID, agent
 	question := lastUserQuestion(messages)
 	capture := &knowledgeOpsStreamCapture{w: w}
 	err = s.RAGFlow.StreamAgentChatCompletion(ctx, ragflow.CompletionRequest{ChatID: agentID, SessionID: sessionID, Messages: messages, Files: files}, capture)
+	if flushErr := capture.Flush(); flushErr != nil {
+		err = flushErr
+	}
 	if err != nil {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, "", 0, 0, 0, int64(time.Since(startedAt).Milliseconds())))
+		s.recordFailedAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), err.Error())
 		return err
 	}
 	if capture.sawError {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, "", 0, 0, 0, int64(time.Since(startedAt).Milliseconds())))
+		s.recordFailedAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), "agent stream returned an error")
 	} else {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), int64(capture.citations), capture.tokensIn, capture.tokensOut, int64(time.Since(startedAt).Milliseconds())))
+		s.recordAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), citationsFromProviderReferences(capture.reference))
 		s.meterAgentCompletion(ctx, tenantID, a.OwnerID, requestID, &ragflow.CompletionResponse{Usage: &ragflow.CompletionUsage{PromptTokens: capture.tokensIn, CompletionTokens: capture.tokensOut}})
 	}
 	return nil
@@ -468,5 +484,7 @@ func (s *Service) meterAgentCompletion(ctx context.Context, tenantID, userID, re
 	_, _ = s.Store.RecordCostMetric(ctx, &model.CostMetric{
 		TenantID: tenantID, UserID: userID, RequestID: requestID, KeyID: "",
 		Date: date, Model: "agent", Scenario: "agent", TokensIn: tIn, TokensOut: tOut,
+		EstimatedCost: (float64(tIn) + float64(tOut)) / 1000 * s.EstimatedCostPer1K,
+		Estimated:     tIn+tOut == 0, EstimationPolicyVersion: "v1",
 	})
 }

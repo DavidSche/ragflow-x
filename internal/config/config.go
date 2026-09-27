@@ -28,6 +28,7 @@ type Config struct {
 	Runtime             Runtime             `yaml:"runtime"`
 	ConversationRouting ConversationRouting `yaml:"conversation_routing"`
 	OIDC                OIDC                `yaml:"oidc"`
+	IM                  IM                  `yaml:"im"`
 }
 
 // OIDC configures an enterprise authorization-code flow. Users are matched to
@@ -48,6 +49,66 @@ type OIDC struct {
 	RequireEmailVerified bool     `yaml:"require_email_verified"`
 	PostLoginPath        string   `yaml:"post_login_path"`
 	HTTPTimeoutSec       int      `yaml:"http_timeout_sec"`
+}
+
+// IM configures interactive instant-message channels. The first adapter is
+// WeCom; its callback must map to an existing active local user and never
+// provisions identities automatically. Feishu and DingTalk follow the same
+// contract (doc/125 §2).
+type IM struct {
+	WeCom    WeCom    `yaml:"wecom"`
+	Feishu   Feishu   `yaml:"feishu"`
+	DingTalk DingTalk `yaml:"dingtalk"`
+}
+
+type WeCom struct {
+	Enabled         bool   `yaml:"enabled"`
+	CorpID          string `yaml:"corp_id"`
+	AgentID         int64  `yaml:"agent_id"`
+	Token           string `yaml:"token"`
+	EncodingAESKey  string `yaml:"encoding_aes_key"`
+	AppSecret       string `yaml:"app_secret"`
+	TenantID        string `yaml:"tenant_id"`
+	DefaultChatID   string `yaml:"default_chat_id"`
+	IdentityIssuer  string `yaml:"identity_issuer"`
+	HTTPTimeoutSec  int    `yaml:"http_timeout_sec"`
+	MaxMessageRunes int    `yaml:"max_message_runes"`
+	APIBaseURL      string `yaml:"api_base_url"`
+}
+
+// Feishu configures the Feishu (Lark) custom-app event subscription. The
+// callback maps an already-provisioned OidcIdentity (issuer
+// "feishu:app:<app_id>" by default) to a local user; identities are never
+// provisioned from the channel.
+type Feishu struct {
+	Enabled           bool   `yaml:"enabled"`
+	AppID             string `yaml:"app_id"`
+	AppSecret         string `yaml:"app_secret"`
+	VerificationToken string `yaml:"verification_token"`
+	EncryptKey        string `yaml:"encrypt_key"`
+	TenantID          string `yaml:"tenant_id"`
+	DefaultChatID     string `yaml:"default_chat_id"`
+	IdentityIssuer    string `yaml:"identity_issuer"`
+	HTTPTimeoutSec    int    `yaml:"http_timeout_sec"`
+	MaxMessageRunes   int    `yaml:"max_message_runes"`
+	APIBaseURL        string `yaml:"api_base_url"`
+}
+
+// DingTalk configures the DingTalk enterprise-internal robot HTTP callback
+// (timestamp + HMAC-SHA256 signature). Identity mapping follows the same
+// fail-closed contract as WeCom and Feishu.
+type DingTalk struct {
+	Enabled         bool   `yaml:"enabled"`
+	CorpID          string `yaml:"corp_id"`
+	AppKey          string `yaml:"app_key"`
+	AppSecret       string `yaml:"app_secret"`
+	RobotCode       string `yaml:"robot_code"`
+	TenantID        string `yaml:"tenant_id"`
+	DefaultChatID   string `yaml:"default_chat_id"`
+	IdentityIssuer  string `yaml:"identity_issuer"`
+	HTTPTimeoutSec  int    `yaml:"http_timeout_sec"`
+	MaxMessageRunes int    `yaml:"max_message_runes"`
+	APIBaseURL      string `yaml:"api_base_url"`
 }
 
 // Runtime controls cross-instance configuration apply reporting. ReportToken
@@ -143,6 +204,11 @@ type Observability struct {
 	OTLPEndpoint      string   `yaml:"otel_endpoint"`
 	ServiceName       string   `yaml:"service_name"`
 	SampleRatio       float64  `yaml:"sample_ratio"`
+	// TraceUIURLTemplate is the deep-link template into the tracing UI
+	// (Grafana Tempo / Jaeger, doc/104 §15). Placeholders {trace_id} and
+	// {span_id} are substituted before the pointer is persisted; empty
+	// disables link generation so evidence only carries raw ids.
+	TraceUIURLTemplate string `yaml:"otel_trace_ui_url_template"`
 }
 
 // Usage controls usage-cost attribution. Estimated cost is derived from
@@ -266,9 +332,17 @@ type RouteGate struct {
 }
 
 type RouteEvidenceThreshold struct {
-	MinHighConfidence int     `yaml:"min_high_confidence_samples"`
-	MinWilsonLower    float64 `yaml:"min_wilson_95_lower_bound"`
-	MaxECE            float64 `yaml:"max_ece"`
+	MinHighConfidence        int     `yaml:"min_high_confidence_samples"`
+	MinWilsonLower           float64 `yaml:"min_wilson_95_lower_bound"`
+	MaxECE                   float64 `yaml:"max_ece"`
+	MinCandidateRecall       float64 `yaml:"min_candidate_recall"`
+	MaxNoMatchRate           float64 `yaml:"max_no_match_rate"`
+	MaxWrongRouteRate        float64 `yaml:"max_wrong_route_rate"`
+	MaxAbstainRate           float64 `yaml:"max_abstain_rate"`
+	MaxRouteP95Ms            int64   `yaml:"max_route_p95_ms"`
+	MaxRouteCost             float64 `yaml:"max_route_cost"`
+	MaxWrongExecutionCount   int     `yaml:"max_wrong_execution_count"`
+	MaxAutoExecuteWrongCount int     `yaml:"max_auto_execute_wrong_count"`
 }
 
 type RouteRerank struct {
@@ -382,7 +456,11 @@ func defaults() *Config {
 			User: "ragflow_x", Password: "change-me", Name: "ragflow_x", SSLMode: "disable",
 			DSN: "file:./ragflow-x.db?cache=shared",
 		},
-		RAGFlow: RAGFlow{Provider: "http", BaseURL: "http://192.168.4.151:8001", Timeout: 30, MaxConns: 20, AutoRegister: true, TaskPollSeconds: 15, RetryMaxRetries: 3, RetryBackoffMs: 100},
+		// The RAGFlow engine address is deployment-specific and must be provided
+		// explicitly (config file or RGX_RAGFLOW_BASE_URL); defaulting to the
+		// loopback placeholder keeps internal network topology out of the
+		// committed source (doc/118 F-08).
+		RAGFlow: RAGFlow{Provider: "http", BaseURL: "http://127.0.0.1:8001", Timeout: 30, MaxConns: 20, AutoRegister: true, TaskPollSeconds: 15, RetryMaxRetries: 3, RetryBackoffMs: 100},
 		Logging: Logging{Level: "info", Format: "json", OutputPath: "stdout", RotateDaily: true, RotationCount: 7},
 		Setup:   Setup{Enabled: true, SecretsFile: "./config/runtime.secrets.json", RSAKeyPath: "./config/rsa_setup.pem", RateLimitPerMin: 10},
 		Gateway: Gateway{NonStreamTimeoutSec: 120, StreamHeaderTimeoutSec: 30, StreamTimeoutSec: 0, MaxConns: 20, RateLimitPerMin: 120},
@@ -425,14 +503,23 @@ func defaults() *Config {
 		Approval:  Approval{DefaultExpireHours: 72, ExecutionMaxRetries: 3, ExpireScanIntervalSec: 3600, RetentionDays: 365, PolicyCacheTTLSec: 30},
 		Runtime:   Runtime{ReportToken: "", HeartbeatTimeoutSec: 60},
 		OIDC:      OIDC{RequireEmailVerified: true},
+		IM:        IM{WeCom: WeCom{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, Feishu: Feishu{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, DingTalk: DingTalk{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}},
 		ConversationRouting: ConversationRouting{
 			Mode: "recommend_only", ConfidenceThreshold: 0.86, ConfidenceMargin: 0.12,
 			MinimumCandidates: 2, ReadinessThreshold: 0.80, TotalTimeoutMs: 1500, CatalogTTLSec: 300,
 			CandidateLimit: 5, ResponseTopK: 3,
 			Rerank: RouteRerank{TimeoutMs: 1200, TopK: 5, MinBaseScore: 0.05},
 			Gate: RouteGate{
-				Pilot:      RouteEvidenceThreshold{MinHighConfidence: 24, MinWilsonLower: 0.85, MaxECE: 0.07},
-				Production: RouteEvidenceThreshold{MinHighConfidence: 24, MinWilsonLower: 0.99, MaxECE: 0.05},
+				Pilot: RouteEvidenceThreshold{
+					MinHighConfidence: 24, MinWilsonLower: 0.85, MaxECE: 0.07,
+					MinCandidateRecall: 0.90, MaxNoMatchRate: 0.10, MaxWrongRouteRate: 0.02,
+					MaxAbstainRate: 0.20, MaxRouteP95Ms: 1500, MaxRouteCost: 0.01,
+				},
+				Production: RouteEvidenceThreshold{
+					MinHighConfidence: 24, MinWilsonLower: 0.99, MaxECE: 0.05,
+					MinCandidateRecall: 0.95, MaxNoMatchRate: 0.05, MaxWrongRouteRate: 0.01,
+					MaxAbstainRate: 0.15, MaxRouteP95Ms: 1200, MaxRouteCost: 0.01,
+				},
 			},
 		},
 	}
@@ -507,6 +594,40 @@ func applyEnv(cfg *Config) {
 	setBool(&cfg.OIDC.RequireEmailVerified, "RGX_OIDC_REQUIRE_EMAIL_VERIFIED")
 	setStr(&cfg.OIDC.PostLoginPath, "RGX_OIDC_POST_LOGIN_PATH")
 	setInt(&cfg.OIDC.HTTPTimeoutSec, "RGX_OIDC_HTTP_TIMEOUT_SEC")
+	setBool(&cfg.IM.WeCom.Enabled, "RGX_WECOM_ENABLED")
+	setStr(&cfg.IM.WeCom.CorpID, "RGX_WECOM_CORP_ID")
+	setInt64(&cfg.IM.WeCom.AgentID, "RGX_WECOM_AGENT_ID")
+	setStr(&cfg.IM.WeCom.Token, "RGX_WECOM_TOKEN")
+	setStr(&cfg.IM.WeCom.EncodingAESKey, "RGX_WECOM_ENCODING_AES_KEY")
+	setStr(&cfg.IM.WeCom.AppSecret, "RGX_WECOM_APP_SECRET")
+	setStr(&cfg.IM.WeCom.TenantID, "RGX_WECOM_TENANT_ID")
+	setStr(&cfg.IM.WeCom.DefaultChatID, "RGX_WECOM_DEFAULT_CHAT_ID")
+	setStr(&cfg.IM.WeCom.IdentityIssuer, "RGX_WECOM_IDENTITY_ISSUER")
+	setInt(&cfg.IM.WeCom.HTTPTimeoutSec, "RGX_WECOM_HTTP_TIMEOUT_SEC")
+	setInt(&cfg.IM.WeCom.MaxMessageRunes, "RGX_WECOM_MAX_MESSAGE_RUNES")
+	setStr(&cfg.IM.WeCom.APIBaseURL, "RGX_WECOM_API_BASE_URL")
+	setBool(&cfg.IM.Feishu.Enabled, "RGX_FEISHU_ENABLED")
+	setStr(&cfg.IM.Feishu.AppID, "RGX_FEISHU_APP_ID")
+	setStr(&cfg.IM.Feishu.AppSecret, "RGX_FEISHU_APP_SECRET")
+	setStr(&cfg.IM.Feishu.VerificationToken, "RGX_FEISHU_VERIFICATION_TOKEN")
+	setStr(&cfg.IM.Feishu.EncryptKey, "RGX_FEISHU_ENCRYPT_KEY")
+	setStr(&cfg.IM.Feishu.TenantID, "RGX_FEISHU_TENANT_ID")
+	setStr(&cfg.IM.Feishu.DefaultChatID, "RGX_FEISHU_DEFAULT_CHAT_ID")
+	setStr(&cfg.IM.Feishu.IdentityIssuer, "RGX_FEISHU_IDENTITY_ISSUER")
+	setInt(&cfg.IM.Feishu.HTTPTimeoutSec, "RGX_FEISHU_HTTP_TIMEOUT_SEC")
+	setInt(&cfg.IM.Feishu.MaxMessageRunes, "RGX_FEISHU_MAX_MESSAGE_RUNES")
+	setStr(&cfg.IM.Feishu.APIBaseURL, "RGX_FEISHU_API_BASE_URL")
+	setBool(&cfg.IM.DingTalk.Enabled, "RGX_DINGTALK_ENABLED")
+	setStr(&cfg.IM.DingTalk.CorpID, "RGX_DINGTALK_CORP_ID")
+	setStr(&cfg.IM.DingTalk.AppKey, "RGX_DINGTALK_APP_KEY")
+	setStr(&cfg.IM.DingTalk.AppSecret, "RGX_DINGTALK_APP_SECRET")
+	setStr(&cfg.IM.DingTalk.RobotCode, "RGX_DINGTALK_ROBOT_CODE")
+	setStr(&cfg.IM.DingTalk.TenantID, "RGX_DINGTALK_TENANT_ID")
+	setStr(&cfg.IM.DingTalk.DefaultChatID, "RGX_DINGTALK_DEFAULT_CHAT_ID")
+	setStr(&cfg.IM.DingTalk.IdentityIssuer, "RGX_DINGTALK_IDENTITY_ISSUER")
+	setInt(&cfg.IM.DingTalk.HTTPTimeoutSec, "RGX_DINGTALK_HTTP_TIMEOUT_SEC")
+	setInt(&cfg.IM.DingTalk.MaxMessageRunes, "RGX_DINGTALK_MAX_MESSAGE_RUNES")
+	setStr(&cfg.IM.DingTalk.APIBaseURL, "RGX_DINGTALK_API_BASE_URL")
 	setStrSlice(&cfg.Security.AllowedOrigins, "RGX_CORS_ALLOWED_ORIGINS")
 	setBool(&cfg.Security.AllowCredentials, "RGX_SECURITY_ALLOW_CREDENTIALS")
 	setInt64(&cfg.Security.MaxRequestBytes, "RGX_SECURITY_MAX_REQUEST_BYTES")
@@ -524,6 +645,7 @@ func applyEnv(cfg *Config) {
 	setBool(&cfg.Observability.TracingEnabled, "RGX_TRACING_ENABLED")
 	setStr(&cfg.Observability.OTLPEndpoint, "RGX_OTEL_ENDPOINT")
 	setStr(&cfg.Observability.ServiceName, "RGX_OTEL_SERVICE_NAME")
+	setStr(&cfg.Observability.TraceUIURLTemplate, "RGX_OTEL_TRACE_UI_URL_TEMPLATE")
 	setFloat64(&cfg.Observability.SampleRatio, "RGX_OTEL_SAMPLE_RATIO")
 	setFloat64(&cfg.Usage.CostPer1KTokens, "RGX_USAGE_COST_PER_1K")
 	setStr(&cfg.Usage.Currency, "RGX_USAGE_CURRENCY")

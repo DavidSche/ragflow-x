@@ -325,19 +325,20 @@ func datasetCSV(list []DatasetSummary) ([]byte, error) {
 
 // DocumentSummary is the API-facing representation of a document.
 type DocumentSummary struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Status      string  `json:"status"`
-	Enabled     bool    `json:"enabled"`
-	ChunkCount  int64   `json:"chunk_count"`
-	TokenCount  int64   `json:"token_count"`
-	Progress    float64 `json:"progress"`
-	ProgressMsg string  `json:"progress_msg"`
-	CreatedAt   int64   `json:"created_at"`
-	UpdatedAt   int64   `json:"updated_at"`
-	Size        int64   `json:"size"`
-	OwnedByMe   bool    `json:"owned_by_me,omitempty"`
-	ParseTaskID string  `json:"parse_task_id,omitempty"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Status      string                 `json:"status"`
+	Enabled     bool                   `json:"enabled"`
+	ChunkCount  int64                  `json:"chunk_count"`
+	TokenCount  int64                  `json:"token_count"`
+	Progress    float64                `json:"progress"`
+	ProgressMsg string                 `json:"progress_msg"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt   int64                  `json:"created_at"`
+	UpdatedAt   int64                  `json:"updated_at"`
+	Size        int64                  `json:"size"`
+	OwnedByMe   bool                   `json:"owned_by_me,omitempty"`
+	ParseTaskID string                 `json:"parse_task_id,omitempty"`
 }
 
 func summaryFromRAGDoc(doc ragflow.Document) DocumentSummary {
@@ -350,6 +351,7 @@ func summaryFromRAGDoc(doc ragflow.Document) DocumentSummary {
 		TokenCount:  doc.TokenCount,
 		Progress:    doc.Progress,
 		ProgressMsg: doc.ProgressMsg,
+		Metadata:    doc.Metadata,
 		CreatedAt:   doc.CreateTime,
 		UpdatedAt:   doc.UpdateTime,
 		Size:        doc.Size,

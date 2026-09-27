@@ -118,6 +118,10 @@ type DatasetLink struct {
 	LastReviewedAt   *time.Time `gorm:"column:last_reviewed_at" json:"last_reviewed_at"`
 	ReviewStatus     string     `gorm:"column:review_status;size:16;not null;default:none;index" json:"review_status"`
 	QualityScore     int        `gorm:"column:quality_score;not null;default:0" json:"quality_score"`
+	// PushdownEnabled gates retrieval metadata pushdown for this dataset
+	// (doc/123 §3): when true, the dataset's sensitivity is synced to
+	// RAGFlow meta_fields and participates in metadata_condition filtering.
+	PushdownEnabled bool `gorm:"column:pushdown_enabled;not null;default:false" json:"pushdown_enabled"`
 }
 
 // TableName is the physical table name.

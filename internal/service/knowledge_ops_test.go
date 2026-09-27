@@ -65,3 +65,77 @@ func TestKnowledgeOpsStreamCaptureAccumulatesSSE(t *testing.T) {
 		t.Fatalf("unexpected captured metadata: %+v", capture)
 	}
 }
+
+func TestKnowledgeOpsStreamCaptureSuppressesThinkingSSE(t *testing.T) {
+	var output strings.Builder
+	capture := &knowledgeOpsStreamCapture{w: &output}
+	frames := []string{
+		`data: {"data":{"start_to_think":true,"answer":""}}` + "\n",
+		`data: {"data":{"answer":"private reasoning"}}` + "\n",
+		`data: {"data":{"end_to_think":true,"answer":""}}` + "\n",
+		`data: {"data":{"answer":"最终答案","reference":[{"chunk":1}]}}` + "\n",
+		"data: [DONE]\n",
+	}
+	for _, frame := range frames {
+		if _, err := capture.Write([]byte(frame)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := capture.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "private reasoning") {
+		t.Fatalf("stream retained thinking: %q", output.String())
+	}
+	if !strings.Contains(output.String(), `data: {"data":{"answer":"最终答案","reference":[{"chunk":1}]}}`+"\n") {
+		t.Fatalf("visible stream answer changed: %q", output.String())
+	}
+	if capture.answer.String() != "最终答案" {
+		t.Fatalf("unexpected captured answer: %q", capture.answer.String())
+	}
+	if capture.citations != 1 {
+		t.Fatalf("unexpected citations: %+v", capture)
+	}
+}
+
+func TestKnowledgeOpsStreamCaptureSuppressesOpenAIThinkingSSE(t *testing.T) {
+	var output strings.Builder
+	capture := &knowledgeOpsStreamCapture{w: &output}
+	frames := []string{
+		`data: {"start_to_think":true}` + "\n",
+		`data: {"choices":[{"delta":{"content":"private reasoning"}}]}` + "\n",
+		`data: {"end_to_think":true}` + "\n",
+		`data: {"choices":[{"delta":{"content":"最终答案"}}]}` + "\n",
+	}
+	for _, frame := range frames {
+		if _, err := capture.Write([]byte(frame)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := capture.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "private reasoning") {
+		t.Fatalf("stream retained thinking: %q", output.String())
+	}
+	if !strings.Contains(output.String(), `data: {"choices":[{"delta":{"content":"最终答案"}}]}`+"\n") {
+		t.Fatalf("visible stream answer changed: %q", output.String())
+	}
+	if capture.answer.String() != "最终答案" {
+		t.Fatalf("unexpected captured answer: %q", capture.answer.String())
+	}
+}
+
+func TestKnowledgeOpsStreamCaptureFlushDropsIncompleteThinking(t *testing.T) {
+	var output strings.Builder
+	capture := &knowledgeOpsStreamCapture{w: &output}
+	if _, err := capture.Write([]byte(`data: {"data":{"start_to_think":true,"answer":"private`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := capture.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "" || capture.answer.String() != "" {
+		t.Fatalf("incomplete thinking leaked: output=%q answer=%q", output.String(), capture.answer.String())
+	}
+}

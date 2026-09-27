@@ -364,6 +364,9 @@ func (s *Service) UpdateConversationAssistant(ctx context.Context, actorID, tena
 	}); err != nil {
 		return nil, err
 	}
+	if err := s.rerunRouteEvaluationForChange(ctx, actorID, tenantID, routeEvaluationSourceMetadataChange); err != nil {
+		return nil, err
+	}
 	return &ConversationAssistant{
 		ID: item.TargetID, Kind: item.Kind, Name: item.Name, Description: item.Description,
 		Categories: decodeStringArray(item.CategoriesJSON), Capabilities: decodeStringArray(item.CapabilitiesJSON),
@@ -459,6 +462,9 @@ func (s *Service) UpdateConversationAssistantGovernance(ctx context.Context, act
 		"kind": kind, "governance_status": item.GovernanceStatus,
 		"discoverable": item.Discoverable, "catalog_version": item.CatalogVersion,
 	}); err != nil {
+		return nil, err
+	}
+	if err := s.rerunRouteEvaluationForChange(ctx, actorID, tenantID, routeEvaluationSourceMetadataChange); err != nil {
 		return nil, err
 	}
 	return toConversationAssistant(item), nil

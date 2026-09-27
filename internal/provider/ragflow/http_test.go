@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -109,19 +110,107 @@ func TestP0_PROVIDER_001_HTTPClientForwardsRequestID(t *testing.T) {
 }
 
 func TestHTTPClientEscapesDocumentMetadataResourceIDs(t *testing.T) {
-	var gotPath string
+	var gotPaths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.EscapedPath()
+		gotPaths = append(gotPaths, r.URL.EscapedPath())
+		if r.Method == http.MethodGet {
+			writeEnvelope(t, w, map[string]interface{}{
+				"docs": []map[string]interface{}{{
+					"id": "doc#1", "meta_fields": map[string]interface{}{"keep": true},
+				}},
+				"total": 1,
+			})
+			return
+		}
 		writeEnvelope(t, w, map[string]interface{}{})
 	}))
 	defer srv.Close()
 
 	client := NewHTTPClient(srv.URL, "key", 2*time.Second, 1)
-	if err := client.UpdateDocumentMetadata(context.Background(), "id/with:slash?query", "doc#1", nil); err != nil {
+	if err := client.UpdateDocumentMetadata(context.Background(), "id/with:slash?query", "doc#1", map[string]interface{}{"added": 1}); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/datasets/id%2Fwith:slash%3Fquery/documents/doc%231/metadata/config" {
-		t.Fatalf("metadata resource id was not escaped: %s", gotPath)
+	if len(gotPaths) != 2 || gotPaths[0] != "/api/v1/datasets/id%2Fwith:slash%3Fquery/documents" || gotPaths[1] != "/api/v1/datasets/id%2Fwith:slash%3Fquery/documents/metadatas" {
+		t.Fatalf("metadata resource id was not escaped: %s", strings.Join(gotPaths, " -> "))
+	}
+}
+
+func TestHTTPClientDocumentMetadataDiff(t *testing.T) {
+	var requests []struct {
+		method string
+		path   string
+		body   string
+	}
+	metadata := map[string]interface{}{"keep": true, "change": "old", "remove": float64(1)}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests = append(requests, struct {
+			method string
+			path   string
+			body   string
+		}{r.Method, r.URL.EscapedPath(), string(body)})
+		if r.Method == http.MethodGet {
+			writeEnvelope(t, w, map[string]interface{}{
+				"docs": []map[string]interface{}{{
+					"id": "doc-a", "meta_fields": metadata,
+				}},
+				"total": 1,
+			})
+			return
+		}
+		metadata = map[string]interface{}{"keep": true, "change": "new", "add": "value", "remove": float64(1)}
+		writeEnvelope(t, w, map[string]interface{}{})
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "k", 2*time.Second, 2)
+	if err := client.UpdateDocumentMetadata(context.Background(), "ds-1", "doc-a", map[string]interface{}{
+		"keep":   true,
+		"change": "new",
+		"add":    "value",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 || requests[0].method != http.MethodGet || requests[1].method != http.MethodPatch {
+		t.Fatalf("expected one metadata read and one patch, got %+v", requests)
+	}
+	var patch struct {
+		Selector struct {
+			DocumentIDs []string `json:"document_ids"`
+		} `json:"selector"`
+		Updates []struct {
+			Key   string      `json:"key"`
+			Value interface{} `json:"value"`
+		} `json:"updates"`
+		Deletes []struct {
+			Key string `json:"key"`
+		} `json:"deletes"`
+	}
+	if err := json.Unmarshal([]byte(requests[1].body), &patch); err != nil {
+		t.Fatal(err)
+	}
+	wantUpdates := []struct {
+		Key   string      `json:"key"`
+		Value interface{} `json:"value"`
+	}{{Key: "add", Value: "value"}, {Key: "change", Value: "new"}}
+	wantDeletes := []struct {
+		Key string `json:"key"`
+	}{{Key: "remove"}}
+	if requests[1].path != "/api/v1/datasets/ds-1/documents/metadatas" ||
+		!reflect.DeepEqual(patch.Selector.DocumentIDs, []string{"doc-a"}) ||
+		!reflect.DeepEqual(patch.Updates, wantUpdates) ||
+		!reflect.DeepEqual(patch.Deletes, wantDeletes) {
+		t.Fatalf("metadata patch: path=%s body=%s", requests[1].path, requests[1].body)
+	}
+
+	requests = nil
+	if err := client.UpdateDocumentMetadata(context.Background(), "ds-1", "doc-a", map[string]interface{}{
+		"keep": true, "change": "new", "add": "value", "remove": float64(1),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 1 || requests[0].method != http.MethodGet {
+		t.Fatalf("unchanged metadata must not patch RAGFlow: %+v", requests)
 	}
 }
 
@@ -130,7 +219,7 @@ func TestHTTPClientEscapesDocumentMetadataResourceIDs(t *testing.T) {
 // process_begin_at/process_duration fields still unmarshal (some RAGFlow
 // versions return numbers, others strings).
 func TestDocumentFlexibleProcessFields(t *testing.T) {
-	raw := `[{"id":"d1","name":"a.pdf","run":"3","chunk_count":5,"token_count":10,"process_begin_at":1720000000,"process_duration":1.5,"progress":1,"progress_msg":"ok"}]`
+	raw := `[{"id":"d1","name":"a.pdf","run":"3","chunk_count":5,"token_count":10,"process_begin_at":1720000000,"process_duration":1.5,"progress":1,"progress_msg":"ok","meta_fields":{"source":"contract"}}]`
 	var out []Document
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		t.Fatalf("unmarshal docs: %v", err)
@@ -140,6 +229,9 @@ func TestDocumentFlexibleProcessFields(t *testing.T) {
 	}
 	if string(out[0].ProcessDuration) != "1.5" {
 		t.Fatalf("process_duration: %q", out[0].ProcessDuration)
+	}
+	if out[0].Metadata["source"] != "contract" {
+		t.Fatalf("metadata: %+v", out[0].Metadata)
 	}
 }
 
@@ -202,13 +294,15 @@ func TestP0_PROVIDER_001_HTTPClientDocumentOps(t *testing.T) {
 		t.Fatalf("set status body: %s", gotBody)
 	}
 
-	if err := client.UpdateDocumentMetadata(ctx, "ds-1", "doc-a", map[string]interface{}{"k": "v"}); err != nil {
+	if err := client.UpdateDocumentMetadata(ctx, "ds-1", "doc-a", map[string]interface{}{"k": "v", "removed": ""}); err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/api/v1/datasets/ds-1/documents/doc-a/metadata/config" || gotMethod != http.MethodPut {
+	if gotPath != "/api/v1/datasets/ds-1/documents/metadatas" || gotMethod != http.MethodPatch {
 		t.Fatalf("metadata: path=%s method=%s", gotPath, gotMethod)
 	}
-	if !strings.Contains(string(gotBody), "metadata") {
+	if !strings.Contains(string(gotBody), `"selector":{"document_ids":["doc-a"]}`) ||
+		!strings.Contains(string(gotBody), `"updates":[{"key":"k","value":"v"},{"key":"removed","value":""}]`) ||
+		!strings.Contains(string(gotBody), `"deletes":[]`) {
 		t.Fatalf("metadata body: %s", gotBody)
 	}
 }

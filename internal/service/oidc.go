@@ -170,7 +170,7 @@ func (s *Service) enabledOIDCConfig(ctx context.Context) (config.OIDC, error) {
 	cfg := s.oidcSettings()
 	if !cfg.Enabled || strings.TrimSpace(cfg.Issuer) == "" || strings.TrimSpace(cfg.ClientID) == "" ||
 		strings.TrimSpace(cfg.ClientSecret) == "" || strings.TrimSpace(cfg.RedirectURL) == "" {
-		return cfg, httperr.New(400, 40140, "OIDC login is not configured")
+		return cfg, httperr.New(400, 40150, "OIDC login is not configured")
 	}
 	client := s.currentOIDCClient()
 	resolved, err := client.ResolveEndpoints(ctx, cfg)

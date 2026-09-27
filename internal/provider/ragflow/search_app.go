@@ -90,9 +90,13 @@ type UpdateSearchAppRequest struct {
 }
 
 // SearchAppCompletionRequest is an SSE completion request against a Search App.
+// MetadataCondition is a reserved channel: docs v0.27.2 do not document
+// metadata filtering on this endpoint, so the service layer leaves it empty
+// (doc/123 §9); the field keeps the request shape forward-compatible.
 type SearchAppCompletionRequest struct {
-	Question string   `json:"question"`
-	KbIDs    []string `json:"kb_ids,omitempty"`
+	Question          string             `json:"question"`
+	KbIDs             []string           `json:"kb_ids,omitempty"`
+	MetadataCondition *MetadataCondition `json:"metadata_condition,omitempty"`
 }
 
 // SearchAppCompletionResult is the accumulated outcome of the SSE completion,

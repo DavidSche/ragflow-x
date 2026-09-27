@@ -35,6 +35,7 @@ type KnowledgeOpsEvent struct {
 	EvalCaseID           string     `gorm:"column:eval_case_id;size:32;index" json:"eval_case_id"`
 	FeedbackID           string     `gorm:"column:feedback_id;size:32;index" json:"feedback_id"`
 	FeedbackRating       string     `gorm:"column:feedback_rating;size:16" json:"feedback_rating"`
+	FeedbackAttribution  string     `gorm:"column:feedback_attribution;size:32" json:"feedback_attribution"`
 	FeedbackComment      string     `gorm:"column:feedback_comment;size:1024" json:"feedback_comment"`
 	FeedbackAt           *time.Time `gorm:"column:feedback_at" json:"feedback_at"`
 }
@@ -55,23 +56,24 @@ const (
 
 // KnowledgeOpsSummary is the aggregate block rendered by the operations board.
 type KnowledgeOpsSummary struct {
-	TotalTurns         int64   `json:"total_turns"`
-	ActiveUsers        int64   `json:"active_users"`
-	ActiveSessions     int64   `json:"active_sessions"`
-	Completed          int64   `json:"completed"`
-	NoAnswer           int64   `json:"no_answer"`
-	Failed             int64   `json:"failed"`
-	WithCitations      int64   `json:"with_citations"`
-	TokensIn           int64   `json:"tokens_in"`
-	TokensOut          int64   `json:"tokens_out"`
-	Positive           int64   `json:"positive"`
-	Negative           int64   `json:"negative"`
-	CitationRate       float64 `json:"citation_rate"`
-	NoAnswerRate       float64 `json:"no_answer_rate"`
-	FailureRate        float64 `json:"failure_rate"`
-	SatisfactionRate   float64 `json:"satisfaction_rate"`
-	AvgLatencyMs       float64 `json:"avg_latency_ms"`
-	AvgResolutionHours float64 `json:"avg_resolution_hours"`
+	TotalTurns         int64            `json:"total_turns"`
+	ActiveUsers        int64            `json:"active_users"`
+	ActiveSessions     int64            `json:"active_sessions"`
+	Completed          int64            `json:"completed"`
+	NoAnswer           int64            `json:"no_answer"`
+	Failed             int64            `json:"failed"`
+	WithCitations      int64            `json:"with_citations"`
+	TokensIn           int64            `json:"tokens_in"`
+	TokensOut          int64            `json:"tokens_out"`
+	Positive           int64            `json:"positive"`
+	Negative           int64            `json:"negative"`
+	AttributionSummary map[string]int64 `json:"attribution_summary"`
+	CitationRate       float64          `json:"citation_rate"`
+	NoAnswerRate       float64          `json:"no_answer_rate"`
+	FailureRate        float64          `json:"failure_rate"`
+	SatisfactionRate   float64          `json:"satisfaction_rate"`
+	AvgLatencyMs       float64          `json:"avg_latency_ms"`
+	AvgResolutionHours float64          `json:"avg_resolution_hours"`
 }
 
 // KnowledgeOpsQueryRow is a normalized Top Query aggregate.
@@ -84,4 +86,16 @@ type KnowledgeOpsQueryRow struct {
 	FailedCount     int64   `json:"failed_count"`
 	CitationMissing int64   `json:"citation_missing_count"`
 	AvgLatencyMs    float64 `json:"avg_latency_ms"`
+}
+
+// KnowledgeParseTaskSummary aggregates the operator parse-task projection.
+// The counts deliberately separate done, running and failed work so callers
+// can compute readiness without conflating canceled with failed documents.
+type KnowledgeParseTaskSummary struct {
+	Total   int64 `json:"total"`
+	Done    int64 `json:"done"`
+	Running int64 `json:"running"`
+	Queued  int64 `json:"queued"`
+	Failed  int64 `json:"failed"`
+	Stopped int64 `json:"stopped"`
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 )
 
@@ -23,6 +25,25 @@ type fixedVersionEngine struct {
 
 func (e fixedVersionEngine) EngineVersion(context.Context) (string, error) {
 	return e.version, nil
+}
+
+// TestCapabilityReportIncludesEndpointCoverage asserts the Capability Matrix
+// report surfaces the endpoint stability registry (doc/121 B2): totals must
+// match the provider registry and internal endpoints must be counted so a
+// reviewer sees the undocumented surface size at a glance.
+func TestCapabilityReportIncludesEndpointCoverage(t *testing.T) {
+	svc := &Service{RAGFlow: ragflow.NewMock(), capabilities: newCapabilityRegistry()}
+	report := svc.ListRAGFlowCapabilities()
+	want := ragflow.EndpointCoverageSummary()
+	if report.EndpointCoverage.Total != want.Total || report.EndpointCoverage.Internal != want.Internal {
+		t.Fatalf("endpoint coverage = %+v, want %+v", report.EndpointCoverage, want)
+	}
+	if want.Internal == 0 {
+		t.Fatal("registry must classify at least one internal endpoint; the drill gate is otherwise vacuous")
+	}
+	if want.Documented+want.Internal != want.Total {
+		t.Fatalf("endpoint coverage must be exhaustive: %+v", want)
+	}
 }
 
 func TestRAGFlowCapabilityVerificationSeparatesVerifiedFromRuntimeHealth(t *testing.T) {
@@ -134,5 +155,37 @@ func TestRAGFlowCapabilityMatrixClassifiesZeroPointTwentyEightAsTrial(t *testing
 	}
 	if byName["agent"].Fallback != "private endpoint disabled" {
 		t.Fatalf("agent fallback must keep private endpoint out of the main path: %+v", byName["agent"])
+	}
+}
+
+func TestCapabilityCompatibilityGateBlocksTrialRuntime(t *testing.T) {
+	svc := &Service{RAGFlow: fixedVersionEngine{version: "0.28.0"}, capabilities: newCapabilityRegistry()}
+	report, err := svc.EnsureCapabilityCompatibility(context.Background(), model.CapabilityKnowledgeChat)
+	if err == nil {
+		t.Fatal("0.28 compatibility trial must block production release")
+	}
+	if httpErr, ok := err.(*httperr.Error); !ok || httpErr.Code != 42260 {
+		t.Fatalf("expected 422/42260, got %v", err)
+	}
+	if report.UpgradeDecision != "BLOCKED_CONTRACT_DRILL_REQUIRED" {
+		t.Fatalf("unexpected compatibility report: %+v", report)
+	}
+	if report.Provider != "ragflow" || report.ProviderVersion != "adapter.v1" {
+		t.Fatalf("capability matrix must identify provider and contract version: %+v", report)
+	}
+	if report.ScenarioRequirements[model.CapabilityKnowledgeChat] == nil ||
+		report.ScenarioRequirements[model.CapabilityAgenticTask] == nil ||
+		report.ScenarioRequirements[model.CapabilityExplicitSearch] == nil {
+		t.Fatalf("scenario requirements are incomplete: %+v", report.ScenarioRequirements)
+	}
+}
+
+func TestCapabilityCompatibilityGateFailsClosedAndRejectsUnknownCapability(t *testing.T) {
+	svc := &Service{RAGFlow: failingEngine{}, capabilities: newCapabilityRegistry()}
+	if _, err := svc.EnsureCapabilityCompatibility(context.Background(), model.CapabilityKnowledgeChat); err == nil {
+		t.Fatal("unavailable runtime must block capability")
+	}
+	if _, err := (&Service{RAGFlow: ragflow.NewMock(), capabilities: newCapabilityRegistry()}).EnsureCapabilityCompatibility(context.Background(), "unknown"); err == nil {
+		t.Fatal("unknown capability must be rejected")
 	}
 }

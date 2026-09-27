@@ -4,6 +4,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -25,11 +30,12 @@ const defaultRetentionInterval = 24 * time.Hour
 // RetentionSummary reports what one purge cycle removed, grouped per tenant
 // across the retention classes. It is returned for logging and tests alike.
 type RetentionSummary struct {
-	Enabled  bool             `json:"enabled"`
-	Audit    map[string]int64 `json:"audit"`    // tenant -> deleted audit rows
-	Usage    map[string]int64 `json:"usage"`    // cost_metric+quota_usage+meter_request
-	Feedback map[string]int64 `json:"feedback"` // message_feedback
-	Job      map[string]int64 `json:"job"`      // terminal job/task ledgers
+	Enabled         bool             `json:"enabled"`
+	Audit           map[string]int64 `json:"audit"`            // tenant -> deleted audit rows
+	Usage           map[string]int64 `json:"usage"`            // cost_metric+quota_usage+meter_request
+	Feedback        map[string]int64 `json:"feedback"`         // message_feedback
+	Job             map[string]int64 `json:"job"`              // terminal job/task ledgers
+	ExportArtifacts map[string]int64 `json:"export_artifacts"` // expired answer export artifact files
 }
 
 // SetRetentionPolicy stores the A5 retention policy (enabled + per-class TTLs).
@@ -140,6 +146,7 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 	summary := &RetentionSummary{
 		Enabled: true, Audit: map[string]int64{}, Usage: map[string]int64{},
 		Feedback: map[string]int64{}, Job: map[string]int64{},
+		ExportArtifacts: map[string]int64{},
 	}
 	// perTenant accumulates class -> deleted count for the audit record.
 	perTenant := map[string]map[string]int64{}
@@ -157,6 +164,18 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 		}
 	}
 	obs.Get().IncRetentionRun()
+
+	// Expired business answer artifacts are removed by their own immutable
+	// expiry timestamp, independent of the per-class TTLs.
+	exportArtifacts, err := s.CleanupExpiredExportArtifacts(ctx, now, 100)
+	if err != nil {
+		return summary, err
+	}
+	summary.ExportArtifacts = exportArtifacts
+	for tenantID, n := range exportArtifacts {
+		obs.Get().IncRetentionPurged("export_artifact", n)
+		accumulate(map[string]int64{tenantID: n}, "export_artifact")
+	}
 
 	// 1) Audit ledger: purge + re-anchor so the retained chain stays verifiable.
 	if p.AuditDays > 0 {
@@ -259,4 +278,34 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 		"audit", len(summary.Audit), "usage", len(summary.Usage),
 		"feedback", len(summary.Feedback), "job", len(summary.Job))
 	return summary, nil
+}
+
+func (s *Service) CleanupExpiredExportArtifacts(ctx context.Context, now time.Time, limit int) (map[string]int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	artifacts, err := s.Store.ListExpiredExportArtifacts(ctx, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int64{}
+	for _, artifact := range artifacts {
+		cleanPath := filepath.Clean(artifact.FileRef)
+		tenantDir := filepath.Join(s.DataDir, "exports", artifact.TenantID)
+		if !strings.HasPrefix(cleanPath, tenantDir+string(os.PathSeparator)) {
+			return counts, fmt.Errorf("export artifact %s has invalid file path", artifact.ID)
+		}
+		if _, err := os.Stat(cleanPath); err == nil {
+			if err := os.Remove(cleanPath); err != nil {
+				return counts, fmt.Errorf("remove export artifact %s: %w", artifact.ID, err)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return counts, fmt.Errorf("stat export artifact %s: %w", artifact.ID, err)
+		}
+		if err := s.Store.ExpireExportArtifactJob(ctx, artifact.TenantID, artifact.ID, now); err != nil {
+			return counts, fmt.Errorf("expire export artifact job %s: %w", artifact.ID, err)
+		}
+		counts[artifact.TenantID]++
+	}
+	return counts, nil
 }

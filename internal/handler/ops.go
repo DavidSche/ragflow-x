@@ -135,3 +135,24 @@ func (h *Handler) UsageDetail(c *gin.Context) {
 	}
 	response.OKPage(c, items, total, page, pageSize)
 }
+
+// OperationalAttribution returns quality/usage/cost/latency grouped by the
+// governance context attached to each TraceRun.
+func (h *Handler) OperationalAttribution(c *gin.Context) {
+	tenantID := c.GetString(middleware.ContextTenantID)
+	userID := c.GetString(middleware.ContextUserID)
+	items, err := h.Service.OperationalAttributionReport(c.Request.Context(), userID, tenantID, repository.OperationalReportFilter{
+		TenantID:           c.Query("tenant_id"),
+		ProjectID:          c.Query("project_id"),
+		AssistantID:        c.Query("assistant_id"),
+		AssistantReleaseID: c.Query("assistant_release_id"),
+		Scenario:           c.Query("scenario"),
+		DateFrom:           c.Query("date_from"),
+		DateTo:             c.Query("date_to"),
+	})
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, items)
+}

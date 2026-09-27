@@ -83,6 +83,17 @@ type Service struct {
 	approvalExecutorRegistryOverride *ApprovalExecutorRegistry
 	runtimeMu                        sync.RWMutex
 	runtimeConfig                    config.Runtime
+	wecomMu                          sync.Mutex
+	wecomConfig                      config.WeCom
+	feishuConfig                     config.Feishu
+	dingTalkConfig                   config.DingTalk
+	wecomSeen                        map[string]time.Time
+	wecomToken                       string
+	wecomTokenExpiresAt              time.Time
+	feishuToken                      string
+	feishuTokenExpiresAt             time.Time
+	dingTalkToken                    string
+	dingTalkTokenExpiresAt           time.Time
 }
 
 // SetRouteStateStore installs the production short-TTL route store. Tests and
@@ -105,6 +116,7 @@ func New(store repository.Store, ragClient ragflow.Client, jm *jwt.Manager, encr
 	svc.approvalPolicyCache = map[string]approvalPolicyCacheEntry{}
 	svc.approvalSubmitLimiter = ratelimit.NewMemory()
 	svc.approvalDecisionLimiter = ratelimit.NewMemory()
+	svc.wecomSeen = map[string]time.Time{}
 	svc.SetRuntimeConfig(config.Runtime{HeartbeatTimeoutSec: 60})
 	svc.capabilities = newCapabilityRegistry()
 	return svc
