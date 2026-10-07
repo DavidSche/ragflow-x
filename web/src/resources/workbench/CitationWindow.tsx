@@ -2,7 +2,7 @@
  * CitationWindow – modal showing a cited data block (image + text) in a
  * resizable split layout, with an original-document link when available.
  */
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useTranslate } from "ra-core";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
+import { OriginalDocumentViewer } from "@/components/documents/original-document-viewer";
+import { previewFormatKind } from "@/components/documents/document-preview";
+import { api } from "../../lib/api";
 import { CitationImage } from "./CitationImage";
 import type { Citation } from "./workbench-types";
 import { isSafeSourceUri } from "./workbench-types";
@@ -39,6 +42,60 @@ export function CitationWindow({
   const [split, setSplit] = useState(0.5);
   const containerRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const previewUrlRef = useRef<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewType, setPreviewType] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const isSpreadsheet = previewFormatKind("", citation?.name) === "xlsx";
+  const previewRequestKey = isSpreadsheet && citation?.datasetId && citation?.docId
+    ? `${citation.datasetId}:${citation.docId}`
+    : "";
+
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!previewRequestKey) {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+      setPreviewUrl(null);
+      setPreviewType("");
+      setPreviewLoading(false);
+      return;
+    }
+
+    let active = true;
+    setPreviewLoading(true);
+    (async () => {
+      try {
+        const response = await api.get(
+          `/chat/document/preview?dataset=${encodeURIComponent(citation!.datasetId!)}&doc=${encodeURIComponent(citation!.docId!)}`,
+          { responseType: "blob" },
+        );
+        if (!active) return;
+        const blob = response.data as Blob;
+        const url = URL.createObjectURL(blob);
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = url;
+        setPreviewUrl(url);
+        setPreviewType(String(response.headers["content-type"] ?? ""));
+      } catch {
+        if (!active) return;
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+        setPreviewUrl(null);
+        setPreviewType("");
+      } finally {
+        if (active) setPreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [previewRequestKey]);
 
   const start = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -83,6 +140,13 @@ export function CitationWindow({
                 chunkId={citation.chunkId}
                 alt={citation.name}
                 className="h-full w-full object-contain"
+              />
+            ) : isSpreadsheet ? (
+              <OriginalDocumentViewer
+                blobUrl={previewUrl ?? undefined}
+                contentType={previewType}
+                filename={citation?.name}
+                loading={previewLoading}
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center rounded border bg-muted/40 text-xs text-muted-foreground">

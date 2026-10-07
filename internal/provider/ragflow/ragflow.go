@@ -37,6 +37,14 @@ type Client interface {
 	// UpdateDocumentMetadata applies a complete metadata map by sending the
 	// current-versus-desired changes to RAGFlow's batch metadata API.
 	UpdateDocumentMetadata(ctx context.Context, datasetID, documentID string, metadata map[string]interface{}) error
+	// GetDatasetDocumentMetadata reads one document's complete metadata from
+	// the document list response. RAGFlow's per-document GET downloads the file,
+	// so the list endpoint is the only metadata read contract.
+	GetDatasetDocumentMetadata(ctx context.Context, datasetID, documentID string) (map[string]interface{}, error)
+	// ReplaceDatasetDocumentMetadata sends the complete map to the document
+	// PATCH meta_fields API. This is the atomic replacement channel required by
+	// version publish and rollback; batch metadata APIs are not a substitute.
+	ReplaceDatasetDocumentMetadata(ctx context.Context, datasetID, documentID string, metadata map[string]interface{}) error
 	// BatchUpdateDatasetMetadata replaces one metadata key on the given
 	// documents via the documented POST /datasets/{id}/metadata/update API.
 	BatchUpdateDatasetMetadata(ctx context.Context, datasetID string, documentIDs []string, updates []MetadataUpdate) error
@@ -134,6 +142,26 @@ type Client interface {
 	DeleteSearchApp(ctx context.Context, searchAppID string) error
 	// SearchAppCompletion runs a retrieval against a Search App for debugging.
 	SearchAppCompletion(ctx context.Context, searchAppID string, req SearchAppCompletionRequest) (*SearchAppCompletionResult, error)
+	// RetrieveDatasets executes the provider's generic multi-dataset retrieval
+	// contract with explicit metadata-condition pushdown.
+	RetrieveDatasets(ctx context.Context, req RetrieveDatasetsRequest) (*RetrieveDatasetsResult, error)
+	SearchDataset(ctx context.Context, datasetID string, req SearchDatasetRequest) (*SearchDatasetResult, error)
+	// ListDatasetArtifacts lists compiled dataset artifacts for probe cross-validation.
+	ListDatasetArtifacts(ctx context.Context, datasetID string, filter DatasetArtifactFilter) ([]DatasetArtifact, int64, error)
+	// GetCompilationStatus reads the dataset compilation lifecycle state.
+	GetCompilationStatus(ctx context.Context, datasetID string) (*CompilationStatus, error)
+	// ListCompilationTemplates reads built-in templates or wiki presets.
+	ListCompilationTemplates(ctx context.Context, source CompilationTemplateSource) ([]CompilationTemplate, error)
+	// ListCompilationTemplateGroups reads governed compilation template groups.
+	ListCompilationTemplateGroups(ctx context.Context, filter CompilationTemplateGroupFilter) ([]CompilationTemplateGroup, int64, error)
+	// GetCompilationTemplateGroup reads one governed compilation template group.
+	GetCompilationTemplateGroup(ctx context.Context, groupID string) (*CompilationTemplateGroup, error)
+	// SaveCompilationTemplateGroup creates a governed compilation template group.
+	SaveCompilationTemplateGroup(ctx context.Context, request CompilationTemplateGroupRequest) (*CompilationTemplateGroup, error)
+	// UpdateCompilationTemplateGroup updates a governed compilation template group.
+	UpdateCompilationTemplateGroup(ctx context.Context, groupID string, request CompilationTemplateGroupRequest) (*CompilationTemplateGroup, error)
+	// DeleteCompilationTemplateGroup soft-deletes a governed compilation template group.
+	DeleteCompilationTemplateGroup(ctx context.Context, groupID string) (bool, error)
 	// StreamSearchAppCompletion proxies the Search App SSE completion to w.
 	StreamSearchAppCompletion(ctx context.Context, searchAppID string, req SearchAppCompletionRequest, w io.Writer) error
 	// ListMemories lists the accessible memories.

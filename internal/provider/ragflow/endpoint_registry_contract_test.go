@@ -295,7 +295,17 @@ func TestInternalEndpointDrillHarness(t *testing.T) {
 // request ("live") or through the offline harness ("harness") when no tenant
 // fixture exists.
 var drillableInternalEndpoints = map[string]string{"POST /datasets/{dataset_id}/documents/batch-update-status": "live (idempotent round-trip of current enabled state)",
+	"GET /datasets/{dataset_id}/artifacts":                                           "harness (offline dataset artifact GET contract covers the list response)",
+	"POST /datasets/{dataset_id}/search":                                             "harness (offline scoped search contract covers request/response wire)",
+	"GET /datasets/{dataset_id}/compilation/status":                                  "live (idempotent compilation status read)",
+	"GET /compilation-templates/{source}":                                            "live (idempotent compilation template read)",
+	"GET /compilation-template-groups":                                               "harness (offline template group list contract covers pagination and filters)",
+	"POST /compilation-template-groups":                                              "harness (write family covered by template group CRUD contract)",
+	"GET /compilation-template-groups/{group_id}":                                    "harness (offline template group GET contract covers escaped IDs)",
+	"PUT /compilation-template-groups/{group_id}":                                    "harness (write family covered by template group CRUD contract)",
+	"DELETE /compilation-template-groups/{group_id}":                                 "harness (write family covered by template group CRUD contract)",
 	"PATCH /datasets/{dataset_id}/documents/metadatas":                               "live (idempotent round-trip; needs doc metadata)",
+	"PATCH /datasets/{dataset_id}/documents/{document_id}":                           "harness (write family covered by document metadata replacement contract)",
 	"GET /documents/{document_id}/preview":                                           "live",
 	"GET /documents/images/{image_id}":                                               "live (needs a chunk with image_id)",
 	"GET /agents/{agent_id}/versions":                                                "live",

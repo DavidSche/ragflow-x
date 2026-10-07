@@ -64,9 +64,33 @@ web/playwright-report/
 bin/
 test-results/
 ragflow-x-server
+dist-drill/
 .go-test-service.json
 run/
 
 # IDE / OS
 .idea/
 .vscode/
+
+# Local scratch dirs (kept out of VCS pending per-file review)
+tmp/
+
+# Development docs and local test data: intentionally untracked until each
+# file is reviewed for release (see doc/126 pre-release review report).
+# Do NOT add these back in bulk; whitelist individual files after review.
+/doc/
+/test/
+
+# Local build artifacts that keep landing in the repo root
+/ragflow-x
+/ragflow-x-server
+/deploy-drill
+/difydsl
+/perf-baseline
+/perf-cleanup
+/testcontract-pg
+/go-coverage
+/go-coverage-*
+/go-coverage.*
+/go-testquality.test
+*.test

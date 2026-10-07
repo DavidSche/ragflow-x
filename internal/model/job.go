@@ -30,6 +30,11 @@ const (
 	// JobKindAlertDeliveryCompensation retries persisted failed webhook
 	// deliveries after restarts and transient downstream failures.
 	JobKindAlertDeliveryCompensation = "alert_delivery_compensation"
+	// JobKindOutboxDispatch periodically dispatches due durable domain events.
+	JobKindOutboxDispatch = "outbox_dispatch"
+	// JobKindVersionPublishReconcile recovers interrupted document version
+	// publish coordination by comparing Attempt snapshots with RAGFlow state.
+	JobKindVersionPublishReconcile = "version_publish_reconcile"
 )
 
 // Job lifecycle states (doc/21 §2).

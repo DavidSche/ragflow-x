@@ -1,4 +1,5 @@
-import { Resource } from "ra-core";
+import { CustomRoutes, Resource } from "ra-core";
+import { Route } from "react-router-dom";
 import { Admin } from "@/components/admin";
 import { authProvider } from "./authProvider";
 import { dataProvider } from "./dataProvider";
@@ -30,9 +31,9 @@ import { assistantReleases } from "./resources/assistant-releases";
 import { memories } from "./resources/memories";
 import { agents } from "./resources/agents";
 import { enterpriseConnections } from "./resources/enterprise-connections";
-import { workbench } from "./resources/workbench";
 import { conversationCenter } from "./resources/conversation-center";
 import { system } from "./resources/system";
+import { WorkbenchRedirect } from "./routes/WorkbenchRedirect";
 
 export default function App() {
   return (
@@ -77,7 +78,9 @@ export default function App() {
             <Resource {...agents} />
             <Resource {...enterpriseConnections} />
             <Resource {...system} />
-            <Resource {...workbench} />
+            <CustomRoutes noLayout>
+              <Route path="/workbench" element={<WorkbenchRedirect />} />
+            </CustomRoutes>
             <Resource {...conversationCenter} />
           </>
         );

@@ -53,7 +53,6 @@ const RESOURCE_MENU: Record<string, { group: string; order: number }> = {
   "asset-governance": { group: "content", order: 5 },
   "release-governance": { group: "content", order: 6 },
   "assistant-releases": { group: "content", order: 7 },
-  workbench: { group: "conversation", order: 1 },
 	chats: { group: "conversation", order: 2 },
 	"search-apps": { group: "conversation", order: 3 },
 	memories: { group: "conversation", order: 4 },

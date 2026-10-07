@@ -105,26 +105,19 @@ describe("useConversationRouter", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("auto-selects at most once per route decision even when select fails", async () => {
+  it("does not auto-select a selected route without an explicit caller", async () => {
     const autoDecision = { ...decision, selected: candidate };
     api.post.mockResolvedValueOnce({ status: 200, data: { code: 0, data: autoDecision } });
-    api.post.mockRejectedValue(new Error("server error"));
-    const onAutoSelected = vi.fn();
     const { result } = renderHook(() =>
-      useConversationRouter({ enabled: true, notify: vi.fn(), translate: (key) => key, onAutoSelected }),
+      useConversationRouter({ enabled: true, notify: vi.fn(), translate: (key) => key }),
     );
     await act(async () => {
       await result.current.route("approval problem");
     });
     expect(result.current.decision).toEqual(autoDecision);
-    await waitFor(() => expect(result.current.status).toBe("suggest"));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
-    const selectCalls = api.post.mock.calls.filter(
-      ([url]) => typeof url === "string" && url.includes("/select"),
-    );
-    expect(selectCalls).toHaveLength(1);
-    expect(onAutoSelected).not.toHaveBeenCalled();
+    expect(api.post).toHaveBeenCalledTimes(1);
   });
 });

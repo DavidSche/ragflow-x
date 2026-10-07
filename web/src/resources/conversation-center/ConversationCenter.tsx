@@ -12,6 +12,7 @@ import { ConversationCenterInput } from "./ConversationCenterInput";
 import { RouteDecisionCard } from "./RouteDecisionCard";
 import { AssistantEmptyState } from "./AssistantEmptyState";
 import { AssistantHeader } from "./AssistantHeader";
+import { CrossAppSessionIndex } from "../workbench/CrossAppSessionIndex";
 import type { AttachmentDraft, Message, UploadedFileMeta } from "../workbench/workbench-types";
 import type { Citation } from "../workbench/workbench-types";
 import { feedbackRequestId } from "../workbench/workbench-types";
@@ -36,7 +37,9 @@ import {
   slashCommandOptions,
   stripLeadingCommand,
   newConversationRunId,
+  createOpaqueScope,
 } from "./logic";
+import { createCspId, createIdempotencyKey, routeAutoEligible, usePendingRequest } from "./use-pending-request";
 import type {
   ActiveRun,
   ConversationAdapter,
@@ -111,19 +114,22 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   const [context, setContext] = useState<ConversationContext | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<ConversationStatus>("IDLE");
-  const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
+  const requestState = usePendingRequest();
+  const input = requestState.composer.text;
+  const attachments = requestState.composer.attachments;
+  const setInput = requestState.setText;
+  const setAttachments = requestState.setAttachments;
   const [messageCursor, setMessageCursor] = useState<string>();
   const [composing, setComposing] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const [lastSubmission, setLastSubmission] = useState<{ text: string; context: ConversationContext | null } | null>(null);
-  const [pendingAutoSubmission, setPendingAutoSubmission] = useState<{ text: string; context: ConversationContext } | null>(null);
+  const [agentSessionUnknown, setAgentSessionUnknown] = useState(false);
 
   const abortRef = useRef<ConversationStream | null>(null);
   const activeRunRef = useRef<ActiveRun | null>(null);
   const sinkRef = useRef<{ push: (event: import("./types").ConversationEvent, run: ActiveRun) => void } | null>(null);
-  const submitRef = useRef<((text?: string, context?: ConversationContext) => Promise<void>) | null>(null);
+  const submitRef = useRef<((text?: string, context?: ConversationContext, target?: ConversationTargetRef) => Promise<void>) | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const activeOption = useRef(0);
   const [activeOptionIndex, setActiveOptionIndex] = useState(0);
@@ -134,7 +140,6 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   const savedDraftKeyRef = useRef<string | null>(null);
   const defaultTargetKeyRef = useRef<string | null>(null);
   const urlRestoreRef = useRef<string | null>(null);
-  const agentAutoSelectRef = useRef<string | null>(null);
 
   const adapter = adapters[kind];
   const {
@@ -151,7 +156,8 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     notify,
     translate: t,
   });
-  const draftStore = useMemo(() => new DraftStore(sessionStorage), []);
+  const draftScope = useMemo(() => createOpaqueScope(scopeKey), [scopeKey]);
+  const draftStore = useMemo(() => new DraftStore(sessionStorage, draftScope), [draftScope]);
   const recentStore = useMemo(() => new RecentTargetStore(localStorage, scopeKey), [scopeKey]);
   const [recentTargets, setRecentTargets] = useState<RecentTargetEntry[]>([]);
   const conversationId = context?.id ?? "new";
@@ -182,29 +188,6 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     enabled: !target && (chatAccess || agentAccess),
     notify,
     translate: t,
-    onAutoSelected: async (operation) => {
-      const pendingText = input.trim();
-      const autoTarget: ConversationTargetRef = {
-        id: operation.target_id,
-        kind: operation.kind,
-        name: operation.target_id,
-        status: "active",
-      };
-      router.reset();
-      selectTarget(autoTarget);
-      const autoContext: ConversationContext = {
-        id: operation.session_id,
-        targetId: operation.target_id,
-        kind: operation.kind,
-        type: "session",
-      };
-      const loadedContext = await selectContext(autoContext, autoTarget);
-      if (pendingText) {
-        setInput("");
-        if (loadedContext) setPendingAutoSubmission({ text: pendingText, context: loadedContext });
-      }
-      focusInput();
-    },
   });
   const searchDirectory = useTargetDirectory({
     adapter,
@@ -245,8 +228,18 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   const restoreDraft = (nextKey: string) => {
     const draft = draftStore.get(nextKey);
     setInput(draft?.text ?? "");
-    setAttachments(draft?.attachments ?? []);
+    setAttachments([]);
     savedDraftKeyRef.current = nextKey;
+  };
+
+  const saveDraft = (nextKey: string) => {
+    draftStore.set(nextKey, {
+      composerDraftId: requestState.composer.composerDraftId,
+      text: input,
+      selectionStart: inputRef.current?.selectionStart ?? input.length,
+      selectionEnd: inputRef.current?.selectionEnd ?? input.length,
+      source: nextKey,
+    });
   };
 
   const cancelActive = useCallback((nextStatus: ConversationStatus = "CANCELLING") => {
@@ -279,28 +272,19 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   useEffect(() => {
     if (!identity || !target) return;
     if (savedDraftKeyRef.current !== draftKey) return;
-    draftStore.set(draftKey, {
-      text: input,
-      attachments,
-      selectionStart: inputRef.current?.selectionStart ?? input.length,
-      selectionEnd: inputRef.current?.selectionEnd ?? input.length,
-    });
+    saveDraft(draftKey);
   }, [attachments, draftKey, draftStore, identity, input, target]);
 
   const selectKind = (nextKind: ConversationKind) => {
     if (nextKind === kind) return;
     discardActiveRun();
     syncUrl(nextKind, null, null);
-    draftStore.set(draftKey, {
-      text: input,
-      attachments,
-      selectionStart: inputRef.current?.selectionStart ?? input.length,
-      selectionEnd: inputRef.current?.selectionEnd ?? input.length,
-    });
+    saveDraft(draftKey);
     setKind(nextKind);
     setTarget(null);
     setContext(null);
     setMessages([]);
+    setAgentSessionUnknown(false);
     setAttachments([]);
     resetContexts();
     resetTargets();
@@ -313,12 +297,7 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     const nextKind = nextTarget.kind;
     const stagedFiles = attachments.filter((item) => item.status === "staged" && item.file);
     syncUrl(nextKind, nextTarget, null);
-    draftStore.set(draftKey, {
-      text: input,
-      attachments,
-      selectionStart: inputRef.current?.selectionStart ?? input.length,
-      selectionEnd: inputRef.current?.selectionEnd ?? input.length,
-    });
+    saveDraft(draftKey);
     setKind(nextKind);
     setTarget(nextTarget);
     setContext(null);
@@ -343,15 +322,15 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     const activeTarget = nextTargetOverride ?? target;
     if (!activeTarget) return null;
     const safeContext = assertConversationContext(nextContext);
+    if (safeContext.targetId !== activeTarget.id || safeContext.kind !== activeTarget.kind) {
+      setStatus("FAILED");
+      notify(t("conversationCenter.context_load_failed"), { type: "error" });
+      return null;
+    }
     const activeKind = activeTarget.kind;
     const activeAdapter = adapters[activeKind];
     discardActiveRun();
-    draftStore.set(draftKey, {
-      text: input,
-      attachments,
-      selectionStart: inputRef.current?.selectionStart ?? input.length,
-      selectionEnd: inputRef.current?.selectionEnd ?? input.length,
-    });
+    saveDraft(draftKey);
     setKind(activeKind);
     syncUrl(activeKind, activeTarget, safeContext);
     setContext(safeContext);
@@ -361,6 +340,7 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     try {
       const snapshot = await activeAdapter.loadContext(safeContext);
       if (!mountedRef.current) return null;
+      setAgentSessionUnknown(false);
       setMessages(snapshot.messages);
       setMessageCursor(snapshot.nextCursor);
       setStatus("READY");
@@ -385,7 +365,7 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   };
 
   const chooseRouteCandidate = async (candidate: NonNullable<ReturnType<typeof useConversationRouter>["decision"]>["candidates"][number]) => {
-    if (!router.decision) return;
+    if (!router.decision || !requestState.getPending()) return;
     const routeTarget: ConversationTargetRef = {
       id: candidate.target_id,
       kind: candidate.kind,
@@ -395,6 +375,16 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     };
     const routeDecision = router.decision;
     const stagedFiles = attachments.filter((item) => item.status === "staged" && item.file);
+    const routeSelectionIdempotencyKey = createIdempotencyKey();
+    const bootstrapIdempotencyKey = createIdempotencyKey();
+    requestState.markPending({
+      state: "binding-assistant",
+      candidateId: candidate.id,
+      candidateKind: candidate.kind,
+      routeSelectionIdempotencyKey,
+      bootstrapIdempotencyKey,
+    });
+    const selectOperation = requestState.beginOperation("select", { routeId: routeDecision.route_id, targetId: candidate.target_id });
     selectTarget(routeTarget);
     setAttachments(stagedFiles);
     router.reset();
@@ -403,37 +393,86 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
       target: routeTarget,
       attributes: { routeId: routeDecision.route_id, scoreStatus: routeDecision.score_status },
     });
-    const operation = await router.select(candidate, routeDecision.route_id);
-    if (!operation) {
+    const result = await router.select(candidate, routeDecision.route_id, {
+      routeSelectionIdempotencyKey,
+      bootstrapIdempotencyKey,
+      signal: selectOperation?.controller.signal,
+    });
+    if (
+      !selectOperation
+      || requestState.rejectOperation(selectOperation, { kind: "select", routeId: routeDecision.route_id, targetId: candidate.target_id })
+      || !result
+      || result.operation.kind !== candidate.kind
+      || result.operation.target_id !== candidate.target_id
+      || result.operation.route_selection_id !== result.routeSelectionId
+      || result.operation.bootstrap_type !== "CREATE_SESSION"
+      || !result.operation.bootstrap_operation_id
+      || !result.operation.session_id
+    ) {
+      if (selectOperation) requestState.endOperation(selectOperation.operationId);
+      requestState.failPending({
+        message: router.error ?? t("conversationCenter.route_select_failed"),
+        stage: "select",
+        failureKind: "unknown",
+        retryAuthorization: "none",
+      });
       notify(router.error ?? t("conversationCenter.route_select_failed"), { type: "error" });
-      syncUrl(candidate.kind, null, null);
-      setKind(candidate.kind);
-      setTarget(null);
-      setContext(null);
-      setMessages([]);
-      setStatus("IDLE");
-      setMessageCursor(undefined);
-      focusInput();
       return;
     }
-    await selectContext({
-      id: operation.session_id,
-      targetId: operation.target_id,
-      kind: operation.kind,
+    if (selectOperation) requestState.endOperation(selectOperation.operationId);
+    requestState.markPending({
+      routeSelectionId: result.routeSelectionId,
+      bootstrapResourceId: result.operation.bootstrap_operation_id,
+      bootstrapSessionId: result.operation.session_id,
+      targetId: result.operation.target_id,
+      targetKind: result.operation.kind,
+      state: "loading-session",
+    });
+    const loadedContext = await selectContext({
+      id: result.operation.session_id,
+      targetId: result.operation.target_id,
+      kind: result.operation.kind,
       type: "session",
     }, routeTarget);
     setAttachments(stagedFiles);
-    await uploadStagedFiles(stagedFiles, routeTarget);
+    if (loadedContext) {
+      requestState.markPending({ contextId: loadedContext.id, bootstrapSessionId: loadedContext.id });
+    }
+    if (requestState.pending?.attachmentSnapshot.length) {
+      requestState.markPending({
+        state: "attachment-blocked",
+        error: {
+          message: t("conversationCenter.attachment_blocked"),
+          stage: "upload",
+          failureKind: "deterministic",
+          retryAuthorization: "none",
+        },
+      });
+      return;
+    }
+    void submitRef.current?.(requestState.getPending()?.textSnapshot, loadedContext ?? undefined, routeTarget);
     focusInput();
   };
 
   useEffect(() => {
-    if (kind !== "agent" || !target || context || contextsLoading || contexts.length === 0 || activeRunRef.current) return;
-    const autoSelectKey = `${target.id}:${contexts[0].id}`;
-    if (agentAutoSelectRef.current === autoSelectKey) return;
-    agentAutoSelectRef.current = autoSelectKey;
-    void selectContext(contexts[0]);
-  }, [context, contexts, contextsLoading, kind, selectContext, target]);
+    const activePending = requestState.pending;
+    if (activePending?.state !== "countdown" || !activePending.countdownEndsAt) return;
+    const delay = Math.max(0, Date.parse(activePending.countdownEndsAt) - Date.now());
+    const timer = setTimeout(() => {
+      const candidate = router.decision?.selected;
+      if (candidate) void chooseRouteCandidate(candidate);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [requestState.pending, router.decision]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (!document.hidden || requestState.pending?.state !== "countdown") return;
+      requestState.markPending({ state: "awaiting-choice", countdownEndsAt: undefined });
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [requestState]);
 
   const resetContext = async () => {
     discardActiveRun();
@@ -444,18 +483,19 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
       }
       try {
         const created = await adapters.agent.createSession(target.id);
+        setAgentSessionUnknown(false);
         await selectContext(created);
       } catch (error) {
+        if (error instanceof ApiError && error.status === 0) {
+          setAgentSessionUnknown(true);
+          notify(t("conversationCenter.agent_session_unknown"), { type: "warning" });
+          return;
+        }
         notify(error instanceof ApiError ? error.displayMessage : t("conversationCenter.agent_new_failed"), { type: "error" });
       }
       return;
     }
-    draftStore.set(draftKey, {
-      text: input,
-      attachments,
-      selectionStart: inputRef.current?.selectionStart ?? input.length,
-      selectionEnd: inputRef.current?.selectionEnd ?? input.length,
-    });
+    saveDraft(draftKey);
     syncUrl(kind, target, null);
     setContext(null);
     setMessages([]);
@@ -634,6 +674,10 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   };
 
   const chooseValidatedTarget = async (nextTarget: ConversationTargetRef) => {
+    const activePending = requestState.getPending();
+    const remainingText = trigger?.type === "mention"
+      ? replaceInputToken(input, trigger).replace(/\s{2,}/g, " ").trim()
+      : undefined;
     if (trigger?.type === "mention") {
       setInput((previous) => replaceInputToken(previous, trigger).replace(/\s{2,}/g, " "));
     }
@@ -647,8 +691,71 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
         notify(t("conversationCenter.agent_type_denied"), { type: "warning" });
         return;
       }
+      if (trigger?.type === "mention" && requestState.getPending()) {
+        setInput((previous) => replaceInputToken(previous, trigger).replace(/\s{2,}/g, " "));
+        inputRef.current?.focus();
+        notify(t("conversationCenter.pending_conflict"), { type: "warning" });
+        return;
+      }
       selectTarget(liveTarget);
       inputRef.current?.focus();
+      if (remainingText && !activePending) {
+        try {
+          requestState.createPending("mention-select");
+          requestState.markPending({
+            textSnapshot: remainingText,
+            candidateId: liveTarget.id,
+            candidateKind: liveTarget.kind === "agent" ? "agent" : "chat",
+            targetId: liveTarget.id,
+            targetKind: liveTarget.kind === "agent" ? "agent" : "chat",
+          });
+          setInput(remainingText);
+          if (liveTarget.kind === "search") {
+            void submitRef.current?.(remainingText, undefined, liveTarget);
+            return;
+          }
+          if (liveTarget.kind === "agent" && !agentSessionCreate) {
+            requestState.cancelPending();
+            notify(t("conversationCenter.agent_new_denied"), { type: "warning" });
+            return;
+          }
+          const loadSessionOperation = requestState.beginOperation("load-session", { targetId: liveTarget.id });
+          try {
+            const createdContext = await adapters[liveTarget.kind].createSession!(liveTarget.id);
+            if (loadSessionOperation && requestState.rejectOperation(loadSessionOperation, { kind: "load-session", targetId: liveTarget.id })) {
+              loadSessionOperation.controller.abort();
+              return;
+            }
+            const loadedContext = await selectContext(createdContext, liveTarget);
+            if (loadSessionOperation) requestState.endOperation(loadSessionOperation.operationId);
+            if (!loadedContext || !requestState.getPending()) return;
+            requestState.markPending({ contextId: loadedContext.id });
+            void submitRef.current?.(remainingText, loadedContext, liveTarget);
+          } catch (error) {
+            if (loadSessionOperation) requestState.endOperation(loadSessionOperation.operationId);
+            if (error instanceof ApiError && error.status === 0) {
+              setAgentSessionUnknown(true);
+              requestState.failPending({
+                message: t("conversationCenter.agent_session_unknown"),
+                stage: "load-session",
+                failureKind: "unknown",
+                retryAuthorization: "none",
+              });
+              notify(t("conversationCenter.agent_session_unknown"), { type: "warning" });
+              return;
+            }
+            requestState.failPending({
+              message: error instanceof ApiError ? error.displayMessage : t("conversationCenter.agent_new_failed"),
+              stage: "load-session",
+              failureKind: "deterministic",
+              retryAuthorization: "none",
+            });
+            notify(error instanceof ApiError ? error.displayMessage : t("conversationCenter.agent_new_failed"), { type: "error" });
+          }
+        } catch {
+          notify(t("conversationCenter.pending_conflict"), { type: "warning" });
+        }
+      }
     } catch (error) {
       if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
         const nextRecent = recentStore.invalidate(nextTarget.kind, nextTarget.id);
@@ -663,59 +770,33 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   };
 
   const addFiles = async (files: File[]) => {
-    if (!target) {
-      setAttachments((previous) => [...previous, ...files.map((file): AttachmentDraft => ({
-        id: `${Date.now()}-${Math.random()}`, name: file.name, size: file.size, mime: file.type,
-        status: "staged", progress: 0, file,
-      }))]);
+    if (kind === "search") {
+      notify(t("conversationCenter.attachment_blocked"), { type: "warning" });
       return;
     }
-    const uploadPath = kind === "agent"
-      ? `/agents/${encodeURIComponent(target.id)}/upload`
-      : "/chat/upload";
-    for (const file of files) {
-      const draftId = `${Date.now()}-${Math.random()}`;
-      setAttachments((previous) => [...previous, { id: draftId, name: file.name, size: file.size, mime: file.type, status: "uploading", progress: 0 }]);
-      const form = new FormData();
-      form.append("file", file);
-      try {
-        const meta = await api.post<{ code: number; message?: string; data: UploadedFileMeta }>(uploadPath, form, { headers: { "Content-Type": "multipart/form-data" } });
-        if (meta.data.code !== 0) throw new ApiError(meta.status, meta.data.code, meta.data.message ?? "upload failed");
-        setAttachments((previous) => previous.map((item) => item.id === draftId ? { ...item, status: "done", meta: meta.data.data } : item));
-      } catch (error) {
-        setAttachments((previous) => previous.map((item) => item.id === draftId ? { ...item, status: "error", error: error instanceof Error ? error.message : "upload failed" } : item));
-        notify(error instanceof ApiError ? error.displayMessage : t("conversationCenter.upload_failed"), { type: "error" });
-      }
-    }
-  };
-
-  const uploadStagedFiles = async (drafts: AttachmentDraft[], nextTarget: ConversationTargetRef) => {
-    if (!nextTarget || nextTarget.kind === "search") return;
-    for (const draft of drafts) {
-      if (!draft.file) continue;
-      setAttachments((previous) => previous.map((item) => item.id === draft.id ? { ...item, status: "uploading", progress: 0 } : item));
-      const uploadPath = nextTarget.kind === "agent"
-        ? `/agents/${encodeURIComponent(nextTarget.id)}/upload`
-        : "/chat/upload";
-      const form = new FormData();
-      form.append("file", draft.file);
-      try {
-        const meta = await api.post<{ code: number; message?: string; data: UploadedFileMeta }>(uploadPath, form, { headers: { "Content-Type": "multipart/form-data" } });
-        if (meta.data.code !== 0) throw new ApiError(meta.status, meta.data.code, meta.data.message ?? "upload failed");
-        setAttachments((previous) => previous.map((item) => item.id === draft.id ? { ...item, status: "done", meta: meta.data.data } : item));
-      } catch (error) {
-        setAttachments((previous) => previous.map((item) => item.id === draft.id ? { ...item, status: "error", error: error instanceof Error ? error.message : "upload failed" } : item));
-        notify(error instanceof ApiError ? error.displayMessage : t("conversationCenter.upload_failed"), { type: "error" });
-      }
-    }
+    setAttachments((previous) => [...previous, ...files.map((file): AttachmentDraft => ({
+      id: createCspId("file"), name: file.name, size: file.size, mime: file.type,
+      status: "staged", progress: 0, file,
+    }))]);
+    if (target) notify(t("conversationCenter.attachment_blocked"), { type: "warning" });
   };
 
   const patchMessage = (messageId: string, patch: (message: Message) => Message) => {
     setMessages((previous) => previous.map((message) => message.id === messageId || message.turnId === messageId ? patch(message) : message));
   };
 
-  const submit = async (requestedText?: string, requestedContext?: ConversationContext) => {
-    if (!identity || busy) return;
+  const submit = async (requestedText?: string, requestedContext?: ConversationContext, requestedTarget?: ConversationTargetRef) => {
+    const pendingBeforePlainText = requestState.getPending();
+    const attachmentBlocked = pendingBeforePlainText?.state === "attachment-blocked";
+    const plainTextOverride = attachmentBlocked && requestedText !== undefined;
+    if (plainTextOverride && requestedText?.trim()) {
+      requestState.cancelPending();
+    }
+    const activePending = requestState.getPending();
+    if (!identity || busy || (activePending && requestedText === undefined && !(attachmentBlocked && attachments.length === 0))) return;
+    if (activePending?.state === "attachment-blocked" && attachments.length === 0) {
+      requestState.cancelPending();
+    }
     if (trigger?.type === "command" && commandOptions[0]) {
       runCommand(commandOptions[0].id);
       setInput("");
@@ -725,18 +806,62 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     let text = trigger?.type === "mention" && requestedText === undefined ? replaceInputToken(input, trigger).replace(/\s{2,}/g, " ").trim() : rawInput.trim();
     text = stripLeadingCommand(text);
     if (!text) return;
-    if (!target) {
+    const targetForSubmission = requestedTarget ?? target;
+    if (!targetForSubmission) {
+      try {
+        requestState.createPending("direct-submit");
+      } catch {
+        return;
+      }
       trackEvent("route_requested", { conversationKey: draftKey, attributes: { requestedMode: "suggest" } });
-      await router.route(text);
+      const routeOperation = requestState.beginOperation("route");
+      const decision = await router.route(text, routeOperation?.controller.signal);
+      if (routeOperation) requestState.endOperation(routeOperation.operationId);
+      if (!decision) {
+        requestState.failPending({
+          message: router.error ?? t("conversationCenter.route_failed"),
+          stage: "route",
+          failureKind: "unknown",
+          retryAuthorization: "none",
+        });
+        return;
+      }
+      const autoSelected = routeAutoEligible(decision, attachments, "local-only");
+      requestState.markPending({
+        state: autoSelected ? "countdown" : "awaiting-choice",
+        routeId: decision.route_id,
+        routeDecisionRevision: activePending?.revision ?? 1,
+        routeExpiresAt: decision.expires_at,
+        countdownEndsAt: autoSelected ? new Date(Date.now() + 3000).toISOString() : undefined,
+      });
       return;
     }
-    if (agentContextMissing) {
+    if (targetForSubmission.kind === "agent" && (!context || context.type !== "session")) {
       notify(t("conversationCenter.agent_requires_context"), { type: "warning" });
       return;
     }
-    const readyAttachments = attachments.filter((item) => item.status === "done" && item.meta);
+    if (attachments.length > 0 && !plainTextOverride) {
+      if (!activePending) {
+        requestState.createPending("direct-submit");
+      }
+      requestState.markPending({
+        state: "attachment-blocked",
+        error: {
+          message: t("conversationCenter.attachment_blocked"),
+          stage: "upload",
+          failureKind: "deterministic",
+          retryAuthorization: "none",
+        },
+      });
+      notify(t("conversationCenter.attachment_blocked"), { type: "warning" });
+      return;
+    }
+    if (!activePending) {
+      requestState.createPending("direct-submit");
+    }
+    const readyAttachments: AttachmentDraft[] = [];
     const requestId = newConversationRunId();
-    const runContext: ConversationContext | null = requestedContext ?? context ?? (kind === "search" ? { id: requestId, targetId: target.id, kind: "search", type: "run" } : null);
+    const runContext: ConversationContext | null = requestedContext ?? context ?? (kind === "search" ? { id: requestId, targetId: targetForSubmission.id, kind: "search", type: "run" } : null);
     const nextMessages: Message[] = [
       ...messages,
       { id: `user-${requestId}`, role: "user", content: text, kind, createdAt: new Date().toISOString(), files: readyAttachments.map((item) => item.meta!) },
@@ -748,12 +873,19 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     setLastSubmission({ text, context: runContext });
     trackEvent("message_submitted", {
       conversationKey: draftKey,
-      target,
+      target: targetForSubmission,
       runId: requestId,
       requestId,
       attributes: { kind, textLength: text.length, attachmentCount: readyAttachments.length },
     });
     setStatus("PREPARING");
+    requestState.markPending({
+      state: "submitting",
+      submitRequestId: requestId,
+      targetId: targetForSubmission.id,
+      targetKind: targetForSubmission.kind,
+      contextId: runContext?.id,
+    });
     const activeRun: ActiveRun = {
       runId: requestId,
       requestId,
@@ -764,19 +896,37 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
     const sink = new ConversationEventSink();
     sinkRef.current = sink;
     activeRunRef.current = activeRun;
+    let streamConnected = false;
     try {
-      const stream = adapter.start({ target, context: runContext ?? undefined, text, attachments: readyAttachments, requestId, conversationKey: draftKey });
+      const stream = adapter.start({ target: targetForSubmission, context: runContext ?? undefined, text, attachments: readyAttachments, requestId, conversationKey: draftKey });
       abortRef.current = stream;
-      setStatus("STREAMING");
       trackEvent("run_started", {
         conversationKey: draftKey,
-        target,
+        target: targetForSubmission,
         runId: requestId,
         requestId,
         attributes: { kind, contextId: runContext?.id ?? "" },
       });
       for await (const event of stream.events) {
         if (activeRunRef.current !== activeRun) break;
+        if (event.target.id !== targetForSubmission.id || event.target.kind !== targetForSubmission.kind) {
+          abortRef.current?.abort();
+          requestState.failPending({
+            message: t("conversationCenter.route_select_failed"),
+            stage: "stream",
+            failureKind: "unknown",
+            retryAuthorization: "none",
+          });
+          break;
+        }
+        if (!streamConnected) {
+          streamConnected = true;
+          setStatus("STREAMING");
+          requestState.markPending({ state: "stream-connected" });
+        }
+        if (event.type !== "stream.completed") {
+          requestState.markPending({ state: "executing" });
+        }
         sink.push(event, activeRun);
         if (event.context) {
           const eventContext = event.context;
@@ -788,7 +938,7 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
           setContext(nextContext);
           updateContext(nextContext);
           activeRun.context = nextContext;
-          if (contextChanged) syncUrl(kind, target, nextContext);
+          if (contextChanged) syncUrl(kind, targetForSubmission, nextContext);
         }
         if (event.type === "message.started") {
           patchMessage(`assistant-${requestId}`, (message) => ({ ...message, id: event.messageId, turnId: event.messageId }));
@@ -804,6 +954,26 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
         } else if (event.type === "usage.updated") {
           patchMessage(event.messageId ?? `assistant-${requestId}`, (message) => ({ ...message, usage: event.usage }));
         } else if (event.type === "error.occurred") {
+          if (event.error.failureKind === "unknown") {
+            requestState.markPending({
+              state: "execution-unknown",
+              error: {
+                code: event.error.errorCode,
+                message: event.error.displayMessage,
+                stage: event.context ? "stream" : "submit",
+                failureKind: "unknown",
+                retryAuthorization: "none",
+              },
+            });
+          } else {
+            requestState.failPending({
+              code: event.error.errorCode,
+              message: event.error.displayMessage,
+              stage: "stream",
+              failureKind: "deterministic",
+              retryAuthorization: event.error.retryAuthorization,
+            });
+          }
           patchMessage(event.messageId ?? `assistant-${requestId}`, (message) => ({ ...message, status: "failed", error: event.error.displayMessage, errorCode: event.error.errorCode }));
         } else if (event.type === "cancelled") {
           patchMessage(event.messageId ?? `assistant-${requestId}`, (message) => ({ ...message, status: "cancelled" }));
@@ -818,25 +988,56 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
             finalStatus === "completed" ? "run_completed" : finalStatus === "failed" ? "run_failed" : "run_cancelled",
             {
               conversationKey: draftKey,
-              target,
+              target: targetForSubmission,
               runId: requestId,
               requestId,
               traceId: event.traceId,
               attributes: { kind, finalStatus },
             },
           );
+          if (finalStatus === "completed") {
+            requestState.completePending();
+          } else if (finalStatus === "failed"
+            && requestState.getPending()?.state !== "failed"
+            && requestState.getPending()?.state !== "execution-unknown") {
+            requestState.failPending({
+              message: t("conversationCenter.run_failed"),
+              stage: "stream",
+              failureKind: "unknown",
+              retryAuthorization: "none",
+            }, "execution-unknown");
+          } else if (finalStatus === "cancelled"
+            && requestState.getPending()?.state !== "failed"
+            && requestState.getPending()?.state !== "execution-unknown") {
+            requestState.cancelPending();
+          }
         }
       }
     } catch (error) {
       const message = error instanceof ApiError ? error.displayMessage : error instanceof Error ? error.message : String(error);
       trackEvent("run_failed", {
         conversationKey: draftKey,
-        target,
+        target: targetForSubmission,
         runId: requestId,
         requestId,
         attributes: { kind },
       });
       setStatus("FAILED");
+      if (error instanceof DOMException && error.name === "TimeoutError") {
+        requestState.failPending({
+          message,
+          stage: "submit",
+          failureKind: "unknown",
+          retryAuthorization: "none",
+        });
+      } else {
+        requestState.failPending({
+          message,
+          stage: "submit",
+          failureKind: "deterministic",
+          retryAuthorization: "none",
+        });
+      }
       patchMessage(`assistant-${requestId}`, (item) => ({ ...item, status: "failed", error: message, errorCode: "model_failure" }));
       notify(message, { type: "error" });
     } finally {
@@ -846,15 +1047,9 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   };
   submitRef.current = submit;
 
-  useEffect(() => {
-    if (!pendingAutoSubmission || !target || busy) return;
-    const submission = pendingAutoSubmission;
-    setPendingAutoSubmission(null);
-    void submitRef.current?.(submission.text, submission.context);
-  }, [busy, pendingAutoSubmission, target]);
-
   const retry = () => {
-    if (!lastSubmission || busy) return;
+    const activePending = requestState.getPending();
+    if (!lastSubmission || busy || (activePending && activePending.error?.retryAuthorization !== "safe-retry")) return;
     trackEvent("retry_clicked", {
       conversationKey: draftKey,
       target: target ?? undefined,
@@ -864,7 +1059,8 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
   };
 
   const retryMessage = (turnId: string) => {
-    if (busy) return;
+    const activePending = requestState.getPending();
+    if (busy || (activePending && activePending.error?.retryAuthorization !== "safe-retry")) return;
     const failedIndex = messages.findIndex((message) => message.id === turnId || message.turnId === turnId);
     if (failedIndex < 0) {
       retry();
@@ -1144,6 +1340,7 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
                 </div>
               </div>
             )}
+            <CrossAppSessionIndex className="shrink-0" />
           </div>
         )}
         toolbar={(
@@ -1181,10 +1378,22 @@ export function ConversationCenter({ telemetry }: { telemetry?: ConversationTele
                 <div>{t("conversationCenter.help_body")}</div>
               </div>
             )}
+            {requestState.pending?.state === "attachment-blocked" ? (
+              <div role="alert" className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <span>{t("conversationCenter.attachment_blocked_hint")}</span>
+                <Button type="button" size="sm" variant="outline" onClick={() => {
+                  const text = input.trim();
+                  if (text) void submit(text);
+                }}>
+                  {t("conversationCenter.attachment_send_plain_text")}
+                </Button>
+              </div>
+            ) : null}
             {router.decision && ((!target && router.status !== "routing") || router.status === "selecting" || router.status === "bootstrapping") ? (
               <RouteDecisionCard
                 decision={router.decision}
                 status={router.status}
+                autoEligible={routeAutoEligible(router.decision, requestState.getPending()?.attachmentSnapshot ?? requestState.composer.attachments, "local-only")}
                 error={router.error}
                 onChoose={(candidate) => void chooseRouteCandidate(candidate)}
                 onDismiss={router.reset}

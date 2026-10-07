@@ -260,7 +260,7 @@ const ChatMetaPanel = () => {
     })();
   }, [record?.id]);
   if (!record) return null;
-  const shareUrl = `${window.location.origin}/workbench?chat=${encodeURIComponent(record.id)}`;
+  const shareUrl = `${window.location.origin}/conversation-center?kind=chat&targetId=${encodeURIComponent(record.id)}`;
   const embed = `<iframe src="${shareUrl}" style="width:100%;height:600px;border:0"></iframe>`;
   const copy = async (text: string, label: string) => {
     try {

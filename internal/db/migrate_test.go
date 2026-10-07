@@ -236,7 +236,8 @@ func TestMigrationV88BusinessUserRole(t *testing.T) {
 	expected := []string{
 		"append|document", "delete:own|document", "execute|agent", "execute|assistant", "execute|chat",
 		"execute|memory", "execute|search-app", "read|agent", "read|assistant",
-		"read|chat", "read|dataset", "read|document", "read|memory",
+		"read|chat", "read|dataset", "read|document", "read|logical-document",
+		"read|memory",
 		"read|search-app", "read|user", "session:create|agent",
 	}
 	if len(permissions) != len(expected) {

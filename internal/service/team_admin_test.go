@@ -59,7 +59,11 @@ func TestP0_PROJ_001_TeamAdminBoundProjectManage(t *testing.T) {
 	team, _ := svc.CreateTeam(ctx, ta.ID, "TeamA", owner.ID)
 	p1, _ := svc.CreateProject(ctx, ta.ID, "P1", "bound")
 	p2, _ := svc.CreateProject(ctx, ta.ID, "P2", "unbound")
+	memberOnly, _ := svc.CreateUser(ctx, ta.ID, "", CreateUserRequest{Username: "member-only", Password: "secret123", Role: model.RoleOperator})
 	if err := svc.SetTeamProjects(ctx, ta.ID, team.ID, []string{p1.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AddUserToTeam(ctx, ta.ID, team.ID, memberOnly.ID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,6 +73,9 @@ func TestP0_PROJ_001_TeamAdminBoundProjectManage(t *testing.T) {
 	}
 	if err := svc.AuthorizeABAC(ctx, owner.ID, "manage", "dataset", ta.ID, p2.ID, ""); err == nil {
 		t.Fatal("team admin must not manage dataset in unbound project")
+	}
+	if err := svc.AuthorizeABAC(ctx, memberOnly.ID, "manage", "dataset", ta.ID, p1.ID, ""); err == nil {
+		t.Fatal("team membership alone must not grant team admin's owned-project access")
 	}
 
 	// The team owner sees the bound project in their project list.

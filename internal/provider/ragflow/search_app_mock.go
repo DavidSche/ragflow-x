@@ -187,6 +187,45 @@ func (m *Mock) SearchAppCompletion(ctx context.Context, searchAppID string, req 
 	}, nil
 }
 
+// RetrieveDatasets returns a deterministic retrieval hit without generating
+// model output; this mock remains the local capability boundary.
+func (m *Mock) RetrieveDatasets(ctx context.Context, req RetrieveDatasetsRequest) (*RetrieveDatasetsResult, error) {
+	if err := validateRetrieveDatasetsRequest(req); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	m.lastRetrieval = &req
+	m.mu.Unlock()
+	return &RetrieveDatasetsResult{
+		Chunks: []map[string]interface{}{
+			{
+				"id": "chunk-1", "content": "mock retrieval hit", "dataset_id": req.DatasetIDs[0],
+				"similarity": 0.9, "compile_kwd": "mock",
+			},
+		},
+		Total: 1,
+	}, nil
+}
+
+func (m *Mock) SearchDataset(
+	ctx context.Context, datasetID string, req SearchDatasetRequest,
+) (*SearchDatasetResult, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	if err := validateSearchDatasetRequest(datasetID, req); err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	m.lastSearchDataset = &req
+	m.mu.Unlock()
+	return &SearchDatasetResult{
+		Chunks: []map[string]interface{}{
+			{"id": "chunk-1", "content": "mock scoped retrieval hit", "dataset_id": datasetID},
+		},
+		Total:  1,
+		Labels: []string{"mock"},
+	}, nil
+}
+
 // StreamSearchAppCompletion writes a JSON mock answer to w.
 func (m *Mock) StreamSearchAppCompletion(ctx context.Context, searchAppID string, req SearchAppCompletionRequest, w io.Writer) error {
 	res, err := m.SearchAppCompletion(ctx, searchAppID, req)

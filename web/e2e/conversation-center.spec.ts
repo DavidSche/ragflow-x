@@ -263,11 +263,12 @@ test("routes a question, binds the selected assistant, and bootstraps its sessio
   await page.goto("/#/conversation-center?kind=chat");
   await page.getByPlaceholder("输入问题；/ 切换类型，@ 选择目标").fill("review the enterprise contract");
   await page.getByRole("button", { name: "发送" }).click();
-  await page.getByRole("button", { name: /Contract Assistant.*95%.*low/ }).click();
+  await expect(page.getByText("匹配度")).toBeVisible();
+  await page.getByRole("button", { name: /Contract Assistant.*95.*low/ }).click();
   await expect.poll(() => selectionRequested).toBe(true);
   await expect.poll(() => bootstrapRequested).toBe(true);
   await expect(page).toHaveURL(/kind=chat&targetId=chat-1&contextId=session-new/);
-  await expect(page.getByText("restored answer")).toBeVisible();
+  await expect(page.getByText("Hello")).toBeVisible();
   expect(new URLSearchParams(new URL(page.url()).hash.split("?")[1]).get("targetId")).toBe("chat-1");
   expect(new URLSearchParams(new URL(page.url()).hash.split("?")[1]).get("contextId")).toBe("session-new");
   const inputFocused = await page.getByPlaceholder("输入问题；/ 切换类型，@ 选择目标").evaluate((element) => element === document.activeElement);
@@ -280,7 +281,7 @@ test("keeps the conversation center and new session action within a 1080p viewpo
   await page.goto("/#/conversation-center?kind=chat");
 
   await expect(page.getByText("Contract Assistant").first()).toBeVisible();
-  const newSession = page.getByRole("button", { name: "新会话" });
+  const newSession = page.getByRole("button", { name: "新会话", exact: true });
   await expect(newSession).toBeVisible();
   await expect(newSession).toBeInViewport();
 

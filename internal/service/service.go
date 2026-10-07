@@ -28,14 +28,15 @@ var ErrForbidden = httperr.Forbidden("insufficient permission")
 
 // Service bundles the dependencies shared by the business services.
 type Service struct {
-	Store       repository.Store
-	RAGFlow     ragflow.Client
-	RouteState  routestate.Store
-	JWT         *jwt.Manager
-	EncryptKey  []byte
-	HMACKey     []byte
-	RegisterLLM bool
-	DataDir     string
+	Store          repository.Store
+	RAGFlow        ragflow.Client
+	RouteState     routestate.Store
+	JWT            *jwt.Manager
+	SecretResolver DBConnectionSecretResolver
+	EncryptKey     []byte
+	HMACKey        []byte
+	RegisterLLM    bool
+	DataDir        string
 	// allowPrivateProviderBaseURL is an explicit deployment exception for
 	// internal LLM gateways. Production internet-facing deployments keep it off.
 	allowPrivateProviderBaseURL bool
@@ -65,6 +66,8 @@ type Service struct {
 	auditAnchorPolicy                config.AuditAnchor
 	securityMu                       sync.RWMutex
 	securityConfig                   config.Security
+	factGuardMu                      sync.RWMutex
+	factGuardConfig                  config.FactGuard
 	observabilityMu                  sync.RWMutex
 	observabilityConfig              config.Observability
 	alertingMu                       sync.RWMutex

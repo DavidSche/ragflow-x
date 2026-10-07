@@ -2009,6 +2009,396 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		// Version 110 adds the first P0-A slice: tenant-owned parser policies
+		// and quality profiles. Parse quality reports and attempts are added
+		// by their execution-focused follow-up slice after the quality gate
+		// contract is wired to parse execution.
+		Version: 110,
+		Name:    "parser_policy_quality_profile",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ParserPolicy{}, &model.QualityProfile{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.ParserPolicy{}, "uk_rgx_parser_policy_active_scope") {
+				return tx.Exec(`CREATE UNIQUE INDEX uk_rgx_parser_policy_active_scope
+					ON rgx_parser_policy (tenant_id, project_id, dataset_id, document_type)
+					WHERE active`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 111 persists every parse attempt and the final quality
+		// decision so fallback chains remain auditable (doc/129 P0-A G7).
+		Version: 111,
+		Name:    "parse_attempt_quality_report",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ParseAttempt{}, &model.ParseQualityReport{})
+		},
+	},
+	{
+		// Version 112 starts the document version lifecycle (doc/129 P0-B).
+		// PostgreSQL additionally enforces non-overlap for governance-visible
+		// versions; draft rows are deliberately outside the exclusion set.
+		Version: 112,
+		Name:    "logical_document_version",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.LogicalDocument{}, &model.DocumentVersion{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.DocumentVersion{}, "idx_rgx_document_version_active") {
+				return tx.Exec(`CREATE UNIQUE INDEX idx_rgx_document_version_active
+					ON rgx_document_version (tenant_id, logical_document_id)
+					WHERE status = 'active'`).Error
+			}
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			if err := tx.Exec(`CREATE EXTENSION IF NOT EXISTS btree_gist`).Error; err != nil {
+				return err
+			}
+			var constraintCount int64
+			if err := tx.Raw(`SELECT COUNT(*) FROM pg_constraint WHERE conname = 'no_overlapping_effective_range' AND conrelid = 'rgx_document_version'::regclass`).Scan(&constraintCount).Error; err != nil {
+				return err
+			}
+			if constraintCount > 0 {
+				return nil
+			}
+			return tx.Exec(`ALTER TABLE rgx_document_version ADD CONSTRAINT no_overlapping_effective_range
+				EXCLUDE USING gist (
+					tenant_id WITH =,
+					logical_document_id WITH =,
+					tstzrange(effective_from, effective_to, '[)') WITH &&
+				)
+				WHERE (status IN ('active', 'superseded', 'publishing'))`).Error
+		},
+	},
+	{
+		// Version 113 repairs migration 109's default-contract gap. GORM's
+		// AutoMigrate added retrieval_pushdown_json as NOT NULL first, so the
+		// following hasColumn guard skipped the intended DEFAULT. Re-issuing
+		// SET DEFAULT here repairs databases that already applied v109 and
+		// keeps raw migrations/seed rows from failing when evidence is absent.
+		Version: 113,
+		Name:    "answer_pushdown_default_repair",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			return tx.Exec(`ALTER TABLE rgx_answer_authorization_projection
+				ALTER COLUMN retrieval_pushdown_json
+				SET DEFAULT '{"status":"absent","policy_version":"retrieval-pushdown.v1"}'`).Error
+		},
+	},
+	{
+		// Version 114 adds the durable P0-B publish coordination records.
+		// Only one preparing/ragflow_updated attempt may exist per tenant and
+		// logical document; terminal states are always replayable history.
+		Version: 114,
+		Name:    "version_filter_policy_publish_attempt",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.VersionFilterPolicy{}, &model.VersionPublishAttempt{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.VersionPublishAttempt{}, "uq_rgx_version_publish_attempt_open") {
+				return tx.Exec(`CREATE UNIQUE INDEX uq_rgx_version_publish_attempt_open
+					ON rgx_version_publish_attempt (tenant_id, logical_document_id)
+					WHERE state IN ('preparing', 'ragflow_updated')`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 115 enables G4 durable domain events. Document version
+		// publication and its OutboxEvent share Transaction B; dispatch uses
+		// claim leases and retry backoff so crash recovery is at-least-once.
+		Version: 115,
+		Name:    "document_version_outbox",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.OutboxEvent{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.OutboxEvent{}, "idx_rgx_outbox_event_dispatch") {
+				return tx.Exec(`CREATE INDEX idx_rgx_outbox_event_dispatch
+					ON rgx_outbox_event (next_retry_at, published_at)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 116 gives open publish attempts a reconciliation lease and
+		// records the pre-publish local state needed for crash compensation.
+		Version: 116,
+		Name:    "version_publish_reconciler",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.VersionPublishAttempt{})
+		},
+	},
+	{
+		// Version 117 starts P1-A with normalized evidence facts, authoritative
+		// evidence conflicts, and durable claim validation decisions.
+		Version: 117,
+		Name:    "fact_guard_registry",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.FactRegistry{}, &model.ClaimValidation{}, &model.EvidenceConflict{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.FactRegistry{}, "idx_rgx_fact_registry_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_fact_registry_lookup
+					ON rgx_fact_registry (tenant_id, answer_run_id, fact_key, unit, time_range)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 118 starts P0-C with tenant-owned deterministic tool
+		// contracts. The partial unique index enforces one active version per
+		// tool while retaining inactive historical versions for audit.
+		Version: 118,
+		Name:    "tool_registry",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ToolRegistry{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.ToolRegistry{}, "uq_rgx_tool_registry_active") {
+				return tx.Exec(`CREATE UNIQUE INDEX uq_rgx_tool_registry_active
+					ON rgx_tool_registry (tenant_id, tool_id)
+					WHERE active IS TRUE`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 119 adds deterministic source routing rules. P0-C supports
+		// tool sources only; knowledge/db execution arrives with their policy
+		// registries in later slices.
+		Version: 119,
+		Name:    "source_routing_rule",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.SourceRoutingRule{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.SourceRoutingRule{}, "idx_rgx_source_routing_rule_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_source_routing_rule_lookup
+					ON rgx_source_routing_rule (tenant_id, active, assistant_id, source_type, priority)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 120 starts P1-B with tenant-owned read-only database
+		// connection contracts. DSNRef stores a secret-manager reference only;
+		// connection verification arrives with the secret resolver slice.
+		Version: 120,
+		Name:    "db_connection",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.DBConnection{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.DBConnection{}, "idx_rgx_db_connection_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_db_connection_lookup
+					ON rgx_db_connection (tenant_id, driver, health_status, created_at)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 121 adds tenant-owned SQL query templates. Execution is a
+		// later slice; this table holds the validated read-only contract.
+		Version: 121,
+		Name:    "query_template",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.QueryTemplate{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.QueryTemplate{}, "idx_rgx_query_template_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_query_template_lookup
+					ON rgx_query_template (tenant_id, active, connection_id, created_at)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 122 adds explicit resource scopes for the first and fourth
+		// authorization layers. Existing governance rows fail closed to the
+		// tenant/platform administrators until an administrator narrows them.
+		Version: 122,
+		Name:    "four_layer_authorization_scopes",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Migrator().HasTable(&model.SourceRoutingRule{}) {
+				if err := ensureFourLayerAuthorizationScopeColumn(
+					tx, &model.SourceRoutingRule{}, "rgx_source_routing_rule",
+				); err != nil {
+					return err
+				}
+			} else if err := tx.AutoMigrate(&model.SourceRoutingRule{}); err != nil {
+				return err
+			}
+			if tx.Migrator().HasTable(&model.DBConnection{}) {
+				if err := ensureFourLayerAuthorizationScopeColumn(
+					tx, &model.DBConnection{}, "rgx_db_connection",
+				); err != nil {
+					return err
+				}
+			} else if err := tx.AutoMigrate(&model.DBConnection{}); err != nil {
+				return err
+			}
+			adminScope := `{"roles":["platform_admin","tenant_admin"]}`
+			if err := tx.Exec(`UPDATE rgx_source_routing_rule
+				SET authorization_scope = ?
+				WHERE authorization_scope IS NULL OR authorization_scope IN ('', '{}')`, adminScope).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`UPDATE rgx_db_connection
+				SET authorization_scope = ?
+				WHERE authorization_scope IS NULL OR authorization_scope IN ('', '{}')`, adminScope).Error
+		},
+	},
+	{
+		// Version 123 starts P1-C with tenant-owned semantic knowledge
+		// strategies. Capability probing and retrieval execution arrive later.
+		Version: 123,
+		Name:    "knowledge_strategy",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.KnowledgeStrategy{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.KnowledgeStrategy{}, "idx_rgx_knowledge_strategy_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_knowledge_strategy_lookup
+					ON rgx_knowledge_strategy (tenant_id, dataset_id, active, strategy_type, created_at)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 124 persists non-HTTP-200 capability probe evidence.
+		Version: 124,
+		Name:    "knowledge_capability_probe",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.KnowledgeCapabilityProbe{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.KnowledgeCapabilityProbe{}, "idx_rgx_knowledge_capability_probe_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_knowledge_capability_probe_lookup
+					ON rgx_knowledge_capability_probe (tenant_id, strategy_id, checked_at DESC)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 125 starts P1-D with immutable evidence contracts and
+		// normalized dependencies. HTTP projection and stale dispatch arrive
+		// in later slices.
+		Version: 125,
+		Name:    "evidence_snapshot",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.EvidenceSnapshot{},
+				&model.EvalCaseEvidence{},
+				&model.EvalCaseDependency{},
+			); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_rgx_evidence_snapshot_lookup
+					ON rgx_evidence_snapshot (tenant_id, created_at DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_eval_case_evidence_lookup
+					ON rgx_eval_case_evidence (tenant_id, eval_case_id, stale_status)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_eval_case_dependency_lookup
+					ON rgx_eval_case_dependency (tenant_id, logical_document_id, binding_type)`,
+			}
+			for _, stmt := range indexes {
+				if err := tx.Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 126 makes the mutable EvalCaseEvidence projection
+		// single-current while preserving immutable EvidenceSnapshot history.
+		Version: 126,
+		Name:    "eval_case_evidence_current_set",
+		Migrate: func(tx *gorm.DB) error {
+			olderDependencies := tx.Exec(`DELETE FROM rgx_eval_case_dependency
+				WHERE eval_case_evidence_id IN (
+					SELECT old.id FROM rgx_eval_case_evidence old
+					JOIN rgx_eval_case_evidence newest
+						ON newest.tenant_id = old.tenant_id
+						AND newest.eval_case_id = old.eval_case_id
+						AND (newest.created_at > old.created_at
+							OR (newest.created_at = old.created_at AND newest.id > old.id))
+				)`).Error
+			if olderDependencies != nil {
+				return olderDependencies
+			}
+			if err := tx.Exec(`DELETE FROM rgx_eval_case_evidence
+				WHERE EXISTS (
+					SELECT 1 FROM rgx_eval_case_evidence newest
+					WHERE rgx_eval_case_evidence.tenant_id = newest.tenant_id
+						AND rgx_eval_case_evidence.eval_case_id = newest.eval_case_id
+						AND (newest.created_at > rgx_eval_case_evidence.created_at
+							OR (newest.created_at = rgx_eval_case_evidence.created_at AND newest.id > rgx_eval_case_evidence.id))
+				)`).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_rgx_eval_case_evidence_case_unique
+				ON rgx_eval_case_evidence (tenant_id, eval_case_id)`).Error
+		},
+	},
+	{
+		// Version 127 projects immutable snapshot DatasetIDs into normalized
+		// rows so team-admin authorization can be evaluated in SQL without
+		// JSON queries or in-memory pagination.
+		Version: 127,
+		Name:    "evidence_snapshot_dataset_projection",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.EvidenceSnapshotDataset{}); err != nil {
+				return err
+			}
+			if err := tx.Where("1 = 1").Delete(&model.EvidenceSnapshotDataset{}).Error; err != nil {
+				return err
+			}
+			snapshots := make([]model.EvidenceSnapshot, 0)
+			if err := tx.Select("id", "tenant_id", "dataset_ids").Find(&snapshots).Error; err != nil {
+				return err
+			}
+			projections := make([]model.EvidenceSnapshotDataset, 0, len(snapshots))
+			for _, snapshot := range snapshots {
+				var datasetIDs []string
+				if err := json.Unmarshal([]byte(snapshot.DatasetIDs), &datasetIDs); err != nil {
+					return fmt.Errorf("evidence snapshot %s has malformed dataset_ids: %w", snapshot.ID, err)
+				}
+				if len(datasetIDs) == 0 {
+					return fmt.Errorf("evidence snapshot %s has no dataset_ids", snapshot.ID)
+				}
+				for _, datasetID := range datasetIDs {
+					if datasetID == "" {
+						return fmt.Errorf("evidence snapshot %s has an empty dataset_id", snapshot.ID)
+					}
+					projections = append(projections, model.EvidenceSnapshotDataset{
+						ID: id.New(), TenantID: snapshot.TenantID,
+						SnapshotID: snapshot.ID, DatasetID: datasetID,
+					})
+				}
+			}
+			if len(projections) == 0 {
+				return nil
+			}
+			return tx.Create(&projections).Error
+		},
+	},
+}
+
+func ensureFourLayerAuthorizationScopeColumn(tx *gorm.DB, target interface{}, table string) error {
+	if !tx.Migrator().HasTable(target) || tx.Migrator().HasColumn(target, "AuthorizationScope") {
+		return nil
+	}
+	return tx.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN authorization_scope TEXT NOT NULL DEFAULT ''", table,
+	)).Error
 }
 
 func assertSingleAssistantReleaseState(tx *gorm.DB, state string) error {
@@ -2943,10 +3333,34 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RolePlatformAdmin, "manage", "scenario-template"},
 		{model.RolePlatformAdmin, "read", "prompt-policy"},
 		{model.RolePlatformAdmin, "manage", "prompt-policy"},
+		{model.RolePlatformAdmin, "read", "parser-policy"},
+		{model.RolePlatformAdmin, "manage", "parser-policy"},
+		{model.RolePlatformAdmin, "read", "quality-profile"},
+		{model.RolePlatformAdmin, "manage", "quality-profile"},
+		{model.RolePlatformAdmin, "read", "logical-document"},
+		{model.RolePlatformAdmin, "manage", "logical-document"},
+		{model.RolePlatformAdmin, "execute", "logical-document"},
+		{model.RolePlatformAdmin, "read", "tool-registry"},
+		{model.RolePlatformAdmin, "manage", "tool-registry"},
+		{model.RolePlatformAdmin, "execute", "tool-registry"},
+		{model.RolePlatformAdmin, "read", "query-template"},
+		{model.RolePlatformAdmin, "manage", "query-template"},
+		{model.RolePlatformAdmin, "read", "source-routing-rule"},
+		{model.RolePlatformAdmin, "manage", "source-routing-rule"},
+		{model.RolePlatformAdmin, "read", "knowledge-strategy"},
+		{model.RolePlatformAdmin, "manage", "knowledge-strategy"},
+		{model.RolePlatformAdmin, "execute", "knowledge-strategy"},
+		{model.RolePlatformAdmin, "read", "evidence-snapshot"},
+		{model.RolePlatformAdmin, "read", "outbox-event"},
+		{model.RolePlatformAdmin, "execute", "outbox-event"},
+		{model.RolePlatformAdmin, "read", "db-connection"},
+		{model.RolePlatformAdmin, "manage", "db-connection"},
+		{model.RolePlatformAdmin, "test", "db-connection"},
 		{model.RolePlatformAdmin, "read", "knowledge-lifecycle"},
 		{model.RolePlatformAdmin, "manage", "knowledge-lifecycle"},
 		{model.RolePlatformAdmin, "read", "eval-set"},
 		{model.RolePlatformAdmin, "manage", "eval-set"},
+		{model.RolePlatformAdmin, "execute", "eval-set"},
 		{model.RolePlatformAdmin, "read", "release-governance"},
 		{model.RolePlatformAdmin, "manage", "release-governance"},
 		{model.RolePlatformAdmin, "read", "alert"},
@@ -3021,10 +3435,38 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "manage", "scenario-template"},
 		{model.RoleTenantAdmin, "read", "prompt-policy"},
 		{model.RoleTenantAdmin, "manage", "prompt-policy"},
+		{model.RoleTenantAdmin, "read", "parser-policy"},
+		{model.RoleTenantAdmin, "manage", "parser-policy"},
+		{model.RoleTenantAdmin, "read", "quality-profile"},
+		{model.RoleTenantAdmin, "manage", "quality-profile"},
+		{model.RoleTenantAdmin, "read", "logical-document"},
+		{model.RoleTenantAdmin, "manage", "logical-document"},
+		{model.RoleTenantAdmin, "execute", "logical-document"},
+		{model.RoleTenantAdmin, "read", "tool-registry"},
+		{model.RoleTenantAdmin, "manage", "tool-registry"},
+		{model.RoleTenantAdmin, "execute", "tool-registry"},
+		{model.RoleTenantAdmin, "read", "query-template"},
+		{model.RoleTenantAdmin, "manage", "query-template"},
+		{model.RoleTenantAdmin, "read", "source-routing-rule"},
+		{model.RoleTenantAdmin, "manage", "source-routing-rule"},
+		{model.RoleTenantAdmin, "read", "knowledge-strategy"},
+		{model.RoleTenantAdmin, "manage", "knowledge-strategy"},
+		{model.RoleTenantAdmin, "execute", "knowledge-strategy"},
+		{model.RoleTenantAdmin, "read", "evidence-snapshot"},
+		{model.RoleTenantAdmin, "read", "outbox-event"},
+		{model.RoleTenantAdmin, "execute", "outbox-event"},
+		{model.RoleTeamAdmin, "read", "knowledge-strategy"},
+		{model.RoleTeamAdmin, "manage", "knowledge-strategy"},
+		{model.RoleTeamAdmin, "execute", "knowledge-strategy"},
+		{model.RoleTeamAdmin, "read", "evidence-snapshot"},
+		{model.RoleTenantAdmin, "read", "db-connection"},
+		{model.RoleTenantAdmin, "manage", "db-connection"},
+		{model.RoleTenantAdmin, "test", "db-connection"},
 		{model.RoleTenantAdmin, "read", "knowledge-lifecycle"},
 		{model.RoleTenantAdmin, "manage", "knowledge-lifecycle"},
 		{model.RoleTenantAdmin, "read", "eval-set"},
 		{model.RoleTenantAdmin, "manage", "eval-set"},
+		{model.RoleTenantAdmin, "execute", "eval-set"},
 		{model.RoleTenantAdmin, "read", "release-governance"},
 		{model.RoleTenantAdmin, "manage", "release-governance"},
 		{model.RoleTenantAdmin, "read", "alert"},
@@ -3054,9 +3496,18 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleOperator, "read", "scenario-template"},
 		{model.RoleOperator, "read", "prompt-policy"},
 		{model.RoleOperator, "manage", "prompt-policy"},
+		{model.RoleOperator, "read", "parser-policy"},
+		{model.RoleOperator, "read", "quality-profile"},
+		{model.RoleOperator, "read", "logical-document"},
+		{model.RoleOperator, "read", "source-routing-rule"},
+		{model.RoleOperator, "read", "knowledge-strategy"},
+		{model.RoleOperator, "execute", "knowledge-strategy"},
+		{model.RoleOperator, "read", "evidence-snapshot"},
+		{model.RoleOperator, "read", "outbox-event"},
 		{model.RoleOperator, "read", "knowledge-lifecycle"},
 		{model.RoleOperator, "read", "eval-set"},
 		{model.RoleOperator, "manage", "eval-set"},
+		{model.RoleOperator, "execute", "eval-set"},
 		{model.RoleOperator, "read", "release-governance"},
 		{model.RoleOperator, "read", "alert"},
 		// business_user
@@ -3071,6 +3522,7 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleBusinessUser, "execute", "chat"},
 		{model.RoleBusinessUser, "read", "search-app"},
 		{model.RoleBusinessUser, "execute", "search-app"},
+		{model.RoleBusinessUser, "read", "logical-document"},
 		// viewer
 		{model.RoleViewer, "read", "user"},
 		{model.RoleViewer, "read", "team"},
@@ -3086,6 +3538,12 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleViewer, "read", "assistant"},
 		{model.RoleViewer, "read", "scenario-template"},
 		{model.RoleViewer, "read", "prompt-policy"},
+		{model.RoleViewer, "read", "parser-policy"},
+		{model.RoleViewer, "read", "quality-profile"},
+		{model.RoleViewer, "read", "logical-document"},
+		{model.RoleViewer, "read", "source-routing-rule"},
+		{model.RoleViewer, "read", "knowledge-strategy"},
+		{model.RoleViewer, "read", "evidence-snapshot"},
 		{model.RoleViewer, "read", "knowledge-lifecycle"},
 		{model.RoleViewer, "read", "eval-set"},
 		{model.RoleViewer, "read", "release-governance"},
@@ -3127,6 +3585,11 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTeamAdmin, "read", "scenario-template"},
 		{model.RoleTeamAdmin, "manage", "scenario-template"},
 		{model.RoleTeamAdmin, "read", "prompt-policy"},
+		{model.RoleTeamAdmin, "read", "parser-policy"},
+		{model.RoleTeamAdmin, "read", "quality-profile"},
+		{model.RoleTeamAdmin, "read", "logical-document"},
+		{model.RoleTeamAdmin, "manage", "logical-document"},
+		{model.RoleTeamAdmin, "execute", "logical-document"},
 		{model.RoleTeamAdmin, "read", "knowledge-lifecycle"},
 		{model.RoleTeamAdmin, "read", "eval-set"},
 		{model.RoleTeamAdmin, "manage", "eval-set"},

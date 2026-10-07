@@ -1,7 +1,7 @@
 /**
  * DocumentsPanel – document list, upload, parse, chunk viewer for a dataset.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ChangeEvent } from "react";
 import {
   useCanAccess,
@@ -31,6 +31,7 @@ import {
   Play,
   Power,
   RefreshCw,
+  ShieldCheck,
   Square,
   Tags,
   Trash2,
@@ -41,6 +42,7 @@ import {
   type DocumentRecord,
   type ChunkRecord,
   type Envelope,
+  type ParseQualityReportRecord,
   RUN_TEXT,
   errText,
   formatBytes,
@@ -48,6 +50,7 @@ import {
   documentExt,
   loadDocuments,
 } from "./dataset-types";
+import { ParseQualityDialog } from "./ParseQualityDialog";
 
 export const DocumentsPanel = () => {
   const record = useRecordContext<{ id?: string; tenant_id?: string }>();
@@ -59,10 +62,11 @@ export const DocumentsPanel = () => {
     identityTenantID && recordTenantID && identityTenantID !== recordTenantID
       ? `?scope=specific&tenant_id=${encodeURIComponent(recordTenantID)}`
       : "";
-  const scopePath = (path: string) =>
-    scopeQuery
+  const scopePath = useCallback((path: string) => {
+    return scopeQuery
       ? `${path}${path.includes("?") ? `&${scopeQuery.slice(1)}` : scopeQuery}`
       : path;
+  }, [scopeQuery]);
   const notify = useNotify();
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -86,6 +90,8 @@ export const DocumentsPanel = () => {
   const [previewText, setPreviewText] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [chunkSel, setChunkSel] = useState<Set<string>>(new Set());
+  const [qualityReports, setQualityReports] = useState<Record<string, ParseQualityReportRecord>>({});
+  const [qualityDoc, setQualityDoc] = useState<{ id: string; name: string } | null>(null);
   const t = useTranslate();
   const { canAccess: canAppendDocument } = useCanAccess({
     resource: "document",
@@ -94,6 +100,10 @@ export const DocumentsPanel = () => {
   const { canAccess: canExecuteDocument } = useCanAccess({
     resource: "document",
     action: "execute",
+  });
+  const { canAccess: canReadDocument } = useCanAccess({
+    resource: "document",
+    action: "read",
   });
   const { canAccess: canDeleteOwnDocument } = useCanAccess({
     resource: "document",
@@ -112,10 +122,39 @@ export const DocumentsPanel = () => {
     }
   };
 
+  const loadQualityReports = useCallback(async () => {
+    if (!datasetId || !canReadDocument) return;
+    const reports: Record<string, ParseQualityReportRecord> = {};
+    try {
+      const first = await api.get<Envelope<{ items: ParseQualityReportRecord[]; total: number }>>(
+        scopePath(`/datasets/${datasetId}/parse-quality-reports?page=1&page_size=200`),
+      );
+      const total = first.data.data?.total ?? 0;
+      for (const report of first.data.data?.items ?? []) {
+        reports[report.document_id] = report;
+      }
+      for (let page = 2; page * 200 < total; page += 1) {
+        const response = await api.get<Envelope<{ items: ParseQualityReportRecord[] }>>(
+          scopePath(`/datasets/${datasetId}/parse-quality-reports?page=${page}&page_size=200`),
+        );
+        for (const report of response.data.data?.items ?? []) {
+          reports[report.document_id] = report;
+        }
+      }
+      setQualityReports(reports);
+    } catch {
+      setQualityReports({});
+    }
+  }, [canReadDocument, datasetId, scopePath]);
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetId]);
+
+  useEffect(() => {
+    void loadQualityReports();
+  }, [datasetId, loadQualityReports]);
 
   const run = async (fn: () => Promise<unknown>, success: string) => {
     setBusy(true);
@@ -123,6 +162,7 @@ export const DocumentsPanel = () => {
       await fn();
       notify(success, { type: "success" });
       await load();
+      await loadQualityReports();
     } catch (err) {
       notify(errText(err, t("datasets.chunk_op_error")), { type: "error" });
     } finally {
@@ -421,7 +461,10 @@ export const DocumentsPanel = () => {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => void load()}
+            onClick={() => {
+              void load();
+              void loadQualityReports();
+            }}
           >
             {loading ? (
               <Loader2 className="size-4 animate-spin" />
@@ -462,6 +505,7 @@ export const DocumentsPanel = () => {
               ) : (
                 docs.map((doc) => {
                   const s = status(doc.status);
+                  const qualityReport = qualityReports[doc.id];
                   const done =
                     doc.status === "3" || doc.status === "DONE";
                   const running =
@@ -541,6 +585,21 @@ export const DocumentsPanel = () => {
                             {Math.round((doc.progress ?? 0) * 100)}%
                           </div>
                         ) : null}
+                        {qualityReport ? (
+                          <div className="mt-1">
+                            <Badge
+                              variant={
+                                qualityReport.quality_status === "FAIL"
+                                  ? "destructive"
+                                  : qualityReport.quality_status === "WARN"
+                                    ? "secondary"
+                                    : "default"
+                              }
+                            >
+                              {qualityReport.quality_status} · {qualityReport.gate_action}
+                            </Badge>
+                          </div>
+                        ) : null}
                       </td>
                       <td className="p-2">
                         <div className="flex items-center gap-0.5">
@@ -583,6 +642,17 @@ export const DocumentsPanel = () => {
                                 <Tags />
                               </IconButtonWithTooltip>
                             </>
+                          ) : null}
+                          {canReadDocument ? (
+                            <IconButtonWithTooltip
+                              label={t("datasets.parse_quality_button")}
+                              onClick={() =>
+                                setQualityDoc({ id: doc.id, name: doc.name })
+                              }
+                              disabled={busy}
+                            >
+                              <ShieldCheck />
+                            </IconButtonWithTooltip>
                           ) : null}
                           <IconButtonWithTooltip
                             label={t("datasets.doc_chunks_btn")}
@@ -649,6 +719,15 @@ export const DocumentsPanel = () => {
           </DialogContent>
         </Dialog>
       </div>
+
+      <ParseQualityDialog
+        open={!!qualityDoc}
+        datasetId={datasetId}
+        doc={qualityDoc}
+        report={qualityDoc ? qualityReports[qualityDoc.id] : undefined}
+        scopePath={scopePath}
+        onClose={() => setQualityDoc(null)}
+      />
 
       <Dialog
         open={!!chunksDoc}

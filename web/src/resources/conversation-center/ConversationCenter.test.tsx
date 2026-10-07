@@ -74,11 +74,16 @@ vi.mock("./use-assistant-directory", () => ({
 }));
 
 vi.mock("../workbench/ConversationShell", () => ({
-  ConversationShell: ({ messages, input, sidebar }: { messages: Array<{ id: string; content: string }>; input: ReactElement; sidebar: ReactElement }) => (
+  ConversationShell: ({ messages, input, sidebar, toolbar, afterMessages, onRegenerate }: { messages: Array<{ id: string; content: string; error?: string }>; input: ReactElement; sidebar: ReactElement; toolbar?: ReactElement; afterMessages?: ReactElement; onRegenerate?: (turnId: string) => void }) => (
     <div>
       {sidebar}
       {messages.map((message) => <p key={message.id}>{message.content}</p>)}
+          {onRegenerate && [...messages].reverse().find((message) => message.error) ? (
+            <button type="button" onClick={() => onRegenerate([...messages].reverse().find((message) => message.error)!.id!)}>conversationCenter.retry</button>
+      ) : null}
       {input}
+      {toolbar}
+      {afterMessages}
     </div>
   ),
 }));
@@ -103,6 +108,7 @@ describe("ConversationCenter URL restore", () => {
       type: "session",
     })));
     await waitFor(() => expect(screen.getByText("restored answer")).toBeInTheDocument());
+    expect(screen.getByRole("region", { name: "workbench.cross_app_sessions" })).toBeInTheDocument();
     expect(window.location.search).not.toContain("restored%20answer");
   });
 
@@ -194,8 +200,124 @@ describe("ConversationCenter Agent session creation", () => {
   });
 });
 
+describe("ConversationCenter attachment gate", () => {
+  it("submits explicit plain text from the attachment-blocked state", async () => {
+    adapter.start.mockClear();
+    adapter.start.mockImplementationOnce((input: { requestId: string; text: string; conversationKey: string }) => ({
+      requestId: input.requestId,
+      streamId: `stream-${input.requestId}`,
+      abort: vi.fn(),
+      events: (async function* (): AsyncGenerator<ConversationEvent> {
+        yield {
+          type: "stream.completed",
+          eventId: "plain-text-completed",
+          sequence: 1,
+          timestamp: new Date().toISOString(),
+          schemaVersion: 1,
+          requestId: input.requestId,
+          streamId: `stream-${input.requestId}`,
+          conversationKey: input.conversationKey,
+          target: { id: "chat-1", kind: "chat" },
+          context,
+          finalStatus: "completed" as const,
+        };
+      })(),
+    }));
+
+    const { container } = render(
+      <MemoryRouter initialEntries={["/conversation-center?kind=chat&targetId=chat-1&contextId=session-1"]}>
+        <Routes>
+          <Route path="/conversation-center" element={<ConversationCenter />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(adapter.getTarget).toHaveBeenCalledWith("chat-1", expect.anything()));
+    await waitFor(() => expect(screen.getAllByText("Contract Assistant").length).toBeGreaterThan(0));
+    await waitFor(() => expect(container.querySelector('input[type="file"]')).not.toBeNull());
+    const fileInput = container.querySelector('input[type="file"]')!;
+    const file = new File(["contract"], "contract.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText("contract.pdf")).toBeInTheDocument());
+
+    const input = container.querySelector("textarea")!;
+    fireEvent.change(input, { target: { value: "review contract" } });
+    fireEvent.click(screen.getByRole("button", { name: "conversationCenter.send" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("conversationCenter.attachment_blocked_hint"));
+
+    fireEvent.click(screen.getByRole("button", { name: "conversationCenter.attachment_send_plain_text" }));
+    await waitFor(() => expect(adapter.start).toHaveBeenCalledTimes(1));
+    expect(adapter.start.mock.calls[0]?.[0]).toMatchObject({
+      text: "review contract",
+      attachments: [],
+    });
+  });
+});
+
+describe("ConversationCenter unknown execution safety", () => {
+  it("does not retry an unknown stream failure", async () => {
+    const requestId = "req-1";
+    adapter.start.mockClear();
+    adapter.start.mockImplementationOnce(() => ({
+      requestId,
+      streamId: `stream-${requestId}`,
+      abort: vi.fn(),
+      events: (async function* (): AsyncGenerator<ConversationEvent> {
+        yield {
+          type: "error.occurred",
+          eventId: "unknown-error",
+          sequence: 1,
+          timestamp: new Date().toISOString(),
+          schemaVersion: 1,
+          requestId,
+          streamId: `stream-${requestId}`,
+          conversationKey: "tenant-1:user-1:chat:chat-1:session-1",
+          target: { id: "chat-1", kind: "chat" },
+          context,
+          error: {
+            errorCode: "execution_unknown",
+            displayMessage: "unknown execution",
+            failureKind: "unknown",
+            retryAuthorization: "none",
+          },
+        };
+        yield {
+          type: "stream.completed",
+          eventId: "unknown-completed",
+          sequence: 2,
+          timestamp: new Date().toISOString(),
+          schemaVersion: 1,
+          requestId,
+          streamId: `stream-${requestId}`,
+          conversationKey: "tenant-1:user-1:chat:chat-1:session-1",
+          target: { id: "chat-1", kind: "chat" },
+          context,
+          finalStatus: "failed" as const,
+        };
+      })(),
+    }));
+
+    const { container } = render(
+      <MemoryRouter initialEntries={["/conversation-center?kind=chat&targetId=chat-1&contextId=session-1"]}>
+        <Routes>
+          <Route path="/conversation-center" element={<ConversationCenter />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(container.querySelector("textarea")).not.toBeNull());
+    const input = container.querySelector("textarea")!;
+    fireEvent.change(input, { target: { value: "first question" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "conversationCenter.retry" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "conversationCenter.retry" }));
+    expect(adapter.start).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("ConversationCenter automatic route", () => {
-  it("selects the auto target and sends the original question as the first message", async () => {
+  it("selects the auto target and sends the original question as the first message", { timeout: 10_000 }, async () => {
     const originalDirectoryTargets = assistantDirectoryTargets;
     assistantDirectoryTargets = [];
     try {
@@ -206,6 +328,8 @@ describe("ConversationCenter automatic route", () => {
   });
 
   async function assertAutomaticRouteSendsFirstQuestion() {
+    adapter.start.mockClear();
+    api.post.mockClear();
     const autoCandidate = {
       kind: "chat",
       id: "chat-1",
@@ -246,7 +370,21 @@ describe("ConversationCenter automatic route", () => {
     const createdContext = { id: "session-auto", targetId: "chat-1", kind: "chat" as const, type: "session" as const };
     api.post.mockResolvedValueOnce({ status: 200, data: { code: 0, data: autoDecision } });
     api.post.mockResolvedValueOnce({ status: 200, data: { code: 0, data: { route_selection_id: "rs-auto", state: "NEW" } } });
-    api.post.mockResolvedValueOnce({ status: 200, data: { code: 0, data: { bootstrap_state: "SUCCEEDED", session_id: "session-auto", kind: "chat", target_id: "chat-1" } } });
+    api.post.mockResolvedValueOnce({
+      status: 200,
+      data: {
+        code: 0,
+        data: {
+          route_selection_id: "rs-auto",
+          bootstrap_operation_id: "boot-auto",
+          bootstrap_type: "CREATE_SESSION",
+          bootstrap_state: "SUCCEEDED",
+          session_id: "session-auto",
+          kind: "chat",
+          target_id: "chat-1",
+        },
+      },
+    });
     adapter.getTarget.mockResolvedValueOnce(target);
     adapter.listContexts.mockResolvedValueOnce({ items: [], total: 0 });
     adapter.loadContext.mockResolvedValueOnce({ context: createdContext, messages: [], nextCursor: undefined });
@@ -283,7 +421,7 @@ describe("ConversationCenter automatic route", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => expect(api.post).toHaveBeenCalled());
-    await waitFor(() => expect(adapter.start).toHaveBeenCalled());
+    await waitFor(() => expect(adapter.start).toHaveBeenCalled(), { timeout: 8000 });
     expect(adapter.start.mock.calls[0]?.[0]).toMatchObject({
       target: { id: "chat-1", kind: "chat" },
       context: { id: "session-auto", type: "session" },

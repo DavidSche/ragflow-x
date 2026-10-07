@@ -829,10 +829,10 @@
       "oracle": "visible text, citation, loading/error/disabled state",
       "testLevel": "Component + E2E",
       "mappedFiles": [
-        "web/src/resources/workbench/Workbench.tsx",
         "web/src/resources/workbench/workbench-types.ts",
         "web/src/resources/workbench/AnswerMarkdown.tsx",
         "web/src/resources/workbench/MessageBubble.tsx",
+        "web/src/resources/workbench/ConversationMessageList.tsx",
         "web/src/resources/conversation-center/logic.ts"
       ],
       "tests": [

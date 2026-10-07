@@ -59,7 +59,6 @@ const ASSISTANT_APP_RESOURCES = [
   "search-apps",
 ] as const;
 const INTERACTION_RESOURCES = [
-  "workbench",
   "conversation-center",
   "memories",
 ] as const;

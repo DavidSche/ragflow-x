@@ -42,6 +42,9 @@ type AnswerDeliveryInput struct {
 	// Pushdown carries the retrieval-layer metadata_condition evidence
 	// (doc/123 §7); nil means the scenario has no pushdown channel.
 	Pushdown *pushdownEvidence
+	// preparedRun lets orchestration start an AnswerRun before tool execution
+	// so lookup tools can read facts scoped to the same request.
+	preparedRun *model.AnswerRun
 }
 
 type AnswerDeliveryResult struct {
@@ -204,16 +207,33 @@ func (s *Service) FinalizeAnswerDelivery(ctx context.Context, input AnswerDelive
 	}
 	citations := normalizedAnswerCitations(input.Citations)
 	now := time.Now().UTC()
-	run := &model.AnswerRun{
-		TenantID: input.TenantID, ProjectID: input.ProjectID, SessionID: input.SessionID,
-		AssistantID: input.AssistantID, AssistantReleaseID: input.AssistantReleaseID,
-		QuestionRef: sha256Hex(strings.Join(strings.Fields(strings.ToLower(input.Question)), " ")),
-		Model:       input.Model, TraceID: input.TraceID, RequestID: input.RequestID,
-		LifecycleState: input.LifecycleState, AnswerStatus: input.AnswerStatus,
-		CompletionReason: input.CompletionReason, CreatedAt: now, CompletedAt: &now,
+	run := input.preparedRun
+	if run == nil {
+		run = &model.AnswerRun{
+			TenantID: input.TenantID, ProjectID: input.ProjectID, SessionID: input.SessionID,
+			AssistantID: input.AssistantID, AssistantReleaseID: input.AssistantReleaseID,
+			QuestionRef: sha256Hex(strings.Join(strings.Fields(strings.ToLower(input.Question)), " ")),
+			Model:       input.Model, TraceID: input.TraceID, RequestID: input.RequestID,
+			LifecycleState: input.LifecycleState, AnswerStatus: input.AnswerStatus,
+			CompletionReason: input.CompletionReason, CreatedAt: now, CompletedAt: &now,
+		}
 	}
-	if err := s.Store.CreateAnswerRun(ctx, run); err != nil {
-		return nil, err
+	if run.TenantID != input.TenantID || run.SessionID != input.SessionID ||
+		run.AssistantID != input.AssistantID || run.RequestID != input.RequestID {
+		return nil, httperr.New(409, 40997, "prepared answer run does not match the delivery request")
+	}
+	if run.ID != "" {
+	} else {
+		if err := s.Store.CreateAnswerRun(ctx, run); err != nil {
+			return nil, err
+		}
+	}
+	run.LifecycleState = input.LifecycleState
+	run.AnswerStatus = input.AnswerStatus
+	run.CompletionReason = input.CompletionReason
+	run.CompletedAt = &now
+	if input.preparedRun != nil && input.ProjectID != "" {
+		run.ProjectID = input.ProjectID
 	}
 	citationsJSON, artifactsJSON, executionJSON, limitationsJSON, actionsJSON, err := answerJSONFields(input, citations)
 	if err != nil {
@@ -274,6 +294,13 @@ func (s *Service) FinalizeAnswerDelivery(ctx context.Context, input AnswerDelive
 	)
 	if err != nil {
 		return nil, err
+	}
+	if input.preparedRun != nil {
+		if err := s.Store.UpdateAnswerRunTerminal(ctx, input.TenantID, run.ID,
+			input.LifecycleState, input.AnswerStatus, input.CompletionReason,
+		); err != nil {
+			return nil, err
+		}
 	}
 	return &AnswerDeliveryResult{
 		Run: run, Snapshot: snapshot, Projection: projection,

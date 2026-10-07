@@ -2,6 +2,8 @@ package model
 
 import "time"
 
+const AgentStatusActive = "active"
+
 // AgentShadow is the platform's ownership record for a RAGFlow agent canvas.
 // RAGFlow remains the source of truth for the DSL; this table maps an agent id
 // to the platform tenant that owns it so multi-tenant isolation holds even

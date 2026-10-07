@@ -54,15 +54,15 @@ interface KnowledgeAssetMapItem extends LifecycleDataset {
 
 const appTypes = (value: string) => value.split(",").filter(Boolean).join(" / ");
 const dateValue = (value?: string) => value ? value.slice(0, 10) : "";
-const fail = (error: unknown, notify: ReturnType<typeof useNotify>) => {
-  notify(error instanceof ApiError ? error.displayMessage : error instanceof Error ? error.message : "操作失败", { type: "error" });
-};
 
 const emptyTemplate = { key: "", name: "", description: "", app_types: "chat", status: "draft", payload_json: "{}" };
 
 export const AssetGovernanceBoard = () => {
   const t = useTranslate();
   const notify = useNotify();
+  const fail = (error: unknown, notifyFn: ReturnType<typeof useNotify>) => {
+    notifyFn(error instanceof ApiError ? error.displayMessage : error instanceof Error ? error.message : t("assetGovernance.operation_failed"), { type: "error" });
+  };
   const { data: identityData } = useGetIdentity();
   const identity = identityData as { role?: string } | undefined;
   const { data: workspaceRecords = [] } = useGetList("tenants", { pagination: { page: 1, perPage: 200 } });
@@ -163,7 +163,7 @@ export const AssetGovernanceBoard = () => {
         app_types: templateForm.app_types.split(",").map((item) => item.trim()).filter(Boolean),
         status: templateForm.status,
         payload: JSON.parse(templateForm.payload_json || "{}"),
-        change_note: "界面保存",
+        change_note: t("assetGovernance.change_note_ui"),
       };
       if (editingTemplate) {
         await api.put(`/scenario-template-assets/${editingTemplate.id}`, payload);
@@ -171,7 +171,7 @@ export const AssetGovernanceBoard = () => {
         await api.post("/scenario-template-assets", payload);
       }
       setDialogOpen(false); setEditingTemplate(null); setTemplateForm(emptyTemplate);
-      notify("模板已保存为新版本", { type: "success" }); await load();
+      notify(t("assetGovernance.template_save_success"), { type: "success" }); await load();
     } catch (error) { fail(error, notify); } finally { setBusy(false); }
   };
 
@@ -194,7 +194,7 @@ export const AssetGovernanceBoard = () => {
 
   const savePolicy = () => run(async () => {
     await api.post("/prompt-policies", { ...policyForm, payload: JSON.parse(policyForm.payload || "{}") });
-  }, "提示词策略已创建新版本");
+  }, t("assetGovernance.policy_created"));
 
   const saveLifecycle = () => run(async () => {
     if (!lifecycleForm) return;
@@ -205,7 +205,7 @@ export const AssetGovernanceBoard = () => {
       review_status: lifecycleForm.review_status, quality_score: lifecycleForm.quality_score,
     });
     setLifecycleForm(null);
-  }, "知识生命周期已更新");
+  }, t("assetGovernance.lifecycle_updated"));
 
   const createEvalSet = () => run(async () => {
     const cases = evalForm.cases.split("\n").filter(Boolean).map((line) => {
@@ -213,7 +213,7 @@ export const AssetGovernanceBoard = () => {
       return { question: question.trim(), expected_answer: expected.trim(), expected_keywords: keywords.trim() };
     });
     await api.post("/eval-sets", { name: evalForm.name, app_type: evalForm.app_type, cases });
-  }, "评测集已创建");
+  }, t("assetGovernance.eval_set_created"));
 
   const createTemplateReleaseCandidate = (item: TemplateAsset) => run(async () => {
     await api.post(`/scenario-template-assets/${item.id}/release-candidate`, {});
@@ -238,45 +238,45 @@ export const AssetGovernanceBoard = () => {
     <div className="space-y-4">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold">资产治理</h1>
-          <p className="text-sm text-muted-foreground">模板、提示词默认值、知识生命周期与评测回归的统一闭环。</p>
+          <h1 className="text-xl font-semibold">{t("assetGovernance.page_title")}</h1>
+          <p className="text-sm text-muted-foreground">{t("assetGovernance.page_subtitle")}</p>
         </div>
-        <Button variant="outline" onClick={() => void load()} disabled={loading} aria-label="刷新资产数据"><RefreshCw className="size-4" /> 刷新</Button>
+        <Button variant="outline" onClick={() => void load()} disabled={loading} aria-label={t("assetGovernance.refresh_aria")}><RefreshCw className="size-4" /> {t("assetGovernance.refresh")}</Button>
       </header>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="templates">模板</TabsTrigger>
-          <TabsTrigger value="prompts">提示词策略</TabsTrigger>
-          <TabsTrigger value="knowledge">知识生命周期</TabsTrigger>
+          <TabsTrigger value="templates">{t("assetGovernance.tab_templates")}</TabsTrigger>
+          <TabsTrigger value="prompts">{t("assetGovernance.tab_prompts")}</TabsTrigger>
+          <TabsTrigger value="knowledge">{t("assetGovernance.tab_knowledge")}</TabsTrigger>
           <TabsTrigger value="asset-map">{t("assetGovernance.asset_map_title")}</TabsTrigger>
           <TabsTrigger value="knowledge-health">{t("assetGovernance.knowledge_health_title")}</TabsTrigger>
-          <TabsTrigger value="evals">评测集</TabsTrigger>
+          <TabsTrigger value="evals">{t("assetGovernance.tab_evals")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="templates" className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => { setEditingTemplate(null); setTemplateForm(emptyTemplate); setDialogOpen(true); }}><Plus className="size-4" /> 新建模板</Button>
+            <Button onClick={() => { setEditingTemplate(null); setTemplateForm(emptyTemplate); setDialogOpen(true); }}><Plus className="size-4" /> {t("assetGovernance.create_template")}</Button>
             <Button variant="outline" onClick={() => void run(async () => {
               const result = await unwrap(api.post<ApiEnvelope<{ created: number }>>("/eval-sets/generate-from-templates"));
-              if (!result.created) throw new Error("发布模板均已生成评测集");
-            }, "缺失的模板评测集已生成")} disabled={busy}><Sparkles className="size-4" /> 自动补齐评测集</Button>
-            <Button variant="outline" onClick={() => { const input = document.createElement("input"); input.type = "file"; input.accept = ".json"; input.onchange = async () => { const file = input.files?.[0]; if (!file) return; setImportText(await file.text()); await run(async () => { await api.post("/scenario-template-assets/import", JSON.parse(importText || await file.text())); }, "模板导入成功"); }; input.click(); }}><Upload className="size-4" /> 导入</Button>
+              if (!result.created) throw new Error(t("assetGovernance.eval_sets_all_generated"));
+            }, t("assetGovernance.eval_sets_generated"))} disabled={busy}><Sparkles className="size-4" /> {t("assetGovernance.auto_fill_eval_sets")}</Button>
+            <Button variant="outline" onClick={() => { const input = document.createElement("input"); input.type = "file"; input.accept = ".json"; input.onchange = async () => { const file = input.files?.[0]; if (!file) return; setImportText(await file.text()); await run(async () => { await api.post("/scenario-template-assets/import", JSON.parse(importText || await file.text())); }, t("assetGovernance.import_success")); }; input.click(); }}><Upload className="size-4" /> {t("assetGovernance.import")}</Button>
           </div>
           {canCopyAcrossWorkspaces ? (
             <Card><CardContent className="grid gap-2 md:grid-cols-[1fr_auto]">
               <select
                 className="w-full rounded border bg-background px-2 py-1 text-sm"
-                aria-label="目标工作区"
+                aria-label={t("assetGovernance.target_workspace")}
                 value={copyTarget}
                 onChange={(event) => setCopyTarget(event.target.value)}
               >
-                <option value="">请选择目标工作区</option>
+                <option value="">{t("assetGovernance.select_target_workspace")}</option>
                 {workspaceRecords.map((workspace) => (
                   <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
                 ))}
               </select>
-              <Button variant="outline" disabled={!copyTarget || busy}>跨工作区复制模式已启用</Button>
+              <Button variant="outline" disabled={!copyTarget || busy}>{t("assetGovernance.copy_mode_enabled")}</Button>
             </CardContent></Card>
           ) : null}
           {loading ? <Skeleton className="h-40" /> : templates.map((item) => (
@@ -287,21 +287,21 @@ export const AssetGovernanceBoard = () => {
                   <span className="rounded bg-muted px-1.5 text-xs">v{item.latest_version}</span>
                   <span className="rounded bg-muted px-1.5 text-xs">{item.status}</span>
                 </div>
-                <p className="mt-1 text-sm text-muted-foreground">{item.description || "暂无描述"}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{item.description || t("assetGovernance.no_description")}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{appTypes(item.app_types)}</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => void exportTemplate(item)}><Download className="size-4" /> 导出</Button>
-                <Button size="sm" variant="outline" onClick={() => { setEditingTemplate(item); setTemplateForm({ ...emptyTemplate, name: item.name, description: item.description, app_types: item.app_types, status: item.status, payload_json: JSON.stringify(JSON.parse(item.payload_json || "{}"), null, 2) }); setDialogOpen(true); }}>新版本</Button>
-                {canCopyAcrossWorkspaces ? <Button size="sm" variant="outline" onClick={() => void run(() => api.post(`/scenario-template-assets/${item.id}/copy`, { target_tenant_id: copyTarget }), "模板已复制")} disabled={!copyTarget}><Copy className="size-4" /> 复制</Button> : null}
-                <Button size="sm" variant="outline" onClick={() => void run(() => api.post(`/scenario-template-assets/${item.id}/eval-set`, { name: `${item.name}评测集` }), "评测集已生成")}>生成评测</Button>
+                <Button size="sm" variant="outline" onClick={() => void exportTemplate(item)}><Download className="size-4" /> {t("assetGovernance.export")}</Button>
+                <Button size="sm" variant="outline" onClick={() => { setEditingTemplate(item); setTemplateForm({ ...emptyTemplate, name: item.name, description: item.description, app_types: item.app_types, status: item.status, payload_json: JSON.stringify(JSON.parse(item.payload_json || "{}"), null, 2) }); setDialogOpen(true); }}>{t("assetGovernance.new_version")}</Button>
+                {canCopyAcrossWorkspaces ? <Button size="sm" variant="outline" onClick={() => void run(() => api.post(`/scenario-template-assets/${item.id}/copy`, { target_tenant_id: copyTarget }), t("assetGovernance.copied"))} disabled={!copyTarget}><Copy className="size-4" /> {t("assetGovernance.copy")}</Button> : null}
+                <Button size="sm" variant="outline" onClick={() => void run(() => api.post(`/scenario-template-assets/${item.id}/eval-set`, { name: t("assetGovernance.eval_set_default_name", { name: item.name }) }), t("assetGovernance.eval_set_generated"))}>{t("assetGovernance.generate_eval")}</Button>
                 {canInstantiateChat && item.status === "published" && item.app_types.split(",").includes("chat") ? (
                   <Button size="sm" variant="outline" disabled={busy} onClick={() => void instantiateChatFromTemplate(item)}>
                     <Sparkles className="size-4" /> {t("release_governance.create_chat_from_template")}
                   </Button>
                 ) : null}
                 <Button size="sm" variant="outline" onClick={() => void createTemplateReleaseCandidate(item)} disabled={busy}><ShieldCheck className="size-4" /> {t("release_governance.create_candidate_from_template")}</Button>
-                <Button size="sm" variant="ghost" onClick={() => void run(() => api.delete(`/scenario-template-assets/${item.id}`), "模板已归档")}><Archive className="size-4" /> 归档</Button>
+                <Button size="sm" variant="ghost" onClick={() => void run(() => api.delete(`/scenario-template-assets/${item.id}`), t("assetGovernance.archived"))}><Archive className="size-4" /> {t("assetGovernance.archive")}</Button>
               </div>
             </CardContent></Card>
           ))}
@@ -316,41 +316,41 @@ export const AssetGovernanceBoard = () => {
         </TabsContent>
 
         <TabsContent value="prompts" className="grid gap-4 lg:grid-cols-[360px_1fr]">
-          <Card><CardHeader><CardTitle className="text-sm">新建默认策略</CardTitle></CardHeader><CardContent className="space-y-3">
-            <div className="space-y-1"><Label>作用域</Label><select className="w-full rounded border bg-background px-2 py-1 text-sm" value={policyForm.scope} onChange={(event) => setPolicyForm({ ...policyForm, scope: event.target.value, object_id: "" })}><option value="tenant">工作区默认</option><option value="chat">Chat</option><option value="search">Search</option><option value="agent">Agent</option></select></div>
+          <Card><CardHeader><CardTitle className="text-sm">{t("assetGovernance.new_default_policy")}</CardTitle></CardHeader><CardContent className="space-y-3">
+            <div className="space-y-1"><Label>{t("assetGovernance.scope")}</Label><select className="w-full rounded border bg-background px-2 py-1 text-sm" value={policyForm.scope} onChange={(event) => setPolicyForm({ ...policyForm, scope: event.target.value, object_id: "" })}><option value="tenant">{t("assetGovernance.scope_tenant_default")}</option><option value="chat">Chat</option><option value="search">Search</option><option value="agent">Agent</option></select></div>
             {policyForm.scope === "tenant" ? (
-              <div className="space-y-1"><Label>应用对象</Label><p className="text-xs text-muted-foreground">作用于当前工作区的全部默认对话、搜索和智能体。</p></div>
+              <div className="space-y-1"><Label>{t("assetGovernance.target_object")}</Label><p className="text-xs text-muted-foreground">{t("assetGovernance.scope_tenant_hint")}</p></div>
             ) : (
-              <div className="space-y-1"><Label>应用对象</Label>
+              <div className="space-y-1"><Label>{t("assetGovernance.target_object")}</Label>
                 <select className="w-full rounded border bg-background px-2 py-1 text-sm" value={policyForm.object_id} onChange={(event) => setPolicyForm({ ...policyForm, object_id: event.target.value })}>
-                  <option value="">请选择{policyForm.scope === "chat" ? "对话助手" : policyForm.scope === "search" ? "搜索应用" : "智能体"}</option>
+                  <option value="">{t("assetGovernance.select_object", { type: policyForm.scope === "chat" ? t("assetGovernance.object_chat") : policyForm.scope === "search" ? t("assetGovernance.object_search") : t("assetGovernance.object_agent") })}</option>
                   {policyObjects.map((object) => (
                     <option key={object.id} value={object.id}>{object.name}</option>
                   ))}
                 </select>
-                {policyObjects.length === 0 ? <p className="text-xs text-muted-foreground">当前工作区暂无该类型应用，请先创建后再配置策略。</p> : null}
+                {policyObjects.length === 0 ? <p className="text-xs text-muted-foreground">{t("assetGovernance.no_objects_hint")}</p> : null}
               </div>
             )}
-            <div className="space-y-1"><Label>提示词预设</Label>
+            <div className="space-y-1"><Label>{t("assetGovernance.prompt_preset")}</Label>
               <select className="w-full rounded border bg-background px-2 py-1 text-sm" value={policyForm.preset_id} onChange={(event) => setPolicyForm({ ...policyForm, preset_id: event.target.value })}>
-                <option value="">不指定预设</option>
+                <option value="">{t("assetGovernance.no_preset")}</option>
                 {PROMPT_PRESETS.map((preset) => (<option key={preset.id} value={preset.id}>{preset.label}</option>))}
               </select>
             </div>
-            <div className="space-y-1"><Label>参数档案</Label>
+            <div className="space-y-1"><Label>{t("assetGovernance.parameter_profile")}</Label>
               <select className="w-full rounded border bg-background px-2 py-1 text-sm" value={policyForm.profile_id} onChange={(event) => setPolicyForm({ ...policyForm, profile_id: event.target.value })}>
-                <option value="">不指定档案</option>
+                <option value="">{t("assetGovernance.no_profile")}</option>
                 {PARAMETER_PROFILES.map((profile) => (<option key={profile.id} value={profile.id}>{profile.label}</option>))}
               </select>
             </div>
             <Textarea rows={5} value={policyForm.payload} onChange={(event) => setPolicyForm({ ...policyForm, payload: event.target.value })} />
-            <Button className="w-full" onClick={() => void savePolicy()} disabled={busy}>保存新版本</Button>
+            <Button className="w-full" onClick={() => void savePolicy()} disabled={busy}>{t("assetGovernance.save_new_version")}</Button>
           </CardContent></Card>
           <div className="space-y-3">
             {policies.map((item) => (
               <Card key={item.id}><CardContent className="flex items-center justify-between gap-3">
-                <div><div className="flex items-center gap-2"><span className="font-medium">{item.scope}</span><span className="rounded bg-muted px-1.5 text-xs">v{item.version}</span>{item.active ? <span className="rounded bg-primary/10 px-1.5 text-xs text-primary">active</span> : null}</div><p className="text-xs text-muted-foreground">{item.object_id ? governanceObjectName(item.object_id) : "全局默认"}</p></div>
-                <div className="flex gap-2"><Button size="sm" variant="outline" disabled={item.active || busy} onClick={() => void run(() => api.post(`/prompt-policies/${item.id}/rollback`), "已回滚")}><RotateCcw className="size-4" /> 回滚</Button><Button size="sm" variant="ghost" disabled={item.active || busy} onClick={() => void run(() => api.delete(`/prompt-policies/${item.id}`), "已删除")}>删除</Button></div>
+                <div><div className="flex items-center gap-2"><span className="font-medium">{item.scope}</span><span className="rounded bg-muted px-1.5 text-xs">v{item.version}</span>{item.active ? <span className="rounded bg-primary/10 px-1.5 text-xs text-primary">active</span> : null}</div><p className="text-xs text-muted-foreground">{item.object_id ? governanceObjectName(item.object_id) : t("assetGovernance.global_default")}</p></div>
+                <div className="flex gap-2"><Button size="sm" variant="outline" disabled={item.active || busy} onClick={() => void run(() => api.post(`/prompt-policies/${item.id}/rollback`), t("assetGovernance.rolled_back"))}><RotateCcw className="size-4" /> {t("assetGovernance.rollback")}</Button><Button size="sm" variant="ghost" disabled={item.active || busy} onClick={() => void run(() => api.delete(`/prompt-policies/${item.id}`), t("assetGovernance.deleted"))}>{t("assetGovernance.delete")}</Button></div>
               </CardContent></Card>
             ))}
           </div>
@@ -359,8 +359,8 @@ export const AssetGovernanceBoard = () => {
         <TabsContent value="knowledge" className="space-y-3">
           {datasets.map((item) => (
             <Card key={item.id}><CardContent className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div><div className="font-medium">{item.name}</div><div className="text-xs text-muted-foreground">{item.owner_id ? governanceUserName(item.owner_id) : "未设负责人"} · {item.source_type || "未设来源"} · {item.sensitivity || "未设敏感级"}</div></div>
-              <div className="flex items-center gap-2"><span className={`rounded px-2 py-1 text-xs ${item.lifecycle_status === "expired" ? "bg-destructive/10 text-destructive" : item.lifecycle_status === "due" ? "bg-amber-500/10 text-amber-600" : "bg-muted"}`}>{item.lifecycle_status}</span><Button size="sm" variant="outline" onClick={() => setLifecycleForm(item)}>编辑</Button></div>
+              <div><div className="font-medium">{item.name}</div><div className="text-xs text-muted-foreground">{item.owner_id ? governanceUserName(item.owner_id) : t("assetGovernance.no_owner")} · {item.source_type || t("assetGovernance.no_source")} · {item.sensitivity || t("assetGovernance.no_sensitivity")}</div></div>
+              <div className="flex items-center gap-2"><span className={`rounded px-2 py-1 text-xs ${item.lifecycle_status === "expired" ? "bg-destructive/10 text-destructive" : item.lifecycle_status === "due" ? "bg-amber-500/10 text-amber-600" : "bg-muted"}`}>{item.lifecycle_status}</span><Button size="sm" variant="outline" onClick={() => setLifecycleForm(item)}>{t("assetGovernance.edit")}</Button></div>
             </CardContent></Card>
           ))}
         </TabsContent>
@@ -438,72 +438,72 @@ export const AssetGovernanceBoard = () => {
         </TabsContent>
 
         <TabsContent value="evals" className="grid gap-4 lg:grid-cols-[360px_1fr]">
-          <Card><CardHeader><CardTitle className="text-sm">创建评测集</CardTitle></CardHeader><CardContent className="space-y-3">
-            <Input placeholder="名称" value={evalForm.name} onChange={(event) => setEvalForm({ ...evalForm, name: event.target.value })} />
-            <Input placeholder="应用类型：chat/search/agent" value={evalForm.app_type} onChange={(event) => setEvalForm({ ...evalForm, app_type: event.target.value })} />
+          <Card><CardHeader><CardTitle className="text-sm">{t("assetGovernance.create_eval_set")}</CardTitle></CardHeader><CardContent className="space-y-3">
+            <Input placeholder={t("assetGovernance.eval_name_placeholder")} value={evalForm.name} onChange={(event) => setEvalForm({ ...evalForm, name: event.target.value })} />
+            <Input placeholder={t("assetGovernance.eval_app_type_placeholder")} value={evalForm.app_type} onChange={(event) => setEvalForm({ ...evalForm, app_type: event.target.value })} />
             <Textarea rows={6} value={evalForm.cases} onChange={(event) => setEvalForm({ ...evalForm, cases: event.target.value })} />
-            <Button className="w-full" onClick={() => void createEvalSet()} disabled={busy}>创建</Button>
+            <Button className="w-full" onClick={() => void createEvalSet()} disabled={busy}>{t("assetGovernance.create")}</Button>
           </CardContent></Card>
           <div className="space-y-3">
-            {evalSets.map((item) => (<Card key={item.id}><CardContent className="flex items-center justify-between"><div><div className="font-medium">{item.name}</div><div className="text-xs text-muted-foreground">{item.app_type} · {item.item_count} 条 · {item.status}</div></div><Button size="sm" variant="outline" onClick={() => void loadCases(item.id)}>查看</Button></CardContent></Card>))}
-            {selectedEvalSet ? <Card><CardHeader><CardTitle className="text-sm">评测用例</CardTitle></CardHeader><CardContent className="space-y-2">{evalCases.map((item) => (<div key={item.id} className="rounded border p-2"><div className="text-sm">{item.question}</div><div className="text-xs text-muted-foreground">{item.source} · {item.expected_answer || "无期望答案"}</div></div>))}</CardContent></Card> : null}
+            {evalSets.map((item) => (<Card key={item.id}><CardContent className="flex items-center justify-between"><div><div className="font-medium">{item.name}</div><div className="text-xs text-muted-foreground">{item.app_type} · {item.item_count} {t("assetGovernance.eval_items_suffix")} · {item.status}</div></div><Button size="sm" variant="outline" onClick={() => void loadCases(item.id)}>{t("assetGovernance.view")}</Button></CardContent></Card>))}
+            {selectedEvalSet ? <Card><CardHeader><CardTitle className="text-sm">{t("assetGovernance.eval_cases")}</CardTitle></CardHeader><CardContent className="space-y-2">{evalCases.map((item) => (<div key={item.id} className="rounded border p-2"><div className="text-sm">{item.question}</div><div className="text-xs text-muted-foreground">{item.source} · {item.expected_answer || t("assetGovernance.no_expected_answer")}</div></div>))}</CardContent></Card> : null}
           </div>
         </TabsContent>
       </Tabs>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{editingTemplate ? "保存模板新版本" : "新建场景模板"}</DialogTitle></DialogHeader>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{editingTemplate ? t("assetGovernance.save_template_version") : t("assetGovernance.new_template")}</DialogTitle></DialogHeader>
         <div className="grid gap-3">
-          {!editingTemplate ? <Input placeholder="模板 key（必填）" value={templateForm.key} onChange={(event) => setTemplateForm({ ...templateForm, key: event.target.value })} /> : null}
-          <Input placeholder="名称（必填）" value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} />
-          <Input placeholder="应用类型：chat,search,agent" value={templateForm.app_types} onChange={(event) => setTemplateForm({ ...templateForm, app_types: event.target.value })} />
-          <Input placeholder="描述" value={templateForm.description} onChange={(event) => setTemplateForm({ ...templateForm, description: event.target.value })} />
-          <select className="rounded border bg-background px-2 py-1 text-sm" value={templateForm.status} onChange={(event) => setTemplateForm({ ...templateForm, status: event.target.value })}><option value="draft">草稿</option><option value="published">发布</option></select>
+          {!editingTemplate ? <Input placeholder={t("assetGovernance.template_key_placeholder")} value={templateForm.key} onChange={(event) => setTemplateForm({ ...templateForm, key: event.target.value })} /> : null}
+          <Input placeholder={t("assetGovernance.template_name_placeholder")} value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} />
+          <Input placeholder={t("assetGovernance.template_app_types_placeholder")} value={templateForm.app_types} onChange={(event) => setTemplateForm({ ...templateForm, app_types: event.target.value })} />
+          <Input placeholder={t("assetGovernance.template_desc_placeholder")} value={templateForm.description} onChange={(event) => setTemplateForm({ ...templateForm, description: event.target.value })} />
+          <select className="rounded border bg-background px-2 py-1 text-sm" value={templateForm.status} onChange={(event) => setTemplateForm({ ...templateForm, status: event.target.value })}><option value="draft">{t("assetGovernance.status_draft")}</option><option value="published">{t("assetGovernance.status_published")}</option></select>
           <Textarea rows={8} value={templateForm.payload_json} onChange={(event) => setTemplateForm({ ...templateForm, payload_json: event.target.value })} />
-          <Button onClick={() => void saveTemplate()} disabled={busy}>{busy ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />} 保存</Button>
+          <Button onClick={() => void saveTemplate()} disabled={busy}>{busy ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />} {t("assetGovernance.save")}</Button>
         </div>
       </DialogContent></Dialog>
 
-      <Dialog open={!!lifecycleForm} onOpenChange={(open) => !open && setLifecycleForm(null)}><DialogContent><DialogHeader><DialogTitle>知识生命周期</DialogTitle></DialogHeader>
+      <Dialog open={!!lifecycleForm} onOpenChange={(open) => !open && setLifecycleForm(null)}><DialogContent><DialogHeader><DialogTitle>{t("assetGovernance.knowledge_lifecycle")}</DialogTitle></DialogHeader>
         {lifecycleForm ? <div className="grid gap-3">
           <label className="space-y-1 text-sm">
-            <span>负责人</span>
+            <span>{t("assetGovernance.owner")}</span>
             <select
               className="w-full rounded border bg-background px-2 py-1 text-sm"
-              aria-label="负责人"
+              aria-label={t("assetGovernance.owner")}
               value={lifecycleForm.owner_id}
               onChange={(event) => setLifecycleForm({ ...lifecycleForm, owner_id: event.target.value })}
             >
-              <option value="">请选择负责人</option>
+              <option value="">{t("assetGovernance.select_owner")}</option>
               {[...userRecords].filter((user, index, records) => records.findIndex((candidate) => candidate.id === user.id) === index).map((user) => (
                 <option key={user.id} value={user.id}>{user.username}</option>
               ))}
               {lifecycleForm.owner_id && !userRecords.some((user) => user.id === lifecycleForm.owner_id) ? (
-                <option value={lifecycleForm.owner_id}>{lifecycleForm.owner_id}（当前值）</option>
+                <option value={lifecycleForm.owner_id}>{lifecycleForm.owner_id}{t("assetGovernance.current_value_suffix")}</option>
               ) : null}
             </select>
           </label>
           <label className="space-y-1 text-sm">
-            <span>负责团队</span>
+            <span>{t("assetGovernance.owner_team")}</span>
             <select
               className="w-full rounded border bg-background px-2 py-1 text-sm"
-              aria-label="负责团队"
+              aria-label={t("assetGovernance.owner_team")}
               value={lifecycleForm.owner_team_id}
               onChange={(event) => setLifecycleForm({ ...lifecycleForm, owner_team_id: event.target.value })}
             >
-              <option value="">请选择负责团队</option>
+              <option value="">{t("assetGovernance.select_owner_team")}</option>
               {teamRecords.map((team) => (
                 <option key={team.id} value={team.id}>{team.name}</option>
               ))}
               {lifecycleForm.owner_team_id && !teamRecords.some((team) => team.id === lifecycleForm.owner_team_id) ? (
-                <option value={lifecycleForm.owner_team_id}>{lifecycleForm.owner_team_id}（当前值）</option>
+                <option value={lifecycleForm.owner_team_id}>{lifecycleForm.owner_team_id}{t("assetGovernance.current_value_suffix")}</option>
               ) : null}
             </select>
           </label>
-          <Input placeholder="来源类型" value={lifecycleForm.source_type} onChange={(event) => setLifecycleForm({ ...lifecycleForm, source_type: event.target.value })} />
-          <Input placeholder="业务域" value={lifecycleForm.business_domain} onChange={(event) => setLifecycleForm({ ...lifecycleForm, business_domain: event.target.value })} />
-          <Input placeholder="敏感级别" value={lifecycleForm.sensitivity} onChange={(event) => setLifecycleForm({ ...lifecycleForm, sensitivity: event.target.value })} />
+          <Input placeholder={t("assetGovernance.source_type_placeholder")} value={lifecycleForm.source_type} onChange={(event) => setLifecycleForm({ ...lifecycleForm, source_type: event.target.value })} />
+          <Input placeholder={t("assetGovernance.business_domain_placeholder")} value={lifecycleForm.business_domain} onChange={(event) => setLifecycleForm({ ...lifecycleForm, business_domain: event.target.value })} />
+          <Input placeholder={t("assetGovernance.sensitivity_placeholder")} value={lifecycleForm.sensitivity} onChange={(event) => setLifecycleForm({ ...lifecycleForm, sensitivity: event.target.value })} />
           <Input type="date" value={dateValue(lifecycleForm.expires_at)} onChange={(event) => setLifecycleForm({ ...lifecycleForm, expires_at: event.target.value ? new Date(event.target.value).toISOString() : undefined })} />
-          <select className="rounded border bg-background px-2 py-1 text-sm" value={lifecycleForm.review_status} onChange={(event) => setLifecycleForm({ ...lifecycleForm, review_status: event.target.value })}><option value="none">未治理</option><option value="current">已复审</option><option value="due">待复审</option><option value="expired">已过期</option></select>
+          <select className="rounded border bg-background px-2 py-1 text-sm" value={lifecycleForm.review_status} onChange={(event) => setLifecycleForm({ ...lifecycleForm, review_status: event.target.value })}><option value="none">{t("assetGovernance.lifecycle_none")}</option><option value="current">{t("assetGovernance.lifecycle_current")}</option><option value="due">{t("assetGovernance.lifecycle_due")}</option><option value="expired">{t("assetGovernance.lifecycle_expired")}</option></select>
           <NumericRangeField
             label={t("assetGovernance.quality_score")}
             value={lifecycleForm.quality_score}
@@ -512,7 +512,7 @@ export const AssetGovernanceBoard = () => {
             ariaLabel={t("assetGovernance.quality_score")}
             onChange={(next) => setLifecycleForm({ ...lifecycleForm, quality_score: next ?? 0 })}
           />
-          <Button onClick={() => void saveLifecycle()} disabled={busy}>保存</Button>
+          <Button onClick={() => void saveLifecycle()} disabled={busy}>{t("assetGovernance.save")}</Button>
         </div> : null}
       </DialogContent></Dialog>
     </div>

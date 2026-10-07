@@ -116,6 +116,19 @@ func (s *store) ListProjectIDsBoundToTeams(ctx context.Context, teamIDs []string
 	return ids, nil
 }
 
+func (s *store) ListDatasetIDsByProjectIDs(ctx context.Context, tenantID string, projectIDs []string) ([]string, error) {
+	if len(projectIDs) == 0 {
+		return []string{}, nil
+	}
+	datasetIDs := make([]string, 0)
+	if err := s.WithContext(ctx).Model(&model.DatasetLink{}).
+		Where("tenant_id = ? AND project_id IN ?", tenantID, projectIDs).
+		Order("id ASC").Pluck("id", &datasetIDs).Error; err != nil {
+		return nil, err
+	}
+	return datasetIDs, nil
+}
+
 // TeamProjectCounts returns the number of bound projects per team id.
 func (s *store) TeamProjectCounts(ctx context.Context, teamIDs []string) (map[string]int64, error) {
 	out := map[string]int64{}

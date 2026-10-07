@@ -85,6 +85,8 @@ export type ConversationArtifact =
 
 export type ConversationToolCallStatus = "running" | "success" | "failed";
 
+export type AttachmentStatus = "staged" | "uploading" | "uploaded" | "ready" | "error";
+
 export interface ConversationToolCall {
   name?: string;
   status?: ConversationToolCallStatus;
@@ -136,10 +138,13 @@ export interface SessionLike {
   messages?: Message[];
   reference?: Record<string, unknown>[];
 }
+
 export type Rating = "positive" | "negative";
 
 export function newId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const id = globalThis.crypto?.randomUUID?.();
+  if (!id) throw new Error("CSPRNG unavailable");
+  return id;
 }
 
 export function feedbackRequestId(turnId?: string): string {
@@ -268,7 +273,7 @@ export async function streamRead(
               : refs;
         onEvent(delta, refs, typeof inner === "object" ? (inner as Record<string, unknown>) : undefined);
       } catch {
-        console.debug("ragflow-x: malformed SSE payload", payload);
+        console.debug("ragflow-x: malformed SSE payload");
         if (payload) onEvent(payload + "\n", []);
       }
     }
@@ -293,7 +298,7 @@ export interface AttachmentDraft {
   name: string;
   size: number;
   mime: string;
-  status: "staged" | "uploading" | "done" | "error";
+  status: AttachmentStatus;
   progress: number;
   meta?: UploadedFileMeta;
   file?: File;

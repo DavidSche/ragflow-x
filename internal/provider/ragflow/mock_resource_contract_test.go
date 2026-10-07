@@ -39,6 +39,19 @@ func TestMockResourceGovernanceContract(t *testing.T) {
 	if err := mock.UpdateDocumentMetadata(ctx, dataset.ID, "missing", nil); err == nil {
 		t.Fatal("expected missing document error")
 	}
+	metadata, err := mock.GetDatasetDocumentMetadata(ctx, dataset.ID, document.ID)
+	if err != nil || metadata["owner"] != "tenant-a" {
+		t.Fatalf("document metadata: %+v err=%v", metadata, err)
+	}
+	if err := mock.ReplaceDatasetDocumentMetadata(ctx, dataset.ID, document.ID, map[string]interface{}{
+		"rgx_status": "active",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	metadata, err = mock.GetDatasetDocumentMetadata(ctx, dataset.ID, document.ID)
+	if err != nil || len(metadata) != 1 || metadata["rgx_status"] != "active" {
+		t.Fatalf("replace metadata must remove omitted fields: %+v err=%v", metadata, err)
+	}
 	documents, err := mock.ListDocuments(ctx, dataset.ID)
 	if err != nil || len(documents) != 1 || documents[0].Status != "parsed" {
 		t.Fatalf("documents: %+v err=%v", documents, err)

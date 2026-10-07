@@ -26,6 +26,7 @@ type Config struct {
 	Retention           Retention           `yaml:"retention"`
 	Approval            Approval            `yaml:"approval"`
 	Runtime             Runtime             `yaml:"runtime"`
+	FactGuard           FactGuard           `yaml:"fact_guard"`
 	ConversationRouting ConversationRouting `yaml:"conversation_routing"`
 	OIDC                OIDC                `yaml:"oidc"`
 	IM                  IM                  `yaml:"im"`
@@ -386,6 +387,7 @@ type ApproverSpec struct {
 // App holds application-level settings.
 type App struct {
 	Name               string `yaml:"name"`
+	Environment        string `yaml:"environment"`
 	JWTSecret          string `yaml:"jwt_secret"`
 	JWTExpireHours     int    `yaml:"jwt_expire_hours"`
 	RefreshExpireHours int    `yaml:"refresh_expire_hours"`
@@ -393,6 +395,12 @@ type App struct {
 	RequestIDHeader    string `yaml:"request_id_header"`
 	EncryptionKey      string `yaml:"encryption_key"`
 	DataDir            string `yaml:"data_dir"`
+}
+
+// FactGuard controls answer claim enforcement. Off is valid only for
+// development or test deployments.
+type FactGuard struct {
+	Mode string `yaml:"mode"`
 }
 
 // Database holds the operational store settings.
@@ -450,7 +458,7 @@ func defaults() *Config {
 		// No hardcoded encryption key: it must come from RGX_ENCRYPTION_KEY or
 		// the first-run wizard, otherwise service.New falls back to an
 		// ephemeral random key (stored API keys won't survive restart).
-		App: App{Name: "ragflow-x", JWTExpireHours: 1, RefreshExpireHours: 168, LogLevel: "info", RequestIDHeader: "X-Request-Id", EncryptionKey: "", DataDir: "./data"},
+		App: App{Name: "ragflow-x", Environment: "development", JWTExpireHours: 1, RefreshExpireHours: 168, LogLevel: "info", RequestIDHeader: "X-Request-Id", EncryptionKey: "", DataDir: "./data"},
 		Database: Database{
 			Driver: "postgres", Host: "localhost", Port: 5432,
 			User: "ragflow_x", Password: "change-me", Name: "ragflow_x", SSLMode: "disable",
@@ -502,6 +510,7 @@ func defaults() *Config {
 		Retention: Retention{Enabled: false, AuditDays: 365, UsageDays: 180, FeedbackDays: 180, JobDays: 90, IntervalSec: 86400},
 		Approval:  Approval{DefaultExpireHours: 72, ExecutionMaxRetries: 3, ExpireScanIntervalSec: 3600, RetentionDays: 365, PolicyCacheTTLSec: 30},
 		Runtime:   Runtime{ReportToken: "", HeartbeatTimeoutSec: 60},
+		FactGuard: FactGuard{Mode: "warn"},
 		OIDC:      OIDC{RequireEmailVerified: true},
 		IM:        IM{WeCom: WeCom{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, Feishu: Feishu{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, DingTalk: DingTalk{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}},
 		ConversationRouting: ConversationRouting{
@@ -529,6 +538,7 @@ func applyEnv(cfg *Config) {
 	setInt(&cfg.Server.Port, "RGX_PORT")
 	setStr(&cfg.Server.Mode, "RGX_MODE")
 	setStr(&cfg.App.JWTSecret, "RGX_JWT_SECRET")
+	setStr(&cfg.App.Environment, "RGX_ENVIRONMENT")
 	setStr(&cfg.App.EncryptionKey, "RGX_ENCRYPTION_KEY")
 	setInt(&cfg.App.RefreshExpireHours, "RGX_REFRESH_EXPIRE_HOURS")
 	setStr(&cfg.App.DataDir, "RGX_DATA_DIR")
@@ -677,6 +687,7 @@ func applyEnv(cfg *Config) {
 	setStr(&cfg.Approval.NotifyWebhookSecret, "RGX_APPROVAL_NOTIFY_WEBHOOK_SECRET")
 	setStr(&cfg.Runtime.ReportToken, "RGX_RUNTIME_REPORT_TOKEN")
 	setInt(&cfg.Runtime.HeartbeatTimeoutSec, "RGX_RUNTIME_HEARTBEAT_TIMEOUT_SEC")
+	setStr(&cfg.FactGuard.Mode, "RGX_FACT_GUARD_MODE")
 	setStr(&cfg.ConversationRouting.Mode, "RGX_CONVERSATION_ROUTE_MODE")
 	setFloat64(&cfg.ConversationRouting.ConfidenceThreshold, "RGX_CONVERSATION_ROUTE_CONFIDENCE")
 	setFloat64(&cfg.ConversationRouting.ConfidenceMargin, "RGX_CONVERSATION_ROUTE_MARGIN")

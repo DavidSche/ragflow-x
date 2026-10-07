@@ -30,12 +30,13 @@ export function useTargetDirectory({ adapter, accessible, identity, notify, tran
   const [targetCursor, setTargetCursor] = useState<string>();
   const [targetsLoading, setTargetsLoading] = useState(false);
   const [targetStatus, setTargetStatus] = useState<ConversationTargetStatus>("EMPTY");
+  const identityKey = `${String((identity as { tenant_id?: string } | undefined)?.tenant_id ?? "")}:${String((identity as { id?: string } | undefined)?.id ?? "")}`;
 
   useEffect(() => {
     if (!identity || !accessible) return;
     let active = true;
     const controller = new AbortController();
-    const cacheKey = `${adapter.kind}:${targetQuery}`;
+    const cacheKey = `${identityKey}:${adapter.kind}:${targetQuery}`;
     const cached = targetCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < TARGET_CACHE_TTL_MS) {
       setTargets(cached.items);
@@ -76,7 +77,7 @@ export function useTargetDirectory({ adapter, accessible, identity, notify, tran
       clearTimeout(timer);
       controller.abort();
     };
-  }, [accessible, adapter, identity, notify, targetQuery, translate]);
+  }, [accessible, adapter, identity, identityKey, notify, targetQuery, translate]);
 
   const reset = useCallback(() => {
     setTargetQuery("");

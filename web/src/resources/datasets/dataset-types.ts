@@ -32,6 +32,34 @@ export interface ChunkRecord {
   keywords?: string[];
 }
 
+export interface ParseQualityReportRecord {
+  id: string;
+  document_id: string;
+  attempt_id: string;
+  parser_policy_id: string;
+  parse_mode: string;
+  quality_status: string;
+  gate_action: string;
+  heuristic_score: number;
+  reference_score?: number | null;
+  effective_score: number;
+  metrics?: string;
+  created_at?: string;
+}
+
+export interface ParseAttemptRecord {
+  id: string;
+  document_id: string;
+  attempt_no: number;
+  parser_policy_id: string;
+  parse_mode: string;
+  started_at?: string;
+  finished_at?: string;
+  quality_status: string;
+  quality_score: number;
+  failure_reason?: string;
+}
+
 export interface DatasetConfig {
   id?: string;
   name?: string;

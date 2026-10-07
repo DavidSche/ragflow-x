@@ -82,7 +82,9 @@ export interface ConversationError {
   errorCode: string;
   displayMessage: string;
   httpStatus?: number;
-  retriable: boolean;
+  failureKind: "deterministic" | "unknown";
+  retryAuthorization: "none" | "safe-retry";
+  retryHint?: boolean;
   traceId?: string;
 }
 

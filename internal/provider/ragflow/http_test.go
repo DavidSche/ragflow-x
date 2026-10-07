@@ -214,6 +214,37 @@ func TestHTTPClientDocumentMetadataDiff(t *testing.T) {
 	}
 }
 
+func TestHTTPClientReplaceDocumentMetadata(t *testing.T) {
+	var gotPath, gotMethod string
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		gotMethod = r.Method
+		gotBody, _ = io.ReadAll(r.Body)
+		writeEnvelope(t, w, map[string]interface{}{})
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "k", 2*time.Second, 2)
+	if err := client.ReplaceDatasetDocumentMetadata(context.Background(), "ds/1", "doc#1", map[string]interface{}{
+		"rgx_status": "active",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/datasets/ds%2F1/documents/doc%231" || gotMethod != http.MethodPatch {
+		t.Fatalf("replace metadata: path=%s method=%s", gotPath, gotMethod)
+	}
+	var body struct {
+		Metadata map[string]interface{} `json:"meta_fields"`
+	}
+	if err := json.Unmarshal(gotBody, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Metadata["rgx_status"] != "active" {
+		t.Fatalf("replace metadata must send the complete meta_fields map: %s", gotBody)
+	}
+}
+
 // TestHTTPClient_Error propagates non-zero engine error codes.
 // TestDocumentFlexibleProcessFields ensures RAGFlow documents with numeric
 // process_begin_at/process_duration fields still unmarshal (some RAGFlow

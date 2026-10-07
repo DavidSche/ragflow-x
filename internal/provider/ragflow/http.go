@@ -463,6 +463,34 @@ func (c *HTTPClient) UpdateDocumentMetadata(ctx context.Context, datasetID, docu
 	return c.do(ctx, http.MethodPatch, path, bytes.NewReader(body), "application/json", nil)
 }
 
+func (c *HTTPClient) GetDatasetDocumentMetadata(ctx context.Context, datasetID, documentID string) (map[string]interface{}, error) {
+	docs, err := c.ListDocuments(ctx, datasetID)
+	if err != nil {
+		return nil, fmt.Errorf("read document metadata: %w", err)
+	}
+	for _, doc := range docs {
+		if doc.ID == documentID {
+			if doc.Metadata == nil {
+				return map[string]interface{}{}, nil
+			}
+			return doc.Metadata, nil
+		}
+	}
+	return nil, fmt.Errorf("document not found: %s", documentID)
+}
+
+func (c *HTTPClient) ReplaceDatasetDocumentMetadata(ctx context.Context, datasetID, documentID string, metadata map[string]interface{}) error {
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+	body, err := json.Marshal(map[string]interface{}{"meta_fields": metadata})
+	if err != nil {
+		return fmt.Errorf("marshal replace document metadata: %w", err)
+	}
+	path := "/datasets/" + url.PathEscape(datasetID) + "/documents/" + url.PathEscape(documentID)
+	return c.do(ctx, http.MethodPatch, path, bytes.NewReader(body), "application/json", nil)
+}
+
 // MetadataUpdate carries one key replacement for the documented
 // POST /datasets/{id}/metadata/update API (docs v0.27.2 §Update or delete
 // metadata). Match, when set, only replaces documents whose current value

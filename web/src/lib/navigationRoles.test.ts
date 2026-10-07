@@ -77,7 +77,7 @@ describe("navigation views", () => {
       "scenario-templates", "agents", "chats", "search-apps",
     ]);
     expect(groups.find((group) => group.key === "interaction")?.resources).toEqual([
-      "workbench", "conversation-center", "memories",
+      "conversation-center", "memories",
     ]);
     expect(groups.find((group) => group.key === "gateway")?.resources).toEqual([
       "model-providers", "api-keys", "usage",
@@ -108,7 +108,7 @@ describe("navigation views", () => {
     ]);
     expect(groups[0].resources).toEqual(["agents", "chats", "search-apps"]);
     expect(groups[1].resources).toEqual([
-      "workbench", "conversation-center", "memories",
+      "conversation-center", "memories",
     ]);
     expect(groups[2].resources).toEqual(["datasets", "projects"]);
   });
@@ -119,7 +119,7 @@ describe("navigation views", () => {
 
     expect(resources).toEqual([
       "datasets", "agents", "chats", "search-apps",
-      "workbench", "conversation-center", "memories",
+      "conversation-center", "memories",
     ]);
     expect(resources).not.toContain("model-providers");
     expect(resources).not.toContain("api-keys");
@@ -141,5 +141,14 @@ describe("navigation views", () => {
     expect(NAVIGATION_PERMISSION_ALIASES.map((alias) => alias.resource)).toEqual([
       "workbench", "conversation-center", "asset-governance",
     ]);
+  });
+
+  it("keeps Workbench as a redirect-only compatibility alias", () => {
+    const navigationResources = Object.values(NAVIGATION_VIEW_PROFILES)
+      .flatMap((view) => view.groups)
+      .flatMap((group) => group.resources);
+
+    expect(navigationResources).not.toContain("workbench");
+    expect(navigationResources).toContain("conversation-center");
   });
 });

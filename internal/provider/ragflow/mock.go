@@ -14,18 +14,32 @@ import (
 // It is NOT safe for production; it exists so the full service flow can run
 // without a live RAGFlow instance.
 type Mock struct {
-	mu                  sync.Mutex
-	datasets            map[string]*mockDataset
-	documents           map[string][]*mockDocument
-	providers           map[string]*mockProvider
-	metadata            map[string]map[string]map[string]interface{}
-	chunks              map[string][]*mockChunk
-	searchApps          map[string]*mockSearchApp
-	memories            map[string]*mockMemory
-	agents              map[string]*mockAgent
-	chatCreateRequests  []CreateChatRequest
-	lastChatCondition   *MetadataCondition
-	lastSearchCondition *MetadataCondition
+	mu                           sync.Mutex
+	datasets                     map[string]*mockDataset
+	documents                    map[string][]*mockDocument
+	providers                    map[string]*mockProvider
+	metadata                     map[string]map[string]map[string]interface{}
+	chunks                       map[string][]*mockChunk
+	searchApps                   map[string]*mockSearchApp
+	memories                     map[string]*mockMemory
+	agents                       map[string]*mockAgent
+	chatCreateRequests           []CreateChatRequest
+	lastChatCondition            *MetadataCondition
+	lastSearchCondition          *MetadataCondition
+	lastRetrieval                *RetrieveDatasetsRequest
+	lastSearchDataset            *SearchDatasetRequest
+	artifacts                    map[string][]DatasetArtifact
+	lastArtifacts                *DatasetArtifactFilter
+	compilationStatuses          map[string]CompilationStatus
+	lastCompilationStatusDataset string
+	compilationTemplates         map[CompilationTemplateSource][]CompilationTemplate
+	compilationTemplateGroups    map[string]CompilationTemplateGroup
+	compilationTemplateOrder     []string
+	lastTemplateGroupListFilter  *CompilationTemplateGroupFilter
+	lastTemplateGroupSaved       *CompilationTemplateGroupRequest
+	lastTemplateGroupUpdatedID   string
+	lastTemplateGroupUpdate      *CompilationTemplateGroupRequest
+	lastTemplateGroupDeletedID   string
 }
 
 // LastChatMetadataCondition returns the metadata condition received by the
@@ -44,7 +58,48 @@ func (m *Mock) LastSearchMetadataCondition() *MetadataCondition {
 	return m.lastSearchCondition
 }
 
+// LastRetrievalRequest returns the latest generic retrieval request received
+// by the mock. It is used by capability and pushdown contract tests.
+func (m *Mock) LastRetrievalRequest() *RetrieveDatasetsRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lastRetrieval == nil {
+		return nil
+	}
+	captured := *m.lastRetrieval
+	return &captured
+}
+
+func (m *Mock) LastSearchDatasetRequest() *SearchDatasetRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lastSearchDataset == nil {
+		return nil
+	}
+	captured := *m.lastSearchDataset
+	return &captured
+}
+
 // Compile-time assertion that Mock implements Client.
+// SetDatasetArtifacts installs deterministic compiled artifacts for contract
+// and local capability tests.
+func (m *Mock) SetDatasetArtifacts(datasetID string, artifacts []DatasetArtifact) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.artifacts[datasetID] = append([]DatasetArtifact(nil), artifacts...)
+}
+
+// LastDatasetArtifactFilter returns the latest artifact list request.
+func (m *Mock) LastDatasetArtifactFilter() *DatasetArtifactFilter {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lastArtifacts == nil {
+		return nil
+	}
+	captured := *m.lastArtifacts
+	return &captured
+}
+
 var _ Client = (*Mock)(nil)
 
 type mockDataset struct {
@@ -70,16 +125,27 @@ type mockChunk struct {
 
 // NewMock creates an empty Mock.
 func NewMock() *Mock {
-	return &Mock{
-		datasets:   map[string]*mockDataset{},
-		documents:  map[string][]*mockDocument{},
-		providers:  map[string]*mockProvider{},
-		metadata:   map[string]map[string]map[string]interface{}{},
-		chunks:     map[string][]*mockChunk{},
-		searchApps: map[string]*mockSearchApp{},
-		memories:   map[string]*mockMemory{},
-		agents:     map[string]*mockAgent{},
+	mock := &Mock{
+		datasets:                  map[string]*mockDataset{},
+		documents:                 map[string][]*mockDocument{},
+		providers:                 map[string]*mockProvider{},
+		metadata:                  map[string]map[string]map[string]interface{}{},
+		chunks:                    map[string][]*mockChunk{},
+		searchApps:                map[string]*mockSearchApp{},
+		memories:                  map[string]*mockMemory{},
+		agents:                    map[string]*mockAgent{},
+		artifacts:                 map[string][]DatasetArtifact{},
+		compilationStatuses:       map[string]CompilationStatus{},
+		compilationTemplates:      map[CompilationTemplateSource][]CompilationTemplate{},
+		compilationTemplateGroups: map[string]CompilationTemplateGroup{},
 	}
+	mock.SetCompilationTemplates(CompilationTemplateSourceBuiltins, []CompilationTemplate{
+		{ID: "graph", Kind: "graph", DisplayName: "Graph"},
+		{ID: "tree", Kind: "tree", DisplayName: "Tree"},
+		{ID: "page_index", Kind: "page_index", DisplayName: "Page Index"},
+		{ID: "wiki", Kind: "wiki", DisplayName: "Wiki"},
+	})
+	return mock
 }
 
 // Name implements the Client interface.
@@ -226,6 +292,51 @@ func (m *Mock) UpdateDocumentMetadata(ctx context.Context, datasetID, documentID
 	}
 	if !found {
 		return fmt.Errorf("document not found: %s", documentID)
+	}
+	if m.metadata[datasetID] == nil {
+		m.metadata[datasetID] = map[string]map[string]interface{}{}
+	}
+	m.metadata[datasetID][documentID] = metadata
+	return nil
+}
+
+func (m *Mock) GetDatasetDocumentMetadata(ctx context.Context, datasetID, documentID string) (map[string]interface{}, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	docs, ok := m.documents[datasetID]
+	if !ok {
+		return nil, fmt.Errorf("dataset not found: %s", datasetID)
+	}
+	for _, doc := range docs {
+		if doc.id == documentID {
+			metadata := m.metadata[datasetID][documentID]
+			if metadata == nil {
+				return map[string]interface{}{}, nil
+			}
+			return metadata, nil
+		}
+	}
+	return nil, fmt.Errorf("document not found: %s", documentID)
+}
+
+func (m *Mock) ReplaceDatasetDocumentMetadata(ctx context.Context, datasetID, documentID string, metadata map[string]interface{}) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.documents[datasetID]; !ok {
+		return fmt.Errorf("dataset not found: %s", datasetID)
+	}
+	found := false
+	for _, doc := range m.documents[datasetID] {
+		if doc.id == documentID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("document not found: %s", documentID)
+	}
+	if metadata == nil {
+		metadata = map[string]interface{}{}
 	}
 	if m.metadata[datasetID] == nil {
 		m.metadata[datasetID] = map[string]map[string]interface{}{}

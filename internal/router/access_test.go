@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
 // protectedRoutes mirrors the routes registered inside the authenticated group
@@ -159,6 +160,78 @@ func protectedRoutes() []string {
 		"GET /api/v1/assistants/:id/rollout-policies",
 		"POST /api/v1/assistants/:id/rollout-policies",
 		"PUT /api/v1/assistants/:id/rollout-policies/:policyId",
+		// Parser policy and quality profile routes (doc/129 P0-A Slice 1).
+		"GET /api/v1/parser-policies",
+		"POST /api/v1/parser-policies",
+		"GET /api/v1/parser-policies/:id",
+		"PUT /api/v1/parser-policies/:id",
+		"PATCH /api/v1/parser-policies/:id",
+		"DELETE /api/v1/parser-policies/:id",
+		"GET /api/v1/quality-profiles",
+		"POST /api/v1/quality-profiles",
+		"GET /api/v1/quality-profiles/:id",
+		"PUT /api/v1/quality-profiles/:id",
+		"PATCH /api/v1/quality-profiles/:id",
+		"DELETE /api/v1/quality-profiles/:id",
+		// Logical document lifecycle routes (doc/129 P0-B Slice 2).
+		"GET /api/v1/logical-documents",
+		"POST /api/v1/logical-documents",
+		"GET /api/v1/logical-documents/:id",
+		"PUT /api/v1/logical-documents/:id",
+		"PATCH /api/v1/logical-documents/:id",
+		"DELETE /api/v1/logical-documents/:id",
+		"GET /api/v1/logical-documents/:id/versions",
+		"POST /api/v1/logical-documents/:id/supersede",
+		"POST /api/v1/logical-documents/:id/restore",
+		"GET /api/v1/logical-documents/:id/publish-attempts",
+		// Deterministic tool routing routes (doc/129 P0-C Slice 4).
+		"GET /api/v1/tool-registry",
+		"POST /api/v1/tool-registry",
+		"GET /api/v1/tool-registry/:id",
+		"PUT /api/v1/tool-registry/:id",
+		"PATCH /api/v1/tool-registry/:id",
+		"DELETE /api/v1/tool-registry/:id",
+		"POST /api/v1/tool-registry/:id/execute",
+		"POST /api/v1/tool-routing/routed-sql-answer",
+		"POST /api/v1/tool-routing/routed-sql-answers",
+		"POST /api/v1/tool-routing/routed-mixed-tool-answers",
+		"POST /api/v1/tool-routing/planned-mixed-tool-answers",
+		"POST /api/v1/tool-routing/answer-runs",
+		"POST /api/v1/tool-routing/answer-runs/:answerRunId/evidence-facts",
+		"GET /api/v1/tool-routing/answer-runs/:answerRunId/evidence-facts",
+		"GET /api/v1/tool-routing/answer-runs/:answerRunId/fact-guard",
+		"GET /api/v1/source-routing-rules",
+		"POST /api/v1/source-routing-rules",
+		"GET /api/v1/source-routing-rules/:id",
+		"PUT /api/v1/source-routing-rules/:id",
+		"PATCH /api/v1/source-routing-rules/:id",
+		"DELETE /api/v1/source-routing-rules/:id",
+		// SQL query template governance routes (doc/129 P1-B Slice 3).
+		"GET /api/v1/query-templates",
+		"POST /api/v1/query-templates",
+		"GET /api/v1/query-templates/:id",
+		"PUT /api/v1/query-templates/:id",
+		"PATCH /api/v1/query-templates/:id",
+		"DELETE /api/v1/query-templates/:id",
+		"GET /api/v1/db-connections",
+		"POST /api/v1/db-connections",
+		"GET /api/v1/db-connections/:id",
+		"PUT /api/v1/db-connections/:id",
+		"PATCH /api/v1/db-connections/:id",
+		"DELETE /api/v1/db-connections/:id",
+		"POST /api/v1/db-connections/:id/test",
+		"GET /api/v1/knowledge-strategies",
+		"POST /api/v1/knowledge-strategies",
+		"GET /api/v1/knowledge-strategies/:id",
+		"PUT /api/v1/knowledge-strategies/:id",
+		"PATCH /api/v1/knowledge-strategies/:id",
+		"DELETE /api/v1/knowledge-strategies/:id",
+		"POST /api/v1/knowledge-strategies/:id/probe",
+		"POST /api/v1/knowledge-strategies/:id/retrieve",
+		"GET /api/v1/datasets/:id/documents/:docId/parse-attempts",
+		"GET /api/v1/datasets/:id/documents/:docId/parse-quality-report",
+		"GET /api/v1/datasets/:id/documents/:docId/parse-quality-reports",
+		"GET /api/v1/datasets/:id/parse-quality-reports",
 	}
 }
 
@@ -220,5 +293,341 @@ func TestAccessRulesReferenceKnownResources(t *testing.T) {
 		if !resources[r.Resource] {
 			t.Errorf("accessRule %s %s references unknown resource %q with no builtin grant", r.Method, r.Path, r.Resource)
 		}
+	}
+}
+
+func TestLogicalDocumentPermissionsMatchMinimumContract(t *testing.T) {
+	registry := ResourceTypeRegistry()["logical-document"]
+	if registry.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("logical-document scope = %q, want workspace", registry.ResourceScope)
+	}
+	if len(registry.AllowedActions) != 3 || registry.AllowedActions[0] != "read" || registry.AllowedActions[1] != "manage" || registry.AllowedActions[2] != "execute" {
+		t.Fatalf("logical-document allowed actions = %v, want [read manage execute]", registry.AllowedActions)
+	}
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "logical-document" {
+			continue
+		}
+		grants[grant.Role] = map[string]bool{}
+	}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource == "logical-document" {
+			grants[grant.Role][grant.Action] = true
+		}
+	}
+	expected := map[string][]string{
+		model.RolePlatformAdmin: {"read", "manage", "execute"},
+		model.RoleTenantAdmin:   {"read", "manage", "execute"},
+		model.RoleOperator:      {"read"},
+		model.RoleBusinessUser:  {"read"},
+		model.RoleViewer:        {"read"},
+		model.RoleTeamAdmin:     {"read", "manage", "execute"},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("role %s grants = %v, want %v", role, grants[role], actions)
+		}
+		for _, action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("role %s is missing %s", role, action)
+			}
+		}
+	}
+	if len(grants[model.RoleBusinessUser]) != 1 || !grants[model.RoleBusinessUser]["read"] {
+		t.Fatalf("business_user must only receive logical-document read, got %v", grants[model.RoleBusinessUser])
+	}
+}
+
+func TestP0CRoutingPermissionsMatchMinimumContract(t *testing.T) {
+	registry := ResourceTypeRegistry()
+	expected := map[string]map[string][]string{
+		"tool-registry": {
+			model.RolePlatformAdmin: {"read", "manage", "execute"},
+			model.RoleTenantAdmin:   {"read", "manage", "execute"},
+		},
+		"source-routing-rule": {
+			model.RolePlatformAdmin: {"read", "manage"},
+			model.RoleTenantAdmin:   {"read", "manage"},
+			model.RoleOperator:      {"read"},
+			model.RoleViewer:        {"read"},
+		},
+	}
+	for resource, roles := range expected {
+		definition := registry[resource]
+		if definition.ResourceScope != ResourceScopeWorkspace {
+			t.Fatalf("%s scope = %q, want workspace", resource, definition.ResourceScope)
+		}
+		if resource == "tool-registry" {
+			if len(definition.AllowedActions) != 3 || definition.AllowedActions[0] != "read" || definition.AllowedActions[1] != "manage" || definition.AllowedActions[2] != "execute" {
+				t.Fatalf("%s allowed actions = %v, want [read manage execute]", resource, definition.AllowedActions)
+			}
+		} else if len(definition.AllowedActions) != 2 || definition.AllowedActions[0] != "read" || definition.AllowedActions[1] != "manage" {
+			t.Fatalf("%s allowed actions = %v, want [read manage]", resource, definition.AllowedActions)
+		}
+		grants := map[string]map[string]bool{}
+		for _, grant := range db.BuiltinPermissionMatrix() {
+			if grant.Resource == resource {
+				if grants[grant.Role] == nil {
+					grants[grant.Role] = map[string]bool{}
+				}
+				grants[grant.Role][grant.Action] = true
+			}
+		}
+		for role, actions := range roles {
+			if len(grants[role]) != len(actions) {
+				t.Fatalf("%s role %s grants = %v, want %v", resource, role, grants[role], actions)
+			}
+			for _, action := range actions {
+				if !grants[role][action] {
+					t.Fatalf("%s role %s is missing %s", resource, role, action)
+				}
+			}
+		}
+	}
+}
+
+func TestDBConnectionPermissionsMatchMinimumContract(t *testing.T) {
+	definition := ResourceTypeRegistry()["db-connection"]
+	if definition.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("db-connection scope = %q, want workspace", definition.ResourceScope)
+	}
+	if len(definition.AllowedActions) != 3 || definition.AllowedActions[0] != "read" || definition.AllowedActions[1] != "manage" || definition.AllowedActions[2] != "test" {
+		t.Fatalf("db-connection allowed actions = %v, want [read manage test]", definition.AllowedActions)
+	}
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "db-connection" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	expected := map[string]map[string]bool{
+		model.RolePlatformAdmin: {"read": true, "manage": true, "test": true},
+		model.RoleTenantAdmin:   {"read": true, "manage": true, "test": true},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s db-connection grants = %v, want %v", role, grants[role], actions)
+		}
+		for action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing db-connection %s", role, action)
+			}
+		}
+	}
+	for _, role := range []string{model.RoleOperator, model.RoleBusinessUser, model.RoleViewer, model.RoleTeamAdmin} {
+		if len(grants[role]) != 0 {
+			t.Fatalf("%s must not receive db-connection permissions, got %v", role, grants[role])
+		}
+	}
+}
+
+func TestQueryTemplatePermissionsMatchMinimumContract(t *testing.T) {
+	definition := ResourceTypeRegistry()["query-template"]
+	if definition.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("query-template scope = %q, want workspace", definition.ResourceScope)
+	}
+	if len(definition.AllowedActions) != 2 || definition.AllowedActions[0] != "read" || definition.AllowedActions[1] != "manage" {
+		t.Fatalf("query-template allowed actions = %v, want [read manage]", definition.AllowedActions)
+	}
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "query-template" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	expected := map[string]map[string]bool{
+		model.RolePlatformAdmin: {"read": true, "manage": true},
+		model.RoleTenantAdmin:   {"read": true, "manage": true},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s query-template grants = %v, want %v", role, grants[role], actions)
+		}
+		for action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing query-template %s", role, action)
+			}
+		}
+	}
+	for _, role := range []string{model.RoleOperator, model.RoleBusinessUser, model.RoleViewer, model.RoleTeamAdmin} {
+		if len(grants[role]) != 0 {
+			t.Fatalf("%s must not receive query-template permissions, got %v", role, grants[role])
+		}
+	}
+}
+
+func TestKnowledgeStrategyPermissionsMatchMinimumContract(t *testing.T) {
+	definition := ResourceTypeRegistry()["knowledge-strategy"]
+	if definition.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("knowledge-strategy scope = %q, want workspace", definition.ResourceScope)
+	}
+	if len(definition.AllowedActions) != 3 || definition.AllowedActions[0] != "read" ||
+		definition.AllowedActions[1] != "manage" || definition.AllowedActions[2] != "execute" {
+		t.Fatalf("knowledge-strategy allowed actions = %v, want [read manage execute]", definition.AllowedActions)
+	}
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "knowledge-strategy" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	expected := map[string]map[string]bool{
+		model.RolePlatformAdmin: {"read": true, "manage": true, "execute": true},
+		model.RoleTenantAdmin:   {"read": true, "manage": true, "execute": true},
+		model.RoleTeamAdmin:     {"read": true, "manage": true, "execute": true},
+		model.RoleOperator:      {"read": true, "execute": true},
+		model.RoleViewer:        {"read": true},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s knowledge-strategy grants = %v, want %v", role, grants[role], actions)
+		}
+		for action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing knowledge-strategy %s", role, action)
+			}
+		}
+	}
+	for _, role := range []string{model.RoleBusinessUser} {
+		if len(grants[role]) != 0 {
+			t.Fatalf("%s must not receive knowledge-strategy permissions in this slice, got %v", role, grants[role])
+		}
+	}
+}
+
+func TestEvidenceSnapshotPermissionsMatchReadOnlyContract(t *testing.T) {
+	definition := ResourceTypeRegistry()["evidence-snapshot"]
+	if definition.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("evidence-snapshot scope = %q, want workspace", definition.ResourceScope)
+	}
+	if len(definition.AllowedActions) != 1 || definition.AllowedActions[0] != "read" {
+		t.Fatalf("evidence-snapshot allowed actions = %v, want [read]", definition.AllowedActions)
+	}
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "evidence-snapshot" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	expected := map[string]map[string]bool{
+		model.RolePlatformAdmin: {"read": true},
+		model.RoleTenantAdmin:   {"read": true},
+		model.RoleOperator:      {"read": true},
+		model.RoleViewer:        {"read": true},
+		model.RoleTeamAdmin:     {"read": true},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s evidence-snapshot grants = %v, want %v", role, grants[role], actions)
+		}
+		for action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing evidence-snapshot %s", role, action)
+			}
+		}
+	}
+	for _, role := range []string{model.RoleBusinessUser} {
+		if len(grants[role]) != 0 {
+			t.Fatalf("%s must not receive evidence-snapshot permissions, got %v", role, grants[role])
+		}
+	}
+}
+
+func TestOutboxEventPermissionsMatchOperationalContract(t *testing.T) {
+	definition := ResourceTypeRegistry()["outbox-event"]
+	if definition.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("outbox-event scope = %q, want workspace", definition.ResourceScope)
+	}
+	if len(definition.AllowedActions) != 2 || definition.AllowedActions[0] != "read" ||
+		definition.AllowedActions[1] != "execute" {
+		t.Fatalf("outbox-event allowed actions = %v, want [read execute]", definition.AllowedActions)
+	}
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "outbox-event" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	expected := map[string]map[string]bool{
+		model.RolePlatformAdmin: {"read": true, "execute": true},
+		model.RoleTenantAdmin:   {"read": true, "execute": true},
+		model.RoleOperator:      {"read": true},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s outbox-event grants = %v, want %v", role, grants[role], actions)
+		}
+		for action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing outbox-event %s", role, action)
+			}
+		}
+	}
+	for _, role := range []string{model.RoleBusinessUser, model.RoleViewer, model.RoleTeamAdmin} {
+		if len(grants[role]) != 0 {
+			t.Fatalf("%s must not receive outbox-event permissions, got %v", role, grants[role])
+		}
+	}
+}
+
+func TestEvalSetExecutePermissionsMatchRevalidationContract(t *testing.T) {
+	definition := ResourceTypeRegistry()["eval-set"]
+	if definition.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("eval-set scope = %q, want workspace", definition.ResourceScope)
+	}
+	if len(definition.AllowedActions) != 3 || definition.AllowedActions[0] != "read" ||
+		definition.AllowedActions[1] != "manage" || definition.AllowedActions[2] != "execute" {
+		t.Fatalf("eval-set allowed actions = %v, want [read manage execute]", definition.AllowedActions)
+	}
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "eval-set" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	expected := map[string]map[string]bool{
+		model.RolePlatformAdmin: {"read": true, "manage": true, "execute": true},
+		model.RoleTenantAdmin:   {"read": true, "manage": true, "execute": true},
+		model.RoleOperator:      {"read": true, "manage": true, "execute": true},
+		model.RoleTeamAdmin:     {"read": true, "manage": true},
+		model.RoleViewer:        {"read": true},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s eval-set grants = %v, want %v", role, grants[role], actions)
+		}
+		for action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing eval-set %s", role, action)
+			}
+		}
+	}
+	if len(grants[model.RoleBusinessUser]) != 0 {
+		t.Fatalf("business_user must not receive eval-set permissions, got %v", grants[model.RoleBusinessUser])
 	}
 }

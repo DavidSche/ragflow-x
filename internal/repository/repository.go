@@ -57,6 +57,15 @@ type Store interface {
 	AnswerDeliveryRepo
 	KnowledgeImpactRepo
 	KnowledgeAssetRepo
+	ParserPolicyRepo
+	ParseQualityRepo
+	DocumentVersionRepo
+	ToolRegistryRepo
+	SourceRoutingRuleRepo
+	DBConnectionRepo
+	QueryTemplateRepo
+	KnowledgeStrategyRepo
+	FactGuardRepo
 }
 
 // ConversationAgentListFilter is kept beside the repository aggregate to avoid

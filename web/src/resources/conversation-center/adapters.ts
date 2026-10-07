@@ -63,11 +63,21 @@ function capabilities(overrides: Partial<typeof EMPTY_CAPABILITIES> = {}) {
 function conversationError(
   errorCode: string,
   displayMessage: string,
-  options: { httpStatus?: number; traceId?: string } = {},
+  options: { httpStatus?: number; traceId?: string; failureKind?: "deterministic" | "unknown"; retryAuthorization?: "none" | "safe-retry" } = {},
 ): ConversationError {
   const { httpStatus } = options;
-  const retriable = httpStatus === undefined || httpStatus === 0 || httpStatus === 408 || httpStatus === 425 || httpStatus === 429 || httpStatus >= 500;
-  return { errorCode, displayMessage, httpStatus, retriable, traceId: options.traceId };
+  const unknown = options.failureKind === "unknown"
+    || httpStatus === undefined || httpStatus === 0 || httpStatus === 408 || httpStatus === 425 || httpStatus === 429 || httpStatus >= 500;
+  const retryAuthorization = options.retryAuthorization ?? (unknown ? "none" : "none");
+  return {
+    errorCode,
+    displayMessage,
+    httpStatus,
+    failureKind: unknown ? "unknown" : "deterministic",
+    retryAuthorization,
+    retryHint: retryAuthorization === "safe-retry",
+    traceId: options.traceId,
+  };
 }
 
 function page<T>(envelope: PageEnvelope<T>, limit: number, pageValue?: number): {
@@ -187,12 +197,17 @@ function eventBase(state: StreamState, input: { target: { id: string; kind: Conv
   };
 }
 
-async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<Record<string, unknown> | null> {
+async function* readSse(
+  body: ReadableStream<Uint8Array>,
+  onTransportData?: () => void,
+  onApplicationEvent?: (event: Record<string, unknown> | null) => void,
+): AsyncGenerator<Record<string, unknown> | null> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   for (;;) {
     const { done, value } = await reader.read();
+    onTransportData?.();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
@@ -207,9 +222,11 @@ async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<Record
         continue;
       }
       try {
-        yield JSON.parse(payload) as Record<string, unknown>;
+        const parsed = JSON.parse(payload) as Record<string, unknown>;
+        onApplicationEvent?.(parsed);
+        yield parsed;
       } catch {
-        console.debug("conversation-center: malformed SSE payload", payload);
+        console.debug("conversation-center: malformed SSE payload");
       }
     }
   }
@@ -220,9 +237,10 @@ async function* consumeStream(
   body: ReadableStream<Uint8Array>,
   state: StreamState,
   input: { target: { id: string; kind: ConversationTargetRef["kind"] }, context: ConversationContext | null, conversationKey: string, requestId: string },
+  onApplicationEvent?: () => void,
 ): AsyncGenerator<ConversationEvent> {
   state.traceId = response.headers.get("X-Request-Id") ?? undefined;
-  const frames = readSse(body);
+  const frames = readSse(body, undefined, onApplicationEvent);
   let messageStarted = false;
   let context = input.context;
   let failed = false;
@@ -341,7 +359,31 @@ function startStream(
   streamId: string,
 ): ConversationStream {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120000);
+  let connectTimer: ReturnType<typeof setTimeout> | undefined;
+  let transportTimer: ReturnType<typeof setTimeout> | undefined;
+  let applicationTimer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+
+  const failTimeout = (kind: "connect" | "transport" | "application") => {
+    timedOut = true;
+    controller.abort(new DOMException(`${kind} timeout`, "TimeoutError"));
+  };
+  const resetTransport = () => {
+    clearTimeout(transportTimer);
+    transportTimer = setTimeout(() => failTimeout("transport"), 30_000);
+  };
+  const resetApplication = () => {
+    clearTimeout(applicationTimer);
+    applicationTimer = setTimeout(() => failTimeout("application"), 60_000);
+  };
+  const clearTimers = () => {
+    clearTimeout(connectTimer);
+    clearTimeout(transportTimer);
+    clearTimeout(applicationTimer);
+  };
+  connectTimer = setTimeout(() => failTimeout("connect"), 15_000);
+  resetTransport();
+  resetApplication();
   const state: StreamState = { eventSequence: 0, assistantId: `assistant-${streamId}`, controller, streamId };
   const request = async () => fetch(url, {
     method: "POST",
@@ -353,19 +395,32 @@ function startStream(
   const consume = async function* () {
     try {
       const response = await request();
-      clearTimeout(timer);
+      clearTimeout(connectTimer);
+      resetTransport();
       state.traceId = response.headers.get("X-Request-Id") ?? undefined;
       if (!response.ok || !response.body) {
         const raw = await response.text().catch(() => "");
         throw new ApiError(response.status, response.status, raw || `Completion request failed (${response.status})`, state.traceId);
       }
-      yield* consumeStream(response, response.body, state, input);
+      yield* consumeStream(response, response.body, state, input, resetApplication);
     } catch (error) {
-      clearTimeout(timer);
+      clearTimers();
       if (error instanceof DOMException && error.name === "AbortError") {
         const cancelledEvent: ConversationEvent = { ...eventBase(state, input, "cancelled"), type: "cancelled", context, reason: "user" };
         const completedEvent: ConversationEvent = { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: "cancelled" };
         yield cancelledEvent;
+        yield completedEvent;
+        return;
+      }
+      if (timedOut || (error instanceof DOMException && error.name === "TimeoutError")) {
+        const errorEvent: ConversationEvent = {
+          ...eventBase(state, input, "error.occurred"),
+          type: "error.occurred",
+          context,
+          error: conversationError("execution_unknown", "Conversation execution status unknown", { failureKind: "unknown" }),
+        };
+        const completedEvent: ConversationEvent = { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: "failed" };
+        yield errorEvent;
         yield completedEvent;
         return;
       }

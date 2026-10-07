@@ -100,8 +100,21 @@ func (s *Service) SyncTaskProgress(ctx context.Context, tenantID string) error {
 			failures = append(failures, err)
 			continue
 		}
-		for _, document := range documents {
-			status, progress, detail := mapRAGFlowDocument(document)
+		for index := range documents {
+			document := &documents[index]
+			if status, _, _ := mapRAGFlowDocument(*document); status == model.TaskStatusDone {
+				report, err := s.recordParseQualityForDocument(ctx, link.TenantID, &link, *document, "system", document.ID)
+				if err != nil {
+					logger.Warn("parse quality gate evaluation failed", "dataset_id", link.ID, "document_id", document.ID, "error", err)
+					failures = append(failures, err)
+					continue
+				}
+				if report != nil && (report.GateAction == model.GateActionRetry || report.GateAction == model.GateActionQuarantine) {
+					document.Status = "failed"
+					document.ProgressMsg = "quality gate " + strings.ToLower(report.GateAction)
+				}
+			}
+			status, progress, detail := mapRAGFlowDocument(*document)
 			if err := s.Store.SyncParseTask(ctx, document.ID, status, progress, detail); err != nil {
 				logger.Warn("parse task projection sync failed", "dataset_id", link.ID, "document_id", document.ID, "error", err)
 				failures = append(failures, err)

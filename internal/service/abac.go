@@ -25,16 +25,26 @@ func (s *Service) AuthorizeABAC(ctx context.Context, actorID, action, resource s
 	}
 	if projectID != "" && ac.user.TenantID == objectTenantID {
 		if ac.user.Role != model.RoleTenantAdmin {
-			ownedBound, err := s.isProjectBoundToOwnedTeam(ctx, actorID, projectID)
+			roles, err := s.Store.ListRolesByUser(ctx, actorID)
 			if err != nil {
 				return err
 			}
-			member, err := s.projectMember(ctx, actorID, projectID)
-			if err != nil {
-				return err
-			}
-			if !ownedBound && !member && ownerID != actorID {
-				return ErrForbidden
+			if hasRoleID(roles, model.RoleTeamAdmin) {
+				ownedBound, err := s.isProjectBoundToOwnedTeam(ctx, objectTenantID, actorID, projectID)
+				if err != nil {
+					return err
+				}
+				if !ownedBound {
+					return ErrForbidden
+				}
+			} else {
+				member, err := s.projectMember(ctx, actorID, projectID)
+				if err != nil {
+					return err
+				}
+				if !member && ownerID != actorID {
+					return ErrForbidden
+				}
 			}
 		}
 	}

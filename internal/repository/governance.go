@@ -55,8 +55,27 @@ type GovernanceRepo interface {
 	ListAllEvalSets(ctx context.Context, page, pageSize int, filter GovernanceFilter) ([]model.EvalSet, int64, error)
 	DeleteEvalSet(ctx context.Context, tenantID, id string) (bool, error)
 	ListEvalCases(ctx context.Context, tenantID, evalSetID string) ([]model.EvalCase, error)
+	GetEvalCase(ctx context.Context, tenantID, evalCaseID string) (*model.EvalCase, error)
 	CreateEvalCases(ctx context.Context, tenantID string, cases []model.EvalCase) error
 	LinkKnowledgeOpsEvalCase(ctx context.Context, tenantID, eventID, evalSetID, evalCaseID string) (bool, error)
+	CreateEvidenceSnapshotBundle(
+		ctx context.Context, snapshot *model.EvidenceSnapshot, evidence *model.EvalCaseEvidence,
+		dependencies []model.EvalCaseDependency, audit *model.AuditLog,
+	) error
+	GetEvalCaseEvidenceBundle(ctx context.Context, tenantID, evalCaseID string) (*EvidenceSnapshotBundle, error)
+	CreateOrReplaceEvidenceSnapshotBundle(
+		ctx context.Context, snapshot *model.EvidenceSnapshot, evidence *model.EvalCaseEvidence,
+		dependencies []model.EvalCaseDependency, audit *model.AuditLog,
+	) error
+	UpdateEvalCaseEvidenceTransition(
+		ctx context.Context, tenantID, evidenceID, fromStatus, toStatus string, revalidatedAt *time.Time,
+	) (bool, error)
+	GetEvidenceSnapshotBundle(ctx context.Context, tenantID, snapshotID string) (*EvidenceSnapshotBundle, error)
+	ListEvidenceSnapshotDatasetIDs(ctx context.Context, tenantID, snapshotID string) ([]string, error)
+	ListEvidenceSnapshots(
+		ctx context.Context, tenantID string, filter EvidenceSnapshotFilter, page, pageSize int,
+	) ([]EvidenceSnapshotListItem, int64, error)
+	ListDatasetIDsByProjectIDs(ctx context.Context, tenantID string, projectIDs []string) ([]string, error)
 }
 
 func (s *store) CreateScenarioTemplate(ctx context.Context, asset *model.ScenarioTemplateAsset, version *model.ScenarioTemplateVersion) error {

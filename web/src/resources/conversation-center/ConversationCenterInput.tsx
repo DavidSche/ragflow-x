@@ -1,11 +1,12 @@
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import { useTranslate } from "ra-core";
 import { Button } from "@/components/ui/button";
-import { Loader2, Plus, Send, Square, X } from "lucide-react";
+import { Loader2, Mic, Plus, Send, Square, X } from "lucide-react";
 import type { AttachmentDraft } from "../workbench/workbench-types";
 import type { SlashCommandOption } from "./logic";
 import { ConversationPalette } from "./ConversationPalette";
 import type { ConversationTargetRef } from "./types";
+import { useSpeechRecognition } from "./use-speech-recognition";
 
 interface ConversationCenterInputProps {
   input: string;
@@ -57,6 +58,7 @@ export function ConversationCenterInput({
   onSubmit,
 }: ConversationCenterInputProps) {
   const t = useTranslate();
+  const voice = useSpeechRecognition({ value: input, onChange });
   return (
     <div className="relative rounded-md border bg-background">
         {paletteOpen && (
@@ -113,6 +115,20 @@ export function ConversationCenterInput({
             </Button>
           ) : <span />}
           <div className="flex items-center gap-2">
+            {voice.supported ? (
+              <Button
+                type="button"
+                size="icon"
+                variant={voice.listening ? "default" : "ghost"}
+                className={voice.listening ? "text-destructive" : ""}
+                onClick={voice.toggle}
+                disabled={disabled}
+                aria-label={voice.listening ? t("conversationCenter.stop_voice_input") : t("conversationCenter.voice_input")}
+                title={voice.listening ? t("conversationCenter.stop_voice_input") : t("conversationCenter.voice_input")}
+              >
+                {voice.listening ? <Square className="size-4" /> : <Mic className="size-4" />}
+              </Button>
+            ) : null}
             {busy ? (
               <Button size="sm" variant="outline" onClick={onCancel}><Square className="size-4" />{t("conversationCenter.stop")}</Button>
             ) : null}

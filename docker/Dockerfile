@@ -5,13 +5,16 @@
 FROM golang:1.25-alpine AS build
 WORKDIR /src
 
+# Release version stamped into the binary (set by release.yml / docker build --build-arg).
+ARG VERSION=dev
+
 # Cache module downloads first so dependency layers are reused.
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 # CGO disabled + linux -> fully static binary, runs in the slim alpine runtime.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/ragflow-x ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/ragflow-x ./cmd/server
 
 # ---- runtime stage ----
 FROM alpine:3.21

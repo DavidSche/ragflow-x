@@ -210,6 +210,10 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "PUT", Path: "/api/v1/datasets/:id/documents/:docId/metadata", Action: "execute", Resource: "document"},
 		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/chunks", Action: "read", Resource: "document"},
 		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/preview", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/parse-attempts", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/parse-quality-report", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/parse-quality-reports", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/parse-quality-reports", Action: "read", Resource: "document"},
 		{Method: "DELETE", Path: "/api/v1/datasets/:id/documents/:docId/chunks", Action: "execute", Resource: "document"},
 		{Method: "PATCH", Path: "/api/v1/datasets/:id/documents/:docId/chunks", Action: "execute", Resource: "document"},
 
@@ -398,8 +402,219 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "POST", Path: "/api/v1/alerts/:id/claim", Action: "manage", Resource: "alert"},
 		{Method: "GET", Path: "/api/v1/system/capabilities", Action: "read", Resource: "system"},
 		{Method: "POST", Path: "/api/v1/system/capabilities/verify", Action: "manage", Resource: "system"},
+
+		// Parser policy and quality baseline management (doc/129 P0-A).
+		{Method: "GET", Path: "/api/v1/parser-policies", Action: "read", Resource: "parser-policy"},
+		{Method: "POST", Path: "/api/v1/parser-policies", Action: "manage", Resource: "parser-policy"},
+		{Method: "GET", Path: "/api/v1/parser-policies/:id", Action: "read", Resource: "parser-policy", Resolve: resolveParserPolicyScope(svc)},
+		{Method: "PUT", Path: "/api/v1/parser-policies/:id", Action: "manage", Resource: "parser-policy", Resolve: resolveParserPolicyScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/parser-policies/:id", Action: "manage", Resource: "parser-policy", Resolve: resolveParserPolicyScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/parser-policies/:id", Action: "manage", Resource: "parser-policy", Resolve: resolveParserPolicyScope(svc)},
+		{Method: "GET", Path: "/api/v1/quality-profiles", Action: "read", Resource: "quality-profile"},
+		{Method: "POST", Path: "/api/v1/quality-profiles", Action: "manage", Resource: "quality-profile"},
+		{Method: "GET", Path: "/api/v1/quality-profiles/:id", Action: "read", Resource: "quality-profile", Resolve: resolveQualityProfileScope(svc)},
+		{Method: "PUT", Path: "/api/v1/quality-profiles/:id", Action: "manage", Resource: "quality-profile", Resolve: resolveQualityProfileScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/quality-profiles/:id", Action: "manage", Resource: "quality-profile", Resolve: resolveQualityProfileScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/quality-profiles/:id", Action: "manage", Resource: "quality-profile", Resolve: resolveQualityProfileScope(svc)},
+		{Method: "GET", Path: "/api/v1/logical-documents", Action: "read", Resource: "logical-document"},
+		{Method: "POST", Path: "/api/v1/logical-documents", Action: "manage", Resource: "logical-document"},
+		{Method: "GET", Path: "/api/v1/logical-documents/:id", Action: "read", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "PUT", Path: "/api/v1/logical-documents/:id", Action: "manage", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/logical-documents/:id", Action: "manage", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/logical-documents/:id", Action: "manage", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "GET", Path: "/api/v1/logical-documents/:id/versions", Action: "read", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "POST", Path: "/api/v1/logical-documents/:id/supersede", Action: "execute", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "POST", Path: "/api/v1/logical-documents/:id/restore", Action: "execute", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "GET", Path: "/api/v1/logical-documents/:id/publish-attempts", Action: "read", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "GET", Path: "/api/v1/tool-registry", Action: "read", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-registry", Action: "manage", Resource: "tool-registry"},
+		{Method: "GET", Path: "/api/v1/tool-registry/:id", Action: "read", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "PUT", Path: "/api/v1/tool-registry/:id", Action: "manage", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/tool-registry/:id", Action: "manage", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/tool-registry/:id", Action: "manage", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "POST", Path: "/api/v1/tool-registry/:id/execute", Action: "execute", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "POST", Path: "/api/v1/tool-routing/routed-sql-answer", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/routed-sql-answers", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/routed-mixed-tool-answers", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/planned-mixed-tool-answers", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/answer-runs", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/answer-runs/:answerRunId/evidence-facts", Action: "execute", Resource: "tool-registry"},
+		{Method: "GET", Path: "/api/v1/tool-routing/answer-runs/:answerRunId/evidence-facts", Action: "read", Resource: "tool-registry"},
+		{Method: "GET", Path: "/api/v1/tool-routing/answer-runs/:answerRunId/fact-guard", Action: "read", Resource: "tool-registry"},
+		{Method: "GET", Path: "/api/v1/source-routing-rules", Action: "read", Resource: "source-routing-rule"},
+		{Method: "POST", Path: "/api/v1/source-routing-rules", Action: "manage", Resource: "source-routing-rule"},
+		{Method: "GET", Path: "/api/v1/source-routing-rules/:id", Action: "read", Resource: "source-routing-rule", Resolve: resolveSourceRoutingRuleScope(svc)},
+		{Method: "PUT", Path: "/api/v1/source-routing-rules/:id", Action: "manage", Resource: "source-routing-rule", Resolve: resolveSourceRoutingRuleScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/source-routing-rules/:id", Action: "manage", Resource: "source-routing-rule", Resolve: resolveSourceRoutingRuleScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/source-routing-rules/:id", Action: "manage", Resource: "source-routing-rule", Resolve: resolveSourceRoutingRuleScope(svc)},
+		{Method: "GET", Path: "/api/v1/query-templates", Action: "read", Resource: "query-template"},
+		{Method: "POST", Path: "/api/v1/query-templates", Action: "manage", Resource: "query-template"},
+		{Method: "GET", Path: "/api/v1/query-templates/:id", Action: "read", Resource: "query-template", Resolve: resolveQueryTemplateScope(svc)},
+		{Method: "PUT", Path: "/api/v1/query-templates/:id", Action: "manage", Resource: "query-template", Resolve: resolveQueryTemplateScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/query-templates/:id", Action: "manage", Resource: "query-template", Resolve: resolveQueryTemplateScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/query-templates/:id", Action: "manage", Resource: "query-template", Resolve: resolveQueryTemplateScope(svc)},
+		{Method: "GET", Path: "/api/v1/db-connections", Action: "read", Resource: "db-connection"},
+		{Method: "POST", Path: "/api/v1/db-connections", Action: "manage", Resource: "db-connection"},
+		{Method: "GET", Path: "/api/v1/db-connections/:id", Action: "read", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "PUT", Path: "/api/v1/db-connections/:id", Action: "manage", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/db-connections/:id", Action: "manage", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/db-connections/:id", Action: "manage", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "POST", Path: "/api/v1/db-connections/:id/test", Action: "test", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "GET", Path: "/api/v1/knowledge-strategies", Action: "read", Resource: "knowledge-strategy"},
+		{Method: "POST", Path: "/api/v1/knowledge-strategies", Action: "manage", Resource: "knowledge-strategy"},
+		{Method: "GET", Path: "/api/v1/knowledge-strategies/:id", Action: "read", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "PUT", Path: "/api/v1/knowledge-strategies/:id", Action: "manage", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/knowledge-strategies/:id", Action: "manage", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/knowledge-strategies/:id", Action: "manage", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "POST", Path: "/api/v1/knowledge-strategies/:id/probe", Action: "execute", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "POST", Path: "/api/v1/knowledge-strategies/:id/retrieve", Action: "execute", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "GET", Path: "/api/v1/evidence-snapshots", Action: "read", Resource: "evidence-snapshot"},
+		{Method: "GET", Path: "/api/v1/evidence-snapshots/:id", Action: "read", Resource: "evidence-snapshot", Resolve: resolveEvidenceSnapshotScope(svc)},
+		{Method: "GET", Path: "/api/v1/outbox-events", Action: "read", Resource: "outbox-event"},
+		{Method: "GET", Path: "/api/v1/outbox-events/:id", Action: "read", Resource: "outbox-event", Resolve: resolveOutboxEventScope(svc)},
+		{Method: "POST", Path: "/api/v1/outbox-events/:id/retry", Action: "execute", Resource: "outbox-event", Resolve: resolveOutboxEventScope(svc)},
+		{Method: "GET", Path: "/api/v1/eval-cases/:id/evidence", Action: "read", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
+		{Method: "PUT", Path: "/api/v1/eval-cases/:id/evidence", Action: "manage", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
+		{Method: "POST", Path: "/api/v1/eval-cases/:id/revalidate", Action: "execute", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
 	}
 	return withRouteContracts(rules)
+}
+
+func resolveParserPolicyScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		policy, err := svc.Store.GetParserPolicy(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if policy == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, policy.ProjectID, "", nil
+	}
+}
+
+func resolveQualityProfileScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetQualityProfile(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveLogicalDocumentScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		document, err := svc.Store.GetLogicalDocument(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if document == nil {
+			return tenantID, "", "", nil
+		}
+		dataset, err := svc.Store.GetDatasetLink(c.Request.Context(), tenantID, document.DatasetID)
+		if err != nil {
+			return "", "", "", err
+		}
+		if dataset == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, dataset.ProjectID, "", nil
+	}
+}
+
+func resolveToolRegistryScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetToolRegistry(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveSourceRoutingRuleScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetSourceRoutingRule(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveDBConnectionScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetDBConnection(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveQueryTemplateScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetQueryTemplate(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveKnowledgeStrategyScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		strategy, err := svc.Store.GetKnowledgeStrategy(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if strategy == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, strategy.ProjectID, "", nil
+	}
+}
+
+func resolveEvidenceSnapshotScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		if _, err := svc.Store.GetEvidenceSnapshotBundle(
+			c.Request.Context(), tenantID, c.Param("id"),
+		); err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveOutboxEventScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		if _, err := svc.Store.GetOutboxEvent(c.Request.Context(), tenantID, c.Param("id")); err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveEvalCaseScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetEvalCase(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
 }
 
 func resolveDatasetScope(svc *service.Service) middleware.ResolveContext {

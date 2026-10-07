@@ -1,4 +1,3 @@
-import { newId, type AttachmentDraft } from "../workbench/workbench-types";
 import {
   CONVERSATION_EVENT_SCHEMA_VERSION,
   ConversationContext,
@@ -15,6 +14,21 @@ export function conversationKey(
   contextId?: string,
 ): string {
   return JSON.stringify([scopeKey, kind, targetId, contextId ?? "new"]);
+}
+
+export function createOpaqueScope(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `op-${(hash >>> 0).toString(36)}`;
+}
+
+function createCspValue(prefix: string): string {
+  const id = globalThis.crypto?.randomUUID?.();
+  if (!id) throw new Error("CSPRNG unavailable");
+  return `${prefix}-${id}`;
 }
 
 export function assertConversationContext(context: ConversationContext): ConversationContext {
@@ -148,37 +162,71 @@ export class ConversationEventSink {
 }
 
 export interface DraftState {
+  composerDraftId?: string;
+  createdAt?: string;
   text: string;
-  attachments: AttachmentDraft[];
   selectionStart: number;
   selectionEnd: number;
+  source: string;
 }
 
 export class DraftStore {
-  constructor(private readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem">) {}
+  private static readonly TTL_MS = 60 * 60 * 1000;
+
+  constructor(
+    private readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> & Partial<Pick<Storage, "key" | "length">>,
+    private readonly opaqueScope: string,
+  ) {
+    this.cleanupLegacy();
+  }
+
+  private cleanupLegacy() {
+    const { length, key } = this.storage;
+    if (typeof length !== "number" || typeof key !== "function") return;
+    for (let index = length - 1; index >= 0; index -= 1) {
+      const storageKey = key.call(this.storage, index);
+      if (!storageKey) continue;
+      if (storageKey.startsWith("rgx:pending:") || storageKey.startsWith("conversation-center:draft:")) {
+        this.storage.removeItem(storageKey);
+      }
+    }
+  }
+
+  private opaqueKey(key: string): string {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < key.length; index += 1) {
+      hash ^= key.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  private indexKey(key: string): string {
+    return `rgx:composer-draft-index:${this.opaqueScope}:${this.opaqueKey(key)}`;
+  }
 
   get(key: string): DraftState | undefined {
-    const raw = this.storage.getItem(key);
-    if (!raw) return undefined;
     try {
-    const parsed = JSON.parse(raw) as Partial<DraftState>;
+    const composerDraftId = this.storage.getItem(this.indexKey(key));
+    if (!composerDraftId) return undefined;
+    const raw = this.storage.getItem(`rgx:composer-draft:${this.opaqueScope}:${composerDraftId}`);
+    if (!raw) {
+      this.storage.removeItem(this.indexKey(key));
+      return undefined;
+    }
+    const parsed = JSON.parse(raw) as Partial<DraftState & { schemaVersion?: number; expiresAt?: string }>;
+    if (parsed.schemaVersion !== 3 || !parsed.expiresAt || Date.parse(parsed.expiresAt) <= Date.now()) {
+      this.storage.removeItem(this.indexKey(key));
+      this.storage.removeItem(`rgx:composer-draft:${this.opaqueScope}:${composerDraftId}`);
+      return undefined;
+    }
     if (typeof parsed.text !== "string") return undefined;
-    if (!Array.isArray(parsed.attachments)) return undefined;
-    const attachments = parsed.attachments.filter((attachment) => {
-      if (!attachment || typeof attachment !== "object") return false;
-      const value = attachment as Partial<AttachmentDraft>;
-      return typeof value.id === "string"
-        && typeof value.name === "string"
-        && typeof value.size === "number"
-        && typeof value.mime === "string"
-        && (value.status === "staged" || value.status === "uploading" || value.status === "done" || value.status === "error")
-        && typeof value.progress === "number";
-    });
     return {
+      composerDraftId,
       text: parsed.text,
-      attachments,
       selectionStart: parsed.selectionStart ?? parsed.text.length,
       selectionEnd: parsed.selectionEnd ?? parsed.text.length,
+      source: key,
     };
     } catch {
       this.storage.removeItem(key);
@@ -187,14 +235,28 @@ export class DraftStore {
   }
 
   set(key: string, draft: DraftState): void {
-    this.storage.setItem(key, JSON.stringify({
-      ...draft,
-      attachments: draft.attachments.filter((attachment) => attachment.status !== "staged"),
+    const composerDraftId = draft.composerDraftId ?? createCspValue("draft");
+    const now = Date.now();
+    this.storage.setItem(`rgx:composer-draft:${this.opaqueScope}:${composerDraftId}`, JSON.stringify({
+      schemaVersion: 3,
+      composerDraftId,
+      text: draft.text,
+      selectionStart: draft.selectionStart,
+      selectionEnd: draft.selectionEnd,
+      source: draft.source,
+      createdAt: draft.createdAt ?? new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + DraftStore.TTL_MS).toISOString(),
     }));
+    this.storage.setItem(this.indexKey(key), composerDraftId);
   }
 
   delete(key: string): void {
-    this.storage.removeItem(key);
+    const composerDraftId = this.storage.getItem(this.indexKey(key));
+    if (composerDraftId) {
+      this.storage.removeItem(`rgx:composer-draft:${this.opaqueScope}:${composerDraftId}`);
+    }
+    this.storage.removeItem(this.indexKey(key));
   }
 }
 
@@ -226,12 +288,13 @@ export class RecentTargetStore {
 
   invalidate(kind?: ConversationTargetRef["kind"], targetId?: string): RecentTargetEntry[] {
     const next = this.list().filter((entry) =>
-      (kind && entry.target.kind !== kind) || (targetId && entry.target.id !== targetId));
+      (kind ? entry.target.kind !== kind : false)
+      || (targetId ? entry.target.id !== targetId : false));
     this.storage.setItem(`conversation-center:recent:${this.scopeKey}`, JSON.stringify(next));
     return next;
   }
 }
 
 export function newConversationRunId(): string {
-  return `run-${newId()}`;
+  return createCspValue("run");
 }

@@ -1,14 +1,17 @@
 # Release workflow for ragflow-x
 #
 # Triggers:
-#   - Push a version tag (v1.2.3 etc.) -> build release packages and create GitHub Release
+#   - Push a version tag (v1.2.3 etc.) -> build release packages + container image,
+#     then create the GitHub Release
 #   - workflow_dispatch manual trigger -> requires the `version` input
 #
 # Flow:
-#   1. build job: cross-compile Go binary (linux/amd64, linux/arm64, darwin/amd64, windows/amd64),
-#      build frontend, package everything into tarballs with SHA256SUMS
-#   2. release job: download artifacts, verify SHA256 checksums (integrity gate),
-#      then create GitHub Release and upload
+#   1. build job: cross-compile Go binaries (linux/amd64, linux/arm64, darwin/amd64,
+#      windows/amd64) with the release version stamped into main.version, build the
+#      frontend, package everything into tarballs with SHA256SUMS
+#   2. docker job: build & push the multi-arch image to ghcr.io
+#   3. release job: download artifacts, verify SHA256 checksums (integrity gate),
+#      render release notes from git history, create the GitHub Release and upload
 
 name: Release
 
@@ -79,26 +82,27 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Build Go binaries (cross-platform)
+      - name: Build Go binaries (cross-platform, version stamped)
         run: |
-          TAG="${{ steps.meta.outputs.version }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          LDFLAGS="-s -w -X main.version=v${VERSION}"
           mkdir -p dist
 
           # linux/amd64
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-            go build -ldflags="-s -w" -o dist/ragflow-x-linux-amd64 ./cmd/server/
+            go build -ldflags="$LDFLAGS" -o dist/ragflow-x-linux-amd64 ./cmd/server/
 
           # linux/arm64
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-            go build -ldflags="-s -w" -o dist/ragflow-x-linux-arm64 ./cmd/server/
+            go build -ldflags="$LDFLAGS" -o dist/ragflow-x-linux-arm64 ./cmd/server/
 
           # darwin/amd64
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
-            go build -ldflags="-s -w" -o dist/ragflow-x-darwin-amd64 ./cmd/server/
+            go build -ldflags="$LDFLAGS" -o dist/ragflow-x-darwin-amd64 ./cmd/server/
 
           # windows/amd64
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-            go build -ldflags="-s -w" -o dist/ragflow-x-windows-amd64.exe ./cmd/server/
+            go build -ldflags="$LDFLAGS" -o dist/ragflow-x-windows-amd64.exe ./cmd/server/
 
       - name: Package release artifacts
         run: |
@@ -138,6 +142,58 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
 
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Compute image tags (ghcr requires lowercase)
+        id: tags
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          VERSION="${{ needs.build.outputs.tag }}"
+          TAGS="${IMAGE}:${VERSION}"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            TAGS="${TAGS}
+          ${IMAGE}:latest"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ needs.build.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -147,8 +203,10 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout repository (release notes template)
+      - name: Checkout repository (full history for release notes)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download release artifacts
         uses: actions/download-artifact@v4
@@ -163,6 +221,50 @@ jobs:
           [ -f SHA256SUMS ] || { echo "::error::SHA256SUMS missing"; exit 1; }
           sha256sum -c SHA256SUMS
 
+      # `gh release create` has no --notes-template flag; render the notes here
+      # and pass them via --notes-file.
+      - name: Render release notes
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.build.outputs.tag }}"
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            echo "## ragflow-x ${TAG}"
+            echo
+            if [ -n "$PREV" ]; then
+              echo "自 **${PREV}** 以来的变更（共 $(git rev-list --count "${PREV}..${TAG}") 个提交）："
+              echo
+              git log --no-merges --format='- %s' "${PREV}..${TAG}"
+            else
+              echo "🎉 首次发版"
+            fi
+            echo
+            echo "---"
+            echo
+            echo "### 安装"
+            echo
+            echo '```bash'
+            echo "# Linux (amd64)"
+            echo "tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz"
+            echo "./ragflow-x-linux-amd64"
+            echo
+            echo "# Docker"
+            echo "docker pull ${IMAGE}:${TAG}"
+            echo '```'
+            echo
+            echo "### 校验"
+            echo
+            echo '```bash'
+            echo "sha256sum -c SHA256SUMS"
+            echo '```'
+            echo
+            echo "---"
+            echo
+            echo "_本说明由 GitHub Actions 自动生成（release.yml）。资产清单见下方 Assets。_"
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Create GitHub Release and upload artifacts
         run: |
           TAG="${{ needs.build.outputs.tag }}"
@@ -172,5 +274,5 @@ jobs:
             artifacts/dist/*.tar.gz \
             artifacts/dist/*.zip \
             artifacts/dist/SHA256SUMS \
-            --notes-template "$GITHUB_WORKSPACE/.github/release-notes-template.md" \
+            --notes-file release-notes.md \
             --title "ragflow-x $TAG"

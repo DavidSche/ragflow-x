@@ -63,12 +63,16 @@ test("logs in and renders the authenticated shell", async ({ page }) => {
   await page.getByRole("textbox", { name: "密码" }).fill("admin123");
   await page.getByRole("button", { name: "登录" }).click();
 
-  // Authenticated shell: main content area + sidebar brand + workbench entry.
+  // Authenticated shell: main content area, sidebar brand, and redirect-only Workbench.
   await expect(page.locator('main[aria-label="主内容区域"]')).toBeVisible();
   if ((page.viewportSize()?.width ?? 0) >= 1024) {
-    await expect(page.getByRole("link", { name: "问答工作台" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "对话中心" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "问答工作台" })).toHaveCount(0);
   }
   if ((page.viewportSize()?.width ?? 0) >= 1024) {
     await expect(page.getByRole("link", { name: "RAGFlow-X" })).toBeVisible();
   }
+  await page.goto("/#/workbench?chat=chat-1");
+  await expect(page).toHaveURL(/kind=chat&targetId=chat-1/);
+  await expect(page.locator('main[aria-label="主内容区域"]')).toBeVisible();
 });

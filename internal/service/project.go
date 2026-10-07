@@ -242,12 +242,22 @@ func (s *Service) projectMember(ctx context.Context, userID, projectID string) (
 
 // isProjectBoundToOwnedTeam reports whether the project is authorized to a
 // team the user administers (owner boundary for team_admin).
-func (s *Service) isProjectBoundToOwnedTeam(ctx context.Context, userID, projectID string) (bool, error) {
+func (s *Service) isProjectBoundToOwnedTeam(ctx context.Context, tenantID, userID, projectID string) (bool, error) {
 	teamIDs, err := s.Store.ListTeamIDsOwnedBy(ctx, userID)
 	if err != nil {
 		return false, err
 	}
-	return s.Store.IsProjectBoundToTeams(ctx, projectID, teamIDs)
+	tenantTeamIDs := make([]string, 0, len(teamIDs))
+	for _, teamID := range teamIDs {
+		team, err := s.Store.GetTeam(ctx, tenantID, teamID)
+		if err != nil {
+			return false, err
+		}
+		if team != nil {
+			tenantTeamIDs = append(tenantTeamIDs, team.ID)
+		}
+	}
+	return s.Store.IsProjectBoundToTeams(ctx, projectID, tenantTeamIDs)
 }
 
 func mergeProjects(parts ...[]model.Project) []model.Project {

@@ -18,10 +18,19 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/setup"
 )
 
+// version is stamped at build time via -ldflags "-X main.version=v0.1.0".
+// Release builds (release.yml / Dockerfile) inject the tag; local builds fall
+// back to the dev placeholder.
+var version = "dev"
+
 func main() {
 	cfg, err := config.Load(flagConfigPath())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load config failed: %v\n", err)
+		os.Exit(1)
+	}
+	if err := service.ValidateFactGuardConfig(cfg.App.Environment, cfg.FactGuard.Mode); err != nil {
+		fmt.Fprintf(os.Stderr, "invalid fact guard config: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -67,6 +76,7 @@ func main() {
 	go func() {
 		logger.Info("ragflow-x server listening",
 			"addr", server.Addr,
+			"version", version,
 			"mode", cfg.Server.Mode,
 			"configured", mgr.Configured(),
 		)

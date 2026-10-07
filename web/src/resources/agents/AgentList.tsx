@@ -113,7 +113,7 @@ const CreateAgentDialog = () => {
                         {t(opt.labelKey)}
                         {opt.disabled && (
                           <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-normal text-amber-700">
-                            开发中
+                            {t("agents.type_developing")}
                           </span>
                         )}
                       </span>

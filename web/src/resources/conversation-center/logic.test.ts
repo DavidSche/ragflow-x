@@ -103,16 +103,16 @@ describe("conversation logic", () => {
       getItem: (key) => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, value),
       removeItem: (key) => storage.delete(key),
-    });
+    }, "test-opaque-scope");
     const key = conversationKey("tenant", "search", "search1", "run1");
     store.set(key, {
       text: "draft",
-      attachments: [{ id: "file-1", name: "contract.pdf", size: 12, mime: "application/pdf", status: "done", progress: 100 }],
       selectionStart: 2,
       selectionEnd: 2,
+      source: key,
     });
     expect(store.get(key)?.text).toBe("draft");
-    expect(store.get(key)?.attachments).toHaveLength(1);
+    expect(store.get(key)?.composerDraftId).toBeTruthy();
     store.delete(key);
     expect(store.get(key)).toBeUndefined();
   });
@@ -123,11 +123,11 @@ describe("conversation logic", () => {
       getItem: (key) => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, value),
       removeItem: (key) => storage.delete(key),
-    });
+    }, "test-opaque-scope");
     const key = conversationKey("tenant", "chat", "none", "new");
-    const staged = { id: "file-2", name: "policy.pdf", size: 24, mime: "application/pdf", status: "staged" as const, progress: 0 };
-    store.set(key, { text: "draft", attachments: [staged], selectionStart: 0, selectionEnd: 0 });
-    expect(store.get(key)?.attachments).toEqual([]);
+    store.set(key, { text: "draft", selectionStart: 0, selectionEnd: 0, source: key });
+    expect(store.get(key)).toEqual(expect.objectContaining({ text: "draft" }));
+    expect([...storage.values()].some((value) => value.includes("policy.pdf"))).toBe(false);
   });
 });
 

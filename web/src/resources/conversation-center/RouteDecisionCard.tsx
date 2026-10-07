@@ -5,13 +5,14 @@ import type { ConversationRouteDecision, ConversationRouteStatus } from "./types
 interface RouteDecisionCardProps {
   decision: ConversationRouteDecision;
   status: ConversationRouteStatus;
+  autoEligible?: boolean;
   error: string | null;
   onChoose: (candidate: ConversationRouteDecision["candidates"][number]) => void;
   onDismiss: () => void;
   translate: (key: string) => string;
 }
 
-export function RouteDecisionCard({ decision, status, error, onChoose, onDismiss, translate }: RouteDecisionCardProps) {
+export function RouteDecisionCard({ decision, status, autoEligible = false, error, onChoose, onDismiss, translate }: RouteDecisionCardProps) {
   const busy = status === "routing" || status === "selecting" || status === "bootstrapping";
   return (
     <section aria-live="polite" aria-busy={busy} className="rounded-md border bg-background/80 p-3 shadow-sm">
@@ -26,6 +27,9 @@ export function RouteDecisionCard({ decision, status, error, onChoose, onDismiss
           {translate("conversationCenter.route_match")}
         </span>
       </div>
+      {autoEligible ? (
+        <p className="mb-2 text-xs text-muted-foreground">{translate("conversationCenter.route_auto_countdown")}</p>
+      ) : null}
       {error ? <p className="mb-2 text-sm text-destructive">{error}</p> : null}
       {!decision.candidates.length ? (
         <p className="text-sm text-muted-foreground">
@@ -41,7 +45,7 @@ export function RouteDecisionCard({ decision, status, error, onChoose, onDismiss
                 <span className="min-w-0 text-left">
                   <span className="block truncate text-sm font-medium">{candidate.name}</span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {translate(`conversationCenter.kind_${candidate.kind}`)} · {Math.round(candidate.normalized_score * 100)}% · {candidate.pre_execution_risk}
+                    {translate(`conversationCenter.kind_${candidate.kind}`)} · {Math.round(candidate.normalized_score * 100)} · {candidate.pre_execution_risk}
                   </span>
                 </span>
               </Button>
