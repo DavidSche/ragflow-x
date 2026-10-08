@@ -73,13 +73,7 @@ image: ghcr.io/davidsche/ragflow-x:v0.2.0
 
 ## 产品视频
 
-<p align="center">
-  <a href="https://raw.githubusercontent.com/DavidSche/ragflow-x/main/doc/user/videos/ragflow-x-promo.mp4">
-    <img src="./doc/user/videos/ragflow-x-promo-cover.png" alt="RAGFlow-X 产品总览" width="960">
-  </a>
-  <br>
-  <sub>▶ 点击封面播放 67 秒产品总览</sub>
-</p>
+![RAGFlow-X 产品总览](https://github.com/user-attachments/assets/59752bf8-2423-491f-b366-1c5fb8e3279a)
 
 ## 开发检查
 
