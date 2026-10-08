@@ -79,9 +79,13 @@ Chinese documentation is available in the
 
 ## Product video
 
-[![RAGFlow-X product overview](./doc/user/images/product-video-cover-en.png)](./doc/user/videos/ragflow-x-promo-en.mp4)
-
-Select the cover image to open the 67-second overview.
+<p align="center">
+  <a href="https://raw.githubusercontent.com/DavidSche/ragflow-x/main/doc/user/videos/ragflow-x-promo-en.mp4">
+    <img src="./doc/user/videos/ragflow-x-promo-cover-en.png" alt="RAGFlow-X product overview" width="960">
+  </a>
+  <br>
+  <sub>▶ Click the cover to play the 67-second product overview</sub>
+</p>
 
 ## Development checks
 
