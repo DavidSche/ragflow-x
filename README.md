@@ -79,7 +79,7 @@ Chinese documentation is available in the
 
 ## Product video
 
-<video src="./doc/user/videos/ragflow-x-promo-en.mp4" controls width="100%"></video>
+![RAGFlow-X product overview](./doc/user/videos/ragflow-x-promo-en.mp4)
 
 The 67-second overview is available for download at
 [`doc/user/videos/ragflow-x-promo-en.mp4`](./doc/user/videos/ragflow-x-promo-en.mp4).
