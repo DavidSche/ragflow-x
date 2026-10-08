@@ -23,6 +23,9 @@ type Mock struct {
 	searchApps                   map[string]*mockSearchApp
 	memories                     map[string]*mockMemory
 	agents                       map[string]*mockAgent
+	pipelines                    map[string]PipelineTemplateDetail
+	pipelineOrder                []string
+	lastPipelineID               string
 	chatCreateRequests           []CreateChatRequest
 	lastChatCondition            *MetadataCondition
 	lastSearchCondition          *MetadataCondition
@@ -40,6 +43,8 @@ type Mock struct {
 	lastTemplateGroupUpdatedID   string
 	lastTemplateGroupUpdate      *CompilationTemplateGroupRequest
 	lastTemplateGroupDeletedID   string
+	lastDocumentParseConfig      *DocumentParseConfigUpdate
+	lastParseDocumentIDs         []string
 }
 
 // LastChatMetadataCondition returns the metadata condition received by the
@@ -109,9 +114,12 @@ type mockDataset struct {
 }
 
 type mockDocument struct {
-	id     string
-	name   string
-	status string
+	id           string
+	name         string
+	status       string
+	parserID     string
+	pipelineID   string
+	parserConfig map[string]interface{}
 }
 
 type mockChunk struct {
@@ -134,6 +142,7 @@ func NewMock() *Mock {
 		searchApps:                map[string]*mockSearchApp{},
 		memories:                  map[string]*mockMemory{},
 		agents:                    map[string]*mockAgent{},
+		pipelines:                 map[string]PipelineTemplateDetail{},
 		artifacts:                 map[string][]DatasetArtifact{},
 		compilationStatuses:       map[string]CompilationStatus{},
 		compilationTemplates:      map[CompilationTemplateSource][]CompilationTemplate{},
@@ -216,7 +225,7 @@ func (m *Mock) ListDocuments(ctx context.Context, datasetID string) ([]Document,
 		if metadata == nil {
 			metadata = map[string]interface{}{}
 		}
-		out = append(out, Document{ID: d.id, Name: d.name, Status: d.status, Metadata: metadata})
+		out = append(out, Document{ID: d.id, Name: d.name, ParserID: d.parserID, PipelineID: d.pipelineID, Status: d.status, Metadata: metadata})
 	}
 	return out, nil
 }
@@ -230,15 +239,85 @@ func (m *Mock) ParseDocuments(ctx context.Context, datasetID string, documentIDs
 		idset[docID] = true
 	}
 	changed := false
+	lastIDs := make([]string, 0, len(documentIDs))
 	for _, d := range docs {
 		if idset[strings.TrimSpace(d.id)] {
 			d.status = "parsed"
 			changed = true
 		}
 	}
+	if changed {
+		m.lastParseDocumentIDs = append(lastIDs, documentIDs...)
+	}
 	if !changed {
 		return fmt.Errorf("no matching documents to parse in dataset %s", datasetID)
 	}
+	return nil
+}
+
+// LastDocumentParseConfigUpdate exposes the latest document-level parse
+// configuration accepted by the mock.
+func (m *Mock) LastDocumentParseConfigUpdate() *DocumentParseConfigUpdate {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lastDocumentParseConfig == nil {
+		return nil
+	}
+	config := *m.lastDocumentParseConfig
+	return &config
+}
+
+// LastParseDocumentIDs returns document IDs accepted by the latest parse call.
+func (m *Mock) LastParseDocumentIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.lastParseDocumentIDs...)
+}
+
+func (m *Mock) UpdateDocumentParseConfig(_ context.Context, datasetID, documentID string, update DocumentParseConfigUpdate) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	docs, ok := m.documents[datasetID]
+	if !ok {
+		return fmt.Errorf("dataset not found: %s", datasetID)
+	}
+	found := false
+	for _, doc := range docs {
+		if doc.id == documentID {
+			found = true
+			if update.Pipeline {
+				doc.pipelineID = update.PipelineID
+				doc.parserID = ""
+			} else {
+				doc.parserID = update.BuiltinParserID
+				doc.pipelineID = ""
+			}
+			doc.parserConfig = nil
+			if len(update.ParserConfig) > 0 {
+				config := map[string]interface{}{}
+				for key, value := range update.ParserConfig {
+					config[key] = value
+				}
+				doc.parserConfig = config
+			}
+			if update.MetaFields != nil {
+				if m.metadata[datasetID] == nil {
+					m.metadata[datasetID] = map[string]map[string]interface{}{}
+				}
+				metadata := map[string]interface{}{}
+				for key, value := range update.MetaFields {
+					metadata[key] = value
+				}
+				m.metadata[datasetID][documentID] = metadata
+			}
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("document not found: %s", documentID)
+	}
+	captured := update
+	m.lastDocumentParseConfig = &captured
 	return nil
 }
 

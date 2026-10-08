@@ -647,6 +647,7 @@ func (m *Manager) buildEngine(cfg *config.Config, sec *secretstore.Secrets) (htt
 		closeGDB(gdb)
 		return nil, nil, fmt.Errorf("resolve effective system settings: %w", err)
 	}
+	svc.SetFactGuardConfig(effectiveCfg.FactGuard)
 	obs.Set(obs.New(effectiveCfg.Observability))
 	hub := notify.NewHub(effectiveCfg.Alerting, effectiveCfg.Approval)
 	hub.SetSink(svc)

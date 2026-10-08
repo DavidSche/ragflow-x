@@ -2390,6 +2390,43 @@ var migrations = []Migration{
 			return tx.Create(&projections).Error
 		},
 	},
+	{
+		// Version 128 repairs databases that were already at the latest
+		// schema version when newer built-in permissions (for example
+		// tool-registry) were introduced. Canonical built-in grants are
+		// intentionally reconciled as a migration, not only when a later
+		// schema change happens to exist.
+		Version: 128,
+		Name:    "reconcile_builtin_rbac_matrix_backfill",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.Role{},
+				&model.Permission{},
+				&model.UserRole{},
+			); err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 129 turns the AnswerSnapshot canonical hash into a content
+		// fingerprint. AnswerRun already supplies the per-run identity, while
+		// identical content can legitimately occur across runs or tenants.
+		Version: 129,
+		Name:    "answer_snapshot_hash_content_fingerprint",
+		Migrate: func(tx *gorm.DB) error {
+			if !tx.Migrator().HasTable(&model.AnswerSnapshot{}) {
+				if err := tx.AutoMigrate(&model.AnswerSnapshot{}); err != nil {
+					return err
+				}
+			}
+			if err := tx.Exec("DROP INDEX IF EXISTS idx_rgx_answer_snapshot_canonical_hash").Error; err != nil {
+				return err
+			}
+			return tx.Exec("CREATE INDEX IF NOT EXISTS idx_rgx_answer_snapshot_canonical_hash ON rgx_answer_snapshot (canonical_hash)").Error
+		},
+	},
 }
 
 func ensureFourLayerAuthorizationScopeColumn(tx *gorm.DB, target interface{}, table string) error {

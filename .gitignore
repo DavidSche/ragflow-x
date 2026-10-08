@@ -94,3 +94,12 @@ tmp/
 /go-coverage.*
 /go-testquality.test
 *.test
+
+# Local integration runtime and scratch artifacts
+/.service-test*
+/blog/.tmp-*
+/blog/.tmp_*
+/blog/tmp-*
+/docs.zip
+/sync-*.png
+/tmp-query/

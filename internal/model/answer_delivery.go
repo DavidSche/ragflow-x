@@ -92,7 +92,7 @@ type AnswerSnapshot struct {
 	ExecutionJSON       string     `gorm:"column:execution_json;type:text;not null" json:"execution"`
 	LimitationsJSON     string     `gorm:"column:limitations_json;type:text;not null" json:"limitations"`
 	ActionsJSON         string     `gorm:"column:actions_json;type:text;not null" json:"actions"`
-	CanonicalHash       string     `gorm:"column:canonical_hash;size:64;not null;uniqueIndex" json:"canonical_hash"`
+	CanonicalHash       string     `gorm:"column:canonical_hash;size:64;not null;index" json:"canonical_hash"`
 	HashAlgorithm       string     `gorm:"column:hash_algorithm;size:16;not null" json:"hash_algorithm"`
 	CreatedAt           time.Time  `gorm:"column:created_at;not null;index" json:"created_at"`
 	CompletedAt         *time.Time `gorm:"column:completed_at" json:"completed_at"`

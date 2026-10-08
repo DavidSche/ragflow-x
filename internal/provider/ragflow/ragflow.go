@@ -28,6 +28,9 @@ type Client interface {
 	ListDocuments(ctx context.Context, datasetID string) ([]Document, error)
 	// ParseDocuments triggers parsing for the given document ids.
 	ParseDocuments(ctx context.Context, datasetID string, documentIDs []string) error
+	// UpdateDocumentParseConfig switches one document between builtin and
+	// pipeline parse modes and optionally updates its parser config.
+	UpdateDocumentParseConfig(ctx context.Context, datasetID, documentID string, update DocumentParseConfigUpdate) error
 	// StopDocuments stops in-flight parsing for the given document ids.
 	StopDocuments(ctx context.Context, datasetID string, documentIDs []string) error
 	// DeleteDocuments removes the given documents from a dataset.
@@ -64,6 +67,10 @@ type Client interface {
 	UpdateDatasetConfig(ctx context.Context, datasetID string, cfg DatasetConfigUpdate) error
 	// Health probes connectivity with the engine.
 	Health(ctx context.Context) (*Health, error)
+	// ListPipelines reads the RAGFlow builtin ingestion pipeline catalog.
+	ListPipelines(ctx context.Context) ([]PipelineTemplate, error)
+	// GetPipeline reads one builtin ingestion pipeline DSL for validation.
+	GetPipeline(ctx context.Context, pipelineID string) (*PipelineTemplateDetail, error)
 	// UpsertModelProvider registers an LLM provider (factory + instance + model)
 	// into the engine so chat configurations can use it.
 	UpsertModelProvider(ctx context.Context, req RegisterModelProviderRequest) error
@@ -382,6 +389,8 @@ type CreateDatasetRequest struct {
 type Document struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
+	ParserID   string     `json:"parser_id"`
+	PipelineID string     `json:"pipeline_id,omitempty"`
 	Status     string     `json:"run"`
 	Enabled    flexString `json:"status"`
 	ChunkCount int64      `json:"chunk_count"`

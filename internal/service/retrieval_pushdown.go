@@ -183,18 +183,6 @@ func agentPushdownEvidence() *pushdownEvidence {
 	return &pushdownEvidence{Status: model.RetrievalPushdownAbsent, Policy: model.RetrievalPushdownPolicyVersion, Reason: "endpoint_unsupported"}
 }
 
-// notePushdownFailure emits the degradation signal for operators.
-func (s *Service) notePushdownFailure(ctx context.Context, tenantID, requestID string, evidence *pushdownEvidence) {
-	if evidence == nil || evidence.Status != model.RetrievalPushdownBypassed {
-		return
-	}
-	notify.Emit(ctx, notify.Event{
-		Title: "retrieval pushdown bypassed", Severity: "warn", TenantID: tenantID,
-		Type: "knowledge.pushdown_bypassed", Resource: "chat", ResourceID: requestID,
-		Fields: map[string]string{"reason": evidence.Reason, "policy": evidence.Policy},
-	})
-}
-
 // SyncDatasetPushdownMetadata backfills rgx_sensitivity (and optionally the
 // business domain) onto every document of the dataset via the documented
 // POST /datasets/{id}/metadata/update endpoint (doc/123 §5.2).

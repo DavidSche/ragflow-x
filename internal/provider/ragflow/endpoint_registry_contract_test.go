@@ -2,6 +2,7 @@ package ragflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -108,6 +109,12 @@ func TestLiveInternalEndpointContract(t *testing.T) {
 			t.Errorf("internal endpoint drill %s failed: %v", name, err)
 		}
 	}
+	failWithoutFixture := func(name string, err error) {
+		var providerErr *Error
+		if err != nil && !(errors.As(err, &providerErr) && providerErr.HTTPStatus == http.StatusOK && providerErr.Code != 0) {
+			t.Errorf("internal endpoint drill %s failed: %v", name, err)
+		}
+	}
 
 	// GET /api/v1/system/version — version gate.
 	if _, err := NewVersionProbe(client).ProbeVersion(ctx); err != nil {
@@ -145,7 +152,7 @@ func TestLiveInternalEndpointContract(t *testing.T) {
 			_, err := client.ListProviderModels(ctx, name, "", "")
 			return err
 		}())
-		fail("GET providers/{name}/instances", func() error {
+		failWithoutFixture("GET providers/{name}/instances", func() error {
 			_, err := client.ListProviderInstances(ctx, name)
 			return err
 		}())
@@ -227,6 +234,23 @@ func TestLiveInternalEndpointContract(t *testing.T) {
 		}
 	}
 
+	// Ingestion pipeline catalog: builtin and read-only.
+	fail("GET /pipelines", func() error {
+		_, err := client.ListPipelines(ctx)
+		return err
+	}())
+	fail("GET /pipelines/{pipeline_id}", func() error {
+		pipelines, err := client.ListPipelines(ctx)
+		if err != nil {
+			return err
+		}
+		if len(pipelines) == 0 {
+			return nil
+		}
+		_, err = client.GetPipeline(ctx, pipelines[0].ID)
+		return err
+	}())
+
 	// Memory message drill: POST /messages is documented (§Add Message) but
 	// writes durable state, so it stays opt-in.
 	if os.Getenv("RGX_RAGFLOW_LIVE_MEMORY_MESSAGE_DRILL") == "1" {
@@ -294,7 +318,9 @@ func TestInternalEndpointDrillHarness(t *testing.T) {
 // other internal endpoints must be drillable with a read-only or idempotent
 // request ("live") or through the offline harness ("harness") when no tenant
 // fixture exists.
-var drillableInternalEndpoints = map[string]string{"POST /datasets/{dataset_id}/documents/batch-update-status": "live (idempotent round-trip of current enabled state)",
+var drillableInternalEndpoints = map[string]string{
+	"PATCH /datasets/{dataset_id}/documents/{document_id}":                           "harness (write family covered by metadata replacement and document parse config contracts)",
+	"POST /datasets/{dataset_id}/documents/batch-update-status":                      "live (idempotent round-trip of current enabled state)",
 	"GET /datasets/{dataset_id}/artifacts":                                           "harness (offline dataset artifact GET contract covers the list response)",
 	"POST /datasets/{dataset_id}/search":                                             "harness (offline scoped search contract covers request/response wire)",
 	"GET /datasets/{dataset_id}/compilation/status":                                  "live (idempotent compilation status read)",
@@ -305,7 +331,6 @@ var drillableInternalEndpoints = map[string]string{"POST /datasets/{dataset_id}/
 	"PUT /compilation-template-groups/{group_id}":                                    "harness (write family covered by template group CRUD contract)",
 	"DELETE /compilation-template-groups/{group_id}":                                 "harness (write family covered by template group CRUD contract)",
 	"PATCH /datasets/{dataset_id}/documents/metadatas":                               "live (idempotent round-trip; needs doc metadata)",
-	"PATCH /datasets/{dataset_id}/documents/{document_id}":                           "harness (write family covered by document metadata replacement contract)",
 	"GET /documents/{document_id}/preview":                                           "live",
 	"GET /documents/images/{image_id}":                                               "live (needs a chunk with image_id)",
 	"GET /agents/{agent_id}/versions":                                                "live",
@@ -329,6 +354,8 @@ var drillableInternalEndpoints = map[string]string{"POST /datasets/{dataset_id}/
 	"GET /system/version":                                                            "live",
 	"GET /models":                                                                    "live",
 	"GET /models/default":                                                            "live",
+	"GET /pipelines":                                                                 "live (read-only builtin pipeline catalog)",
+	"GET /pipelines/{pipeline_id}":                                                   "live (read-only builtin pipeline DSL)",
 }
 
 // TestEveryInternalEndpointHasADrill asserts the drillable map stays in sync

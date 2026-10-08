@@ -20,9 +20,10 @@ func TestApplyPersistsAndReconnects(t *testing.T) {
 
 	var swapped http.Handler
 	cfg := &config.Config{
-		App:      config.App{Name: "ragflow-x", JWTSecret: strongTestJWTSecret, JWTExpireHours: 24, EncryptionKey: "test-encryption-key", DataDir: dir},
-		Database: config.Database{Driver: "sqlite", DSN: filepath.Join(dir, "s.db")},
-		RAGFlow:  config.RAGFlow{Provider: "mock"},
+		App:       config.App{Name: "ragflow-x", JWTSecret: strongTestJWTSecret, JWTExpireHours: 24, EncryptionKey: "test-encryption-key", DataDir: dir},
+		Database:  config.Database{Driver: "sqlite", DSN: filepath.Join(dir, "s.db")},
+		RAGFlow:   config.RAGFlow{Provider: "mock"},
+		FactGuard: config.FactGuard{Mode: "strict"},
 		Setup: config.Setup{
 			Enabled:     true,
 			SecretsFile: filepath.Join(dir, "secrets.json"),
@@ -64,6 +65,9 @@ func TestApplyPersistsAndReconnects(t *testing.T) {
 	}
 	if !m.Configured() {
 		t.Fatal("expected manager to report configured")
+	}
+	if mode := m.svc.CurrentFactGuardConfig().Mode; mode != "strict" {
+		t.Fatalf("fact guard mode = %q, want strict", mode)
 	}
 
 	u, err := m.svc.Store.GetUserByUsername(ctx, "root")
