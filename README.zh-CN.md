@@ -73,11 +73,9 @@ image: ghcr.io/davidsche/ragflow-x:v0.2.0
 
 ## 产品视频
 
-![RAGFlow-X 产品总览](./doc/user/videos/ragflow-x-promo.mp4)
+[![RAGFlow-X 产品总览](./doc/user/images/product-video-cover.png)](./doc/user/videos/ragflow-x-promo.mp4)
 
-这段 67 秒总览视频可在
-[`doc/user/videos/ragflow-x-promo.mp4`](./doc/user/videos/ragflow-x-promo.mp4)
-下载。
+点击封面即可打开这段 67 秒总览视频。
 
 ## 开发检查
 
