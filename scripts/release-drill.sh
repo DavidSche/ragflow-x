@@ -27,38 +27,79 @@ mkdir -p "$DIST"
 echo "==> [1/6] Frontend production build"
 (cd web && npm run build)
 
-echo "==> [2/6] Cross-compiled Go binaries (version stamped: $VERSION)"
+# go:embed cannot reach outside internal/webfs: stage the built web assets
+# there, same as the release.yml "Stage frontend assets for embedding" step.
+rm -rf internal/webfs/dist
+mkdir -p internal/webfs/dist
+cp -r web/dist/. internal/webfs/dist/
+
+echo "==> [2/6] Cross-compiled Go binaries (version stamped + webfs_embed): $VERSION"
 LDFLAGS="-s -w -X main.version=$VERSION"
 mkdir -p "$DIST"
-CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags="$LDFLAGS" -o "$DIST/ragflow-x-linux-amd64"       ./cmd/server/
-CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -ldflags="$LDFLAGS" -o "$DIST/ragflow-x-linux-arm64"       ./cmd/server/
-CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -ldflags="$LDFLAGS" -o "$DIST/ragflow-x-darwin-amd64"      ./cmd/server/
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="$LDFLAGS" -o "$DIST/ragflow-x-windows-amd64.exe" ./cmd/server/
+CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -tags=webfs_embed -ldflags="$LDFLAGS" -o "$DIST/ragflow-x-linux-amd64"       ./cmd/server/
+CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -tags=webfs_embed -ldflags="$LDFLAGS" -o "$DIST/ragflow-x-linux-arm64"       ./cmd/server/
+CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -tags=webfs_embed -ldflags="$LDFLAGS" -o "$DIST/ragflow-x-darwin-amd64"      ./cmd/server/
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags=webfs_embed -ldflags="$LDFLAGS" -o "$DIST/ragflow-x-windows-amd64.exe" ./cmd/server/
 
-echo "==> [3/6] Package binaries + frontend bundle + SHA256SUMS"
+echo "==> [3/6] Package binaries (standard layout) + frontend bundle + SHA256SUMS"
+# Shared layout: binary at the root + config/docker/README companions,
+# mirroring the release.yml "Package release artifacts" step.
+mkdir -p "$DIST/bundle/config" "$DIST/bundle/docker"
+cp config/config.example.yaml "$DIST/bundle/config/"
+cp docker/docker-compose.yml docker/.env.example docker/ragflow-x.yaml "$DIST/bundle/docker/"
+cp README.md "$DIST/bundle/"
 # Git Bash on Windows often lacks `zip`; fall back to Python's zipfile.
+# Argument is a directory; it is packed with paths relative to itself.
 zip_one() {
   local src="$1" dst="$2"
   if command -v zip >/dev/null 2>&1; then
-    zip -j -q "$dst" "$src"
+    ( cd "$src" && zip -qr "$OLDPWD/$dst" . )
   else
     python - "$src" "$dst" <<'PY'
 import os, sys, zipfile
 src, dst = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
-    z.write(src, arcname=os.path.basename(src))
+    for base, _dirs, files in os.walk(src):
+        for name in files:
+            full = os.path.join(base, name)
+            z.write(full, os.path.relpath(full, src))
 PY
   fi
 }
 (cd "$DIST" || exit 1
-  for f in ragflow-x-*; do
+  for f in ragflow-x-linux-* ragflow-x-darwin-* ragflow-x-windows-*; do
+    [ -f "$f" ] || continue
+    rm -rf stage; cp -r bundle stage
     case "$f" in
-      *.exe) zip_one "$f" "ragflow-x-${VERSION_NUM}-$(echo "$f" | sed 's/ragflow-x-//').zip" ;;
-      *)     chmod +x "$f"; tar czf "ragflow-x-${VERSION_NUM}-$(echo "$f" | sed 's/ragflow-x-//').tar.gz" "$f" ;;
+      *.exe)
+        mv "$f" stage/ragflow-x.exe
+        ( cd stage && zip_one . "../ragflow-x-${VERSION_NUM}-windows-amd64.zip" )
+        ;;
+      *)
+        chmod +x "$f"
+        platform="$(echo "$f" | sed 's/ragflow-x-//')"
+        mv "$f" "stage/ragflow-x"
+        tar czf "ragflow-x-${VERSION_NUM}-${platform}.tar.gz" -C stage .
+        ;;
     esac
   done
   tar czf "ragflow-x-${VERSION_NUM}-web.tar.gz" -C "$ROOT/web" dist/
   sha256sum *.tar.gz *.zip > SHA256SUMS
+
+  # Layout guard (mirrors the release.yml packaging check): every platform
+  # package must carry the binary + config + docker + README companions.
+  for pkgname in ragflow-x-*.tar.gz ragflow-x-*.zip; do
+    case "$pkgname" in
+      ragflow-x-${VERSION_NUM}-src.tar.gz|ragflow-x-${VERSION_NUM}-web.tar.gz) continue ;;
+    esac
+    listing=$(tar tzf "$pkgname" 2>/dev/null || unzip -Z1 "$pkgname")
+    for required in "config/config.example.yaml" "docker/docker-compose.yml" "README.md"; do
+      echo "$listing" | grep -Eq "(^|/)${required}$" || {
+        echo "DRILL FAILED: $pkgname is missing $required" >&2; exit 1;
+      }
+    done
+  done
+  echo "==> Layout guard passed: all platform packages carry config/docker/README"
 )
 
 echo "==> [4/6] Source snapshot (git archive HEAD)"
@@ -84,12 +125,12 @@ PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
   echo
   echo "---"
   echo
-  echo "### 安装"
-  echo
-  echo '```bash'
-  echo "# Linux (amd64)"
-  echo "tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz"
-  echo "./ragflow-x-linux-amd64"
+echo "### 安装"
+echo
+echo '```bash'
+echo "# Linux (amd64) — 二进制已嵌入前端 UI，包内含配置样例"
+echo "tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz"
+echo "cp config/config.example.yaml config/config.yaml && ./ragflow-x"
   echo
   echo "# Docker"
   echo "docker pull ghcr.io/davidsche/ragflow-x:${TAG}"
@@ -105,5 +146,5 @@ cat "$DIST/release-notes.md"
 
 echo
 echo "==> Drill PASSED. Version stamp check:"
-tar xzf "$DIST/ragflow-x-${VERSION_NUM}-linux-amd64.tar.gz" -C "$DIST" -O ragflow-x-linux-amd64 | grep -a -o "v${VERSION_NUM}" | head -1 || echo "(string not found in stripped binary; verify with: strings ragflow-x-linux-amd64 | grep main.version)"
+tar xzf "$DIST/ragflow-x-${VERSION_NUM}-linux-amd64.tar.gz" -C "$DIST" -O ./ragflow-x | grep -a -o "v${VERSION_NUM}" | head -1 || echo "(string not found in stripped binary; verify with: strings ragflow-x-linux-amd64 | grep main.version)"
 echo "==> Artifacts in $DIST (gitignored). Clean up with: rm -rf dist-drill/"

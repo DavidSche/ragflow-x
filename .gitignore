@@ -52,6 +52,10 @@ logs/
 
 # Build artifacts
 web/dist/
+
+# Staged frontend build for go:embed (copied from web/dist by the release
+# pipeline / release-drill before `go build -tags=webfs_embed`).
+internal/webfs/dist/
 web/dist2/
 web/dist3/
 web/web.rar

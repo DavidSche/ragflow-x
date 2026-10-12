@@ -12,6 +12,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/obs"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/ratelimit"
+	"github.com/ragflow-x/ragflow-x/internal/webfs"
 )
 
 // New builds the Gin engine with all routes and middleware applied.
@@ -95,6 +96,9 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		handler.RegisterToolRoutingRoutes(protected)
 		handler.RegisterQueryTemplateRoutes(protected)
 		handler.RegisterKnowledgeStrategyRoutes(protected)
+		handler.RegisterKnowledgeCompilationRoutes(protected)
+		handler.RegisterMemoryPolicyRoutes(protected)
+		handler.RegisterConversationContextRoutes(protected)
 		handler.RegisterEvidenceSnapshotRoutes(protected)
 		handler.RegisterOutboxEventRoutes(protected)
 		handler.RegisterEvalCaseEvidenceRoutes(protected)
@@ -173,6 +177,9 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.GET("/knowledge-ops/trace-runs", h.ListTraceRuns)
 		protected.GET("/knowledge-ops/trace-runs/:id", h.GetTraceRun)
 		protected.GET("/knowledge-ops/metrics-contract", h.MetricsContract)
+		protected.GET("/knowledge-ops/compilation/recovery", h.ListCompilationRecovery)
+		protected.POST("/knowledge-ops/compilation/runs/:runId/recovery-probe", h.ProbeCompilationRecoveryRun)
+		protected.POST("/knowledge-ops/compilation/runs/:runId/recovery-approval", h.RequestCompilationRecoveryApproval)
 		protected.GET("/knowledge-tasks", h.ListKnowledgeTasks)
 		protected.POST("/knowledge-tasks", h.CreateKnowledgeTask)
 		protected.GET("/knowledge-tasks/summary", h.KnowledgeTaskSummary)
@@ -284,6 +291,7 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.GET("/memories/:id/messages", h.ListMemoryMessages)
 		protected.POST("/memories/:id/messages", h.AddMemoryMessage)
 		protected.GET("/memories/:id/messages/search", h.SearchMemoryMessages)
+		protected.POST("/memories/:id/governed-search", h.SearchGovernedMemory)
 		protected.GET("/memories/:id/messages/:messageId/content", h.GetMemoryMessageContent)
 		protected.PUT("/memories/:id/messages/:messageId", h.UpdateMemoryMessageStatus)
 		protected.DELETE("/memories/:id/messages/:messageId", h.DeleteMemoryMessage)
@@ -380,6 +388,12 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.POST("/keys", h.CreateAPIKey)
 		protected.POST("/keys/:id/revoke", h.RevokeAPIKey)
 	}
+	// Frontend: serve the embedded UI build (webfs embeds web/dist at compile
+	// time) as the no-route fallback, so a single binary provides API + UI.
+	// Registered last: /api, /metrics and all explicit routes above win. SPA
+	// deep links (e.g. /datasets/123) fall back to index.html inside webfs.
+	r.NoRoute(webfs.Handler())
+
 	// Rate limit per API key (hashed bearer token), not per IP, so tenants
 	// behind a shared egress IP get independent buckets.
 	r.POST("/v1/chat/completions",

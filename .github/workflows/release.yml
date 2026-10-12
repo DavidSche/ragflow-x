@@ -82,44 +82,69 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Build Go binaries (cross-platform, version stamped)
+      # go:embed cannot reach outside internal/webfs, so the built web assets
+      # are copied there for embedding (and stay available for the standalone
+      # web tarball from web/dist).
+      - name: Stage frontend assets for embedding
+        run: |
+          rm -rf internal/webfs/dist
+          mkdir -p internal/webfs/dist
+          cp -r web/dist/. internal/webfs/dist/
+
+      - name: Build Go binaries (cross-platform, version stamped, frontend embedded)
         run: |
           VERSION="${{ steps.meta.outputs.version }}"
           LDFLAGS="-s -w -X main.version=v${VERSION}"
           mkdir -p dist
+          # webfs_embed pulls the built frontend into every binary, so each
+          # release archive serves API + UI out of the box.
 
           # linux/amd64
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-            go build -ldflags="$LDFLAGS" -o dist/ragflow-x-linux-amd64 ./cmd/server/
+            go build -tags=webfs_embed -ldflags="$LDFLAGS" -o dist/ragflow-x-linux-amd64 ./cmd/server/
 
           # linux/arm64
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-            go build -ldflags="$LDFLAGS" -o dist/ragflow-x-linux-arm64 ./cmd/server/
+            go build -tags=webfs_embed -ldflags="$LDFLAGS" -o dist/ragflow-x-linux-arm64 ./cmd/server/
 
           # darwin/amd64
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
-            go build -ldflags="$LDFLAGS" -o dist/ragflow-x-darwin-amd64 ./cmd/server/
+            go build -tags=webfs_embed -ldflags="$LDFLAGS" -o dist/ragflow-x-darwin-amd64 ./cmd/server/
 
           # windows/amd64
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-            go build -ldflags="$LDFLAGS" -o dist/ragflow-x-windows-amd64.exe ./cmd/server/
+            go build -tags=webfs_embed -ldflags="$LDFLAGS" -o dist/ragflow-x-windows-amd64.exe ./cmd/server/
 
       - name: Package release artifacts
         run: |
           TAG="${{ steps.meta.outputs.version }}"
           cd dist
 
-          # Package each binary
+          # Shared layout staged once, then merged into every platform
+          # package: binary at the root + config/docker/README companions so
+          # users can configure and deploy right after unpacking.
+          mkdir -p bundle/config bundle/docker
+          cp ../config/config.example.yaml bundle/config/
+          cp ../docker/docker-compose.yml ../docker/.env.example ../docker/ragflow-x.yaml bundle/docker/
+          cp ../README.md bundle/
+
+          # Package each binary with the shared layout
           for f in ragflow-x-*; do
-            if [[ "$f" == *.exe ]]; then
-              zip -j "ragflow-x-${TAG}-$(echo $f | sed 's/ragflow-x-//').zip" "$f"
-            else
-              chmod +x "$f"
-              tar czf "ragflow-x-${TAG}-$(echo $f | sed 's/ragflow-x-//').tar.gz" "$f"
-            fi
+            case "$f" in
+              *.exe)
+                rm -rf stage; cp -r bundle stage; mv "$f" stage/ragflow-x.exe
+                ( cd stage && zip -qr "../ragflow-x-${TAG}-windows-amd64.zip" . )
+                ;;
+              *)
+                chmod +x "$f"
+                platform="$(echo "$f" | sed 's/ragflow-x-//')"
+                rm -rf stage; cp -r bundle stage; mv "$f" "stage/ragflow-x"
+                tar czf "ragflow-x-${TAG}-${platform}.tar.gz" -C stage .
+                ;;
+            esac
           done
 
-          # Package frontend build
+          # Package frontend build (standalone, for separate static hosting)
           tar czf "ragflow-x-${TAG}-web.tar.gz" -C ../web dist/
 
           # Source snapshot
@@ -131,6 +156,20 @@ jobs:
           sha256sum *.tar.gz *.zip > SHA256SUMS
           echo "--- Release artifacts ---"
           ls -lh *.tar.gz *.zip SHA256SUMS
+
+          # Guard: every platform package must carry binary + config + docker
+          # companions (regression net for the bare-binary packaging bug).
+          for pkgname in ragflow-x-*.tar.gz ragflow-x-*.zip; do
+            case "$pkgname" in
+              ragflow-x-"${TAG}"-src.tar.gz|ragflow-x-"${TAG}"-web.tar.gz) continue ;;
+            esac
+            listing=$(tar tzf "$pkgname" 2>/dev/null || unzip -Z1 "$pkgname")
+            for required in "config/config.example.yaml" "docker/docker-compose.yml" "README.md"; do
+              echo "$listing" | grep -Eq "(^|/)${required}$" || {
+                echo "::error::${pkgname} is missing ${required}"; exit 1;
+              }
+            done
+          done
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -245,9 +284,9 @@ jobs:
             echo "### 安装"
             echo
             echo '```bash'
-            echo "# Linux (amd64)"
+            echo "# Linux (amd64) — binary ships with the UI embedded; config is included"
             echo "tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz"
-            echo "./ragflow-x-linux-amd64"
+            echo "cp config/config.example.yaml config/config.yaml && ./ragflow-x"
             echo
             echo "# Docker"
             echo "docker pull ${IMAGE}:${TAG}"
