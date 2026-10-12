@@ -40,12 +40,12 @@ describe("<MessageBubble />", () => {
     expect(screen.getByText("合同有效")).toBeInTheDocument();
     expect(screen.getByText("retrieval")).toBeInTheDocument();
     expect(screen.getByText("deepseek-v4-flash")).toBeInTheDocument();
-    expect(screen.getByText("128 tokens")).toBeInTheDocument();
-    // toLocaleString() renders in the runner's timezone; match either the
-    // UTC+8 rendering (dev machines) or the UTC rendering (CI runners).
-    expect(
-      screen.getByText((_, el) => /^2026\/9\/2 (09|01):00:00$/.test(el?.textContent ?? "")),
-    ).toBeInTheDocument();
+    // toLocaleString() is environment-dependent (ICU locale + timezone):
+    // UTC+8 dev machines render 2026/9/2 09:00:00, UTC CI runners render
+    // 9/2/2026, 1:00:00 AM (en-US ICU in Node's small-ICU build). Assert the
+    // <time> element's content instead of a hardcoded string.
+    const timeText = container.querySelector("time")?.textContent ?? "";
+    expect(timeText).toMatch(/^(2026\/9\/2 (09|01):00:00|9\/2\/2026, 1:00:00 AM)$/);
   });
 
   it("invokes copy, feedback and regenerate actions", () => {

@@ -23,15 +23,16 @@ describe("<ConversationMessageList />", () => {
     const messages: Message[] = [
       { id: "m2", role: "assistant", content: "结构化回答", kind: "agent", status: "completed", createdAt: "2026-09-02T01:00:00.000Z", toolCalls: [{ name: "retrieval", status: "success", summary: "已检索 2 条" }], artifacts: [{ type: "card", title: "结论", content: "合同有效" }] },
     ];
-    render(<ConversationMessageList messages={messages} onCopy={() => {}} />);
+    const { container } = render(<ConversationMessageList messages={messages} onCopy={() => {}} />);
     expect(screen.getByText("结构化回答")).toBeInTheDocument();
     expect(screen.getByText("retrieval")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "workbench.agent_execution_timeline" })).toBeInTheDocument();
     expect(screen.getByText("结论")).toBeInTheDocument();
-    // toLocaleString() renders in the runner's timezone; match either the
-    // UTC+8 rendering (dev machines) or the UTC rendering (CI runners).
-    expect(
-      screen.getAllByText((_, el) => /^2026\/9\/2 (09|01):00:00$/.test(el?.textContent ?? "")).length,
-    ).toBeGreaterThan(0);
+    // toLocaleString() is environment-dependent (ICU locale + timezone):
+    // UTC+8 dev machines render 2026/9/2 09:00:00, UTC CI runners render
+    // 9/2/2026, 1:00:00 AM (en-US ICU in Node's small-ICU build). Assert the
+    // <time> element's content instead of a hardcoded string.
+    const timeText = container.querySelector("time")?.textContent ?? "";
+    expect(timeText).toMatch(/^(2026\/9\/2 (09|01):00:00|9\/2\/2026, 1:00:00 AM)$/);
   });
 });
