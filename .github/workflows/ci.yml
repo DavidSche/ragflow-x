@@ -47,7 +47,7 @@ jobs:
       - name: golangci-lint
         # golangci-lint v2.5+ is built with Go 1.25 and accepts go.mod's
         # `go 1.25.0` directive (v2.1 binaries compile with go1.24 and abort).
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
           version: v2.5
           working-directory: .
