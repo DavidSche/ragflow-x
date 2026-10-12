@@ -41,7 +41,11 @@ describe("<MessageBubble />", () => {
     expect(screen.getByText("retrieval")).toBeInTheDocument();
     expect(screen.getByText("deepseek-v4-flash")).toBeInTheDocument();
     expect(screen.getByText("128 tokens")).toBeInTheDocument();
-    expect(screen.getByText("2026/9/2 09:00:00")).toBeInTheDocument();
+    // toLocaleString() renders in the runner's timezone; match either the
+    // UTC+8 rendering (dev machines) or the UTC rendering (CI runners).
+    expect(
+      screen.getByText((_, el) => /^2026\/9\/2 (09|01):00:00$/.test(el?.textContent ?? "")),
+    ).toBeInTheDocument();
   });
 
   it("invokes copy, feedback and regenerate actions", () => {

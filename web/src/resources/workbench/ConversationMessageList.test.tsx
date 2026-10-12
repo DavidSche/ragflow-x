@@ -28,6 +28,10 @@ describe("<ConversationMessageList />", () => {
     expect(screen.getByText("retrieval")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "workbench.agent_execution_timeline" })).toBeInTheDocument();
     expect(screen.getByText("结论")).toBeInTheDocument();
-    expect(screen.getByText("2026/9/2 09:00:00")).toBeInTheDocument();
+    // toLocaleString() renders in the runner's timezone; match either the
+    // UTC+8 rendering (dev machines) or the UTC rendering (CI runners).
+    expect(
+      screen.getAllByText((_, el) => /^2026\/9\/2 (09|01):00:00$/.test(el?.textContent ?? "")).length,
+    ).toBeGreaterThan(0);
   });
 });

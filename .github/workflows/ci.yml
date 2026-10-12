@@ -47,7 +47,9 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # golangci-lint v2.1+ supports the Go 1.25 toolchain; older `latest`
+          # v1.64 binaries are built with go1.24 and refuse go.mod go 1.25.
+          version: v2.1
           working-directory: .
           only-new-issues: ${{ github.event_name == 'pull_request' }}
 
