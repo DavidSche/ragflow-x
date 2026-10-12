@@ -1,5 +1,15 @@
 # syntax=docker/dockerfile:1
-# RAGFlow-X API server image (control plane + gateway).
+# RAGFlow-X API server image (control plane + gateway + embedded web UI).
+
+# ---- frontend stage (first: no dependency on the Go stages) ----
+# Produces the Vite production bundle that gets embedded into the Go binary
+# via internal/webfs (go:embed) with the webfs_embed build tag.
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
 
 # ---- build stage ----
 FROM golang:1.25-alpine AS build
@@ -11,15 +21,6 @@ ARG VERSION=dev
 # Cache module downloads first so dependency layers are reused.
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Frontend build stage: produces the Vite production bundle embedded into
-# the Go binary (go:embed via internal/webfs, tag webfs_embed).
-FROM node:22-alpine AS web
-WORKDIR /web
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
-COPY web/ ./
-RUN npm run build
 
 COPY . .
 # Stage the web build where internal/webfs can embed it (go:embed cannot
