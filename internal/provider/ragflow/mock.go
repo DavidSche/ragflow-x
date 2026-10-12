@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 )
@@ -14,37 +15,50 @@ import (
 // It is NOT safe for production; it exists so the full service flow can run
 // without a live RAGFlow instance.
 type Mock struct {
-	mu                           sync.Mutex
-	datasets                     map[string]*mockDataset
-	documents                    map[string][]*mockDocument
-	providers                    map[string]*mockProvider
-	metadata                     map[string]map[string]map[string]interface{}
-	chunks                       map[string][]*mockChunk
-	searchApps                   map[string]*mockSearchApp
-	memories                     map[string]*mockMemory
-	agents                       map[string]*mockAgent
-	pipelines                    map[string]PipelineTemplateDetail
-	pipelineOrder                []string
-	lastPipelineID               string
-	chatCreateRequests           []CreateChatRequest
-	lastChatCondition            *MetadataCondition
-	lastSearchCondition          *MetadataCondition
-	lastRetrieval                *RetrieveDatasetsRequest
-	lastSearchDataset            *SearchDatasetRequest
-	artifacts                    map[string][]DatasetArtifact
-	lastArtifacts                *DatasetArtifactFilter
-	compilationStatuses          map[string]CompilationStatus
-	lastCompilationStatusDataset string
-	compilationTemplates         map[CompilationTemplateSource][]CompilationTemplate
-	compilationTemplateGroups    map[string]CompilationTemplateGroup
-	compilationTemplateOrder     []string
-	lastTemplateGroupListFilter  *CompilationTemplateGroupFilter
-	lastTemplateGroupSaved       *CompilationTemplateGroupRequest
-	lastTemplateGroupUpdatedID   string
-	lastTemplateGroupUpdate      *CompilationTemplateGroupRequest
-	lastTemplateGroupDeletedID   string
-	lastDocumentParseConfig      *DocumentParseConfigUpdate
-	lastParseDocumentIDs         []string
+	mu                              sync.Mutex
+	datasets                        map[string]*mockDataset
+	documents                       map[string][]*mockDocument
+	providers                       map[string]*mockProvider
+	metadata                        map[string]map[string]map[string]interface{}
+	chunks                          map[string][]*mockChunk
+	searchApps                      map[string]*mockSearchApp
+	memories                        map[string]*mockMemory
+	agents                          map[string]*mockAgent
+	pipelines                       map[string]PipelineTemplateDetail
+	pipelineOrder                   []string
+	lastPipelineID                  string
+	chatCreateRequests              []CreateChatRequest
+	lastChatCondition               *MetadataCondition
+	lastChatMessages                []Message
+	lastSearchCondition             *MetadataCondition
+	lastRetrieval                   *RetrieveDatasetsRequest
+	lastSearchDataset               *SearchDatasetRequest
+	artifacts                       map[string][]DatasetArtifact
+	lastArtifacts                   *DatasetArtifactFilter
+	artifactDetails                 map[string]map[string]map[string]DatasetArtifactDetail
+	lastArtifactDetail              *DatasetArtifactDetail
+	compilationStatuses             map[string]CompilationStatus
+	lastCompilationStatusDataset    string
+	compilationTemplates            map[CompilationTemplateSource][]CompilationTemplate
+	compilationTemplateGroups       map[string]CompilationTemplateGroup
+	compilationTemplateOrder        []string
+	lastTemplateGroupListFilter     *CompilationTemplateGroupFilter
+	lastTemplateGroupSaved          *CompilationTemplateGroupRequest
+	lastTemplateGroupUpdatedID      string
+	lastTemplateGroupUpdate         *CompilationTemplateGroupRequest
+	lastTemplateGroupDeletedID      string
+	lastDocumentParseConfig         *DocumentParseConfigUpdate
+	lastParseDocumentIDs            []string
+	lastIngestDocumentIDs           []string
+	memorySearchCalls               int
+	lastMemorySearchParams          *MemorySearchParams
+	lastAgentMessages               []Message
+	memoryAddCalls                  int
+	lastMemoryAddRequest            *AddMessageRequest
+	memoryAddError                  error
+	memoryListMessagesFilteredCalls int
+	memoryListMessagesError         error
+	suppressNextMemoryMessages      bool
 }
 
 // LastChatMetadataCondition returns the metadata condition received by the
@@ -55,12 +69,28 @@ func (m *Mock) LastChatMetadataCondition() *MetadataCondition {
 	return m.lastChatCondition
 }
 
+// LastChatCompletionMessages returns messages sent to the latest chat
+// completion, including governance-injected system context.
+func (m *Mock) LastChatCompletionMessages() []Message {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]Message(nil), m.lastChatMessages...)
+}
+
 // LastSearchMetadataCondition returns the metadata condition received by the
 // most recent mock search completion.
 func (m *Mock) LastSearchMetadataCondition() *MetadataCondition {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.lastSearchCondition
+}
+
+// LastAgentCompletionMessages returns messages sent to the latest agent
+// completion, including governance-injected system context.
+func (m *Mock) LastAgentCompletionMessages() []Message {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]Message(nil), m.lastAgentMessages...)
 }
 
 // LastRetrievalRequest returns the latest generic retrieval request received
@@ -85,6 +115,55 @@ func (m *Mock) LastSearchDatasetRequest() *SearchDatasetRequest {
 	return &captured
 }
 
+// SetMemoryAddError injects a deterministic provider failure for Memory write
+// dispatch tests. It does not change the message store.
+func (m *Mock) SetMemoryAddError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memoryAddError = err
+}
+
+// SetMemoryListMessagesFilteredError injects a deterministic filtered-list
+// failure for Memory dispatch and compensation tests.
+func (m *Mock) SetMemoryListMessagesFilteredError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.memoryListMessagesError = err
+}
+
+// SetMemoryListMessagesSuppressNext makes the next filtered list return an
+// empty page after a successful write, simulating RAGFlow visibility delay.
+func (m *Mock) SetMemoryListMessagesSuppressNext(suppress bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.suppressNextMemoryMessages = suppress
+}
+
+// MemoryAddCalls returns the number of POST /messages dispatch attempts.
+func (m *Mock) MemoryAddCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.memoryAddCalls
+}
+
+// MemoryListMessagesFilteredCalls returns the number of filtered list attempts.
+func (m *Mock) MemoryListMessagesFilteredCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.memoryListMessagesFilteredCalls
+}
+
+// LastMemoryAddRequest returns the latest Memory write request.
+func (m *Mock) LastMemoryAddRequest() *AddMessageRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lastMemoryAddRequest == nil {
+		return nil
+	}
+	captured := *m.lastMemoryAddRequest
+	return &captured
+}
+
 // Compile-time assertion that Mock implements Client.
 // SetDatasetArtifacts installs deterministic compiled artifacts for contract
 // and local capability tests.
@@ -92,6 +171,32 @@ func (m *Mock) SetDatasetArtifacts(datasetID string, artifacts []DatasetArtifact
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.artifacts[datasetID] = append([]DatasetArtifact(nil), artifacts...)
+}
+
+// SetDatasetArtifactDetail installs one deterministic artifact payload.
+func (m *Mock) SetDatasetArtifactDetail(datasetID string, detail DatasetArtifactDetail) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	pageType := strings.TrimSpace(detail.PageType)
+	slug := strings.TrimSpace(detail.Slug)
+	if m.artifactDetails[datasetID] == nil {
+		m.artifactDetails[datasetID] = map[string]map[string]DatasetArtifactDetail{}
+	}
+	if m.artifactDetails[datasetID][pageType] == nil {
+		m.artifactDetails[datasetID][pageType] = map[string]DatasetArtifactDetail{}
+	}
+	m.artifactDetails[datasetID][pageType][slug] = detail
+}
+
+// LastDatasetArtifactDetail returns the artifact payload last returned by Mock.
+func (m *Mock) LastDatasetArtifactDetail() *DatasetArtifactDetail {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lastArtifactDetail == nil {
+		return nil
+	}
+	captured := *m.lastArtifactDetail
+	return &captured
 }
 
 // LastDatasetArtifactFilter returns the latest artifact list request.
@@ -119,7 +224,11 @@ type mockDocument struct {
 	status       string
 	parserID     string
 	pipelineID   string
+	chunkCount   int64
 	parserConfig map[string]interface{}
+	createTime   int64
+	updateTime   int64
+	size         int64
 }
 
 type mockChunk struct {
@@ -144,6 +253,7 @@ func NewMock() *Mock {
 		agents:                    map[string]*mockAgent{},
 		pipelines:                 map[string]PipelineTemplateDetail{},
 		artifacts:                 map[string][]DatasetArtifact{},
+		artifactDetails:           map[string]map[string]map[string]DatasetArtifactDetail{},
 		compilationStatuses:       map[string]CompilationStatus{},
 		compilationTemplates:      map[CompilationTemplateSource][]CompilationTemplate{},
 		compilationTemplateGroups: map[string]CompilationTemplateGroup{},
@@ -209,10 +319,11 @@ func (m *Mock) CreateDocument(ctx context.Context, datasetID string, doc *Docume
 	if !ok {
 		return nil, fmt.Errorf("dataset not found: %s", datasetID)
 	}
-	d := &mockDocument{id: id.New(), name: doc.Name, status: "pending"}
+	now := time.Now().UTC().Unix()
+	d := &mockDocument{id: id.New(), name: doc.Name, status: "pending", createTime: now, updateTime: now, size: int64(len(doc.Content))}
 	ds.docs = append(ds.docs, d)
 	m.documents[datasetID] = ds.docs
-	return &Document{ID: d.id, Name: d.name, Status: d.status}, nil
+	return &Document{ID: d.id, Name: d.name, Status: d.status, Enabled: "1"}, nil
 }
 
 func (m *Mock) ListDocuments(ctx context.Context, datasetID string) ([]Document, error) {
@@ -225,7 +336,7 @@ func (m *Mock) ListDocuments(ctx context.Context, datasetID string) ([]Document,
 		if metadata == nil {
 			metadata = map[string]interface{}{}
 		}
-		out = append(out, Document{ID: d.id, Name: d.name, ParserID: d.parserID, PipelineID: d.pipelineID, Status: d.status, Metadata: metadata})
+		out = append(out, Document{ID: d.id, Name: d.name, Status: d.status, Enabled: "1", ParserID: d.parserID, PipelineID: d.pipelineID, ChunkCount: d.chunkCount, CreateTime: d.createTime, UpdateTime: d.updateTime, Size: d.size, Metadata: metadata})
 	}
 	return out, nil
 }
@@ -255,6 +366,14 @@ func (m *Mock) ParseDocuments(ctx context.Context, datasetID string, documentIDs
 	return nil
 }
 
+func (m *Mock) IngestDocuments(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return fmt.Errorf("document_ids is required")
+	}
+	m.lastIngestDocumentIDs = append([]string(nil), documentIDs...)
+	return nil
+}
+
 // LastDocumentParseConfigUpdate exposes the latest document-level parse
 // configuration accepted by the mock.
 func (m *Mock) LastDocumentParseConfigUpdate() *DocumentParseConfigUpdate {
@@ -272,6 +391,28 @@ func (m *Mock) LastParseDocumentIDs() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]string(nil), m.lastParseDocumentIDs...)
+}
+
+func (m *Mock) LastIngestDocumentIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.lastIngestDocumentIDs...)
+}
+
+// SetDocumentExecutionState simulates mutable ingestion fields reported by a
+// real upstream while source identity remains unchanged.
+func (m *Mock) SetDocumentExecutionState(_ context.Context, datasetID, documentID, status string, chunkCount int64, updateTime int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, d := range m.documents[datasetID] {
+		if d.id == documentID {
+			d.status = status
+			d.chunkCount = chunkCount
+			d.updateTime = updateTime
+			return nil
+		}
+	}
+	return fmt.Errorf("document not found: %s", documentID)
 }
 
 func (m *Mock) UpdateDocumentParseConfig(_ context.Context, datasetID, documentID string, update DocumentParseConfigUpdate) error {

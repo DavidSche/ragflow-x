@@ -7,6 +7,7 @@ import (
 
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
+	"github.com/ragflow-x/ragflow-x/internal/repository"
 	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
@@ -52,7 +53,9 @@ func listExecutionSnapshots(c *gin.Context) {
 func listEvaluationRuns(c *gin.Context) {
 	tenantID, _ := releaseGovernanceContext(c)
 	page, pageSize := pageParams(c)
-	items, total, err := handlerFrom(c).Service.ListEvaluationRuns(c.Request.Context(), tenantID, c.Query("candidate_id"), page, pageSize)
+	items, total, err := handlerFrom(c).Service.ListEvaluationRuns(
+		c.Request.Context(), tenantID, evaluationScopeFilter(c), page, pageSize,
+	)
 	if err != nil {
 		response.Err(c, err)
 		return
@@ -63,7 +66,9 @@ func listEvaluationRuns(c *gin.Context) {
 func listEvidenceBundles(c *gin.Context) {
 	tenantID, _ := releaseGovernanceContext(c)
 	page, pageSize := pageParams(c)
-	items, total, err := handlerFrom(c).Service.ListEvidenceBundles(c.Request.Context(), tenantID, c.Query("candidate_id"), page, pageSize)
+	items, total, err := handlerFrom(c).Service.ListEvidenceBundles(
+		c.Request.Context(), tenantID, evaluationScopeFilter(c), page, pageSize,
+	)
 	if err != nil {
 		response.Err(c, err)
 		return
@@ -209,6 +214,17 @@ func completeEvaluationRun(c *gin.Context) {
 	response.OK(c, item)
 }
 
+func executeScopedEvaluationRun(c *gin.Context) {
+	tenantID, _ := releaseGovernanceContext(c)
+	item, err := handlerFrom(c).Service.ExecuteScopedEvaluationRun(c.Request.Context(), tenantID, c.Param("id"))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	governanceAudit(c, "evaluation_run.execute", "release-governance", item.ID, item.GateStatus)
+	response.OK(c, item)
+}
+
 func createEvidenceBundle(c *gin.Context) {
 	tenantID, userID := releaseGovernanceContext(c)
 	input, ok := bind[service.EvidenceBundleInput](c)
@@ -235,6 +251,19 @@ func evaluateReleaseGate(c *gin.Context) {
 		return
 	}
 	governanceAudit(c, "release_gate.decide", "release-governance", item.ID, item.Decision)
+	response.OK(c, item)
+}
+
+func getReleaseGateEvidence(c *gin.Context) {
+	tenantID, _ := releaseGovernanceContext(c)
+	candidateVersion := parseCandidateVersion(c.Query("candidate_version"))
+	item, err := handlerFrom(c).Service.GetReleaseGateEvidenceReport(
+		c.Request.Context(), tenantID, c.Query("candidate_id"), candidateVersion,
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
 	response.OK(c, item)
 }
 
@@ -359,11 +388,13 @@ func RegisterReleaseGovernanceRoutes(group *gin.RouterGroup, handler *Handler) {
 	group.POST("/evaluation-runs", createEvaluationRun)
 	group.POST("/evaluation-runs/:id/case-results", addEvaluationCaseResult)
 	group.POST("/evaluation-runs/:id/complete", completeEvaluationRun)
+	group.POST("/evaluation-runs/:id/execute", executeScopedEvaluationRun)
 	group.GET("/evaluation-runs", listEvaluationRuns)
 	group.POST("/evidence-bundles", createEvidenceBundle)
 	group.GET("/evidence-bundles", listEvidenceBundles)
 	group.POST("/release-gates", evaluateReleaseGate)
 	group.GET("/release-gates", listReleaseGates)
+	group.GET("/release-gates/evidence", getReleaseGateEvidence)
 	group.POST("/releases", createRelease)
 	group.GET("/releases", listReleases)
 	group.POST("/releases/:id/complete", completeRelease)
@@ -380,4 +411,15 @@ func parseCandidateVersion(value string) int64 {
 		return 0
 	}
 	return version
+}
+
+func evaluationScopeFilter(c *gin.Context) repository.EvaluationScopeFilter {
+	return repository.EvaluationScopeFilter{
+		CandidateID:     c.Query("candidate_id"),
+		CandidateVer:    parseCandidateVersion(c.Query("candidate_version")),
+		Scope:           c.Query("evaluation_scope"),
+		StrategyID:      c.Query("x_strategy_id"),
+		MemoryPolicyID:  c.Query("x_memory_policy_id"),
+		EvaluationRunID: c.Query("evaluation_run_id"),
+	}
 }

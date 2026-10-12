@@ -7,6 +7,7 @@ const (
 	ToolTypeSQLQuery           = "sql_query"
 	ToolTypeLookup             = "lookup"
 	ToolTypeKnowledgeRetrieval = "knowledge_retrieval"
+	ToolTypeMemoryRetrieval    = "memory_retrieval"
 )
 
 // ToolRegistry is the tenant-owned governance record for deterministic tools.

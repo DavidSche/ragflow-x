@@ -17,6 +17,7 @@ type AnswerDeliveryRepo interface {
 	GetAnswerRunByRequest(ctx context.Context, tenantID, requestID string) (*model.AnswerRun, error)
 	GetAnswerRun(ctx context.Context, tenantID, runID string) (*model.AnswerRun, error)
 	GetAnswerSnapshotByRequest(ctx context.Context, tenantID, requestID string) (*model.AnswerSnapshot, error)
+	ListAnswerRunSnapshots(ctx context.Context, tenantID, assistantID, sessionID string) ([]AnswerRunSnapshot, error)
 	CreateAnswerSnapshot(ctx context.Context, snapshot *model.AnswerSnapshot) error
 	GetAnswerSnapshot(ctx context.Context, tenantID, snapshotID string) (*model.AnswerSnapshot, error)
 	ListAnswerSnapshots(ctx context.Context, tenantID, sessionID string) ([]model.AnswerSnapshot, error)
@@ -86,6 +87,48 @@ func (s *store) GetAnswerSnapshotByRequest(ctx context.Context, tenantID, reques
 		Where("rgx_answer_snapshot.tenant_id = ? AND rgx_answer_run.request_id = ?", tenantID, requestID).
 		Order("rgx_answer_snapshot.created_at DESC").First(&snapshot).Error
 	return &snapshot, err
+}
+
+type AnswerRunSnapshot struct {
+	Run      model.AnswerRun
+	Snapshot model.AnswerSnapshot
+}
+
+func (s *store) ListAnswerRunSnapshots(ctx context.Context, tenantID, assistantID, sessionID string) ([]AnswerRunSnapshot, error) {
+	var runs []model.AnswerRun
+	if err := s.WithContext(ctx).
+		Where("tenant_id = ? AND assistant_id = ? AND session_id = ?", tenantID, assistantID, sessionID).
+		Order("created_at ASC, request_id ASC").
+		Find(&runs).Error; err != nil {
+		return nil, err
+	}
+	if len(runs) == 0 {
+		return []AnswerRunSnapshot{}, nil
+	}
+
+	runIDs := make([]string, 0, len(runs))
+	runByID := make(map[string]model.AnswerRun, len(runs))
+	for _, run := range runs {
+		runIDs = append(runIDs, run.ID)
+		runByID[run.ID] = run
+	}
+	var snapshots []model.AnswerSnapshot
+	if err := s.WithContext(ctx).
+		Where("tenant_id = ? AND answer_run_id IN ?", tenantID, runIDs).
+		Order("created_at ASC").
+		Find(&snapshots).Error; err != nil {
+		return nil, err
+	}
+
+	out := make([]AnswerRunSnapshot, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		run, ok := runByID[snapshot.AnswerRunID]
+		if !ok {
+			continue
+		}
+		out = append(out, AnswerRunSnapshot{Run: run, Snapshot: snapshot})
+	}
+	return out, nil
 }
 
 func (s *store) CreateAnswerSnapshot(ctx context.Context, snapshot *model.AnswerSnapshot) error {

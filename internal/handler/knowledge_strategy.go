@@ -113,6 +113,18 @@ func executeKnowledgeStrategy(c *gin.Context) {
 	response.OK(c, result)
 }
 
+func getKnowledgeStrategyQualityGate(c *gin.Context) {
+	tenantID := c.GetString(middleware.ContextTenantID)
+	item, err := handlerFrom(c).Service.GetKnowledgeStrategyQualityGate(
+		c.Request.Context(), tenantID, c.Param("id"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, item)
+}
+
 func RegisterKnowledgeStrategyRoutes(group *gin.RouterGroup) {
 	group.GET("/knowledge-strategies", listKnowledgeStrategies)
 	group.POST("/knowledge-strategies", createKnowledgeStrategy)
@@ -122,4 +134,5 @@ func RegisterKnowledgeStrategyRoutes(group *gin.RouterGroup) {
 	group.DELETE("/knowledge-strategies/:id", deleteKnowledgeStrategy)
 	group.POST("/knowledge-strategies/:id/probe", probeKnowledgeStrategy)
 	group.POST("/knowledge-strategies/:id/retrieve", executeKnowledgeStrategy)
+	group.GET("/knowledge-strategies/:id/quality-gate", getKnowledgeStrategyQualityGate)
 }

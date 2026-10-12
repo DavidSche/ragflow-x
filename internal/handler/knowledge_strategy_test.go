@@ -238,3 +238,31 @@ func TestKnowledgeStrategyRetrieveRouteBindsVersionResolver(t *testing.T) {
 		t.Fatalf("unexpected resolver response: %v", result)
 	}
 }
+
+func TestKnowledgeStrategyQualityGateRoute(t *testing.T) {
+	gin, svc, tenantID := knowledgeStrategyRouter(t)
+	datasetID := createHandlerDatasetLink(t, svc, tenantID, "Quality Gate Dataset")
+	input := service.KnowledgeStrategyInput{
+		DatasetID: datasetID, StrategyType: "semantic",
+		FallbackStrategy:   "hybrid",
+		RAGFlowCapability:  "retrieval",
+		AuthorizationScope: `{"roles":["platform_admin","tenant_admin"]}`,
+	}
+	payload, _ := json.Marshal(input)
+	recorder := httptest.NewRecorder()
+	gin.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/knowledge-strategies", bytes.NewReader(payload)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("create strategy: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	strategyID, _ := decodeObject[map[string]interface{}](t, recorder)["id"].(string)
+
+	recorder = httptest.NewRecorder()
+	gin.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-strategies/"+strategyID+"/quality-gate", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("quality gate route: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	summary := decodeObject[map[string]interface{}](t, recorder)
+	if summary["strategy_id"] != strategyID || summary["gate_status"] != "NOT_EVALUATED" {
+		t.Fatalf("unexpected quality gate response: %v", summary)
+	}
+}

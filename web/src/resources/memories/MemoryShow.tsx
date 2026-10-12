@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { useNotify, useTranslate } from "ra-core";
+import { useCanAccess, useNotify, useTranslate } from "ra-core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChevronDown, ChevronRight, Loader2, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
+import { GovernedMemorySearchPanel } from "./GovernedMemorySearchPanel";
+import { MemoryOperationPanel } from "./MemoryOperationPanel";
 import { NumericRangeField } from "@/components/NumericRangeField";
 import { clampInteger, clampNumber } from "@/lib/numeric";
 
@@ -43,9 +45,21 @@ interface AgentSessionOption {
   name: string;
 }
 
+interface ContextDecision {
+  id: string;
+  request_kind: string;
+  assistant_id: string;
+  session_id: string;
+  decision: string;
+  decision_hash: string;
+  created_at: string;
+}
+
 export const MemoryShow = () => {
   const t = useTranslate();
   const notify = useNotify();
+  const { canAccess: canManageMemory } = useCanAccess({ resource: "memory", action: "manage" });
+  const { canAccess: canExecuteMemory } = useCanAccess({ resource: "memory", action: "execute" });
   const { id } = useParams<{ id: string }>();
   const [cfg, setCfg] = useState<MemoryConfig>({
     name: "", memory_type: [], embd_id: "", llm_id: "", permissions: "me",
@@ -63,6 +77,11 @@ export const MemoryShow = () => {
   const [searchTopN, setSearchTopN] = useState("5");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<MemoryMessage[]>([]);
+  const [searchAgentID, setSearchAgentID] = useState("");
+  const [searchSessionID, setSearchSessionID] = useState("");
+  const [searchUserID, setSearchUserID] = useState("");
+  const [contextDecision, setContextDecision] = useState<ContextDecision | null>(null);
+  const [previewingContext, setPreviewingContext] = useState(false);
   const [agentOptions, setAgentOptions] = useState<AgentOption[]>([]);
   const [sessionOptions, setSessionOptions] = useState<AgentSessionOption[]>([]);
   // expanded message content
@@ -181,19 +200,45 @@ export const MemoryShow = () => {
     if (!id) return;
     setSearching(true);
     setSearchResults([]);
+    const weight = 0.7;
     const threshold = clampNumber(Number(searchThreshold), 0, 1, 0.2);
     const topN = clampInteger(Number(searchTopN), 1, 100, 5);
     setSearchThreshold(String(threshold));
     setSearchTopN(String(topN));
     try {
       const res = await api.get<{ code: number; data: MemoryMessage[] }>(
-        `/memories/${id}/messages/search?query=${encodeURIComponent(searchQuery)}&threshold=${encodeURIComponent(String(threshold))}&top_n=${encodeURIComponent(String(topN))}`,
+        `/memories/${id}/messages/search?query=${encodeURIComponent(searchQuery)}&threshold=${encodeURIComponent(String(threshold))}&top_n=${encodeURIComponent(String(topN))}&weight=${encodeURIComponent(String(weight))}` +
+          `&agent_id=${encodeURIComponent(searchAgentID)}&session_id=${encodeURIComponent(searchSessionID)}&user_id=${encodeURIComponent(searchUserID)}`,
       );
       setSearchResults(Array.isArray(res.data?.data) ? res.data.data : []);
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("memories.search_fail"), { type: "error" });
     } finally {
       setSearching(false);
+    }
+  };
+
+  const previewContext = async () => {
+    if (!msgForm.agent_id) {
+      notify(t("memories.context_agent_required"), { type: "error" });
+      return;
+    }
+    setPreviewingContext(true);
+    try {
+      const response = await api.post<{ code: number; data: { decision: ContextDecision } }>(
+        "/conversation-context/preview",
+        {
+          request_kind: "search",
+          assistant_id: msgForm.agent_id,
+          session_id: msgForm.session_id,
+          request_id: crypto.randomUUID(),
+        },
+      );
+      setContextDecision(response.data?.data?.decision ?? null);
+    } catch (err) {
+      notify(err instanceof ApiError ? err.displayMessage : t("memories.context_preview_failed"), { type: "error" });
+    } finally {
+      setPreviewingContext(false);
     }
   };
 
@@ -239,15 +284,19 @@ export const MemoryShow = () => {
             {m.status ? t("memories.status_remembered") : t("memories.status_forgotten")}
           </button>
           <div className="flex gap-1">
-            <button type="button" className="rounded border px-2 py-1" onClick={() => void toggleStatus(m)}>
-              {m.status ? t("memories.forget") : t("memories.remember")}
-            </button>
+            {canManageMemory ? (
+              <button type="button" className="rounded border px-2 py-1" onClick={() => void toggleStatus(m)}>
+                {m.status ? t("memories.forget") : t("memories.remember")}
+              </button>
+            ) : null}
             <button type="button" className="rounded border px-2 py-1" onClick={() => void toggleContent(m)}>
               {t("memories.view_content")}
             </button>
-            <button type="button" className="rounded border p-1 text-destructive" onClick={() => void forget(m)} aria-label={t("memories.forget")}>
-              <Trash2 className="size-3" aria-hidden="true" />
-            </button>
+            {canManageMemory ? (
+              <button type="button" className="rounded border p-1 text-destructive" onClick={() => void forget(m)} aria-label={t("memories.forget")}>
+                <Trash2 className="size-3" aria-hidden="true" />
+              </button>
+            ) : null}
           </div>
         </div>
         <p className="mt-1 text-muted-foreground">{t("memories.ask")}: {m.user_input}</p>
@@ -270,14 +319,16 @@ export const MemoryShow = () => {
             <RefreshCw className="size-4" aria-hidden="true" />
             {t("memories.refresh")}
           </Button>
-          <Button onClick={() => void saveCfg()} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : t("ra.action.save")}
-          </Button>
+          {canManageMemory ? (
+            <Button onClick={() => void saveCfg()} disabled={saving}>
+              {saving ? <Loader2 className="size-4 animate-spin" /> : t("ra.action.save")}
+            </Button>
+          ) : null}
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded border p-4">
+        <section className={`${canManageMemory ? "" : "hidden"} rounded border p-4`}>
           <h2 className="mb-3 text-sm font-medium">{t("memories.config_title")}</h2>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -328,10 +379,15 @@ export const MemoryShow = () => {
         </section>
 
         <div className="flex flex-col gap-6">
-          <section className="rounded border p-4">
+          <section className={`${canExecuteMemory ? "" : "hidden"} rounded border p-4`}>
             <h2 className="mb-3 text-sm font-medium">{t("memories.search_title")}</h2>
             <div className="space-y-2">
               <Input placeholder={t("memories.search_placeholder")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Input aria-label={t("memories.search_agent")} placeholder={t("memories.search_agent")} value={searchAgentID} onChange={(e) => setSearchAgentID(e.target.value)} />
+                <Input aria-label={t("memories.search_session")} placeholder={t("memories.search_session")} value={searchSessionID} onChange={(e) => setSearchSessionID(e.target.value)} />
+                <Input aria-label={t("memories.search_user")} placeholder={t("memories.search_user")} value={searchUserID} onChange={(e) => setSearchUserID(e.target.value)} />
+              </div>
               <div className="flex gap-2">
                 <Input
                   aria-label={t("memories.search_threshold")}
@@ -362,6 +418,30 @@ export const MemoryShow = () => {
             ) : searchResults.length === 0 && searching !== true ? null : null}
           </section>
 
+          <GovernedMemorySearchPanel memoryId={id ?? ""} />
+
+          <MemoryOperationPanel memoryId={id ?? undefined} />
+
+          <section className="rounded border p-4">
+            <h2 className="mb-3 text-sm font-medium">{t("memories.context_title")}</h2>
+            <div className="space-y-2">
+              <Button type="button" onClick={() => void previewContext()} disabled={previewingContext || !msgForm.agent_id}>
+                {previewingContext ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" aria-hidden="true" />}
+                {t("memories.context_preview")}
+              </Button>
+              {contextDecision ? (
+                <div className="rounded border p-2 text-xs">
+                  <div className="font-medium">{contextDecision.decision}</div>
+                  <div>{contextDecision.request_kind} · {contextDecision.assistant_id}</div>
+                  <div className="text-muted-foreground">{t("memories.context_no_side_effect")}</div>
+                  <div className="font-mono">{contextDecision.decision_hash.slice(0, 16)}</div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t("memories.context_empty")}</p>
+              )}
+            </div>
+          </section>
+
           <section className="rounded border p-4">
             <h2 className="mb-3 text-sm font-medium">{t("memories.messages_title")}</h2>
             <div className="space-y-2">
@@ -372,7 +452,7 @@ export const MemoryShow = () => {
               )}
             </div>
 
-            <div className="mt-4 space-y-2 rounded border p-3">
+            <div className={`${canManageMemory ? "" : "hidden"} mt-4 space-y-2 rounded border p-3`}>
               <div className="flex gap-2">
                 <select
                   className="flex-1 rounded border bg-background px-2 py-1 text-sm"
@@ -398,10 +478,12 @@ export const MemoryShow = () => {
               </div>
               <Input placeholder={t("memories.user_input")} value={msgForm.user_input} onChange={(e) => setMsgForm((p) => ({ ...p, user_input: e.target.value }))} />
               <Input placeholder={t("memories.agent_response")} value={msgForm.agent_response} onChange={(e) => setMsgForm((p) => ({ ...p, agent_response: e.target.value }))} />
-              <Button onClick={() => void addMessage()} disabled={adding || !msgForm.user_input.trim() || !msgForm.agent_response.trim()}>
-                {adding ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" aria-hidden="true" />}
-                {t("memories.add_message")}
-              </Button>
+              {canManageMemory ? (
+                <Button onClick={() => void addMessage()} disabled={adding || !msgForm.user_input.trim() || !msgForm.agent_response.trim()}>
+                  {adding ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" aria-hidden="true" />}
+                  {t("memories.add_message")}
+                </Button>
+              ) : null}
             </div>
           </section>
         </div>

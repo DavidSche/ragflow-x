@@ -9,6 +9,10 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
+func int64Ptr(value int64) *int64 { return &value }
+
+func stringPtr(value string) *string { return &value }
+
 func TestMigrationV49GovernanceGuards(t *testing.T) {
 	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "guards.db")})
 	if err != nil {
@@ -51,7 +55,7 @@ func TestMigrationV49GovernanceGuards(t *testing.T) {
 	}
 
 	run := &model.EvaluationRun{
-		ID: "run", TenantID: "t1", ReleaseCandidateID: "cand", CandidateVersion: 1,
+		ID: "run", TenantID: "t1", ReleaseCandidateID: stringPtr("cand"), CandidateVersion: int64Ptr(1),
 		EvalSetID: "set", EvalSetVersion: 1, EvalSetHash: "hash",
 		EvaluationPolicyVersion: "v1", EvaluationPolicyHash: "hash",
 		AggregationPolicyVersion: "v1", AggregationPolicyHash: "hash",
@@ -235,9 +239,11 @@ func TestMigrationV88BusinessUserRole(t *testing.T) {
 	}
 	expected := []string{
 		"append|document", "delete:own|document", "execute|agent", "execute|assistant", "execute|chat",
-		"execute|memory", "execute|search-app", "read|agent", "read|assistant",
+		"execute|memory", "execute|memory-forget", "execute|memory-policy", "execute|search-app", "read|agent", "read|assistant",
 		"read|chat", "read|dataset", "read|document", "read|logical-document",
-		"read|memory",
+		"read|memory", "read|memory-policy",
+		"read|memory-operation",
+		"read|context-decision",
 		"read|search-app", "read|user", "session:create|agent",
 	}
 	if len(permissions) != len(expected) {
@@ -259,5 +265,40 @@ func TestMigrationV88BusinessUserRole(t *testing.T) {
 
 	if !gdb.Migrator().HasTable(&model.DocumentOwnershipLink{}) {
 		t.Fatal("document ownership table missing")
+	}
+}
+
+func TestMigrationV134TeamAdminContextDecisionRead(t *testing.T) {
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "team-admin-context-decision.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := gdb.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+	if err := Migrate(gdb); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := gdb.Model(&model.Permission{}).
+		Where("role_id = ? AND action = ? AND resource = ?", model.RoleTeamAdmin, "read", "context-decision").
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one team_admin context-decision read grant, got %d", count)
+	}
+	if err := Migrate(gdb); err != nil {
+		t.Fatalf("migrate must be idempotent: %v", err)
+	}
+	if err := gdb.Model(&model.Permission{}).
+		Where("role_id = ? AND action = ? AND resource = ?", model.RoleTeamAdmin, "read", "context-decision").
+		Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected idempotent team_admin grant, got %d", count)
 	}
 }

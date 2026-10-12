@@ -154,10 +154,11 @@ func parseServiceDate(s string) (time.Time, bool) {
 
 // UpdateTenantRequest carries editable tenant fields.
 type UpdateTenantRequest struct {
-	Name      string
-	Status    string
-	BrandName string
-	BrandLogo string
+	Name                   string
+	Status                 string
+	BrandName              string
+	BrandLogo              string
+	CompilationTokenBudget *int64
 }
 
 // UpdateTenant edits a tenant. Platform admins may edit any tenant; tenant
@@ -198,6 +199,12 @@ func (s *Service) UpdateTenant(ctx context.Context, actorID, actorTenantID, tena
 	}
 	if req.BrandLogo != "" {
 		t.BrandLogo = req.BrandLogo
+	}
+	if req.CompilationTokenBudget != nil {
+		if *req.CompilationTokenBudget < 0 {
+			return nil, httperr.BadRequest(40147, "compilation_token_budget must not be negative")
+		}
+		t.CompilationTokenBudget = *req.CompilationTokenBudget
 	}
 	if err := s.Store.UpdateTenant(ctx, t); err != nil {
 		return nil, err

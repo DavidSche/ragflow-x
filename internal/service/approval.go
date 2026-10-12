@@ -1244,6 +1244,49 @@ func (s *Service) resolveApprovalTarget(ctx context.Context, tenantID, actorID s
 		}
 		attrs["knowledge_task_title"] = task.Title
 		attrs["knowledge_task_owner"] = task.OwnerID
+	case model.ApprovalObjectCompilationRun:
+		if req.Action != model.ApprovalActionConfirmDownstreamAbsent && req.Action != model.ApprovalActionCreate {
+			return nil, nil, nil, httperr.BadRequest(40152, "unsupported compilation recovery action")
+		}
+		run, err := s.Store.GetCompilationRun(ctx, tenantID, req.ObjectID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if run == nil {
+			return nil, nil, nil, httperr.NotFound("compilation run not found")
+		}
+		if err := s.AuthorizeABAC(ctx, actorID, "execute", "compilation", tenantID, run.ProjectID, ""); err != nil {
+			return nil, nil, nil, err
+		}
+		evidence, evidenceErr := decodeCompilationRecoveryEvidence(run.RecoveryEvidence)
+		if evidenceErr != nil {
+			return nil, nil, nil, evidenceErr
+		}
+		if req.Action == model.ApprovalActionConfirmDownstreamAbsent {
+			if run.State != model.CompilationRunUnknown || run.RecoveryState != model.CompilationRecoveryNeedsApproval {
+				return nil, nil, nil, httperr.New(409, 40976, "compilation recovery evidence is insufficient")
+			}
+		} else {
+			if run.State != model.CompilationRunReconciled || run.FailureCode != model.CompilationFailureDownstreamNotFound {
+				return nil, nil, nil, httperr.New(409, 40976, "downstream absence must be confirmed before replacement")
+			}
+			if run.RecoveryNoMatchCount < 2 || run.RecoveryFirstNoMatchAt == nil || run.RecoveryLastNoMatchAt == nil {
+				return nil, nil, nil, httperr.New(409, 40976, "compilation recovery evidence is insufficient")
+			}
+			oldRunID, _ := req.Payload["old_run_id"].(string)
+			if oldRunID != run.ID {
+				return nil, nil, nil, httperr.BadRequest(40152, "replacement payload must reference the recovery source run")
+			}
+			confirmedApprovalID, _ := req.Payload["confirmed_approval_id"].(string)
+			if confirmedApprovalID == "" || confirmedApprovalID != run.ApprovalID {
+				return nil, nil, nil, httperr.BadRequest(40152, "replacement payload must reference the confirmed approval")
+			}
+		}
+		target.Snapshot = map[string]any{
+			"run_id": run.ID, "dataset_id": run.DatasetID, "kind": run.Kind,
+			"state": run.State, "recovery_state": run.RecoveryState,
+			"failure_code": run.FailureCode, "evidence_hash": compilationRecoveryHash(evidence),
+		}
 	default:
 		return nil, nil, nil, httperr.BadRequest(40094, "unsupported approval object")
 	}

@@ -17,8 +17,9 @@ func TestHTTPClient_GetCompilationStatusContract(t *testing.T) {
 			t.Fatalf("unexpected status request: %s %s", r.Method, r.URL.EscapedPath())
 		}
 		writeEnvelope(t, w, map[string]interface{}{
-			"state": "running", "error": "merge retry", "inflight": 2, "backlog": 1,
-			"last_completed_at": completed, "updated_at": updated,
+			"kind": "tree", "state": "running", "error": "merge retry", "progress": 0.25,
+			"current_phase": "merge", "progress_msg": "merging variants", "inflight": 2,
+			"backlog": 1, "last_completed_at": completed, "updated_at": updated,
 		})
 	}))
 	defer srv.Close()
@@ -27,9 +28,27 @@ func TestHTTPClient_GetCompilationStatusContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.State != "running" || status.Error != "merge retry" || status.Inflight != 2 ||
-		status.Backlog != 1 || status.LastCompletedAt == nil || status.UpdatedAt.IsZero() {
+	if status.Kind != "tree" || status.State != "running" || status.Error != "merge retry" ||
+		status.Progress != 0.25 || status.CurrentPhase != "merge" ||
+		status.ProgressMsg != "merging variants" || status.Inflight != 2 || status.Backlog != 1 ||
+		status.LastCompletedAt == nil || status.UpdatedAt.IsZero() {
 		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
+func TestHTTPClient_GetCompilationStatusForKindContract(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("kind") != "Graph" {
+			t.Fatalf("unexpected kind query: %s", r.URL.RawQuery)
+		}
+		writeEnvelope(t, w, map[string]interface{}{"kind": "Graph", "state": "completed"})
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "key", 2*time.Second, 1)
+	status, err := client.GetCompilationStatusForKind(context.Background(), "dataset-1", " Graph ")
+	if err != nil || status.Kind != "Graph" || status.State != "completed" {
+		t.Fatalf("status=%+v err=%v", status, err)
 	}
 }
 
@@ -81,9 +100,9 @@ func TestMock_CompilationContracts(t *testing.T) {
 	templates := []CompilationTemplate{{ID: "tree", Kind: "tree", DisplayName: "Tree"}}
 	mock.SetCompilationStatus("dataset-1", status)
 	mock.SetCompilationTemplates(CompilationTemplateSourceBuiltins, templates)
-	gotStatus, err := mock.GetCompilationStatus(context.Background(), "dataset-1")
-	if err != nil || gotStatus.State != status.State || gotStatus.Inflight != status.Inflight ||
-		gotStatus.Backlog != status.Backlog {
+	gotStatus, err := mock.GetCompilationStatusForKind(context.Background(), "dataset-1", "tree")
+	if err != nil || gotStatus.Kind != "tree" || gotStatus.State != status.State ||
+		gotStatus.Inflight != status.Inflight || gotStatus.Backlog != status.Backlog {
 		t.Fatalf("status=%+v err=%v", gotStatus, err)
 	}
 	if captured := mock.LastCompilationStatusDataset(); captured != "dataset-1" {

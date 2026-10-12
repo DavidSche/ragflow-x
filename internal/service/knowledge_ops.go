@@ -21,8 +21,52 @@ func (s *Service) KnowledgeOpsScopeAll(ctx context.Context, actorID string) bool
 }
 
 // KnowledgeOpsSummary returns the aggregate knowledge quality KPIs.
-func (s *Service) KnowledgeOpsSummary(ctx context.Context, tenantID string, scopeAll bool, dateFrom, dateTo string) (*model.KnowledgeOpsSummary, error) {
-	return s.Store.KnowledgeOpsSummary(ctx, tenantID, scopeAll, dateFrom, dateTo)
+func (s *Service) KnowledgeOpsSummary(
+	ctx context.Context, tenantID string, scopeAll bool,
+	dateFrom, dateTo, datasetID string,
+) (*model.KnowledgeOpsSummary, error) {
+	summary, err := s.Store.KnowledgeOpsSummary(ctx, tenantID, scopeAll, dateFrom, dateTo)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Store.SummarizeCostAttribution(ctx, tenantID, scopeAll, dateFrom, dateTo, datasetID)
+	if err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		used := rows[index].TokensIn + rows[index].TokensOut
+		rows[index].UsedTokens = used
+		switch {
+		case rows[index].DatasetID != "":
+			dataset, datasetErr := s.Store.GetDatasetLink(ctx, tenantID, rows[index].DatasetID)
+			if datasetErr != nil {
+				return nil, datasetErr
+			}
+			if dataset != nil {
+				rows[index].BudgetTokenLimit = dataset.CompilationTokenBudget
+			}
+		case rows[index].ProfileID == "" && rows[index].RunID == "":
+			tenant, tenantErr := s.Store.GetTenant(ctx, rows[index].TenantID)
+			if tenantErr != nil {
+				return nil, tenantErr
+			}
+			if tenant != nil {
+				rows[index].BudgetTokenLimit = tenant.CompilationTokenBudget
+			}
+		}
+		switch {
+		case rows[index].BudgetTokenLimit <= 0:
+			rows[index].Status = "unlimited"
+		case used > rows[index].BudgetTokenLimit:
+			rows[index].Status = "exceeded"
+		case used*5 >= rows[index].BudgetTokenLimit*4:
+			rows[index].Status = "warning"
+		default:
+			rows[index].Status = "ok"
+		}
+	}
+	summary.CostAttribution = rows
+	return summary, nil
 }
 
 // TopKnowledgeQueries returns the most frequently asked normalized questions.
@@ -43,6 +87,7 @@ func (s *Service) ReviewKnowledgeOpsEvent(ctx context.Context, tenantID, eventID
 	default:
 		return httperr.BadRequest(40095, "review status must be open, resolved or ignored")
 	}
+	review.Note = truncateKnowledgeText(review.Note, 1024)
 	updated, err := s.Store.ReviewKnowledgeOpsEvent(ctx, tenantID, eventID, scopeAll, review)
 	if err != nil {
 		return err
@@ -60,11 +105,15 @@ func normalizeKnowledgeQuestion(question string) string {
 }
 
 func truncateKnowledgeText(value string, limit int) string {
-	runes := []rune(strings.TrimSpace(value))
+	trimmed := strings.TrimSpace(value)
+	runes := []rune(trimmed)
 	if len(runes) <= limit {
-		return strings.TrimSpace(value)
+		return trimmed
 	}
-	return strings.TrimSpace(string(runes[:limit])) + "..."
+	if limit <= len("...") {
+		return string(runes[:limit])
+	}
+	return strings.TrimSpace(string(runes[:limit-len("...")])) + "..."
 }
 
 func lastUserQuestion(messages []ragflow.Message) string {

@@ -36,6 +36,7 @@ func (s *Service) RecordMessageFeedback(ctx context.Context, tenantID, userID st
 	} else {
 		attribution = ""
 	}
+	req.Comment = truncateKnowledgeText(req.Comment, 1024)
 	cs, err := s.getOwnedChat(ctx, tenantID, req.ChatID, false)
 	if err != nil {
 		return nil, err

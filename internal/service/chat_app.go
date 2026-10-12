@@ -66,11 +66,26 @@ func (s *Service) ChatAppCompletion(ctx context.Context, key *model.APIKey, chat
 	req.Stream = false
 	startedAt := time.Now()
 	question := lastUserQuestion(req.Messages)
+	decision, err := s.AuthorizeConversationContext(ctx, key.TenantID, key.UserID, ConversationContextAuthorizationInput{
+		ActorID: key.UserID, RequestID: requestID, RequestKind: model.ContextDecisionChat, TargetKind: "chat",
+		AssistantID: chatID, SessionID: sessionID, Query: question,
+	})
+	if err != nil {
+		s.ReleaseGatewayQuota(ctx, key, requestID)
+		return nil, err
+	}
+	memoryMessages, err := s.CollectPreModelMemoryContext(
+		ctx, key.TenantID, key.UserID, question, decision,
+	)
+	if err != nil {
+		s.ReleaseGatewayQuota(ctx, key, requestID)
+		return nil, err
+	}
+	req.Messages = applyPreModelMemoryContext(req.Messages, memoryMessages)
 
 	// Retrieval-layer metadata pushdown (doc/123 §8.1): the evidence rides
 	// into the projection regardless of pushdown success.
 	pushdown := s.applyChatPushdownForChat(ctx, key.TenantID, chatID, &req)
-
 	resp, err := s.RAGFlow.ChatCompletion(ctx, chatID, req)
 	if err != nil {
 		notify.Emit(ctx, notify.Event{
@@ -126,6 +141,22 @@ func (s *Service) StreamChatAppCompletion(ctx context.Context, key *model.APIKey
 	req.Stream = true
 	startedAt := time.Now()
 	question := lastUserQuestion(req.Messages)
+	decision, err := s.AuthorizeConversationContext(ctx, key.TenantID, key.UserID, ConversationContextAuthorizationInput{
+		ActorID: key.UserID, RequestID: requestID, RequestKind: model.ContextDecisionChat, TargetKind: "chat",
+		AssistantID: chatID, SessionID: sessionID, Query: question,
+	})
+	if err != nil {
+		s.ReleaseGatewayQuota(ctx, key, requestID)
+		return 0, "", err
+	}
+	memoryMessages, err := s.CollectPreModelMemoryContext(
+		ctx, key.TenantID, key.UserID, question, decision,
+	)
+	if err != nil {
+		s.ReleaseGatewayQuota(ctx, key, requestID)
+		return 0, "", err
+	}
+	req.Messages = applyPreModelMemoryContext(req.Messages, memoryMessages)
 
 	pushdown := s.applyChatPushdownForChat(ctx, key.TenantID, chatID, &req)
 

@@ -117,11 +117,11 @@ func TestSearchAppCompletionTenantIsolation(t *testing.T) {
 	}
 
 	// Cross-tenant completion is rejected.
-	if _, err := svc.SearchAppCompletion(ctx, tb.ID, sa.ID, "hello", "req-x", false); err == nil {
+	if _, err := svc.SearchAppCompletion(ctx, tb.ID, "user-b", sa.ID, "hello", "req-x", false); err == nil {
 		t.Fatal("tenant B must not run completion on tenant A's search app")
 	}
 
-	resp, err := svc.SearchAppCompletion(ctx, ta.ID, sa.ID, "hello", "req-1", false)
+	resp, err := svc.SearchAppCompletion(ctx, ta.ID, "actor-a", sa.ID, "hello", "req-1", false)
 	if err != nil {
 		t.Fatalf("owner completion should succeed: %v", err)
 	}

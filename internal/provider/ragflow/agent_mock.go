@@ -252,6 +252,9 @@ func (m *Mock) DeleteAgentSession(ctx context.Context, agentID, sessionID string
 // AgentChatCompletion returns a deterministic mock completion.
 func (m *Mock) AgentChatCompletion(ctx context.Context, req CompletionRequest) (*CompletionResponse, error) {
 	content := "mock agent response"
+	m.mu.Lock()
+	m.lastAgentMessages = append([]Message(nil), req.Messages...)
+	m.mu.Unlock()
 	if len(req.Messages) > 0 {
 		content = "mock agent response to: " + req.Messages[len(req.Messages)-1].Content
 	}

@@ -105,7 +105,7 @@ var migrations = []Migration{
 					return err
 				}
 			}
-			return nil
+			return reconcileBuiltinPermissions(tx)
 		},
 	},
 	{
@@ -732,7 +732,7 @@ var migrations = []Migration{
 					return err
 				}
 			}
-			return nil
+			return reconcileBuiltinPermissions(tx)
 		},
 	},
 	{
@@ -792,8 +792,15 @@ var migrations = []Migration{
 		Version: 55,
 		Name:    "tenant_type_and_platform_guard",
 		Migrate: func(tx *gorm.DB) error {
-			if err := tx.AutoMigrate(&model.Tenant{}); err != nil {
-				return err
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "SelfMemoryTemplate") {
+				if err := tx.Exec("ALTER TABLE rgx_tenant ADD COLUMN self_memory_template TEXT").Error; err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "SelfMemoryTemplateVersion") {
+				if err := tx.Exec("ALTER TABLE rgx_tenant ADD COLUMN self_memory_template_version BIGINT NOT NULL DEFAULT 0").Error; err != nil {
+					return err
+				}
 			}
 			platform := model.Tenant{
 				ID: model.PlatformTenantID, Name: "Platform", Type: model.TenantTypePlatform,
@@ -2427,6 +2434,421 @@ var migrations = []Migration{
 			return tx.Exec("CREATE INDEX IF NOT EXISTS idx_rgx_answer_snapshot_canonical_hash ON rgx_answer_snapshot (canonical_hash)").Error
 		},
 	},
+	{
+		// Version 130 introduces the governed Knowledge Compilation and
+		// Memory landing models. Operations stay fail-closed: service code
+		// must not dispatch an unverified RAGFlow contract from this migration.
+		Version: 130,
+		Name:    "knowledge_compilation_memory_landing",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.KnowledgeProfile{},
+				&model.CompilationRun{},
+				&model.ArtifactProjection{},
+				&model.MemoryPolicy{},
+				&model.MemoryOperation{},
+				&model.ContextDecision{},
+			); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "SelfMemoryTemplate") {
+				if err := tx.Exec("ALTER TABLE rgx_tenant ADD COLUMN self_memory_template TEXT").Error; err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "SelfMemoryTemplateVersion") {
+				if err := tx.Exec("ALTER TABLE rgx_tenant ADD COLUMN self_memory_template_version BIGINT NOT NULL DEFAULT 0").Error; err != nil {
+					return err
+				}
+			}
+			indexes := []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_compilation_run_idempotency ON rgx_compilation_run (tenant_id, dataset_id, idempotency_key)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_compilation_run_state ON rgx_compilation_run (tenant_id, dataset_id, state, created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_artifact_projection_dataset ON rgx_artifact_projection (tenant_id, dataset_id, run_id, state)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_idempotency ON rgx_memory_operation (tenant_id, policy_id, idempotency_key)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_scope ON rgx_memory_operation (tenant_id, project_id, user_id, memory_id, state, created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_context_decision_request ON rgx_context_decision (tenant_id, request_id)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_policy_scope ON rgx_memory_policy (tenant_id, project_id, user_id, assistant_id, state)",
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 131 completes the MemoryOperation/outbox contract. It keeps
+		// existing rows loadable, adds operation-level identity columns, and
+		// makes both request and idempotency identities unique per tenant,
+		// policy and operation.
+		Version: 131,
+		Name:    "memory_operation_outbox_contract",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MemoryPolicy{}, &model.MemoryOperation{}); err != nil {
+				return err
+			}
+			if err := tx.Exec("UPDATE rgx_memory_operation SET request_id = '' WHERE request_id IS NULL").Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("UPDATE rgx_memory_operation SET policy_version = 1 WHERE policy_version IS NULL OR policy_version = 0").Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("UPDATE rgx_memory_operation SET record_version = 1 WHERE record_version IS NULL OR record_version = 0").Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("DROP INDEX IF EXISTS idx_rgx_memory_operation_idempotency").Error; err != nil {
+				return err
+			}
+			indexes := []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_memory_operation_request ON rgx_memory_operation (tenant_id, operation_type, policy_id, request_id)",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_memory_operation_idempotency ON rgx_memory_operation (tenant_id, operation_type, policy_id, idempotency_key)",
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 132 adds durable compensation evidence for memory
+		// tombstones. Hashes are keyed and irreversible; raw memory content
+		// is never persisted or exposed through this API.
+		Version: 132,
+		Name:    "memory_operation_tombstone_compensation",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MemoryOperation{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_memory_operation SET tombstone_scope_hash = '' WHERE tombstone_scope_hash IS NULL",
+				"UPDATE rgx_memory_operation SET tombstone_payload_hash = '' WHERE tombstone_payload_hash IS NULL",
+				"UPDATE rgx_memory_operation SET tombstone_message_hash = '' WHERE tombstone_message_hash IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_tombstone ON rgx_memory_operation (tenant_id, user_id, tombstone_active, tombstone_created_at DESC)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 133 binds an active memory policy to one RAGFlow Memory.
+		// Read admission resolves the policy through this durable binding and
+		// never derives authorization from attribution strings.
+		Version: 133,
+		Name:    "memory_policy_runtime_binding",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MemoryPolicy{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_memory_policy_active_memory ON rgx_memory_policy (tenant_id, ragflow_memory_id) WHERE state = 'active' AND ragflow_memory_id <> ''",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_memory_policy_active_scope ON rgx_memory_policy (tenant_id, assistant_id, (CASE WHEN user_id = '' THEN 'project' ELSE 'user' END), (CASE WHEN user_id = '' THEN project_id ELSE user_id END)) WHERE state = 'active'",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 134 reconciles the Context Decision grant that the Context
+		// Source UI requires for team admins who inspect their own runs. The
+		// canonical matrix still prevents cross-owner reads at service level.
+		Version: 134,
+		Name:    "context_decision_team_admin_read",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 135 adds an irreversible external-message fingerprint so
+		// tombstone compensation can locate an already accepted write without
+		// retaining ciphertext or raw content after the dispatch terminal state.
+		Version: 135,
+		Name:    "memory_compensation_external_fingerprint",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MemoryOperation{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_memory_operation SET external_message_hash = '' WHERE external_message_hash IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_compensation ON rgx_memory_operation (tombstone_active, state, claim_expires_at, created_at ASC)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 136 turns CompilationRun from a fail-closed request record
+		// into a bounded explicit-dispatch state machine. Document IDs and
+		// kind are dispatch inputs only; RAGFlow remains the execution plane.
+		Version: 136,
+		Name:    "compilation_dispatch_state_contract",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.CompilationRun{},
+				&model.ArtifactProjection{},
+			); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET kind = 'wiki' WHERE kind IS NULL OR kind = ''",
+				"UPDATE rgx_compilation_run SET document_ids = '[]' WHERE document_ids IS NULL",
+				"UPDATE rgx_compilation_run SET manifest_complete = false WHERE manifest_complete IS NULL",
+				"UPDATE rgx_artifact_projection SET artifact_hash = '' WHERE artifact_hash IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_artifact_projection_artifact ON rgx_artifact_projection (tenant_id, dataset_id, artifact_id, updated_at DESC)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 137 attributes evaluation runs and evidence bundles to a
+		// release, compiled retrieval strategy, or memory policy. Existing
+		// rows remain release-scoped. Strategy and policy runs have no
+		// release identity and can therefore never feed a Release Gate.
+		Version: 137,
+		Name:    "evaluation_governance_scope",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.EvaluationRun{}, &model.EvidenceBundle{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_evaluation_run SET evaluation_scope = 'release' WHERE evaluation_scope IS NULL OR evaluation_scope = ''",
+				"UPDATE rgx_evidence_bundle SET evaluation_scope = 'release' WHERE evaluation_scope IS NULL OR evaluation_scope = ''",
+				"DROP INDEX IF EXISTS idx_evidence_bundle_candidate",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_evaluation_run_scope ON rgx_evaluation_run (tenant_id, evaluation_scope, x_strategy_id, x_memory_policy_id, created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_evidence_bundle_scope ON rgx_evidence_bundle (tenant_id, evaluation_scope, x_strategy_id, x_memory_policy_id, created_at DESC)",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_evidence_bundle_run ON rgx_evidence_bundle (tenant_id, evaluation_run_id)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			if err := applyEvaluationScopeConstraints(tx); err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 138 records the capability-specific paired A/B protocol and
+		// evaluator output. Legacy release rows stay manual-result compatible.
+		Version: 138,
+		Name:    "evaluation_paired_ab_execution",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.EvaluationRun{}, &model.EvaluationCaseVersion{}, &model.EvaluationCaseResult{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_evaluation_run SET execution_mode = 'manual_result' WHERE execution_mode IS NULL OR execution_mode = ''",
+				"UPDATE rgx_evaluation_run SET execution_config = '{}' WHERE execution_config IS NULL OR execution_config = ''",
+				"UPDATE rgx_evaluation_case_result SET paired_sample_id = '' WHERE paired_sample_id IS NULL",
+				"UPDATE rgx_evaluation_case_result SET experiment_arm = '' WHERE experiment_arm IS NULL",
+				"UPDATE rgx_evaluation_case_version SET paired_sample_id = '' WHERE paired_sample_id IS NULL",
+				"DROP INDEX IF EXISTS idx_evaluation_case_result_run_case",
+				"CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_case_result_run_case ON rgx_evaluation_case_result (tenant_id, run_id, case_id, paired_sample_id, experiment_arm)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_evaluation_run_capability ON rgx_evaluation_run (tenant_id, capability, gate_status, created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_evaluation_case_result_pair ON rgx_evaluation_case_result (tenant_id, run_id, paired_sample_id, experiment_arm)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 139 makes post-run source consistency durable. Legacy runs
+		// cannot claim a downstream snapshot or matching post-run manifest and
+		// therefore stay unverified.
+		Version: 139,
+		Name:    "compilation_source_consistency",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.CompilationRun{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET downstream_source_snapshot_id = '' WHERE downstream_source_snapshot_id IS NULL",
+				"UPDATE rgx_compilation_run SET post_run_source_manifest_hash = '' WHERE post_run_source_manifest_hash IS NULL",
+				"UPDATE rgx_compilation_run SET source_consistency = 'unverified' WHERE source_consistency IS NULL OR source_consistency NOT IN ('unverified', 'consistent', 'changed', 'unknown')",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 140 persists unknown-run recovery evidence and linkage.
+		// Legacy unknown evidence stays insufficient; the service never infers
+		// downstream absence from a historical state alone.
+		Version: 140,
+		Name:    "compilation_unknown_recovery_governance",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.CompilationRun{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET downstream_task_id = '' WHERE downstream_task_id IS NULL",
+				"UPDATE rgx_compilation_run SET triggered_by_x_run_id = '' WHERE triggered_by_x_run_id IS NULL",
+				"UPDATE rgx_compilation_run SET cancel_scope = 'x_scheduling_only' WHERE cancel_scope IS NULL OR cancel_scope = ''",
+				"UPDATE rgx_compilation_run SET failure_code = '' WHERE failure_code IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_state = '' WHERE recovery_state IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_evidence = '{}' WHERE recovery_evidence IS NULL OR recovery_evidence = ''",
+				"UPDATE rgx_compilation_run SET approval_id = '' WHERE approval_id IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_no_match_count = 0 WHERE recovery_no_match_count IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_observation_seconds = 0 WHERE recovery_observation_seconds IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_approved_by = '' WHERE recovery_approved_by IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_operated_by = '' WHERE recovery_operated_by IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_state = 'pending_recovery' WHERE state = 'unknown' AND (recovery_state IS NULL OR recovery_state = '')",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_compilation_recovery_state ON rgx_compilation_run (tenant_id, state, recovery_state, unknown_at)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 141 gives artifact payload hashes their 137 schema
+		// identity. Legacy projection hashes describe the projection snapshot;
+		// payload hashes are recovered only when that snapshot explicitly
+		// proved run and content binding.
+		Version: 141,
+		Name:    "compilation_artifact_content_hash",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ArtifactProjection{}); err != nil {
+				return err
+			}
+			var projections []model.ArtifactProjection
+			if err := tx.Select("id", "artifact_json").Find(&projections).Error; err != nil {
+				return err
+			}
+			for _, projection := range projections {
+				var snapshot map[string]interface{}
+				if err := json.Unmarshal([]byte(projection.ArtifactJSON), &snapshot); err != nil {
+					continue
+				}
+				contentHash, _ := snapshot["content_hash"].(string)
+				if bound, _ := snapshot["content_hash_binding"].(bool); !bound || contentHash == "" {
+					continue
+				}
+				if err := tx.Model(&model.ArtifactProjection{}).Where("id = ?", projection.ID).
+					Update("content_hash", contentHash).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 142 wires enhancement work into the existing quota ledger.
+		// Cost rows carry the X governance dimensions without changing the
+		// request_id idempotency contract; budget snapshots freeze the limits
+		// accepted at dispatch time.
+		Version: 142,
+		Name:    "enhancement_cost_budgets",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.DatasetLink{}, &model.CostMetric{},
+				&model.QuotaReservation{}, &model.CompilationRun{},
+			); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "CompilationTokenBudget") {
+				if err := tx.Migrator().AddColumn(&model.Tenant{}, "CompilationTokenBudget"); err != nil {
+					return err
+				}
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET budget_snapshot = '{}' WHERE budget_snapshot IS NULL OR budget_snapshot = ''",
+				"UPDATE rgx_compilation_run SET quota_reservation_id = '' WHERE quota_reservation_id IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_cost_metric_enhancement_scope ON rgx_cost_metric (tenant_id, project_id, x_dataset_id, x_profile_id, x_assistant_id, x_run_id, date)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_quota_reservation_enhancement_scope ON rgx_quota_reservation (tenant_id, project_id, x_dataset_id, x_profile_id, x_assistant_id, x_run_id, status)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+}
+
+func evaluationScopeCondition(columnPrefix string) string {
+	return "(" +
+		"(" + columnPrefix + "evaluation_scope = 'release' AND " + columnPrefix + "release_candidate_id IS NOT NULL AND " + columnPrefix + "release_candidate_id <> '' AND " + columnPrefix + "candidate_version IS NOT NULL AND " + columnPrefix + "x_strategy_id IS NULL AND " + columnPrefix + "x_memory_policy_id IS NULL) OR " +
+		"(" + columnPrefix + "evaluation_scope = 'compilation_strategy' AND " + columnPrefix + "x_strategy_id IS NOT NULL AND " + columnPrefix + "x_strategy_id <> '' AND " + columnPrefix + "x_memory_policy_id IS NULL AND " + columnPrefix + "release_candidate_id IS NULL AND " + columnPrefix + "candidate_version IS NULL) OR " +
+		"(" + columnPrefix + "evaluation_scope = 'memory_policy' AND " + columnPrefix + "x_memory_policy_id IS NOT NULL AND " + columnPrefix + "x_memory_policy_id <> '' AND " + columnPrefix + "x_strategy_id IS NULL AND " + columnPrefix + "release_candidate_id IS NULL AND " + columnPrefix + "candidate_version IS NULL)" +
+		")"
+}
+
+func applyEvaluationScopeConstraints(tx *gorm.DB) error {
+	dialect := tx.Dialector.Name()
+	switch dialect {
+	case "postgres", "mysql":
+		statements := []string{
+			"ALTER TABLE rgx_evaluation_run ADD CONSTRAINT chk_rgx_evaluation_run_scope CHECK " + evaluationScopeCondition(""),
+			"ALTER TABLE rgx_evidence_bundle ADD CONSTRAINT chk_rgx_evidence_bundle_scope CHECK " + evaluationScopeCondition(""),
+		}
+		for _, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+	case "sqlite":
+		tables := []string{"rgx_evaluation_run", "rgx_evidence_bundle"}
+		for _, table := range tables {
+			triggerPrefix := strings.ReplaceAll(table, "rgx_", "trg_")
+			condition := evaluationScopeCondition("NEW.")
+			statements := []string{
+				"CREATE TRIGGER IF NOT EXISTS " + triggerPrefix + "_scope_insert BEFORE INSERT ON " + table +
+					" FOR EACH ROW WHEN NOT " + condition + " BEGIN SELECT RAISE(ABORT, 'invalid evaluation scope attribution'); END",
+				"CREATE TRIGGER IF NOT EXISTS " + triggerPrefix + "_scope_update BEFORE UPDATE ON " + table +
+					" FOR EACH ROW WHEN NOT " + condition + " BEGIN SELECT RAISE(ABORT, 'invalid evaluation scope attribution'); END",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if dialect == "postgres" || dialect == "sqlite" {
+		return createScopedEvidenceUniqueIndex(tx)
+	}
+	return nil
+}
+
+func createScopedEvidenceUniqueIndex(tx *gorm.DB) error {
+	return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_evidence_bundle_scoped ON rgx_evidence_bundle " +
+		"(tenant_id, evaluation_scope, COALESCE(x_strategy_id, ''), COALESCE(x_memory_policy_id, ''), eval_set_id, eval_set_version, snapshot_hash) " +
+		"WHERE evaluation_scope <> 'release'").Error
 }
 
 func ensureFourLayerAuthorizationScopeColumn(tx *gorm.DB, target interface{}, table string) error {
@@ -3214,6 +3636,19 @@ func createReleaseGovernanceGuards(tx *gorm.DB) error {
 // applied version in rgx_schema_version. It is idempotent. PostgreSQL uses an
 // advisory lock so simultaneous replicas cannot run DDL concurrently.
 func Migrate(db *gorm.DB) error {
+	return migrateTo(db, LatestMigrationVersion(), true)
+}
+
+// MigrateTo applies every pending migration no newer than target. It never
+// rolls back applied versions; database snapshot restore is the rollback path.
+func MigrateTo(db *gorm.DB, target int64) error {
+	if !migrationTargetExists(target) {
+		return fmt.Errorf("unknown migration target %d", target)
+	}
+	return migrateTo(db, target, false)
+}
+
+func migrateTo(db *gorm.DB, target int64, requirePlatformTenant bool) error {
 	unlock, err := lockMigrations(db)
 	if err != nil {
 		return err
@@ -3225,6 +3660,9 @@ func Migrate(db *gorm.DB) error {
 	}
 
 	for _, m := range migrations {
+		if m.Version > target {
+			continue
+		}
 		var count int64
 		if err := db.Model(&model.SchemaVersion{}).
 			Where("version = ?", m.Version).
@@ -3248,16 +3686,27 @@ func Migrate(db *gorm.DB) error {
 			return fmt.Errorf("migration %d (%s): %w", m.Version, m.Name, err)
 		}
 	}
-	var platformCount int64
-	if err := db.Model(&model.Tenant{}).
-		Where("type = ?", model.TenantTypePlatform).
-		Count(&platformCount).Error; err != nil {
-		return err
-	}
-	if platformCount != 1 {
-		return fmt.Errorf("expected exactly one platform tenant, got %d", platformCount)
+	if requirePlatformTenant {
+		var platformCount int64
+		if err := db.Model(&model.Tenant{}).
+			Where("type = ?", model.TenantTypePlatform).
+			Count(&platformCount).Error; err != nil {
+			return err
+		}
+		if platformCount != 1 {
+			return fmt.Errorf("expected exactly one platform tenant, got %d", platformCount)
+		}
 	}
 	return nil
+}
+
+func migrationTargetExists(target int64) bool {
+	for _, m := range migrations {
+		if m.Version == target {
+			return true
+		}
+	}
+	return false
 }
 
 // LatestMigrationVersion returns the version encoded by the frozen migration list.
@@ -3387,6 +3836,11 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RolePlatformAdmin, "read", "knowledge-strategy"},
 		{model.RolePlatformAdmin, "manage", "knowledge-strategy"},
 		{model.RolePlatformAdmin, "execute", "knowledge-strategy"},
+		{model.RolePlatformAdmin, "read", "knowledge-profile"},
+		{model.RolePlatformAdmin, "manage", "knowledge-profile"},
+		{model.RolePlatformAdmin, "read", "compilation"},
+		{model.RolePlatformAdmin, "manage", "compilation"},
+		{model.RolePlatformAdmin, "execute", "compilation"},
 		{model.RolePlatformAdmin, "read", "evidence-snapshot"},
 		{model.RolePlatformAdmin, "read", "outbox-event"},
 		{model.RolePlatformAdmin, "execute", "outbox-event"},
@@ -3400,11 +3854,19 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RolePlatformAdmin, "execute", "eval-set"},
 		{model.RolePlatformAdmin, "read", "release-governance"},
 		{model.RolePlatformAdmin, "manage", "release-governance"},
+		{model.RolePlatformAdmin, "execute", "release-governance"},
 		{model.RolePlatformAdmin, "read", "alert"},
 		{model.RolePlatformAdmin, "manage", "alert"},
 		{model.RolePlatformAdmin, "read", "memory"},
 		{model.RolePlatformAdmin, "manage", "memory"},
 		{model.RolePlatformAdmin, "execute", "memory"},
+		{model.RolePlatformAdmin, "read", "memory-policy"},
+		{model.RolePlatformAdmin, "manage", "memory-policy"},
+		{model.RolePlatformAdmin, "execute", "memory-policy"},
+		{model.RolePlatformAdmin, "manage", "memory-forget"},
+		{model.RolePlatformAdmin, "execute", "memory-forget"},
+		{model.RolePlatformAdmin, "read", "context-decision"},
+		{model.RolePlatformAdmin, "read", "memory-operation"},
 		{model.RolePlatformAdmin, "read", "agent"},
 		{model.RolePlatformAdmin, "manage", "agent"},
 		{model.RolePlatformAdmin, "execute", "agent"},
@@ -3489,13 +3951,26 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "read", "knowledge-strategy"},
 		{model.RoleTenantAdmin, "manage", "knowledge-strategy"},
 		{model.RoleTenantAdmin, "execute", "knowledge-strategy"},
+		{model.RoleTenantAdmin, "read", "knowledge-profile"},
+		{model.RoleTenantAdmin, "manage", "knowledge-profile"},
+		{model.RoleTenantAdmin, "read", "compilation"},
+		{model.RoleTenantAdmin, "manage", "compilation"},
+		{model.RoleTenantAdmin, "execute", "compilation"},
 		{model.RoleTenantAdmin, "read", "evidence-snapshot"},
 		{model.RoleTenantAdmin, "read", "outbox-event"},
 		{model.RoleTenantAdmin, "execute", "outbox-event"},
 		{model.RoleTeamAdmin, "read", "knowledge-strategy"},
 		{model.RoleTeamAdmin, "manage", "knowledge-strategy"},
 		{model.RoleTeamAdmin, "execute", "knowledge-strategy"},
+		{model.RoleTeamAdmin, "read", "knowledge-profile"},
+		{model.RoleTeamAdmin, "manage", "knowledge-profile"},
+		{model.RoleTeamAdmin, "read", "compilation"},
+		{model.RoleTeamAdmin, "manage", "compilation"},
+		{model.RoleTeamAdmin, "execute", "compilation"},
 		{model.RoleTeamAdmin, "read", "evidence-snapshot"},
+		{model.RoleTeamAdmin, "read", "release-governance"},
+		{model.RoleTeamAdmin, "execute", "release-governance"},
+		{model.RoleTeamAdmin, "read", "context-decision"},
 		{model.RoleTenantAdmin, "read", "db-connection"},
 		{model.RoleTenantAdmin, "manage", "db-connection"},
 		{model.RoleTenantAdmin, "test", "db-connection"},
@@ -3506,6 +3981,7 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "execute", "eval-set"},
 		{model.RoleTenantAdmin, "read", "release-governance"},
 		{model.RoleTenantAdmin, "manage", "release-governance"},
+		{model.RoleTenantAdmin, "execute", "release-governance"},
 		{model.RoleTenantAdmin, "read", "alert"},
 		{model.RoleTenantAdmin, "manage", "alert"},
 		// operator
@@ -3539,6 +4015,11 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleOperator, "read", "source-routing-rule"},
 		{model.RoleOperator, "read", "knowledge-strategy"},
 		{model.RoleOperator, "execute", "knowledge-strategy"},
+		{model.RoleOperator, "read", "knowledge-profile"},
+		{model.RoleOperator, "manage", "knowledge-profile"},
+		{model.RoleOperator, "read", "compilation"},
+		{model.RoleOperator, "manage", "compilation"},
+		{model.RoleOperator, "execute", "compilation"},
 		{model.RoleOperator, "read", "evidence-snapshot"},
 		{model.RoleOperator, "read", "outbox-event"},
 		{model.RoleOperator, "read", "knowledge-lifecycle"},
@@ -3546,6 +4027,7 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleOperator, "manage", "eval-set"},
 		{model.RoleOperator, "execute", "eval-set"},
 		{model.RoleOperator, "read", "release-governance"},
+		{model.RoleOperator, "execute", "release-governance"},
 		{model.RoleOperator, "read", "alert"},
 		// business_user
 		{model.RoleBusinessUser, "read", "user"},
@@ -3580,6 +4062,8 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleViewer, "read", "logical-document"},
 		{model.RoleViewer, "read", "source-routing-rule"},
 		{model.RoleViewer, "read", "knowledge-strategy"},
+		{model.RoleViewer, "read", "knowledge-profile"},
+		{model.RoleViewer, "read", "compilation"},
 		{model.RoleViewer, "read", "evidence-snapshot"},
 		{model.RoleViewer, "read", "knowledge-lifecycle"},
 		{model.RoleViewer, "read", "eval-set"},
@@ -3588,12 +4072,32 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "execute", "memory"},
 		{model.RoleTenantAdmin, "read", "memory"},
 		{model.RoleTenantAdmin, "manage", "memory"},
+		{model.RoleTenantAdmin, "read", "memory-policy"},
+		{model.RoleTenantAdmin, "manage", "memory-policy"},
+		{model.RoleTenantAdmin, "execute", "memory-policy"},
+		{model.RoleTenantAdmin, "manage", "memory-forget"},
+		{model.RoleTenantAdmin, "execute", "memory-forget"},
+		{model.RoleTenantAdmin, "read", "context-decision"},
+		{model.RoleTenantAdmin, "read", "memory-operation"},
 		{model.RoleOperator, "execute", "memory"},
 		{model.RoleOperator, "read", "memory"},
 		{model.RoleOperator, "manage", "memory"},
+		{model.RoleOperator, "read", "memory-policy"},
+		{model.RoleOperator, "manage", "memory-policy"},
+		{model.RoleOperator, "execute", "memory-policy"},
+		{model.RoleOperator, "read", "context-decision"},
+		{model.RoleOperator, "read", "memory-operation"},
 		{model.RoleViewer, "read", "memory"},
+		{model.RoleViewer, "read", "memory-policy"},
+		{model.RoleViewer, "read", "context-decision"},
+		{model.RoleViewer, "read", "memory-operation"},
 		{model.RoleBusinessUser, "read", "memory"},
 		{model.RoleBusinessUser, "execute", "memory"},
+		{model.RoleBusinessUser, "read", "memory-policy"},
+		{model.RoleBusinessUser, "execute", "memory-policy"},
+		{model.RoleBusinessUser, "execute", "memory-forget"},
+		{model.RoleBusinessUser, "read", "context-decision"},
+		{model.RoleBusinessUser, "read", "memory-operation"},
 		// agent
 		{model.RoleTenantAdmin, "execute", "agent"},
 		{model.RoleTenantAdmin, "read", "agent"},
@@ -3630,6 +4134,10 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTeamAdmin, "read", "knowledge-lifecycle"},
 		{model.RoleTeamAdmin, "read", "eval-set"},
 		{model.RoleTeamAdmin, "manage", "eval-set"},
+		{model.RoleTeamAdmin, "read", "memory-operation"},
+		{model.RoleTeamAdmin, "execute", "memory-forget"},
+		{model.RoleTeamAdmin, "read", "memory-policy"},
+		{model.RoleTeamAdmin, "execute", "memory-policy"},
 		// approval
 		{model.RoleTenantAdmin, "read", "approval"},
 		{model.RoleTenantAdmin, "execute", "approval"},

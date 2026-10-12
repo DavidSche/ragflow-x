@@ -9,12 +9,35 @@ import (
 )
 
 type CompilationStatus struct {
+	Kind            string     `json:"kind,omitempty"`
 	State           string     `json:"state"`
 	Error           string     `json:"error,omitempty"`
+	Progress        float64    `json:"progress"`
+	CurrentPhase    string     `json:"current_phase,omitempty"`
+	ProgressMsg     string     `json:"progress_msg,omitempty"`
 	Inflight        int        `json:"inflight"`
 	Backlog         int        `json:"backlog"`
 	LastCompletedAt *time.Time `json:"last_completed_at,omitempty"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// Compilation status states are frozen from RAGFlow v1.0.0-rc1
+// internal/entity/knowledge_compile_doc.go. Error is diagnostic metadata, not
+// a lifecycle state.
+var knownCompilationStatusStates = map[string]struct{}{
+	"idle":      {},
+	"pending":   {},
+	"running":   {},
+	"completed": {},
+}
+
+func KnownCompilationStatusStates() []string {
+	return []string{"idle", "pending", "running", "completed"}
+}
+
+func IsKnownCompilationStatusState(state string) bool {
+	_, ok := knownCompilationStatusStates[state]
+	return ok
 }
 
 type CompilationTemplate struct {
@@ -33,11 +56,21 @@ const (
 )
 
 func (c *HTTPClient) GetCompilationStatus(ctx context.Context, datasetID string) (*CompilationStatus, error) {
+	return c.GetCompilationStatusForKind(ctx, datasetID, "")
+}
+
+func (c *HTTPClient) GetCompilationStatusForKind(
+	ctx context.Context, datasetID, kind string,
+) (*CompilationStatus, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, protocolError("dataset_id is required")
 	}
+	kind = strings.TrimSpace(kind)
 	path := "/datasets/" + url.PathEscape(datasetID) + "/compilation/status"
+	if kind != "" {
+		path += "?kind=" + url.QueryEscape(kind)
+	}
 	var status CompilationStatus
 	if err := c.do(ctx, http.MethodGet, path, nil, "", &status); err != nil {
 		return nil, err

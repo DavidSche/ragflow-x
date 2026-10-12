@@ -357,7 +357,7 @@ func (s *Service) GetAgentSession(ctx context.Context, tenantID, agentID, sessio
 }
 
 // ListAgentSessionMessages returns an owned agent session as bounded pages.
-func (s *Service) ListAgentSessionMessages(ctx context.Context, tenantID, agentID, sessionID string, scopeAll bool, opts ragflow.SessionMessagePageOptions) ([]ragflow.Message, string, error) {
+func (s *Service) ListAgentSessionMessages(ctx context.Context, tenantID, agentID, sessionID string, scopeAll bool, opts ragflow.SessionMessagePageOptions) ([]SessionMessage, string, error) {
 	if _, err := s.GetAgentSession(ctx, tenantID, agentID, sessionID, scopeAll); err != nil {
 		return nil, "", err
 	}
@@ -365,7 +365,7 @@ func (s *Service) ListAgentSessionMessages(ctx context.Context, tenantID, agentI
 	if err != nil {
 		return nil, "", httperr.New(502, 50291, "ragflow list agent session messages failed")
 	}
-	return items, next, nil
+	return s.traceSessionMessages(ctx, tenantID, agentID, sessionID, items), next, nil
 }
 
 // DeleteAgentSession deletes an owned agent session.
@@ -401,6 +401,18 @@ func (s *Service) AgentChatCompletion(ctx context.Context, tenantID, agentID, us
 		requestID = id.New()
 	}
 	question := lastUserQuestion(messages)
+	decision, err := s.AuthorizeConversationContext(ctx, tenantID, userID, ConversationContextAuthorizationInput{
+		ActorID: userID, RequestID: requestID, RequestKind: model.ContextDecisionChat, TargetKind: "agent",
+		AssistantID: agentID, SessionID: sessionID, Query: question,
+	})
+	if err != nil {
+		return nil, err
+	}
+	memoryMessages, err := s.CollectPreModelMemoryContext(ctx, tenantID, userID, question, decision)
+	if err != nil {
+		return nil, err
+	}
+	messages = applyPreModelMemoryContext(messages, memoryMessages)
 	resp, err := s.RAGFlow.AgentChatCompletion(ctx, ragflow.CompletionRequest{ChatID: agentID, SessionID: sessionID, Messages: messages, Files: files})
 	if err != nil {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, "", 0, 0, 0, int64(time.Since(startedAt).Milliseconds())))
@@ -447,6 +459,21 @@ func (s *Service) StreamAgentChatCompletion(ctx context.Context, tenantID, agent
 	}
 	startedAt := time.Now()
 	question := lastUserQuestion(messages)
+	if requestID == "" {
+		requestID = id.New()
+	}
+	decision, err := s.AuthorizeConversationContext(ctx, tenantID, userID, ConversationContextAuthorizationInput{
+		ActorID: userID, RequestID: requestID, RequestKind: model.ContextDecisionChat, TargetKind: "agent",
+		AssistantID: agentID, SessionID: sessionID, Query: question,
+	})
+	if err != nil {
+		return err
+	}
+	memoryMessages, err := s.CollectPreModelMemoryContext(ctx, tenantID, userID, question, decision)
+	if err != nil {
+		return err
+	}
+	messages = applyPreModelMemoryContext(messages, memoryMessages)
 	capture := &knowledgeOpsStreamCapture{w: w}
 	err = s.RAGFlow.StreamAgentChatCompletion(ctx, ragflow.CompletionRequest{ChatID: agentID, SessionID: sessionID, Messages: messages, Files: files}, capture)
 	if flushErr := capture.Flush(); flushErr != nil {

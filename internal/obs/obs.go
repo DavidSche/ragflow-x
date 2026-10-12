@@ -57,6 +57,16 @@ type Observability struct {
 	alertDeliveryCompensationAbandonedTotal   prometheus.Counter
 	alertDeliveryCompensationFencedTotal      prometheus.Counter
 
+	memoryDispatchExternalBindTotal   *prometheus.CounterVec
+	memoryCompensationScannedTotal    prometheus.Counter
+	memoryCompensationResultTotal     *prometheus.CounterVec
+	memoryCompensationPassTotal       prometheus.Counter
+	memoryCompensationPassFailedTotal prometheus.Counter
+
+	compilationUpstreamStallAge *prometheus.GaugeVec
+	compilationUnknownAge       *prometheus.GaugeVec
+	enhancementBudgetRejected   *prometheus.CounterVec
+
 	resourceSyncRunProgress    *prometheus.GaugeVec
 	resourceSyncItemsTotal     *prometheus.CounterVec
 	resourceSyncStaleRunsTotal *prometheus.CounterVec
@@ -195,6 +205,46 @@ func New(cfg config.Observability) *Observability {
 			Name: "compensation_fenced_total",
 			Help: "Total alert delivery results rejected because the lease generation or owner was no longer valid.",
 		})
+		o.memoryDispatchExternalBindTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "memory_dispatch",
+			Name: "external_bind_total",
+			Help: "Total Memory dispatch external-message identity binding outcomes by result.",
+		}, []string{"result"})
+		o.memoryCompensationScannedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "memory_tombstone",
+			Name: "compensation_scanned_total",
+			Help: "Total Memory tombstone operations claimed for compensation.",
+		})
+		o.memoryCompensationResultTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "memory_tombstone",
+			Name: "compensation_result_total",
+			Help: "Total Memory tombstone compensation outcomes by result.",
+		}, []string{"result"})
+		o.memoryCompensationPassTotal = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "memory_tombstone",
+			Name: "compensation_pass_total",
+			Help: "Total Memory tombstone compensation worker passes.",
+		})
+		o.memoryCompensationPassFailedTotal = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "memory_tombstone",
+			Name: "compensation_pass_failed_total",
+			Help: "Total Memory tombstone compensation passes containing provider or state errors.",
+		})
+		o.compilationUpstreamStallAge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "compilation",
+			Name: "upstream_stall_seconds",
+			Help: "Age of the most recent upstream pending/running compilation status by tenant and kind.",
+		}, []string{"tenant_id", "kind"})
+		o.compilationUnknownAge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "compilation",
+			Name: "unknown_age_seconds",
+			Help: "Age of the most recent unknown compilation run by tenant and kind.",
+		}, []string{"tenant_id", "kind"})
+		o.enhancementBudgetRejected = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "enhancement",
+			Name: "budget_rejected_total",
+			Help: "Total enhancement tasks rejected by budget governance or cost-accounting failures by tenant and scope.",
+		}, []string{"tenant_id", "scope"})
 		o.resourceSyncRunProgress = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: namespace, Subsystem: "resource_sync",
 			Name: "run_progress",
@@ -216,7 +266,11 @@ func New(cfg config.Observability) *Observability {
 			o.approvalSubmittedTotal, o.approvalExecutionTotal, o.approvalPending,
 			o.alertDeliveryCompensationScannedTotal, o.alertDeliveryCompensationCompensatedTotal,
 			o.alertDeliveryCompensationSkippedTotal, o.alertDeliveryCompensationAbandonedTotal,
-			o.alertDeliveryCompensationFencedTotal, o.resourceSyncRunProgress,
+			o.alertDeliveryCompensationFencedTotal, o.memoryDispatchExternalBindTotal,
+			o.memoryCompensationScannedTotal, o.memoryCompensationResultTotal,
+			o.memoryCompensationPassTotal, o.memoryCompensationPassFailedTotal,
+			o.compilationUpstreamStallAge, o.compilationUnknownAge, o.enhancementBudgetRejected,
+			o.resourceSyncRunProgress,
 			o.resourceSyncItemsTotal, o.resourceSyncStaleRunsTotal)
 	}
 
@@ -488,6 +542,82 @@ func (o *Observability) AddAlertDeliveryCompensation(scanned, compensated, skipp
 	if o.alertDeliveryCompensationFencedTotal != nil {
 		o.alertDeliveryCompensationFencedTotal.Add(float64(fenced))
 	}
+}
+
+// AddMemoryDispatchExternalBind records whether a successful provider write
+// could be bound to a durable external message identity.
+func (o *Observability) AddMemoryDispatchExternalBind(result string) {
+	if o.metricsEnabled && o.memoryDispatchExternalBindTotal != nil {
+		o.memoryDispatchExternalBindTotal.WithLabelValues(result).Inc()
+	}
+}
+
+// AddMemoryCompensation publishes one bounded tombstone compensation pass.
+func (o *Observability) AddMemoryCompensation(
+	scanned, compensated, absent, pending, skipped, failed int64,
+) {
+	if !o.metricsEnabled {
+		return
+	}
+	if o.memoryCompensationScannedTotal != nil {
+		o.memoryCompensationScannedTotal.Add(float64(scanned))
+	}
+	if o.memoryCompensationResultTotal != nil {
+		o.memoryCompensationResultTotal.WithLabelValues("compensated").Add(float64(compensated))
+		o.memoryCompensationResultTotal.WithLabelValues("absent").Add(float64(absent))
+		o.memoryCompensationResultTotal.WithLabelValues("pending").Add(float64(pending))
+		o.memoryCompensationResultTotal.WithLabelValues("skipped").Add(float64(skipped))
+	}
+	if o.memoryCompensationPassTotal != nil {
+		o.memoryCompensationPassTotal.Inc()
+	}
+	if o.memoryCompensationPassFailedTotal != nil && failed > 0 {
+		o.memoryCompensationPassFailedTotal.Inc()
+	}
+}
+
+// SetCompilationUpstreamStallAge publishes the age of a non-terminal
+// compilation status. The gauge is cleared when reconciliation reaches a
+// terminal decision for the same tenant/kind series.
+func (o *Observability) SetCompilationUpstreamStallAge(tenantID, kind string, seconds float64) {
+	if !o.metricsEnabled || o.compilationUpstreamStallAge == nil {
+		return
+	}
+	o.compilationUpstreamStallAge.WithLabelValues(tenantID, kind).Set(seconds)
+}
+
+// ClearCompilationUpstreamStallAge removes a terminal series so completed or
+// unknown recovery states cannot keep a stale stall alert alive.
+func (o *Observability) ClearCompilationUpstreamStallAge(tenantID, kind string) {
+	if !o.metricsEnabled || o.compilationUpstreamStallAge == nil {
+		return
+	}
+	_ = o.compilationUpstreamStallAge.DeleteLabelValues(tenantID, kind)
+}
+
+// SetCompilationUnknownAge publishes the age of the most recent unknown run.
+func (o *Observability) SetCompilationUnknownAge(tenantID, kind string, seconds float64) {
+	if !o.metricsEnabled || o.compilationUnknownAge == nil {
+		return
+	}
+	o.compilationUnknownAge.WithLabelValues(tenantID, kind).Set(seconds)
+}
+
+// ClearCompilationUnknownAge removes the unknown series after reconciliation.
+func (o *Observability) ClearCompilationUnknownAge(tenantID, kind string) {
+	if !o.metricsEnabled || o.compilationUnknownAge == nil {
+		return
+	}
+	_ = o.compilationUnknownAge.DeleteLabelValues(tenantID, kind)
+}
+
+// IncEnhancementBudgetRejected records budget enforcement or cost accounting
+// failures without leaking document identities or payload details.
+func (o *Observability) IncEnhancementBudgetRejected(tenantID, scope string) {
+	if !o.metricsEnabled || o.enhancementBudgetRejected == nil {
+		return
+	}
+	o.enhancementBudgetRejected.WithLabelValues(tenantID, scope).Inc()
 }
 
 // SetResourceSyncRunProgress publishes the current resource sync run counters.

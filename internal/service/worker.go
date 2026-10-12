@@ -462,12 +462,18 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	runner.Register(&ragflowImportWorker{svc: s})
 	runner.Register(&ragflowReconcileWorker{svc: s})
 	runner.Register(&alertDeliveryCompensationWorker{svc: s})
+	runner.Register(&memoryCompensationWorker{svc: s})
 	runner.Register(&outboxDispatchWorker{svc: s})
+	runner.Register(&compilationReconcileWorker{svc: s})
+	runner.Register(&evaluationRunWorker{svc: s})
 	runner.Register(&versionPublishReconcileWorker{svc: s})
 	s.SetupApprovalWorker(runner)
 	s.Runner = runner
 	if _, scheduleErr := s.ScheduleOutboxDispatch(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("outbox dispatch schedule failed", "error", scheduleErr)
+	}
+	if _, scheduleErr := s.ScheduleMemoryCompensation(context.Background(), ""); scheduleErr != nil {
+		logger.Warn("memory compensation schedule failed", "error", scheduleErr)
 	}
 	if _, scheduleErr := s.ScheduleVersionPublishReconciler(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("version publish reconcile schedule failed", "error", scheduleErr)

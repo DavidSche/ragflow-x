@@ -205,6 +205,7 @@ func (m *Mock) ChatCompletion(ctx context.Context, chatID string, req Completion
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastChatCondition = effectiveMetadataCondition(req)
+	m.lastChatMessages = append([]Message(nil), req.Messages...)
 	db := m.chatDB()
 	if _, ok := db.chats[chatID]; !ok {
 		return nil, fmt.Errorf("chat not found: %s", chatID)
@@ -230,6 +231,7 @@ func (m *Mock) StreamChatCompletion(ctx context.Context, chatID string, req Comp
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastChatCondition = effectiveMetadataCondition(req)
+	m.lastChatMessages = append([]Message(nil), req.Messages...)
 	db := m.chatDB()
 	if _, ok := db.chats[chatID]; !ok {
 		return fmt.Errorf("chat not found: %s", chatID)

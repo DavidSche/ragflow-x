@@ -3,51 +3,124 @@ package model
 import "time"
 
 const (
-	CandidateDraft                = "DRAFT"
-	CandidateReadyForEvaluation   = "READY_FOR_EVALUATION"
-	CandidateEvaluating           = "EVALUATING"
-	CandidateEvaluated            = "EVALUATED"
-	CandidateGatePending          = "GATE_PENDING"
-	CandidateApproved             = "APPROVED"
-	CandidateReleased             = "RELEASED"
-	CandidateFailed               = "FAILED"
-	CandidateRejected             = "REJECTED"
-	CandidateCancelled            = "CANCELLED"
-	EvaluationRunQueued           = "QUEUED"
-	EvaluationRunRunning          = "RUNNING"
-	EvaluationRunCompleted        = "COMPLETED"
-	EvaluationRunFailed           = "FAILED"
-	EvaluationRunCancelled        = "CANCELLED"
-	GateDecisionPending           = "PENDING"
-	GateDecisionEvaluating        = "EVALUATING"
-	GateDecisionPass              = "PASS"
-	GateDecisionPassWithWarning   = "PASS_WITH_WARNING"
-	GateDecisionBlock             = "BLOCK"
-	ReleaseStatusCreated          = "CREATED"
-	ReleaseStatusReleasing        = "RELEASING"
-	ReleaseStatusReleased         = "RELEASED"
-	ReleaseStatusFailed           = "FAILED"
-	ReleaseStatusRolledBack       = "ROLLED_BACK"
-	QualityIssueOpen              = "OPEN"
-	QualityIssueTriaged           = "TRIAGED"
-	QualityIssueInProgress        = "IN_PROGRESS"
-	QualityIssueFixed             = "FIXED"
-	QualityIssueRegressionPending = "REGRESSION_PENDING"
-	QualityIssueVerified          = "VERIFIED"
-	QualityIssueClosed            = "CLOSED"
-	QualityIssueReopened          = "REOPENED"
-	HashAlgorithmSHA256           = "SHA256"
-	CandidateManifestTarget       = "target"
-	CandidateManifestPrompt       = "prompt"
-	CandidateManifestKnowledge    = "knowledge"
-	CandidateManifestModelRoute   = "modelRoute"
-	CandidateManifestPolicy       = "policy"
-	CandidateManifestCatalog      = "catalog"
-	CandidateManifestRouter       = "router"
-	CandidateManifestTools        = "tools"
-	CandidateManifestRetrieval    = "retrievalConfig"
-	CandidateManifestExecution    = "executionConfig"
+	CandidateDraft                     = "DRAFT"
+	CandidateReadyForEvaluation        = "READY_FOR_EVALUATION"
+	CandidateEvaluating                = "EVALUATING"
+	CandidateEvaluated                 = "EVALUATED"
+	CandidateGatePending               = "GATE_PENDING"
+	CandidateApproved                  = "APPROVED"
+	CandidateReleased                  = "RELEASED"
+	CandidateFailed                    = "FAILED"
+	CandidateRejected                  = "REJECTED"
+	CandidateCancelled                 = "CANCELLED"
+	EvaluationRunQueued                = "QUEUED"
+	EvaluationRunRunning               = "RUNNING"
+	EvaluationRunCompleted             = "COMPLETED"
+	EvaluationRunFailed                = "FAILED"
+	EvaluationRunCancelled             = "CANCELLED"
+	GateDecisionPending                = "PENDING"
+	GateDecisionEvaluating             = "EVALUATING"
+	GateDecisionPass                   = "PASS"
+	GateDecisionPassWithWarning        = "PASS_WITH_WARNING"
+	GateDecisionBlock                  = "BLOCK"
+	GateReportPass                     = "PASS"
+	GateReportWarn                     = "WARN"
+	GateReportWaived                   = "WAIVED"
+	ReleaseStatusCreated               = "CREATED"
+	ReleaseStatusReleasing             = "RELEASING"
+	ReleaseStatusReleased              = "RELEASED"
+	ReleaseStatusFailed                = "FAILED"
+	ReleaseStatusRolledBack            = "ROLLED_BACK"
+	QualityIssueOpen                   = "OPEN"
+	QualityIssueTriaged                = "TRIAGED"
+	QualityIssueInProgress             = "IN_PROGRESS"
+	QualityIssueFixed                  = "FIXED"
+	QualityIssueRegressionPending      = "REGRESSION_PENDING"
+	QualityIssueVerified               = "VERIFIED"
+	QualityIssueClosed                 = "CLOSED"
+	QualityIssueReopened               = "REOPENED"
+	HashAlgorithmSHA256                = "SHA256"
+	CandidateManifestTarget            = "target"
+	CandidateManifestPrompt            = "prompt"
+	CandidateManifestKnowledge         = "knowledge"
+	CandidateManifestModelRoute        = "modelRoute"
+	CandidateManifestPolicy            = "policy"
+	CandidateManifestCatalog           = "catalog"
+	CandidateManifestRouter            = "router"
+	CandidateManifestTools             = "tools"
+	CandidateManifestRetrieval         = "retrievalConfig"
+	CandidateManifestExecution         = "executionConfig"
+	EvaluationScopeRelease             = "release"
+	EvaluationScopeCompilationStrategy = "compilation_strategy"
+	EvaluationScopeMemoryPolicy        = "memory_policy"
+	EvaluationCapabilityPageIndex      = "page_index"
+	EvaluationCapabilityWiki           = "wiki"
+	EvaluationCapabilityMemory         = "memory"
+	EvaluationArmBaseline              = "baseline"
+	EvaluationArmExperiment            = "experiment"
+	EvaluationGatePass                 = "PASS"
+	EvaluationGateWait                 = "WAIT"
+	EvaluationGateFail                 = "FAIL"
 )
+
+// Release gate contract names required by the Knowledge Compilation and
+// Memory governance plan. They are exact keys, not free-form labels, so a
+// missing gate can never be rendered as a passing release.
+const (
+	ReleaseGateCompilationContract = "compilation_contract"
+	ReleaseGateMemoryContract      = "memory_contract"
+	ReleaseGateIdentity            = "identity"
+	ReleaseGateMigration           = "migration"
+	ReleaseGatePermission          = "permission"
+	ReleaseGateImprovement         = "improvement"
+	ReleaseGatePrivacy             = "privacy"
+	ReleaseGateCost                = "cost"
+	ReleaseGateConversation        = "conversation"
+	ReleaseGateExperience          = "experience"
+	ReleaseGateOperations          = "operations"
+)
+
+var ReleaseGateNames = []string{
+	ReleaseGateCompilationContract, ReleaseGateMemoryContract, ReleaseGateIdentity,
+	ReleaseGateMigration, ReleaseGatePermission, ReleaseGateImprovement,
+	ReleaseGatePrivacy, ReleaseGateCost, ReleaseGateConversation,
+	ReleaseGateExperience, ReleaseGateOperations,
+}
+
+// ReleaseGateRuntimeEvidenceSummary is a read-only aggregate used to bridge an
+// immutable candidate/release identity to runtime facts without scanning an
+// unbounded page of rows in the service layer.
+type ReleaseGateRuntimeEvidenceSummary struct {
+	RuntimeRequests   int64   `gorm:"column:runtime_requests" json:"runtime_requests"`
+	CostRequests      int64   `gorm:"column:cost_requests" json:"cost_requests"`
+	UnmeteredRequests int64   `gorm:"column:unmetered_requests" json:"unmetered_requests"`
+	UnpolicyRequests  int64   `gorm:"column:unpolicy_requests" json:"unpolicy_requests"`
+	TokensIn          int64   `gorm:"column:tokens_in" json:"tokens_in"`
+	TokensOut         int64   `gorm:"column:tokens_out" json:"tokens_out"`
+	EstimatedCost     float64 `gorm:"column:estimated_cost" json:"estimated_cost"`
+}
+
+// ReleaseGateConversationEvidenceSummary counts the immutable decisions and
+// contract violations associated with candidate-attributed runtime requests.
+type ReleaseGateConversationEvidenceSummary struct {
+	RuntimeRequests            int64 `gorm:"column:runtime_requests" json:"runtime_requests"`
+	DecisionRequests           int64 `gorm:"column:decision_requests" json:"decision_requests"`
+	DecisionCount              int64 `gorm:"column:decision_count" json:"decision_count"`
+	InvalidDecisionCount       int64 `gorm:"column:invalid_decision_count" json:"invalid_decision_count"`
+	InvalidContractCount       int64 `gorm:"column:invalid_contract_count" json:"invalid_contract_count"`
+	SearchMemoryOperationCount int64 `gorm:"column:search_memory_operation_count" json:"search_memory_operation_count"`
+}
+
+// ReleaseGateExperienceEvidenceSummary closes candidate runtime turns to the
+// knowledge-operations quality ledger without exposing question or answer text.
+type ReleaseGateExperienceEvidenceSummary struct {
+	RuntimeRequests int64 `gorm:"column:runtime_requests" json:"runtime_requests"`
+	LedgerRequests  int64 `gorm:"column:ledger_requests" json:"ledger_requests"`
+	Completed       int64 `gorm:"column:completed" json:"completed"`
+	NoAnswer        int64 `gorm:"column:no_answer" json:"no_answer"`
+	Failed          int64 `gorm:"column:failed" json:"failed"`
+	Negative        int64 `gorm:"column:negative" json:"negative"`
+}
 
 // ReleaseCandidate is an immutable release change package once it enters
 // READY_FOR_EVALUATION. candidate_id identifies lineage and candidate_version
@@ -140,6 +213,7 @@ type EvaluationCaseVersion struct {
 	ExpectedKeywords       string    `gorm:"column:expected_keywords;size:512" json:"expected_keywords"`
 	ExpectedCitationDocIDs string    `gorm:"column:expected_citation_doc_ids;size:512" json:"expected_citation_doc_ids"`
 	Metadata               string    `gorm:"column:metadata;type:text" json:"metadata"`
+	PairedSampleID         string    `gorm:"column:paired_sample_id;size:128;not null;default:'';index" json:"paired_sample_id"`
 	CreatedBy              string    `gorm:"column:created_by;size:32;not null" json:"created_by"`
 	CreatedAt              time.Time `gorm:"column:created_at" json:"created_at"`
 }
@@ -151,8 +225,11 @@ func (EvaluationCaseVersion) TableName() string { return "rgx_evaluation_case_ve
 type EvaluationRun struct {
 	ID                       string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	TenantID                 string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	ReleaseCandidateID       string     `gorm:"column:release_candidate_id;size:32;not null;index" json:"release_candidate_id"`
-	CandidateVersion         int64      `gorm:"column:candidate_version;not null;index" json:"candidate_version"`
+	ReleaseCandidateID       *string    `gorm:"column:release_candidate_id;size:32;index" json:"release_candidate_id"`
+	CandidateVersion         *int64     `gorm:"column:candidate_version;index" json:"candidate_version"`
+	EvaluationScope          string     `gorm:"column:evaluation_scope;size:32;not null;default:release;index" json:"evaluation_scope"`
+	XStrategyID              *string    `gorm:"column:x_strategy_id;size:32;index" json:"x_strategy_id,omitempty"`
+	XMemoryPolicyID          *string    `gorm:"column:x_memory_policy_id;size:32;index" json:"x_memory_policy_id,omitempty"`
 	EvalSetID                string     `gorm:"column:eval_set_id;size:32;not null" json:"eval_set_id"`
 	EvalSetVersion           int64      `gorm:"column:eval_set_version;not null" json:"eval_set_version"`
 	EvalSetHash              string     `gorm:"column:eval_set_hash;size:64;not null" json:"eval_set_hash"`
@@ -161,6 +238,11 @@ type EvaluationRun struct {
 	AggregationPolicyVersion string     `gorm:"column:aggregation_policy_version;size:64;not null" json:"aggregation_policy_version"`
 	AggregationPolicyHash    string     `gorm:"column:aggregation_policy_hash;size:64;not null" json:"aggregation_policy_hash"`
 	ExecutionSnapshotID      string     `gorm:"column:execution_snapshot_id;size:32;not null" json:"execution_snapshot_id"`
+	Capability               string     `gorm:"column:capability;size:32;not null;default:'';index" json:"capability"`
+	ExecutionMode            string     `gorm:"column:execution_mode;size:32;not null;default:'manual_result';index" json:"execution_mode"`
+	ExecutionConfig          string     `gorm:"column:execution_config;type:text;not null;default:'{}'" json:"execution_config"`
+	GateStatus               string     `gorm:"column:gate_status;size:16;not null;default:'';index" json:"gate_status"`
+	GateReason               string     `gorm:"column:gate_reason;size:256" json:"gate_reason"`
 	Status                   string     `gorm:"column:status;size:16;not null;default:QUEUED;index" json:"status"`
 	Metrics                  string     `gorm:"column:metrics;type:text" json:"metrics"`
 	Pass                     *bool      `gorm:"column:pass" json:"pass"`
@@ -176,20 +258,26 @@ func (EvaluationRun) TableName() string { return "rgx_evaluation_run" }
 
 // EvaluationCaseResult becomes immutable when its run reaches terminal state.
 type EvaluationCaseResult struct {
-	ID              string    `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID        string    `gorm:"column:tenant_id;size:32;not null;uniqueIndex:idx_evaluation_case_result_run_case;index" json:"tenant_id"`
-	RunID           string    `gorm:"column:run_id;size:32;not null;uniqueIndex:idx_evaluation_case_result_run_case;index" json:"run_id"`
-	CaseID          string    `gorm:"column:case_id;size:32;not null;uniqueIndex:idx_evaluation_case_result_run_case" json:"case_id"`
-	CaseVersionID   string    `gorm:"column:case_version_id;size:32;not null;index" json:"case_version_id"`
-	CaseVersionHash string    `gorm:"column:case_version_hash;size:64;not null" json:"case_version_hash"`
-	ActualAnswer    string    `gorm:"column:actual_answer;type:text" json:"actual_answer"`
-	References      string    `gorm:"column:references;type:text" json:"references"`
-	Metrics         string    `gorm:"column:metrics;type:text" json:"metrics"`
-	Pass            *bool     `gorm:"column:pass" json:"pass"`
-	FailureReason   string    `gorm:"column:failure_reason;type:text" json:"failure_reason"`
-	LatencyMs       int64     `gorm:"column:latency_ms;not null;default:0" json:"latency_ms"`
-	Tokens          int64     `gorm:"column:tokens;not null;default:0" json:"tokens"`
-	CreatedAt       time.Time `gorm:"column:created_at" json:"created_at"`
+	ID                string    `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID          string    `gorm:"column:tenant_id;size:32;not null;uniqueIndex:idx_evaluation_case_result_run_case;index" json:"tenant_id"`
+	RunID             string    `gorm:"column:run_id;size:32;not null;uniqueIndex:idx_evaluation_case_result_run_case;index" json:"run_id"`
+	CaseID            string    `gorm:"column:case_id;size:32;not null;uniqueIndex:idx_evaluation_case_result_run_case" json:"case_id"`
+	CaseVersionID     string    `gorm:"column:case_version_id;size:32;not null;index" json:"case_version_id"`
+	CaseVersionHash   string    `gorm:"column:case_version_hash;size:64;not null" json:"case_version_hash"`
+	PairedSampleID    string    `gorm:"column:paired_sample_id;size:128;not null;default:'';uniqueIndex:idx_evaluation_case_result_run_case" json:"paired_sample_id"`
+	ExperimentArm     string    `gorm:"column:experiment_arm;size:16;not null;default:'';uniqueIndex:idx_evaluation_case_result_run_case" json:"experiment_arm"`
+	ActualAnswer      string    `gorm:"column:actual_answer;type:text" json:"actual_answer"`
+	References        string    `gorm:"column:references;type:text" json:"references"`
+	Metrics           string    `gorm:"column:metrics;type:text" json:"metrics"`
+	Pass              *bool     `gorm:"column:pass" json:"pass"`
+	HitAtK            *bool     `gorm:"column:hit_at_k" json:"hit_at_k"`
+	AnswerCorrect     *bool     `gorm:"column:answer_correct" json:"answer_correct"`
+	NoAnswer          *bool     `gorm:"column:no_answer" json:"no_answer"`
+	CitationPrecision *float64  `gorm:"column:citation_precision" json:"citation_precision"`
+	FailureReason     string    `gorm:"column:failure_reason;type:text" json:"failure_reason"`
+	LatencyMs         int64     `gorm:"column:latency_ms;not null;default:0" json:"latency_ms"`
+	Tokens            int64     `gorm:"column:tokens;not null;default:0" json:"tokens"`
+	CreatedAt         time.Time `gorm:"column:created_at" json:"created_at"`
 }
 
 func (EvaluationCaseResult) TableName() string { return "rgx_evaluation_case_result" }
@@ -197,11 +285,14 @@ func (EvaluationCaseResult) TableName() string { return "rgx_evaluation_case_res
 // EvidenceBundle is an immutable evidence card generated at Gate time.
 type EvidenceBundle struct {
 	ID                             string    `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID                       string    `gorm:"column:tenant_id;size:32;not null;uniqueIndex:idx_evidence_bundle_candidate;index" json:"tenant_id"`
-	ReleaseCandidateID             string    `gorm:"column:release_candidate_id;size:32;not null;uniqueIndex:idx_evidence_bundle_candidate" json:"release_candidate_id"`
-	CandidateVersion               int64     `gorm:"column:candidate_version;not null;uniqueIndex:idx_evidence_bundle_candidate" json:"candidate_version"`
-	SnapshotID                     string    `gorm:"column:snapshot_id;size:32;not null" json:"snapshot_id"`
-	SnapshotHash                   string    `gorm:"column:snapshot_hash;size:64;not null" json:"snapshot_hash"`
+	TenantID                       string    `gorm:"column:tenant_id;size:32;not null;uniqueIndex:uidx_rgx_evidence_bundle_run;index" json:"tenant_id"`
+	ReleaseCandidateID             *string   `gorm:"column:release_candidate_id;size:32;index" json:"release_candidate_id"`
+	CandidateVersion               *int64    `gorm:"column:candidate_version;index" json:"candidate_version"`
+	EvaluationScope                string    `gorm:"column:evaluation_scope;size:32;not null;default:release;index" json:"evaluation_scope"`
+	XStrategyID                    *string   `gorm:"column:x_strategy_id;size:32;index" json:"x_strategy_id,omitempty"`
+	XMemoryPolicyID                *string   `gorm:"column:x_memory_policy_id;size:32;index" json:"x_memory_policy_id,omitempty"`
+	SnapshotID                     string    `gorm:"column:snapshot_id;size:32" json:"snapshot_id"`
+	SnapshotHash                   string    `gorm:"column:snapshot_hash;size:64" json:"snapshot_hash"`
 	ModelRouteVersion              string    `gorm:"column:model_route_version;size:64" json:"model_route_version"`
 	ModelRoutePinID                string    `gorm:"column:model_route_pin_id;size:64;index" json:"model_route_pin_id,omitempty"`
 	ModelRoutePinVersion           int64     `gorm:"column:model_route_pin_version" json:"model_route_pin_version,omitempty"`
@@ -212,7 +303,7 @@ type EvidenceBundle struct {
 	EnterpriseBindingVersion       int64     `gorm:"column:enterprise_binding_version" json:"enterprise_binding_version,omitempty"`
 	EnterpriseModelRef             string    `gorm:"column:enterprise_model_ref;size:128" json:"enterprise_model_ref,omitempty"`
 	CredentialVersion              string    `gorm:"column:credential_version;size:64" json:"credential_version,omitempty"`
-	EvaluationRunID                string    `gorm:"column:evaluation_run_id;size:32;not null" json:"evaluation_run_id"`
+	EvaluationRunID                string    `gorm:"column:evaluation_run_id;size:32;not null;uniqueIndex:uidx_rgx_evidence_bundle_run" json:"evaluation_run_id"`
 	EvalSetID                      string    `gorm:"column:eval_set_id;size:32;not null" json:"eval_set_id"`
 	EvalSetVersion                 int64     `gorm:"column:eval_set_version;not null" json:"eval_set_version"`
 	EvalSetHash                    string    `gorm:"column:eval_set_hash;size:64;not null" json:"eval_set_hash"`

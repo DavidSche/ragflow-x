@@ -117,6 +117,24 @@ describe("conversation adapters", () => {
     })]);
   });
 
+  it("restores server snapshot messages with traceable request turns", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(envelope({
+      items: [
+        { role: "assistant", content: "first answer", request_id: "run-1" },
+        { role: "assistant", content: "unmatched answer" },
+      ],
+    }));
+
+    const result = await createChatAdapter().loadContext({
+      id: "session-1", targetId: "chat-1", kind: "chat", type: "session",
+    });
+    expect(result.messages[0]).toEqual(expect.objectContaining({
+      id: "assistant-run-1",
+      turnId: "assistant-run-1",
+    }));
+    expect(result.messages[1].turnId).toBeUndefined();
+  });
+
   it("emits citations that arrive after the streaming message has started", async () => {
     const frames = [
       { code: 0, data: { answer: "answer", session_id: "session-1", reference: { chunks: [] } } },
@@ -150,7 +168,7 @@ describe("conversation adapters", () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       type: "citation.added",
-      messageId: "assistant-stream-run-1",
+      messageId: "assistant-run-1",
       citation: expect.objectContaining({ name: "policy.md", content: "source text", datasetId: "dataset-1", docId: "doc-1", chunkId: "chunk-1" }),
     }));
   });

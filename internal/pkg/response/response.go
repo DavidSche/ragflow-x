@@ -27,6 +27,17 @@ func OK(c *gin.Context, data interface{}) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
 }
 
+// Accepted writes a successful 202 response with the standard envelope.
+func Accepted(c *gin.Context, data interface{}) {
+	payload, err := json.Marshal(Body{Code: 0, Message: "accepted", Data: data, TraceID: traceID(c)})
+	if err != nil {
+		Fail(c, 500, 50000, "response serialization failed")
+		return
+	}
+	c.Header("Location", "/api/v1/compilation/runs/"+c.Param("runId"))
+	c.Data(http.StatusAccepted, "application/json; charset=utf-8", payload)
+}
+
 // Page wraps a paginated payload.
 type Page struct {
 	Items    interface{} `json:"items"`

@@ -28,6 +28,32 @@ import (
 // approvalAccessRules returns the subset of access rules needed for approval
 // integration tests. We define them here instead of importing the router
 // package to avoid circular dependencies.
+func strictReleaseEvidence(
+	candidateID string, candidateVersion int64,
+) (json.RawMessage, json.RawMessage) {
+	permission, _ := json.Marshal(map[string]interface{}{
+		"permission_gate": map[string]interface{}{
+			"candidate_id": candidateID, "candidate_version": candidateVersion,
+			"contract_version": "release-gate-permission-v1", "passed": true,
+			"resource_matrix": true, "builtin_reconciliation": true,
+			"pre_model_authorization": true, "membership_revocation": true,
+			"endpoint_abac_matrix": true, "pii_template_tenant_boundary": true,
+			"preview_redaction": true,
+		},
+	})
+	configuration, _ := json.Marshal(map[string]interface{}{
+		"experience_gate": map[string]interface{}{
+			"candidate_id": candidateID, "candidate_version": candidateVersion,
+			"contract_version": "release-gate-experience-v1", "passed": true,
+			"dataset_details": true, "knowledge_ops": true, "memory_workbench": true,
+			"conversation_center": true, "assistant_release": true, "loading_state": true,
+			"empty_state": true, "wait_state": true, "error_state": true,
+			"unauthorized_state": true, "retry_state": true, "i18n_en": true, "i18n_zh": true,
+		},
+	})
+	return permission, configuration
+}
+
 func approvalAccessRules() []middleware.Rule {
 	return []middleware.Rule{
 		{Method: "GET", Path: "/api/v1/approvals", Action: "read", Resource: "approval"},
@@ -1439,22 +1465,26 @@ func activateScenarioTemplatePassGate(t *testing.T, env *testEnv, template *mode
 	if _, err := env.svc.CompleteEvaluationRun(ctx, env.tenantID, run.ID, false, ""); err != nil {
 		t.Fatal(err)
 	}
+	permissionEvidence, configurationEvidence := strictReleaseEvidence(
+		candidateResult.Candidate.CandidateID, candidateResult.Candidate.CandidateVersion,
+	)
 	bundle, err := env.svc.CreateEvidenceBundle(ctx, env.tenantID, env.adminID, service.EvidenceBundleInput{
 		ReleaseCandidateID: candidateResult.Candidate.CandidateID,
 		CandidateVersion:   candidateResult.Candidate.CandidateVersion,
 		EvaluationRunID:    run.ID,
 		SecurityEvidence:   json.RawMessage(`{}`), PolicyEvidence: json.RawMessage(`{}`),
-		RiskEvidence: json.RawMessage(`{}`), PermissionEvidence: json.RawMessage(`{}`),
-		ConfigurationEvidence: json.RawMessage(`{}`), ApprovalEvidence: json.RawMessage(`{}`),
+		RiskEvidence: json.RawMessage(`{}`), PermissionEvidence: permissionEvidence,
+		ConfigurationEvidence: configurationEvidence, ApprovalEvidence: json.RawMessage(`{}`),
 		EvidenceItems: json.RawMessage(`[]`),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	subGates, err := json.Marshal(map[string]string{
-		"security": "PASS", "policy": "PASS", "risk": "PASS", "permission": "PASS",
-		"configuration": "PASS", "approval": "PASS",
-	})
+	states := make(map[string]string, len(model.ReleaseGateNames))
+	for _, name := range model.ReleaseGateNames {
+		states[name] = model.GateReportPass
+	}
+	subGates, err := json.Marshal(states)
 	if err != nil {
 		t.Fatal(err)
 	}

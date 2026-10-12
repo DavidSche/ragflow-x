@@ -146,8 +146,12 @@ func (c *HTTPClient) ChatCompletion(ctx context.Context, chatID string, req Comp
 	req.ChatID = chatID
 	req.Stream = false
 	body, _ := json.Marshal(req)
-	var out CompletionResponse
-	if err := c.do(ctx, http.MethodPost, "/chat/completions", bytes.NewReader(body), "application/json", &out); err != nil {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodPost, "/chat/completions", bytes.NewReader(body), "application/json", &raw); err != nil {
+		return nil, err
+	}
+	out, err := decodeChatCompletionPayload(raw)
+	if err != nil {
 		return nil, err
 	}
 	// RAGFlow v0.27's assistant completion returns its RAGFlow answer object
@@ -157,6 +161,39 @@ func (c *HTTPClient) ChatCompletion(ctx context.Context, chatID string, req Comp
 		out.Choices = []CompletionChoice{{Message: Message{Role: "assistant", Content: out.Answer}}}
 	}
 	return &out, nil
+}
+
+func decodeChatCompletionPayload(raw json.RawMessage) (CompletionResponse, error) {
+	var out CompletionResponse
+	if err := json.Unmarshal(raw, &out); err == nil && (len(out.Choices) > 0 || out.Answer != "") {
+		return out, nil
+	}
+	var answer struct {
+		ID        string           `json:"id"`
+		Answer    string           `json:"answer"`
+		SessionID string           `json:"session_id"`
+		Model     string           `json:"model"`
+		Reference json.RawMessage  `json:"reference"`
+		Usage     *CompletionUsage `json:"usage"`
+	}
+	if err := json.Unmarshal(raw, &answer); err != nil || answer.Answer == "" {
+		return out, wrapError("decode ragflow chat completion", err)
+	}
+	out.ID, out.Answer, out.SessionID, out.Model, out.Usage = answer.ID, answer.Answer, answer.SessionID, answer.Model, answer.Usage
+	if len(answer.Reference) == 0 || string(answer.Reference) == "null" {
+		return out, nil
+	}
+	var referenceObject struct {
+		Chunks []map[string]interface{} `json:"chunks"`
+	}
+	if err := json.Unmarshal(answer.Reference, &referenceObject); err == nil {
+		out.Reference = referenceObject.Chunks
+		return out, nil
+	}
+	if err := json.Unmarshal(answer.Reference, &out.Reference); err != nil {
+		return out, wrapError("decode ragflow chat references", err)
+	}
+	return out, nil
 }
 
 // StreamChatCompletion streams a chat completion (SSE) from RAGFlow to w,

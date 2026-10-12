@@ -12,9 +12,23 @@ ARG VERSION=dev
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Frontend build stage: produces the Vite production bundle embedded into
+# the Go binary (go:embed via internal/webfs, tag webfs_embed).
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 COPY . .
+# Stage the web build where internal/webfs can embed it (go:embed cannot
+# reach outside the package directory), then build with webfs_embed so the
+# image serves API + UI from the single binary.
+COPY --from=web /web/dist ./internal/webfs/dist
 # CGO disabled + linux -> fully static binary, runs in the slim alpine runtime.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/ragflow-x ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -tags=webfs_embed \
+    -ldflags="-s -w -X main.version=${VERSION}" -o /out/ragflow-x ./cmd/server
 
 # ---- runtime stage ----
 FROM alpine:3.21

@@ -411,13 +411,14 @@ func newTemplateReleaseGateFixture(t *testing.T, decision string) (*Service, con
 	if _, err := svc.CompleteEvaluationRun(ctx, tenant.ID, run.ID, false, ""); err != nil {
 		t.Fatal(err)
 	}
+	permissionEvidence, configurationEvidence := strictReleaseEvidenceRaw(candidateResult.Candidate)
 	bundle, err := svc.CreateEvidenceBundle(ctx, tenant.ID, user.ID, EvidenceBundleInput{
 		ReleaseCandidateID: candidateResult.Candidate.CandidateID,
 		CandidateVersion:   candidateResult.Candidate.CandidateVersion,
 		EvaluationRunID:    run.ID,
 		SecurityEvidence:   json.RawMessage(`{}`), PolicyEvidence: json.RawMessage(`{}`),
-		RiskEvidence: json.RawMessage(`{}`), PermissionEvidence: json.RawMessage(`{}`),
-		ConfigurationEvidence: json.RawMessage(`{}`), ApprovalEvidence: json.RawMessage(`{}`),
+		RiskEvidence: json.RawMessage(`{}`), PermissionEvidence: permissionEvidence,
+		ConfigurationEvidence: configurationEvidence, ApprovalEvidence: json.RawMessage(`{}`),
 		EvidenceItems: json.RawMessage(`[]`),
 	})
 	if err != nil {
@@ -426,19 +427,16 @@ func newTemplateReleaseGateFixture(t *testing.T, decision string) (*Service, con
 	if decision == "" {
 		return svc, ctx, tenant, user, asset
 	}
-	subGates := map[string]string{
-		"security": "PASS", "policy": "PASS", "risk": "PASS", "permission": "PASS",
-		"configuration": "PASS", "approval": "PASS",
-	}
+	subGates := namedPassingReleaseSubGates()
 	expected := model.GateDecisionPass
 	switch decision {
 	case "BLOCK":
-		subGates["approval"] = model.GateDecisionBlock
+		subGates[model.ReleaseGateOperations] = model.GateDecisionBlock
 		expected = model.GateDecisionBlock
 	case "FAIL_RUN":
 		expected = model.GateDecisionBlock
 	case "WAIVED_PRODUCTION":
-		subGates["approval"] = "WAIVED"
+		subGates[model.ReleaseGateOperations] = model.GateReportWaived
 		expected = model.GateDecisionBlock
 	default:
 		if decision != model.GateDecisionPass {

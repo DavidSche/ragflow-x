@@ -8,6 +8,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
+	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
 func knowledgeOpsScope(h *Handler, c *gin.Context) (string, bool) {
@@ -26,7 +27,9 @@ func (h *Handler) KnowledgeOpsSummary(c *gin.Context) {
 	}
 	tenantID, scopeAll := knowledgeOpsScope(h, c)
 	from, to := knowledgeOpsRange(c)
-	out, err := h.Service.KnowledgeOpsSummary(c.Request.Context(), tenantID, scopeAll, from, to)
+	out, err := h.Service.KnowledgeOpsSummary(
+		c.Request.Context(), tenantID, scopeAll, from, to, c.Query("x_dataset_id"),
+	)
 	if err != nil {
 		response.Err(c, err)
 		return
@@ -119,4 +122,52 @@ func (h *Handler) MetricsContract(c *gin.Context) {
 		return
 	}
 	response.OK(c, out)
+}
+
+// ListCompilationRecovery exposes the unknown-run governance queue.
+func (h *Handler) ListCompilationRecovery(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	page, pageSize := pageParams(c)
+	items, total, err := h.Service.ListCompilationRecovery(
+		c.Request.Context(), c.GetString(middleware.ContextUserID), c.GetString(middleware.ContextTenantID),
+		c.Query("dataset_id"), page, pageSize,
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OKPage(c, items, total, page, pageSize)
+}
+
+// ProbeCompilationRecoveryRun performs one read-only downstream probe.
+func (h *Handler) ProbeCompilationRecoveryRun(c *gin.Context) {
+	item, err := h.Service.ProbeCompilationRecoveryRun(
+		c.Request.Context(), c.GetString(middleware.ContextUserID), c.GetString(middleware.ContextTenantID), c.Param("runId"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, item)
+}
+
+// RequestCompilationRecoveryApproval submits the governed recovery action.
+func (h *Handler) RequestCompilationRecoveryApproval(c *gin.Context) {
+	var req service.CompilationRecoveryApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40000, "invalid compilation recovery payload")
+		return
+	}
+	approval, err := h.Service.RequestCompilationRecoveryApproval(
+		c.Request.Context(), c.GetString(middleware.ContextUserID), c.GetString(middleware.ContextTenantID),
+		c.Param("runId"), req,
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.Accepted(c, approval)
 }

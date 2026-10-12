@@ -83,6 +83,7 @@ func (h *Handler) UpdateTenant(c *gin.Context) {
 		Status    string `json:"status"`
 		BrandName string `json:"brand_name"`
 		BrandLogo string `json:"brand_logo"`
+		CompilationTokenBudget *int64 `json:"compilation_token_budget"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid tenant payload")
@@ -98,6 +99,7 @@ func (h *Handler) UpdateTenant(c *gin.Context) {
 	tenantID := c.Param("id")
 	t, err := h.Service.UpdateTenant(ctx, actorID, actorTenantID, tenantID, service.UpdateTenantRequest{
 		Name: req.Name, Status: req.Status, BrandName: req.BrandName, BrandLogo: req.BrandLogo,
+		CompilationTokenBudget: req.CompilationTokenBudget,
 	})
 	if err != nil {
 		response.Err(c, err)

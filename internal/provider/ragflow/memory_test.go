@@ -39,9 +39,18 @@ func TestHTTPClient_MemoryContract(t *testing.T) {
 				}
 				writeEnvelope(t, w, map[string]interface{}{"id": "m1", "name": "mem"})
 			case http.MethodGet:
+				query := r.URL.Query()
+				if query.Get("agent_id") != "a" || query.Get("keywords") != "s" ||
+					query.Get("page") != "1" || query.Get("page_size") != "100" {
+					http.Error(w, "bad message filters "+r.URL.RawQuery, http.StatusBadRequest)
+					return
+				}
 				writeEnvelope(t, w, map[string]interface{}{
 					"messages": map[string]interface{}{
-						"message_list": []map[string]interface{}{{"message_id": 1, "memory_id": "m1", "user_input": "hi"}},
+						"message_list": []map[string]interface{}{{
+							"message_id": 1, "memory_id": "m1", "user_id": "user-1",
+							"agent_id": "a", "session_id": "s", "user_input": "hi",
+						}},
 					},
 					"storage_type": "table",
 				})
@@ -50,7 +59,7 @@ func TestHTTPClient_MemoryContract(t *testing.T) {
 			}
 		case "/api/v1/messages":
 			if r.Method == http.MethodPost {
-				if !strings.Contains(body, `"memory_id":"m1"`) {
+				if !strings.Contains(body, `"memory_id":["m1"]`) || !strings.Contains(body, `"user_id":"user-1"`) {
 					http.Error(w, "bad add body "+body, http.StatusBadRequest)
 					return
 				}
@@ -101,7 +110,9 @@ func TestHTTPClient_MemoryContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msgs, err := client.ListMemoryMessages(ctx, "m1")
+	msgs, err := client.ListMemoryMessagesFiltered(ctx, "m1", MemoryMessageListFilter{
+		AgentID: "a", SessionID: "s", UserID: "user-1", Page: 1, PageSize: 100,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +120,7 @@ func TestHTTPClient_MemoryContract(t *testing.T) {
 		t.Fatalf("unexpected messages: %+v", msgs)
 	}
 
-	if err := client.AddMemoryMessage(ctx, AddMessageRequest{MemoryID: "m1", AgentID: "a", SessionID: "s", UserInput: "q", AgentResponse: "a"}); err != nil {
+	if err := client.AddMemoryMessage(ctx, AddMessageRequest{MemoryIDs: []string{"m1"}, AgentID: "a", SessionID: "s", UserID: "user-1", UserInput: "q", AgentResponse: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.DeleteMemoryMessage(ctx, "m1", 1); err != nil {
@@ -130,7 +141,7 @@ func TestMock_MemoryLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := mock.AddMemoryMessage(ctx, AddMessageRequest{MemoryID: id, AgentID: "a", SessionID: "s", UserInput: "q", AgentResponse: "a"}); err != nil {
+	if err := mock.AddMemoryMessage(ctx, AddMessageRequest{MemoryIDs: []string{id}, AgentID: "a", SessionID: "s", UserID: "attribution", UserInput: "q", AgentResponse: "a"}); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err := mock.ListMemoryMessages(ctx, id)
@@ -147,8 +158,14 @@ func TestMock_MemoryLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	msgs, _ = mock.ListMemoryMessages(ctx, id)
-	if len(msgs) != 0 {
-		t.Fatalf("expected no messages after delete: %+v", msgs)
+	activeMessages := 0
+	for _, message := range msgs {
+		if message.Status && message.ForgetAt == "" {
+			activeMessages++
+		}
+	}
+	if activeMessages != 0 || len(msgs) != 1 || msgs[0].ForgetAt == "" {
+		t.Fatalf("expected one inactive forgotten message after delete: %+v", msgs)
 	}
 	if err := mock.DeleteMemory(ctx, id); err != nil {
 		t.Fatal(err)
@@ -163,6 +180,12 @@ func TestHTTPClient_MemorySearchAndContent(t *testing.T) {
 				http.Error(w, "bad search params", http.StatusBadRequest)
 				return
 			}
+			if r.URL.Query().Get("agent_id") != "agent-1" ||
+				r.URL.Query().Get("session_id") != "session-1" ||
+				r.URL.Query().Get("user_id") != "user-1" {
+				http.Error(w, "missing AND filters", http.StatusBadRequest)
+				return
+			}
 			writeEnvelope(t, w, []map[string]interface{}{{"message_id": 1, "memory_id": "m1", "user_input": "hello"}})
 		case "/api/v1/messages/m1:1/content":
 			writeEnvelope(t, w, map[string]interface{}{"user_input": "hello", "agent_response": "world"})
@@ -174,7 +197,9 @@ func TestHTTPClient_MemorySearchAndContent(t *testing.T) {
 	client := NewHTTPClient(srv.URL, "key", 5*time.Second, 2)
 	ctx := context.Background()
 
-	res, err := client.SearchMemoryMessages(ctx, "m1", MemorySearchParams{Query: "hello", TopN: 5})
+	res, err := client.SearchMemoryMessages(ctx, "m1", MemorySearchParams{
+		Query: "hello", AgentID: "agent-1", SessionID: "session-1", UserID: "user-1", TopN: 5,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +223,7 @@ func TestMock_MemorySearchAndContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := mock.AddMemoryMessage(ctx, AddMessageRequest{MemoryID: id, UserInput: "how are you", AgentResponse: "fine"}); err != nil {
+	if err := mock.AddMemoryMessage(ctx, AddMessageRequest{MemoryIDs: []string{id}, UserInput: "how are you", AgentResponse: "fine"}); err != nil {
 		t.Fatal(err)
 	}
 	res, err := mock.SearchMemoryMessages(ctx, id, MemorySearchParams{Query: "fine", TopN: 5})
@@ -207,6 +232,16 @@ func TestMock_MemorySearchAndContent(t *testing.T) {
 	}
 	if len(res) != 1 {
 		t.Fatalf("expected 1 search result, got %d", len(res))
+	}
+	res, err = mock.SearchMemoryMessages(ctx, id, MemorySearchParams{
+		Query: "fine", AgentID: "missing-agent", SessionID: "missing-session", UserID: "missing-user",
+	})
+	if err != nil || len(res) != 0 {
+		t.Fatalf("expected all filters to be ANDed, got %d results and err %v", len(res), err)
+	}
+	res, err = mock.SearchMemoryMessages(ctx, id, MemorySearchParams{Query: "fine", TopN: 5})
+	if err != nil || len(res) != 1 {
+		t.Fatalf("expected unfiltered search before content read, got %d results and err %v", len(res), err)
 	}
 	content, err := mock.GetMemoryMessageContent(ctx, id, res[0].MessageID)
 	if err != nil {

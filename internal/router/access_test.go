@@ -228,6 +228,36 @@ func protectedRoutes() []string {
 		"DELETE /api/v1/knowledge-strategies/:id",
 		"POST /api/v1/knowledge-strategies/:id/probe",
 		"POST /api/v1/knowledge-strategies/:id/retrieve",
+		"GET /api/v1/knowledge-strategies/:id/quality-gate",
+		"GET /api/v1/knowledge-profiles",
+		"POST /api/v1/knowledge-profiles",
+		"GET /api/v1/knowledge-profiles/:profileId",
+		"PUT /api/v1/knowledge-profiles/:profileId",
+		"DELETE /api/v1/knowledge-profiles/:profileId",
+		"POST /api/v1/datasets/:id/compilation/runs",
+		"GET /api/v1/datasets/:id/compilation/runs",
+		"POST /api/v1/datasets/:id/compilation/reconcile",
+		"GET /api/v1/datasets/:id/artifacts",
+		"GET /api/v1/memory-policies",
+		"POST /api/v1/memory-policies",
+		"GET /api/v1/memory-policies/:policyId",
+		"GET /api/v1/memory-policies/:policyId/quality-gate",
+		"PUT /api/v1/memory-policies/:policyId",
+		"DELETE /api/v1/memory-policies/:policyId",
+		"POST /api/v1/memory-policies/:policyId/opt-in",
+		"POST /api/v1/memory-policies/:policyId/opt-out",
+		"GET /api/v1/memory-privacy/self-policy-template",
+		"PUT /api/v1/memory-privacy/self-policy-template",
+		"GET /api/v1/self/memory-policies",
+		"POST /api/v1/self/memory-policies",
+		"GET /api/v1/memory-operations",
+		"GET /api/v1/memory-operations/:operationId",
+		"POST /api/v1/memory-operations/:operationId/tombstone",
+		"POST /api/v1/memories/:id/governed-search",
+		"POST /api/v1/conversation-context/preview",
+		"GET /api/v1/conversation-context/decisions/:decisionId",
+		"GET /api/v1/conversation-context/decisions/by-request/:requestId",
+		"GET /api/v1/conversation-context/decisions",
 		"GET /api/v1/datasets/:id/documents/:docId/parse-attempts",
 		"GET /api/v1/datasets/:id/documents/:docId/parse-quality-report",
 		"GET /api/v1/datasets/:id/documents/:docId/parse-quality-reports",
@@ -587,6 +617,48 @@ func TestOutboxEventPermissionsMatchOperationalContract(t *testing.T) {
 	for _, role := range []string{model.RoleBusinessUser, model.RoleViewer, model.RoleTeamAdmin} {
 		if len(grants[role]) != 0 {
 			t.Fatalf("%s must not receive outbox-event permissions, got %v", role, grants[role])
+		}
+	}
+}
+
+func TestMemoryForgetPermissionsMatchOwnerCancellationContract(t *testing.T) {
+	definition := ResourceTypeRegistry()["memory-forget"]
+	if definition.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("memory-forget scope = %q, want workspace", definition.ResourceScope)
+	}
+	if len(definition.AllowedActions) != 2 || definition.AllowedActions[0] != "execute" ||
+		definition.AllowedActions[1] != "manage" {
+		t.Fatalf("memory-forget allowed actions = %v, want [execute manage]", definition.AllowedActions)
+	}
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "memory-forget" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	expected := map[string]map[string]bool{
+		model.RolePlatformAdmin: {"execute": true, "manage": true},
+		model.RoleTenantAdmin:   {"execute": true, "manage": true},
+		model.RoleBusinessUser:  {"execute": true},
+		model.RoleTeamAdmin:     {"execute": true},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s memory-forget grants = %v, want %v", role, grants[role], actions)
+		}
+		for action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing memory-forget %s", role, action)
+			}
+		}
+	}
+	for _, role := range []string{model.RoleOperator, model.RoleViewer} {
+		if len(grants[role]) != 0 {
+			t.Fatalf("%s must not receive memory-forget permissions, got %v", role, grants[role])
 		}
 	}
 }

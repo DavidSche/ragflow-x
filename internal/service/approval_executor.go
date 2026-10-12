@@ -179,6 +179,24 @@ func (s *Service) approvalExecutorRegistry() *ApprovalExecutorRegistry {
 		svc: s, objectType: model.ApprovalObjectKnowledgeTask, action: model.ApprovalActionResolve,
 		validate: validateKnowledgeTaskResolve, execute: executeKnowledgeTaskResolve,
 	})
+	registry.Register(fmt.Sprintf("%s.%s", model.ApprovalObjectCompilationRun, model.ApprovalActionConfirmDownstreamAbsent), &serviceApprovalExecutor{
+		svc: s, objectType: model.ApprovalObjectCompilationRun, action: model.ApprovalActionConfirmDownstreamAbsent,
+		validate: func(ctx context.Context, svc *Service, approval *model.Approval) error {
+			return svc.validateCompilationRecoveryApproval(ctx, approval)
+		},
+		execute: func(ctx context.Context, svc *Service, approval *model.Approval) (map[string]any, error) {
+			return svc.executeCompilationRecoveryConfirm(ctx, approval)
+		},
+	})
+	registry.Register(fmt.Sprintf("%s.%s", model.ApprovalObjectCompilationRun, model.ApprovalActionCreate), &serviceApprovalExecutor{
+		svc: s, objectType: model.ApprovalObjectCompilationRun, action: model.ApprovalActionCreate,
+		validate: func(ctx context.Context, svc *Service, approval *model.Approval) error {
+			return svc.validateCompilationRecoveryApproval(ctx, approval)
+		},
+		execute: func(ctx context.Context, svc *Service, approval *model.Approval) (map[string]any, error) {
+			return svc.executeCompilationRecoveryCreate(ctx, approval)
+		},
+	})
 	return registry
 }
 

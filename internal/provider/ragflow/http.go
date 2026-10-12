@@ -382,6 +382,15 @@ func (c *HTTPClient) ParseDocuments(ctx context.Context, datasetID string, docum
 	return c.do(ctx, http.MethodPost, path, bytes.NewReader([]byte(payload)), "application/json", nil)
 }
 
+func (c *HTTPClient) IngestDocuments(ctx context.Context, documentIDs []string) error {
+	if len(documentIDs) == 0 {
+		return protocolError("document_ids is required")
+	}
+	ids, _ := json.Marshal(documentIDs)
+	payload := fmt.Sprintf(`{"doc_ids":%s,"run":"1","delete":true}`, ids)
+	return c.do(ctx, http.MethodPost, "/documents/ingest", bytes.NewReader([]byte(payload)), "application/json", nil)
+}
+
 func (c *HTTPClient) StopDocuments(ctx context.Context, datasetID string, documentIDs []string) error {
 	ids, _ := json.Marshal(documentIDs)
 	path := "/datasets/" + url.PathEscape(datasetID) + "/documents/stop"

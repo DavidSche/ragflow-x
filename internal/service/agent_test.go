@@ -98,7 +98,7 @@ func TestAgentTenantIsolation(t *testing.T) {
 	if err := svc.DeleteAgentSession(ctx, ta.ID, agent.ID, sess.ID, false); err != nil {
 		t.Fatalf("owner delete session: %v", err)
 	}
-	if _, err := svc.AgentChatCompletion(ctx, ta.ID, agent.ID, "", []ragflow.Message{{Role: "user", Content: "hi"}}, nil, "req-1", ""); err != nil {
+	if _, err := svc.AgentChatCompletion(ctx, ta.ID, agent.ID, "user-1", []ragflow.Message{{Role: "user", Content: "hi"}}, nil, "req-1", ""); err != nil {
 		t.Fatalf("owner completion: %v", err)
 	}
 

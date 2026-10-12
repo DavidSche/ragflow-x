@@ -78,17 +78,30 @@ type MemoryMessage struct {
 	UserInput     string `json:"user_input,omitempty"`
 	AgentResponse string `json:"agent_response,omitempty"`
 	Status        bool   `json:"status"`
+	ForgetAt      string `json:"forget_at"`
 	Content       string `json:"content,omitempty"`
 	CreateTime    int64  `json:"create_time,omitempty"`
 }
 
+// MemoryMessageListFilter narrows the raw-message metadata list. RAGFlow's
+// list endpoint returns metadata only; callers must read one message's content
+// explicitly before acting on a content-sensitive result.
+type MemoryMessageListFilter struct {
+	AgentID   string
+	SessionID string
+	UserID    string
+	Page      int
+	PageSize  int
+}
+
 // AddMessageRequest mirrors POST /messages.
 type AddMessageRequest struct {
-	MemoryID      string `json:"memory_id"`
-	AgentID       string `json:"agent_id"`
-	SessionID     string `json:"session_id"`
-	UserInput     string `json:"user_input"`
-	AgentResponse string `json:"agent_response"`
+	MemoryIDs     []string `json:"memory_id"`
+	AgentID       string   `json:"agent_id"`
+	SessionID     string   `json:"session_id"`
+	UserID        string   `json:"user_id,omitempty"`
+	UserInput     string   `json:"user_input"`
+	AgentResponse string   `json:"agent_response"`
 }
 
 // ListMemories lists the accessible memories.
@@ -155,16 +168,45 @@ func (c *HTTPClient) DeleteMemory(ctx context.Context, memoryID string) error {
 
 // ListMemoryMessages lists the messages of a memory (GET /memories/<id>).
 func (c *HTTPClient) ListMemoryMessages(ctx context.Context, memoryID string) ([]MemoryMessage, error) {
+	return c.ListMemoryMessagesFiltered(ctx, memoryID, MemoryMessageListFilter{})
+}
+
+// ListMemoryMessagesFiltered lists a bounded page of raw-message metadata.
+func (c *HTTPClient) ListMemoryMessagesFiltered(
+	ctx context.Context, memoryID string, filter MemoryMessageListFilter,
+) ([]MemoryMessage, error) {
+	page, size := filter.Page, filter.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 50
+	}
+	q := url.Values{}
+	q.Set("page", strconv.Itoa(page))
+	q.Set("page_size", strconv.Itoa(size))
+	if filter.AgentID != "" {
+		q.Set("agent_id", filter.AgentID)
+	}
+	if filter.SessionID != "" {
+		q.Set("keywords", filter.SessionID)
+	}
 	var out struct {
 		Messages struct {
 			MessageList []MemoryMessage `json:"message_list"`
 		} `json:"messages"`
 	}
-	path := "/memories/" + url.PathEscape(memoryID)
+	path := "/memories/" + url.PathEscape(memoryID) + "?" + q.Encode()
 	if err := c.do(ctx, http.MethodGet, path, nil, "", &out); err != nil {
 		return nil, err
 	}
-	return out.Messages.MessageList, nil
+	messages := make([]MemoryMessage, 0, len(out.Messages.MessageList))
+	for _, message := range out.Messages.MessageList {
+		if filter.UserID == "" || message.UserID == filter.UserID {
+			messages = append(messages, message)
+		}
+	}
+	return messages, nil
 }
 
 // AddMessage stores a memory message (POST /messages).
@@ -189,6 +231,9 @@ func (c *HTTPClient) UpdateMemoryMessageStatus(ctx context.Context, memoryID str
 // MemorySearchParams carries the semantic memory-search parameters.
 type MemorySearchParams struct {
 	Query                    string
+	AgentID                  string
+	SessionID                string
+	UserID                   string
 	SimilarityThreshold      float64
 	KeywordsSimilarityWeight float64
 	TopN                     int
@@ -200,6 +245,15 @@ func (c *HTTPClient) SearchMemoryMessages(ctx context.Context, memoryID string, 
 	q.Set("memory_id", memoryID)
 	if p.Query != "" {
 		q.Set("query", p.Query)
+	}
+	if p.AgentID != "" {
+		q.Set("agent_id", p.AgentID)
+	}
+	if p.SessionID != "" {
+		q.Set("session_id", p.SessionID)
+	}
+	if p.UserID != "" {
+		q.Set("user_id", p.UserID)
 	}
 	if p.SimilarityThreshold != 0 {
 		q.Set("similarity_threshold", strconv.FormatFloat(p.SimilarityThreshold, 'f', -1, 64))

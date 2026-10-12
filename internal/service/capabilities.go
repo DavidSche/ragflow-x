@@ -88,13 +88,13 @@ func newCapabilityRegistry() *capabilityRegistry {
 		items:         map[string]*RAGFlowCapability{},
 	}
 	declarations := []RAGFlowCapability{
-		{Name: "chat", APIProfile: "chat.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "stable chat contract"},
-		{Name: "session", APIProfile: "session.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "new session"},
+		{Name: "chat", APIProfile: "chat.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc1", TrialPattern: "0.28.*", ContractTest: true, Fallback: "stable chat contract"},
+		{Name: "session", APIProfile: "session.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc1", TrialPattern: "0.28.*", ContractTest: true, Fallback: "new session"},
 		{Name: "agent", APIProfile: "agent.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "private endpoint disabled"},
 		{Name: "agent_session", APIProfile: "agent-session.v1", Lifecycle: "BETA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "non-streaming result"},
 		{Name: "search_app", APIProfile: "search-app.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "chat.v1"},
 		{Name: "memory", APIProfile: "memory.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "empty memory"},
-		{Name: "references", APIProfile: "references.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "no citation"},
+		{Name: "references", APIProfile: "references.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc1", TrialPattern: "0.28.*", ContractTest: true, Fallback: "no citation"},
 		{Name: "stream", APIProfile: "stream.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "non-streaming"},
 		{Name: "structured_output", APIProfile: "structured-output.v1", Lifecycle: "EXPERIMENTAL", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: false, Fallback: "text"},
 		{Name: "openai_compatibility", APIProfile: "openai-compatible.v1", Lifecycle: "BETA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: false, Fallback: "ragflow-native"},

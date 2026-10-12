@@ -714,6 +714,12 @@ type QuotaRepo interface {
 	FinalizeQuotaReservation(ctx context.Context, requestID string, actual int64) error
 	ReleaseQuotaReservation(ctx context.Context, requestID string) error
 	ReapStaleQuotaReservations(ctx context.Context, keyID, periodStart string, before time.Time) (int64, error)
+	ReserveEnhancementQuota(ctx context.Context, request EnhancementBudgetRequest) (*EnhancementBudgetSnapshot, string, error)
+	ReleaseEnhancementQuota(ctx context.Context, requestID string) error
+	SummarizeCostAttribution(
+		ctx context.Context, tenantID string, scopeAll bool,
+		dateFrom, dateTo, datasetID string,
+	) ([]model.KnowledgeOpsCostAttribution, error)
 
 	// Gateway idempotency is caller-facing, unlike MeterRequest which only
 	// prevents duplicate usage accounting for the same execution request.

@@ -28,6 +28,9 @@ type Client interface {
 	ListDocuments(ctx context.Context, datasetID string) ([]Document, error)
 	// ParseDocuments triggers parsing for the given document ids.
 	ParseDocuments(ctx context.Context, datasetID string, documentIDs []string) error
+	// IngestDocuments starts a deletion-safe ingestion run using RAGFlow's
+	// pipeline ingest API; it is required for pipeline-bound documents.
+	IngestDocuments(ctx context.Context, documentIDs []string) error
 	// UpdateDocumentParseConfig switches one document between builtin and
 	// pipeline parse modes and optionally updates its parser config.
 	UpdateDocumentParseConfig(ctx context.Context, datasetID, documentID string, update DocumentParseConfigUpdate) error
@@ -155,8 +158,12 @@ type Client interface {
 	SearchDataset(ctx context.Context, datasetID string, req SearchDatasetRequest) (*SearchDatasetResult, error)
 	// ListDatasetArtifacts lists compiled dataset artifacts for probe cross-validation.
 	ListDatasetArtifacts(ctx context.Context, datasetID string, filter DatasetArtifactFilter) ([]DatasetArtifact, int64, error)
+	// GetDatasetArtifact reads one artifact payload and its source bindings.
+	GetDatasetArtifact(ctx context.Context, datasetID, pageType, slug string) (*DatasetArtifactDetail, error)
 	// GetCompilationStatus reads the dataset compilation lifecycle state.
 	GetCompilationStatus(ctx context.Context, datasetID string) (*CompilationStatus, error)
+	// GetCompilationStatusForKind reads state scoped to a compilation kind.
+	GetCompilationStatusForKind(ctx context.Context, datasetID, kind string) (*CompilationStatus, error)
 	// ListCompilationTemplates reads built-in templates or wiki presets.
 	ListCompilationTemplates(ctx context.Context, source CompilationTemplateSource) ([]CompilationTemplate, error)
 	// ListCompilationTemplateGroups reads governed compilation template groups.
@@ -183,6 +190,11 @@ type Client interface {
 	DeleteMemory(ctx context.Context, memoryID string) error
 	// ListMemoryMessages lists a memory's messages.
 	ListMemoryMessages(ctx context.Context, memoryID string) ([]MemoryMessage, error)
+	// ListMemoryMessagesFiltered lists raw-message metadata for exact
+	// compensation discovery. It must never be used to read content into logs.
+	ListMemoryMessagesFiltered(
+		ctx context.Context, memoryID string, filter MemoryMessageListFilter,
+	) ([]MemoryMessage, error)
 	// AddMemoryMessage stores a memory message.
 	AddMemoryMessage(ctx context.Context, req AddMessageRequest) error
 	// DeleteMemoryMessage forgets a memory message.
@@ -382,28 +394,42 @@ type CreateDatasetRequest struct {
 	Name           string `json:"name"`
 	ChunkMethod    string `json:"chunk_method,omitempty"`
 	EmbeddingModel string `json:"embedding_model,omitempty"`
+	ParseType      int    `json:"parse_type,omitempty"`
 	ParserID       string `json:"parser_id,omitempty"`
+	PipelineID     string `json:"pipeline_id,omitempty"`
 }
 
 // Document mirrors RAGFlow document fields used by RAGFlow-X.
 type Document struct {
-	ID         string     `json:"id"`
-	Name       string     `json:"name"`
-	ParserID   string     `json:"parser_id"`
-	PipelineID string     `json:"pipeline_id,omitempty"`
-	Status     string     `json:"run"`
-	Enabled    flexString `json:"status"`
-	ChunkCount int64      `json:"chunk_count"`
-	TokenCount int64      `json:"token_count"`
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	ParserID        string     `json:"parser_id"`
+	PipelineID      string     `json:"pipeline_id,omitempty"`
+	Status          string     `json:"run"`
+	Enabled         flexString `json:"status"`
+	IngestionStatus string     `json:"ingestion_status,omitempty"`
+	ChunkCount      int64      `json:"chunk_count"`
+	TokenCount      int64      `json:"token_count"`
 
-	ProcessBeginAt  flexString             `json:"process_begin_at"`
-	ProcessDuration flexString             `json:"process_duration"`
-	Progress        float64                `json:"progress"`
-	ProgressMsg     string                 `json:"progress_msg"`
-	Metadata        map[string]interface{} `json:"meta_fields"`
-	CreateTime      int64                  `json:"create_time"`
-	UpdateTime      int64                  `json:"update_time"`
-	Size            int64                  `json:"size"`
+	ProcessBeginAt       flexString              `json:"process_begin_at"`
+	ProcessDuration      flexString              `json:"process_duration"`
+	Progress             float64                 `json:"progress"`
+	ProgressMsg          string                  `json:"progress_msg"`
+	Metadata             map[string]interface{}  `json:"meta_fields"`
+	CreateTime           int64                   `json:"create_time"`
+	UpdateTime           int64                   `json:"update_time"`
+	Size                 int64                   `json:"size"`
+	LatestIngestionEvent *DocumentIngestionEvent `json:"latest_ingestion_event,omitempty"`
+}
+
+// DocumentIngestionEvent carries only the non-sensitive upstream event fields
+// needed to fail a controlled live test quickly.
+type DocumentIngestionEvent struct {
+	ID        int64  `json:"id"`
+	EventType int    `json:"event_type"`
+	Component string `json:"component"`
+	Phase     int    `json:"phase"`
+	Message   string `json:"message"`
 }
 
 // flexString decodes either a JSON string or a number into a string, because

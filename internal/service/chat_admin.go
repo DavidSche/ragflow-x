@@ -280,7 +280,7 @@ func (s *Service) GetChatSession(ctx context.Context, tenantID, chatID, sessionI
 }
 
 // ListChatSessionMessages returns an owned chat session as bounded pages.
-func (s *Service) ListChatSessionMessages(ctx context.Context, tenantID, chatID, sessionID string, scopeAll bool, opts ragflow.SessionMessagePageOptions) ([]ragflow.Message, string, error) {
+func (s *Service) ListChatSessionMessages(ctx context.Context, tenantID, chatID, sessionID string, scopeAll bool, opts ragflow.SessionMessagePageOptions) ([]SessionMessage, string, error) {
 	if _, err := s.GetChatSession(ctx, tenantID, chatID, sessionID, scopeAll); err != nil {
 		return nil, "", err
 	}
@@ -288,7 +288,7 @@ func (s *Service) ListChatSessionMessages(ctx context.Context, tenantID, chatID,
 	if err != nil {
 		return nil, "", httperr.New(502, 50245, "ragflow list session messages failed")
 	}
-	return items, next, nil
+	return s.traceSessionMessages(ctx, tenantID, chatID, sessionID, items), next, nil
 }
 
 // CreateChatSession creates a session on an owned chat assistant.

@@ -13,6 +13,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/notify"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
+	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
 var candidateManifestSections = []string{
@@ -76,16 +77,22 @@ type ExecutionSnapshotInput struct {
 }
 
 type EvaluationRunInput struct {
-	ReleaseCandidateID       string `json:"release_candidate_id"`
-	CandidateVersion         int64  `json:"candidate_version"`
-	EvalSetID                string `json:"eval_set_id"`
-	EvalSetVersion           int64  `json:"eval_set_version"`
-	EvalSetHash              string `json:"eval_set_hash"`
-	EvaluationPolicyVersion  string `json:"evaluation_policy_version"`
-	EvaluationPolicyHash     string `json:"evaluation_policy_hash"`
-	AggregationPolicyVersion string `json:"aggregation_policy_version"`
-	AggregationPolicyHash    string `json:"aggregation_policy_hash"`
-	ExecutionSnapshotID      string `json:"execution_snapshot_id"`
+	ReleaseCandidateID       string          `json:"release_candidate_id"`
+	CandidateVersion         int64           `json:"candidate_version"`
+	EvaluationScope          string          `json:"evaluation_scope"`
+	XStrategyID              string          `json:"x_strategy_id"`
+	XMemoryPolicyID          string          `json:"x_memory_policy_id"`
+	EvalSetID                string          `json:"eval_set_id"`
+	EvalSetVersion           int64           `json:"eval_set_version"`
+	EvalSetHash              string          `json:"eval_set_hash"`
+	EvaluationPolicyVersion  string          `json:"evaluation_policy_version"`
+	EvaluationPolicyHash     string          `json:"evaluation_policy_hash"`
+	AggregationPolicyVersion string          `json:"aggregation_policy_version"`
+	AggregationPolicyHash    string          `json:"aggregation_policy_hash"`
+	ExecutionSnapshotID      string          `json:"execution_snapshot_id"`
+	Capability               string          `json:"capability"`
+	ExecutionMode            string          `json:"execution_mode"`
+	ExecutionConfig          json.RawMessage `json:"execution_config"`
 }
 
 type EvaluationSetVersionInput struct {
@@ -105,20 +112,27 @@ type EvaluationCaseVersionInput struct {
 	ExpectedKeywords       string          `json:"expected_keywords"`
 	ExpectedCitationDocIDs string          `json:"expected_citation_doc_ids"`
 	Metadata               json.RawMessage `json:"metadata"`
+	PairedSampleID         string          `json:"paired_sample_id"`
 }
 
 type EvaluationCaseResultInput struct {
-	RunID           string          `json:"run_id"`
-	CaseID          string          `json:"case_id"`
-	CaseVersionID   string          `json:"case_version_id"`
-	CaseVersionHash string          `json:"case_version_hash"`
-	ActualAnswer    string          `json:"actual_answer"`
-	References      json.RawMessage `json:"references"`
-	Metrics         json.RawMessage `json:"metrics"`
-	Pass            *bool           `json:"pass"`
-	FailureReason   string          `json:"failure_reason"`
-	LatencyMs       int64           `json:"latency_ms"`
-	Tokens          int64           `json:"tokens"`
+	RunID             string          `json:"run_id"`
+	CaseID            string          `json:"case_id"`
+	CaseVersionID     string          `json:"case_version_id"`
+	CaseVersionHash   string          `json:"case_version_hash"`
+	ActualAnswer      string          `json:"actual_answer"`
+	References        json.RawMessage `json:"references"`
+	Metrics           json.RawMessage `json:"metrics"`
+	Pass              *bool           `json:"pass"`
+	FailureReason     string          `json:"failure_reason"`
+	LatencyMs         int64           `json:"latency_ms"`
+	Tokens            int64           `json:"tokens"`
+	PairedSampleID    string          `json:"paired_sample_id"`
+	ExperimentArm     string          `json:"experiment_arm"`
+	HitAtK            *bool           `json:"hit_at_k"`
+	AnswerCorrect     *bool           `json:"answer_correct"`
+	NoAnswer          *bool           `json:"no_answer"`
+	CitationPrecision *float64        `json:"citation_precision"`
 }
 
 type EvidenceBundleInput struct {
@@ -485,12 +499,12 @@ func (s *Service) ListExecutionSnapshots(ctx context.Context, tenantID, candidat
 	return s.Store.ListExecutionSnapshots(ctx, tenantID, candidateID, page, pageSize)
 }
 
-func (s *Service) ListEvaluationRuns(ctx context.Context, tenantID, candidateID string, page, pageSize int) ([]model.EvaluationRun, int64, error) {
-	return s.Store.ListEvaluationRuns(ctx, tenantID, candidateID, page, pageSize)
+func (s *Service) ListEvaluationRuns(ctx context.Context, tenantID string, filter repository.EvaluationScopeFilter, page, pageSize int) ([]model.EvaluationRun, int64, error) {
+	return s.Store.ListEvaluationRuns(ctx, tenantID, filter, page, pageSize)
 }
 
-func (s *Service) ListEvidenceBundles(ctx context.Context, tenantID, candidateID string, page, pageSize int) ([]model.EvidenceBundle, int64, error) {
-	return s.Store.ListEvidenceBundles(ctx, tenantID, candidateID, page, pageSize)
+func (s *Service) ListEvidenceBundles(ctx context.Context, tenantID string, filter repository.EvaluationScopeFilter, page, pageSize int) ([]model.EvidenceBundle, int64, error) {
+	return s.Store.ListEvidenceBundles(ctx, tenantID, filter, page, pageSize)
 }
 
 func (s *Service) ListGateDecisions(ctx context.Context, tenantID, candidateID string, candidateVersion int64, page, pageSize int) ([]model.ReleaseGateDecision, int64, error) {
@@ -607,16 +621,85 @@ func (s *Service) CreateExecutionSnapshot(ctx context.Context, tenantID, userID 
 }
 
 func (s *Service) CreateEvaluationRun(ctx context.Context, tenantID, userID string, input EvaluationRunInput) (*model.EvaluationRun, error) {
-	candidate, err := s.getReleaseCandidateByIdentity(ctx, tenantID, input.ReleaseCandidateID, input.CandidateVersion)
-	if err != nil || candidate == nil {
-		return nil, httperr.NotFound("release candidate not found")
+	scope := input.EvaluationScope
+	if scope == "" {
+		scope = model.EvaluationScopeRelease
 	}
-	snapshot, err := s.Store.GetExecutionSnapshot(ctx, tenantID, input.ExecutionSnapshotID)
-	if err != nil || snapshot == nil {
-		return nil, httperr.NotFound("execution snapshot not found")
+	candidateVersion := input.CandidateVersion
+	run := &model.EvaluationRun{
+		ID: id.New(), TenantID: tenantID, EvalSetID: input.EvalSetID,
+		EvalSetVersion: input.EvalSetVersion, EvalSetHash: input.EvalSetHash,
+		EvaluationPolicyVersion: input.EvaluationPolicyVersion, EvaluationPolicyHash: input.EvaluationPolicyHash,
+		AggregationPolicyVersion: input.AggregationPolicyVersion, AggregationPolicyHash: input.AggregationPolicyHash,
+		Capability:      input.Capability,
+		ExecutionMode:   map[bool]string{true: "manual_result", false: input.ExecutionMode}[input.ExecutionMode == ""],
+		ExecutionConfig: "{}",
+		Status:          model.EvaluationRunQueued, Actor: userID,
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
-	if snapshot.ReleaseCandidateID != candidate.CandidateID || snapshot.CandidateVersion != input.CandidateVersion {
-		return nil, httperr.BadRequest(40072, "evaluation candidate binding mismatch")
+	var candidate *model.ReleaseCandidate
+	if input.ExecutionConfig != nil {
+		encodedConfig, err := validPayloadJSON(input.ExecutionConfig, 40072, "execution config must be JSON")
+		if err != nil {
+			return nil, err
+		}
+		run.ExecutionConfig = encodedConfig
+	}
+	if input.ExecutionMode != "" && input.ExecutionMode != "manual_result" && input.ExecutionMode != "paired_ab" {
+		return nil, httperr.BadRequest(40072, "unsupported evaluation execution mode")
+	}
+	if input.ExecutionMode == "paired_ab" {
+		if scope == model.EvaluationScopeRelease {
+			return nil, httperr.BadRequest(40072, "paired evaluation is scoped to compilation strategy or memory policy")
+		}
+		if _, err := requiredString(input.Capability, "evaluation capability"); err != nil {
+			return nil, err
+		}
+	}
+	if scope != model.EvaluationScopeRelease {
+		if input.ReleaseCandidateID != "" || input.ExecutionSnapshotID != "" ||
+			(input.XStrategyID != "" && input.XMemoryPolicyID != "") ||
+			(scope == model.EvaluationScopeCompilationStrategy && input.XMemoryPolicyID != "") ||
+			(scope == model.EvaluationScopeMemoryPolicy && input.XStrategyID != "") {
+			return nil, httperr.BadRequest(40072, "evaluation scope attribution is exclusive")
+		}
+		run.EvaluationScope = scope
+		switch scope {
+		case model.EvaluationScopeCompilationStrategy:
+			strategy, err := s.Store.GetKnowledgeStrategy(ctx, tenantID, input.XStrategyID)
+			if err != nil || strategy == nil {
+				return nil, httperr.BadRequest(40072, "knowledge strategy not found")
+			}
+			run.XStrategyID = &strategy.ID
+		case model.EvaluationScopeMemoryPolicy:
+			policy, err := s.Store.GetMemoryPolicy(ctx, tenantID, input.XMemoryPolicyID)
+			if err != nil || policy == nil {
+				return nil, httperr.BadRequest(40072, "memory policy not found")
+			}
+			run.XMemoryPolicyID = &policy.ID
+		default:
+			return nil, httperr.BadRequest(40072, "unsupported evaluation scope")
+		}
+	} else {
+		if input.XStrategyID != "" || input.XMemoryPolicyID != "" {
+			return nil, httperr.BadRequest(40072, "release evaluation cannot use scoped attribution")
+		}
+		run.EvaluationScope = model.EvaluationScopeRelease
+		var err error
+		candidate, err = s.getReleaseCandidateByIdentity(ctx, tenantID, input.ReleaseCandidateID, input.CandidateVersion)
+		if err != nil || candidate == nil {
+			return nil, httperr.NotFound("release candidate not found")
+		}
+		snapshot, err := s.Store.GetExecutionSnapshot(ctx, tenantID, input.ExecutionSnapshotID)
+		if err != nil || snapshot == nil {
+			return nil, httperr.NotFound("execution snapshot not found")
+		}
+		if snapshot.ReleaseCandidateID != candidate.CandidateID || snapshot.CandidateVersion != input.CandidateVersion {
+			return nil, httperr.BadRequest(40072, "evaluation candidate binding mismatch")
+		}
+		run.ReleaseCandidateID = &candidate.CandidateID
+		run.CandidateVersion = &candidateVersion
+		run.ExecutionSnapshotID = snapshot.ID
 	}
 	evalSetVersion, err := s.Store.GetEvaluationSetVersion(ctx, tenantID, input.EvalSetID, input.EvalSetVersion)
 	if err != nil || evalSetVersion == nil {
@@ -630,23 +713,18 @@ func (s *Service) CreateEvaluationRun(ctx context.Context, tenantID, userID stri
 			return nil, err
 		}
 	}
-	run := &model.EvaluationRun{
-		ID: id.New(), TenantID: tenantID, ReleaseCandidateID: candidate.CandidateID,
-		CandidateVersion: input.CandidateVersion, EvalSetID: input.EvalSetID,
-		EvalSetVersion: input.EvalSetVersion, EvalSetHash: input.EvalSetHash,
-		EvaluationPolicyVersion: input.EvaluationPolicyVersion, EvaluationPolicyHash: input.EvaluationPolicyHash,
-		AggregationPolicyVersion: input.AggregationPolicyVersion, AggregationPolicyHash: input.AggregationPolicyHash,
-		ExecutionSnapshotID: snapshot.ID, Status: model.EvaluationRunQueued,
-		Actor: userID, CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}
 	if err := s.Store.CreateEvaluationRun(ctx, run); err != nil {
 		return nil, err
 	}
 	if err := s.Store.StartEvaluationRun(ctx, run.ID); err != nil {
 		return nil, err
 	}
-	_ = s.Store.TransitionReleaseCandidate(ctx, tenantID, candidate.CandidateID, candidate.Status, model.CandidateEvaluating)
+	if candidate != nil {
+		_ = s.Store.TransitionReleaseCandidate(ctx, tenantID, candidate.CandidateID, candidate.Status, model.CandidateEvaluating)
+	}
+	if err := s.enqueueScopedEvaluationRun(ctx, run); err != nil {
+		return nil, err
+	}
 	return run, nil
 }
 
@@ -704,7 +782,7 @@ func (s *Service) CreateEvaluationCaseVersion(ctx context.Context, tenantID, use
 		EvalSetVersion: input.EvalSetVersion, CaseID: input.CaseID, CaseVersion: input.CaseVersion,
 		Hash: sha256Hex(string(identity)), Question: input.Question, ExpectedAnswer: input.ExpectedAnswer,
 		ExpectedKeywords: input.ExpectedKeywords, ExpectedCitationDocIDs: input.ExpectedCitationDocIDs,
-		Metadata: metadata, CreatedBy: userID, CreatedAt: time.Now().UTC(),
+		Metadata: metadata, PairedSampleID: input.PairedSampleID, CreatedBy: userID, CreatedAt: time.Now().UTC(),
 	}
 	if err := s.Store.CreateEvaluationCaseVersions(ctx, []model.EvaluationCaseVersion{*version}); err != nil {
 		return nil, httperr.New(409, 40984, "evaluation case version already exists")
@@ -738,9 +816,12 @@ func (s *Service) AddEvaluationCaseResult(ctx context.Context, tenantID, userID 
 	result := &model.EvaluationCaseResult{
 		ID: id.New(), TenantID: tenantID, RunID: run.ID, CaseID: input.CaseID,
 		CaseVersionID: input.CaseVersionID, CaseVersionHash: input.CaseVersionHash,
+		PairedSampleID: input.PairedSampleID, ExperimentArm: input.ExperimentArm,
 		ActualAnswer: input.ActualAnswer, References: references, Metrics: metrics,
 		Pass: input.Pass, FailureReason: input.FailureReason, LatencyMs: input.LatencyMs,
-		Tokens: input.Tokens, CreatedAt: time.Now().UTC(),
+		Tokens: input.Tokens, HitAtK: input.HitAtK, AnswerCorrect: input.AnswerCorrect,
+		NoAnswer: input.NoAnswer, CitationPrecision: input.CitationPrecision,
+		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.Store.CreateEvaluationCaseResult(ctx, result); err != nil {
 		return nil, httperr.New(409, 40985, "case result already exists")
@@ -784,26 +865,68 @@ func (s *Service) CompleteEvaluationRun(ctx context.Context, tenantID, runID str
 	if err := s.Store.CompleteEvaluationRun(ctx, run.ID, status, string(metrics), pass); err != nil {
 		return nil, err
 	}
-	_ = s.Store.TransitionReleaseCandidate(ctx, tenantID, run.ReleaseCandidateID, model.CandidateEvaluating, model.CandidateEvaluated)
+	if run.ReleaseCandidateID != nil && *run.ReleaseCandidateID != "" {
+		_ = s.Store.TransitionReleaseCandidate(ctx, tenantID, *run.ReleaseCandidateID, model.CandidateEvaluating, model.CandidateEvaluated)
+	}
 	return s.Store.GetEvaluationRun(ctx, tenantID, runID)
 }
 
 func (s *Service) CreateEvidenceBundle(ctx context.Context, tenantID, userID string, input EvidenceBundleInput) (*model.EvidenceBundle, error) {
-	candidate, err := s.getReleaseCandidateByIdentity(ctx, tenantID, input.ReleaseCandidateID, input.CandidateVersion)
-	if err != nil || candidate == nil {
-		return nil, httperr.NotFound("release candidate not found")
-	}
 	run, err := s.Store.GetEvaluationRun(ctx, tenantID, input.EvaluationRunID)
 	if err != nil || run == nil {
 		return nil, httperr.NotFound("evaluation run not found")
 	}
-	snapshot, err := s.Store.GetExecutionSnapshot(ctx, tenantID, run.ExecutionSnapshotID)
-	if err != nil || snapshot == nil {
-		return nil, httperr.NotFound("execution snapshot not found")
+	bundle := &model.EvidenceBundle{
+		ID: id.New(), TenantID: tenantID,
+		EvaluationScope: run.EvaluationScope, XStrategyID: run.XStrategyID,
+		XMemoryPolicyID: run.XMemoryPolicyID,
+		SnapshotID:      run.ExecutionSnapshotID, EvaluationRunID: run.ID,
+		EvalSetID: run.EvalSetID, EvalSetVersion: run.EvalSetVersion,
+		EvalSetHash: run.EvalSetHash, EvaluationPolicyVersion: run.EvaluationPolicyVersion,
+		EvaluationPolicyHash: run.EvaluationPolicyHash, AggregationPolicyVersion: run.AggregationPolicyVersion,
+		AggregationPolicyHash: run.AggregationPolicyHash,
+		CreatedBy:             userID, CreatedAt: time.Now().UTC(),
 	}
-	if run.ReleaseCandidateID != candidate.CandidateID || run.CandidateVersion != input.CandidateVersion ||
-		snapshot.ReleaseCandidateID != candidate.CandidateID || snapshot.CandidateVersion != input.CandidateVersion ||
-		run.Status != model.EvaluationRunCompleted || run.Pass == nil {
+	if run.EvaluationScope == model.EvaluationScopeRelease {
+		if input.ReleaseCandidateID == "" || input.CandidateVersion <= 0 {
+			return nil, httperr.BadRequest(40074, "release evidence requires candidate identity")
+		}
+		candidate, err := s.getReleaseCandidateByIdentity(ctx, tenantID, input.ReleaseCandidateID, input.CandidateVersion)
+		if err != nil || candidate == nil {
+			return nil, httperr.NotFound("release candidate not found")
+		}
+		snapshot, err := s.Store.GetExecutionSnapshot(ctx, tenantID, run.ExecutionSnapshotID)
+		if err != nil || snapshot == nil {
+			return nil, httperr.NotFound("execution snapshot not found")
+		}
+		if run.ReleaseCandidateID == nil || *run.ReleaseCandidateID != candidate.CandidateID || run.CandidateVersion == nil ||
+			*run.CandidateVersion != input.CandidateVersion ||
+			snapshot.ReleaseCandidateID != candidate.CandidateID || snapshot.CandidateVersion != input.CandidateVersion {
+			return nil, httperr.BadRequest(40074, "evidence chain binding mismatch")
+		}
+		bundle.ReleaseCandidateID = &candidate.CandidateID
+		candidateVersion := input.CandidateVersion
+		bundle.CandidateVersion = &candidateVersion
+		if err := validateReleaseGateEvidenceContracts(
+			candidate, input.PermissionEvidence, input.ConfigurationEvidence,
+		); err != nil {
+			return nil, err
+		}
+		bundle.SnapshotHash = snapshot.SnapshotHash
+		bundle.ModelRouteVersion = snapshot.ModelRouteVersion
+		bundle.ModelRoutePinID = snapshot.ModelRoutePinID
+		bundle.ModelRoutePinVersion = snapshot.ModelRoutePinVersion
+		bundle.EnterpriseConnectionID = snapshot.EnterpriseConnectionID
+		bundle.EnterpriseConnectionVersion = snapshot.EnterpriseConnectionVersion
+		bundle.EnterpriseConnectionConfigHash = snapshot.EnterpriseConnectionConfigHash
+		bundle.EnterpriseBindingID = snapshot.EnterpriseBindingID
+		bundle.EnterpriseBindingVersion = snapshot.EnterpriseBindingVersion
+		bundle.EnterpriseModelRef = snapshot.EnterpriseModelRef
+		bundle.CredentialVersion = snapshot.CredentialVersion
+	} else if input.ReleaseCandidateID != "" || input.CandidateVersion > 0 {
+		return nil, httperr.BadRequest(40074, "scoped evidence cannot use release attribution")
+	}
+	if run.Status != model.EvaluationRunCompleted || run.Pass == nil {
 		return nil, httperr.BadRequest(40074, "evidence chain binding mismatch")
 	}
 	evidence := map[string]json.RawMessage{
@@ -822,28 +945,15 @@ func (s *Service) CreateEvidenceBundle(ctx context.Context, tenantID, userID str
 		return nil, err
 	}
 	bundleHash := sha256Hex(string(canonical))
-	bundle := &model.EvidenceBundle{
-		ID: id.New(), TenantID: tenantID, ReleaseCandidateID: candidate.CandidateID,
-		CandidateVersion: input.CandidateVersion, SnapshotID: snapshot.ID, SnapshotHash: snapshot.SnapshotHash,
-		ModelRouteVersion: snapshot.ModelRouteVersion, ModelRoutePinID: snapshot.ModelRoutePinID,
-		ModelRoutePinVersion:           snapshot.ModelRoutePinVersion,
-		EnterpriseConnectionID:         snapshot.EnterpriseConnectionID,
-		EnterpriseConnectionVersion:    snapshot.EnterpriseConnectionVersion,
-		EnterpriseConnectionConfigHash: snapshot.EnterpriseConnectionConfigHash,
-		EnterpriseBindingID:            snapshot.EnterpriseBindingID,
-		EnterpriseBindingVersion:       snapshot.EnterpriseBindingVersion,
-		EnterpriseModelRef:             snapshot.EnterpriseModelRef,
-		CredentialVersion:              snapshot.CredentialVersion,
-		EvaluationRunID:                run.ID, EvalSetID: run.EvalSetID, EvalSetVersion: run.EvalSetVersion,
-		EvalSetHash: run.EvalSetHash, EvaluationPolicyVersion: run.EvaluationPolicyVersion,
-		EvaluationPolicyHash: run.EvaluationPolicyHash, AggregationPolicyVersion: run.AggregationPolicyVersion,
-		AggregationPolicyHash: run.AggregationPolicyHash, SecurityEvidence: string(input.SecurityEvidence),
-		PolicyEvidence: string(input.PolicyEvidence), RiskEvidence: string(input.RiskEvidence),
-		PermissionEvidence: string(input.PermissionEvidence), ConfigurationEvidence: string(input.ConfigurationEvidence),
-		ApprovalEvidence: string(input.ApprovalEvidence), EvidenceItems: string(input.EvidenceItems),
-		HashAlgorithm: model.HashAlgorithmSHA256, BundleHash: bundleHash,
-		CreatedBy: userID, CreatedAt: time.Now().UTC(),
-	}
+	bundle.SecurityEvidence = string(input.SecurityEvidence)
+	bundle.PolicyEvidence = string(input.PolicyEvidence)
+	bundle.RiskEvidence = string(input.RiskEvidence)
+	bundle.PermissionEvidence = string(input.PermissionEvidence)
+	bundle.ConfigurationEvidence = string(input.ConfigurationEvidence)
+	bundle.ApprovalEvidence = string(input.ApprovalEvidence)
+	bundle.EvidenceItems = string(input.EvidenceItems)
+	bundle.HashAlgorithm = model.HashAlgorithmSHA256
+	bundle.BundleHash = bundleHash
 	if err := s.Store.CreateEvidenceBundle(ctx, bundle); err != nil {
 		return nil, httperr.New(409, 40986, "evidence bundle already exists")
 	}
@@ -859,7 +969,11 @@ func (s *Service) EvaluateReleaseGate(ctx context.Context, tenantID, userID stri
 	if err != nil || bundle == nil {
 		return nil, httperr.NotFound("evidence bundle not found")
 	}
-	if bundle.ReleaseCandidateID != candidate.CandidateID || bundle.CandidateVersion != input.CandidateVersion {
+	if bundle.EvaluationScope != model.EvaluationScopeRelease {
+		return nil, httperr.BadRequest(40075, "scoped evaluations cannot create release gates")
+	}
+	if bundle.ReleaseCandidateID == nil || *bundle.ReleaseCandidateID != candidate.CandidateID || bundle.CandidateVersion == nil ||
+		*bundle.CandidateVersion != input.CandidateVersion {
 		return nil, httperr.BadRequest(40075, "gate candidate binding mismatch")
 	}
 	snapshot, err := s.Store.GetExecutionSnapshot(ctx, tenantID, bundle.SnapshotID)
@@ -873,8 +987,8 @@ func (s *Service) EvaluateReleaseGate(ctx context.Context, tenantID, userID stri
 	if bundle.SnapshotHash != snapshot.SnapshotHash ||
 		snapshot.ReleaseCandidateID != candidate.CandidateID ||
 		snapshot.CandidateVersion != input.CandidateVersion ||
-		run.ReleaseCandidateID != candidate.CandidateID ||
-		run.CandidateVersion != input.CandidateVersion ||
+		run.ReleaseCandidateID == nil || *run.ReleaseCandidateID != candidate.CandidateID ||
+		run.CandidateVersion == nil || *run.CandidateVersion != input.CandidateVersion ||
 		run.EvalSetID != bundle.EvalSetID ||
 		run.EvalSetVersion != bundle.EvalSetVersion ||
 		run.EvalSetHash != bundle.EvalSetHash ||
@@ -891,9 +1005,9 @@ func (s *Service) EvaluateReleaseGate(ctx context.Context, tenantID, userID stri
 	default:
 		return nil, httperr.BadRequest(40075, "unsupported release environment")
 	}
-	var states map[string]string
-	if err := json.Unmarshal(input.SubGateStates, &states); err != nil || len(states) != 6 {
-		return nil, httperr.BadRequest(40075, "six sub gate states are required")
+	states, err := parseReleaseGateStates(input.SubGateStates)
+	if err != nil {
+		return nil, err
 	}
 	overall := model.GateDecisionPass
 	hasWarning := false
@@ -970,6 +1084,28 @@ func (s *Service) EvaluateReleaseGate(ctx context.Context, tenantID, userID stri
 	}
 	_ = s.Store.TransitionReleaseCandidate(ctx, tenantID, candidate.CandidateID, candidate.Status, nextStatus)
 	return decision, nil
+}
+
+func parseReleaseGateStates(raw json.RawMessage) (map[string]string, error) {
+	var states map[string]string
+	if err := json.Unmarshal(raw, &states); err != nil {
+		return nil, httperr.BadRequest(40075, "release sub gate states must be JSON")
+	}
+	if len(states) != len(model.ReleaseGateNames) {
+		return nil, httperr.BadRequest(40075, "all eleven release sub gate states are required")
+	}
+	for _, name := range model.ReleaseGateNames {
+		state, found := states[name]
+		if !found {
+			return nil, httperr.BadRequest(40075, "release sub gate "+name+" is required")
+		}
+		switch state {
+		case model.GateReportPass, model.GateReportWarn, model.GateReportWaived, model.GateDecisionBlock:
+		default:
+			return nil, httperr.BadRequest(40075, "release sub gate "+name+" has an invalid state")
+		}
+	}
+	return states, nil
 }
 
 func (s *Service) CreateRelease(ctx context.Context, tenantID, userID string, input ReleaseInput) (*model.Release, error) {
@@ -1188,7 +1324,7 @@ func (s *Service) VerifyQualityIssue(ctx context.Context, tenantID string, issue
 	if err != nil || run == nil {
 		return nil, httperr.NotFound("evaluation run not found")
 	}
-	if run.ReleaseCandidateID != issue.ResolutionTargetID || run.Status != model.EvaluationRunCompleted ||
+	if run.ReleaseCandidateID == nil || *run.ReleaseCandidateID != issue.ResolutionTargetID || run.Status != model.EvaluationRunCompleted ||
 		run.Pass == nil || !*run.Pass {
 		return nil, httperr.New(409, 40989, "quality issue resolution target and passing run do not match")
 	}

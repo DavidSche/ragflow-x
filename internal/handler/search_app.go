@@ -276,7 +276,7 @@ func (h *Handler) SearchAppCompletion(c *gin.Context) {
 		return
 	}
 	searchAppID := c.Param("id")
-	resp, err := h.Service.SearchAppCompletion(ctx, tenantID, searchAppID, req.Question, c.GetString("request_id"), false)
+	resp, err := h.Service.SearchAppCompletion(ctx, tenantID, userID, searchAppID, req.Question, c.GetString("request_id"), false)
 	if err != nil {
 		response.Err(c, err)
 		return
@@ -304,7 +304,7 @@ func (h *Handler) StreamSearchAppCompletion(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Status(200)
-	if err := h.Service.StreamSearchAppCompletion(ctx, tenantID, searchAppID, req.Question, c.GetString("request_id"), false, c.Writer); err != nil {
+	if err := h.Service.StreamSearchAppCompletion(ctx, tenantID, userID, searchAppID, req.Question, c.GetString("request_id"), false, c.Writer); err != nil {
 		// Stream already started; send an OpenAI-style error frame.
 		message := "completion request failed"
 		if he, ok := err.(*httperr.Error); ok {

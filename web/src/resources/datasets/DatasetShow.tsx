@@ -10,6 +10,7 @@ import { Show } from "@/components/admin";
 import { useRecordContext, useTranslate } from "ra-core";
 import { ConfigurationPanel } from "./ConfigurationPanel";
 import { DocumentsPanel } from "./DocumentsPanel";
+import { KnowledgeCompilationPanel } from "./KnowledgeCompilationPanel";
 
 export const DatasetShow = () => {
   const t = useTranslate();
@@ -30,6 +31,7 @@ const DatasetDetail = () => {
       </div>
       <DocumentsPanel />
       <ConfigurationPanel />
+      <KnowledgeCompilationPanel />
     </div>
   );
 };

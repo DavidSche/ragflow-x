@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -65,6 +66,10 @@ type Store interface {
 	DBConnectionRepo
 	QueryTemplateRepo
 	KnowledgeStrategyRepo
+	KnowledgeCompilationRepo
+	MemoryPolicyRepo
+	ConversationContextRepo
+	ReleaseGateRuntimeEvidenceRepo
 	FactGuardRepo
 }
 
@@ -117,6 +122,7 @@ type DatasetRepo interface {
 	DeleteDatasetLinkByTenant(ctx context.Context, tenantID, id string) error
 	SetDatasetProject(ctx context.Context, tenantID, id, projectID string) error
 	UpdateDatasetLinkName(ctx context.Context, tenantID, id, name string) error
+	UpdateDatasetLinkCompilationBudget(ctx context.Context, tenantID, id string, budget int64) error
 	UpsertDatasetLink(ctx context.Context, d *model.DatasetLink) error
 	CreateDocumentOwnership(ctx context.Context, ownership *model.DocumentOwnershipLink) error
 	ListDocumentOwners(ctx context.Context, tenantID, datasetID string, documentIDs []string) ([]model.DocumentOwnershipLink, error)
@@ -536,6 +542,15 @@ func (s *store) SetDatasetProject(ctx context.Context, tenantID, id, projectID s
 func (s *store) UpdateDatasetLinkName(ctx context.Context, tenantID, id, name string) error {
 	return s.WithContext(ctx).Model(&model.DatasetLink{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).Update("name", name).Error
+}
+
+func (s *store) UpdateDatasetLinkCompilationBudget(ctx context.Context, tenantID, id string, budget int64) error {
+	if budget < 0 {
+		return fmt.Errorf("compilation token budget must not be negative")
+	}
+	return s.WithContext(ctx).Model(&model.DatasetLink{}).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Update("compilation_token_budget", budget).Error
 }
 
 func (s *store) UpsertDatasetLink(ctx context.Context, d *model.DatasetLink) error {

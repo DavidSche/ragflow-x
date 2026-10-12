@@ -88,11 +88,12 @@ func newCompletedGovernanceChain(t *testing.T, pass bool) (*Service, context.Con
 	if _, err := svc.CompleteEvaluationRun(ctx, tenant.ID, run.ID, false, ""); err != nil {
 		t.Fatal(err)
 	}
+	permissionEvidence, configurationEvidence := strictReleaseEvidenceRaw(candidate)
 	bundle, err := svc.CreateEvidenceBundle(ctx, tenant.ID, user.ID, EvidenceBundleInput{
 		ReleaseCandidateID: candidate.CandidateID, CandidateVersion: candidate.CandidateVersion,
 		EvaluationRunID: run.ID, SecurityEvidence: json.RawMessage(`{}`),
 		PolicyEvidence: json.RawMessage(`{}`), RiskEvidence: json.RawMessage(`{}`),
-		PermissionEvidence: json.RawMessage(`{}`), ConfigurationEvidence: json.RawMessage(`{}`),
+		PermissionEvidence: permissionEvidence, ConfigurationEvidence: configurationEvidence,
 		ApprovalEvidence: json.RawMessage(`{}`), EvidenceItems: json.RawMessage(`[]`),
 	})
 	if err != nil {
@@ -226,11 +227,18 @@ func TestCreateScenarioTemplateReleaseCandidateRequiresEvaluationQuestions(t *te
 	}
 }
 
+func namedPassingReleaseSubGates() map[string]string {
+	states := make(map[string]string, len(model.ReleaseGateNames))
+	for _, name := range model.ReleaseGateNames {
+		states[name] = model.GateReportPass
+	}
+	return states
+}
+
 func passingSubGates(state string) string {
-	data, _ := json.Marshal(map[string]string{
-		"security": state, "policy": "PASS", "risk": "PASS", "permission": "PASS",
-		"configuration": "PASS", "approval": "PASS",
-	})
+	states := namedPassingReleaseSubGates()
+	states[model.ReleaseGateCompilationContract] = state
+	data, _ := json.Marshal(states)
 	return string(data)
 }
 
@@ -243,6 +251,18 @@ func TestReleaseGateRejectsIncompleteWaiverEvidence(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected incomplete waiver evidence to be rejected")
+	}
+}
+
+func TestReleaseGateRequiresElevenNamedSubGates(t *testing.T) {
+	svc, ctx, tenant, user, candidate, _, bundle := newCompletedGovernanceChain(t, true)
+	_, err := svc.EvaluateReleaseGate(ctx, tenant.ID, user.ID, GateDecisionInput{
+		ReleaseCandidateID: candidate.CandidateID, CandidateVersion: candidate.CandidateVersion,
+		EvidenceBundleID: bundle.ID, Environment: "production", SubGateStates: json.RawMessage(`{}`),
+		EnvironmentPolicyVersion: "v1", EnvironmentPolicyHash: "env-hash",
+	})
+	if err == nil {
+		t.Fatal("expected incomplete release sub gate contract to be rejected")
 	}
 }
 
@@ -352,20 +372,18 @@ func TestQualityToReleaseSuccessChain(t *testing.T) {
 	if err != nil || run.Pass == nil || !*run.Pass {
 		t.Fatalf("complete run: run=%+v err=%v", run, err)
 	}
+	permissionEvidence, configurationEvidence := strictReleaseEvidenceRaw(candidate)
 	bundle, err := svc.CreateEvidenceBundle(ctx, tenant.ID, user.ID, EvidenceBundleInput{
 		ReleaseCandidateID: candidate.CandidateID, CandidateVersion: candidate.CandidateVersion,
 		EvaluationRunID: run.ID, SecurityEvidence: json.RawMessage(`{}`),
 		PolicyEvidence: json.RawMessage(`{}`), RiskEvidence: json.RawMessage(`{}`),
-		PermissionEvidence: json.RawMessage(`{}`), ConfigurationEvidence: json.RawMessage(`{}`),
+		PermissionEvidence: permissionEvidence, ConfigurationEvidence: configurationEvidence,
 		ApprovalEvidence: json.RawMessage(`{}`), EvidenceItems: json.RawMessage(`[]`),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	subGates, _ := json.Marshal(map[string]string{
-		"security": "PASS", "policy": "PASS", "risk": "PASS", "permission": "PASS",
-		"configuration": "PASS", "approval": "PASS",
-	})
+	subGates, _ := json.Marshal(namedPassingReleaseSubGates())
 	gate, err := svc.EvaluateReleaseGate(ctx, tenant.ID, user.ID, GateDecisionInput{
 		ReleaseCandidateID: candidate.CandidateID, CandidateVersion: candidate.CandidateVersion,
 		EvidenceBundleID: bundle.ID, Environment: "production", SubGateStates: subGates,

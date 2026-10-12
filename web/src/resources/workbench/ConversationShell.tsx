@@ -28,6 +28,7 @@ interface ConversationShellProps {
   onOpenCitation?: (citation: Citation) => void;
   onOpenDocument?: (citation: Citation) => void;
   onCreateKnowledgeTask?: (turnId: string) => void;
+  onOpenContextSource?: (turnId: string) => void;
 }
 
 export function ConversationShell({
@@ -56,6 +57,7 @@ export function ConversationShell({
   onOpenCitation,
   onOpenDocument,
   onCreateKnowledgeTask,
+  onOpenContextSource,
 }: ConversationShellProps) {
   useEffect(() => {
     if (scrollRef?.current) {
@@ -67,9 +69,16 @@ export function ConversationShell({
     <div className={`flex min-h-0 min-w-0 ${className}`}>
       {sidebar ? <div className={sidebarClassName}>{sidebar}</div> : null}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {toolbar ? <div className="flex shrink-0 flex-wrap items-center gap-2">{toolbar}</div> : null}
+        {toolbar ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {toolbar}
+          </div>
+        ) : null}
         {beforeMessages}
-        <div ref={scrollRef} className={`flex min-h-0 flex-col overflow-y-auto rounded border p-3 ${scrollClassName ?? ""}`}>
+        <div
+          ref={scrollRef}
+          className={`flex min-h-0 flex-col overflow-y-auto rounded border p-3 ${scrollClassName ?? ""}`}
+        >
           <div aria-label={messagesAriaLabel}>
             <ConversationMessageList
               className={messageListClassName}
@@ -84,9 +93,10 @@ export function ConversationShell({
               onCancelComment={onCancelComment}
               onCopy={onCopy}
               onRegenerate={onRegenerate}
-            onOpenCitation={onOpenCitation}
-            onOpenDocument={onOpenDocument}
-            onCreateKnowledgeTask={onCreateKnowledgeTask}
+              onOpenCitation={onOpenCitation}
+              onOpenDocument={onOpenDocument}
+              onCreateKnowledgeTask={onCreateKnowledgeTask}
+              onOpenContextSource={onOpenContextSource}
             />
           </div>
         </div>

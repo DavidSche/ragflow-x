@@ -40,7 +40,9 @@ func (s *Service) CreateDataset(ctx context.Context, tenantID, name string) (*Da
 	if existing != nil {
 		return nil, displayNameConflict("dataset")
 	}
-	ds, err := s.RAGFlow.CreateDataset(ctx, ragflow.CreateDatasetRequest{Name: name})
+	ds, err := s.RAGFlow.CreateDataset(ctx, ragflow.CreateDatasetRequest{
+		Name: name, ParseType: 1, ParserID: "naive",
+	})
 	if err != nil {
 		return nil, httperr.New(502, 50200, "ragflow create dataset failed")
 	}
@@ -198,6 +200,22 @@ func (s *Service) UpdateDataset(ctx context.Context, tenantID, datasetID, name s
 	return &DatasetSummary{
 		ID: d.ID, TenantID: tenantID, Name: name, RAGFlowDatasetID: d.RAGFlowDatasetID,
 	}, nil
+}
+
+func (s *Service) UpdateDatasetCompilationBudget(
+	ctx context.Context, tenantID, datasetID string, budget int64,
+) error {
+	if budget < 0 {
+		return httperr.BadRequest(40147, "compilation_token_budget must not be negative")
+	}
+	dataset, err := s.Store.GetDatasetLink(ctx, tenantID, datasetID)
+	if err != nil {
+		return err
+	}
+	if dataset == nil {
+		return httperr.NotFound("dataset not found")
+	}
+	return s.Store.UpdateDatasetLinkCompilationBudget(ctx, tenantID, datasetID, budget)
 }
 
 // DeleteDataset removes the dataset from RAGFlow and drops its link.

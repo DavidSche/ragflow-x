@@ -4,7 +4,7 @@
 .PHONY: help build build-server build-web dev dev-web tidy check \
         start start-local stop status restart \
         test test-v test-p0 test-contract test-race test-coverage test-frontend-coverage test-frontend-coverage-report \
-        test-integration test-pg-contract test-operational-contracts test-warning-contracts test-e2e test-quality-report test-changed-coverage test-coverage-trend test-query-plan-trend test-flake-report test-governance-report check-nightly check-release lint vet typecheck clean \
+        test-integration test-pg-contract test-pg-release-rollback test-operational-contracts test-warning-contracts test-e2e test-quality-report test-changed-coverage test-coverage-trend test-query-plan-trend test-flake-report test-governance-report check-nightly check-release lint vet typecheck clean \
         docker-build docker-up docker-down docker-log docker-ps docker-config
 
 # ─── Platform detection ───────────────────────────────────────────────
@@ -86,6 +86,9 @@ test-pg-contract: ## Run internal/db PG contract tests against a disposable rgx_
 
 test-pg-contract-keep: ## Same as test-pg-contract but keeps the disposable database for debugging
 	go run ./cmd/testcontract-pg -keep
+
+test-pg-release-rollback: ## Run pg_dump/pg_restore release rollback contract (set RGX_TEST_POSTGRES_DSN)
+	go run ./cmd/testcontract-pg -run '^TestPostgresReleaseRollbackContract$' -timeout 10m
 
 test-p0: ## Run P0 scenario regressions selected by TestP0_ naming
 	go test -count=1 -shuffle=on -run '^TestP0_' ./...

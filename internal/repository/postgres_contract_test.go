@@ -45,6 +45,49 @@ func newPostgresContractStore(t *testing.T) Store {
 	return store
 }
 
+func TestPostgresMemoryPolicyActiveScopeIndex(t *testing.T) {
+	store := newPostgresContractStore(t)
+	ctx := context.Background()
+	tenantID := id.New()
+	memoryID := id.New()
+	base := model.MemoryPolicy{
+		TenantID: tenantID, AssistantID: "assistant-active-scope",
+		RagflowMemoryID: memoryID, State: model.MemoryPolicyActive,
+		ReadPolicy: "owner", WritePolicy: "owner", PolicyVersion: 1,
+		PolicyGeneration: 1, ConsentVersion: 1, Config: "{}",
+		CreatedBy: tenantID, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+
+	userPolicy := base
+	userPolicy.ID = id.New()
+	userPolicy.UserID = id.New()
+	if err := store.CreateMemoryPolicy(ctx, &userPolicy); err != nil {
+		t.Fatalf("create active user policy: %v", err)
+	}
+	otherUser := base
+	otherUser.ID = id.New()
+	otherUser.UserID = id.New()
+	otherUser.RagflowMemoryID = id.New()
+	if err := store.CreateMemoryPolicy(ctx, &otherUser); err != nil {
+		t.Fatalf("create active policy for another user: %v", err)
+	}
+
+	projectPolicy := base
+	projectPolicy.ID = id.New()
+	projectPolicy.UserID = ""
+	projectPolicy.ProjectID = id.New()
+	projectPolicy.RagflowMemoryID = id.New()
+	if err := store.CreateMemoryPolicy(ctx, &projectPolicy); err != nil {
+		t.Fatalf("create active project policy in another scope: %v", err)
+	}
+	duplicateProject := projectPolicy
+	duplicateProject.ID = id.New()
+	duplicateProject.RagflowMemoryID = id.New()
+	if err := store.CreateMemoryPolicy(ctx, &duplicateProject); err == nil {
+		t.Fatal("duplicate active project scope must be rejected")
+	}
+}
+
 func createDatabase(t *testing.T, adminDSN, databaseName string) {
 	t.Helper()
 	admin, err := gorm.Open(postgres.Open(adminDSN), &gorm.Config{})

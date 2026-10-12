@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
+	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
 func (h *Handler) memoryScopeAll(c *gin.Context) bool {
@@ -54,6 +56,16 @@ type memoryMessagePayload struct {
 
 type memoryMessageStatusPayload struct {
 	Status bool `json:"status"`
+}
+
+type memoryGovernedSearchPayload struct {
+	Query                    string  `json:"query" binding:"required"`
+	AssistantID              string  `json:"assistant_id" binding:"required"`
+	SessionID                string  `json:"session_id" binding:"required"`
+	RequestID                string  `json:"request_id" binding:"required"`
+	SimilarityThreshold      float64 `json:"threshold"`
+	KeywordsSimilarityWeight float64 `json:"weight"`
+	TopN                     int     `json:"top_n"`
 }
 
 // ListMemories returns the caller's memories.
@@ -201,7 +213,7 @@ func (h *Handler) AddMemoryMessage(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID := c.GetString(middleware.ContextTenantID)
 	userID := c.GetString(middleware.ContextUserID)
-	if err := h.Service.Authorize(ctx, userID, "execute", "memory"); err != nil {
+	if err := h.Service.Authorize(ctx, userID, "execute", "memory-policy"); err != nil {
 		response.Err(c, err)
 		return
 	}
@@ -267,6 +279,20 @@ func (h *Handler) UpdateMemoryMessageStatus(c *gin.Context) {
 
 // SearchMemoryMessages runs a semantic retrieval against a memory.
 func (h *Handler) SearchMemoryMessages(c *gin.Context) {
+	allowed := map[string]bool{
+		"query": true, "threshold": true, "weight": true, "top_n": true,
+		"agent_id": true, "session_id": true, "user_id": true, "scope": true,
+	}
+	for key := range c.Request.URL.Query() {
+		if !allowed[key] {
+			response.Fail(c, 400, 40143, "unknown memory search parameter: "+key)
+			return
+		}
+	}
+	if strings.TrimSpace(c.Query("query")) == "" {
+		response.Fail(c, 400, 40096, "query is required")
+		return
+	}
 	ctx := c.Request.Context()
 	tenantID := c.GetString(middleware.ContextTenantID)
 	if err := h.Service.Authorize(ctx, c.GetString(middleware.ContextUserID), "execute", "memory"); err != nil {
@@ -277,27 +303,72 @@ func (h *Handler) SearchMemoryMessages(c *gin.Context) {
 	weight := 0.7
 	topN := 5
 	if v := c.Query("threshold"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			threshold = f
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f < 0 || f > 1 {
+			response.Fail(c, 400, 40144, "threshold must be between 0 and 1")
+			return
 		}
+		threshold = f
 	}
 	if v := c.Query("weight"); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			weight = f
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f < 0 || f > 1 {
+			response.Fail(c, 400, 40145, "weight must be between 0 and 1")
+			return
 		}
+		weight = f
 	}
 	if v := c.Query("top_n"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			topN = n
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > 100 {
+			response.Fail(c, 400, 40146, "top_n must be between 1 and 100")
+			return
 		}
+		topN = n
 	}
-	rows, err := h.Service.SearchMemoryMessages(ctx, tenantID, c.Param("id"), c.Query("query"), threshold, weight, topN, h.memoryScopeAll(c))
+	input := service.MemorySearchInput{
+		Query: c.Query("query"), AgentID: c.Query("agent_id"), SessionID: c.Query("session_id"), UserID: c.Query("user_id"),
+		SimilarityThreshold: threshold, KeywordsSimilarityWeight: weight, TopN: topN,
+	}
+	rows, err := h.Service.SearchMemoryMessages(ctx, tenantID, c.Param("id"), input, h.memoryScopeAll(c))
 	if err != nil {
 		response.Err(c, err)
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: c.GetString(middleware.ContextUserID), Action: "memory.message.search", Resource: "memory", ResourceID: c.Param("id"), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
 	response.OK(c, rows)
+}
+
+// SearchGovernedMemory runs policy-authorized memory retrieval and records an
+// immutable context decision before the first RAGFlow read.
+func (h *Handler) SearchGovernedMemory(c *gin.Context) {
+	var req memoryGovernedSearchPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40000, "invalid governed memory search payload")
+		return
+	}
+	ctx := c.Request.Context()
+	tenantID := c.GetString(middleware.ContextTenantID)
+	userID := c.GetString(middleware.ContextUserID)
+	if err := h.Service.Authorize(ctx, userID, "execute", "memory"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	result, err := h.Service.SearchGovernedMemory(ctx, tenantID, userID, c.Param("id"), service.GovernedMemorySearchInput{
+		Query: req.Query, AssistantID: req.AssistantID, SessionID: req.SessionID,
+		RequestID: req.RequestID, SimilarityThreshold: req.SimilarityThreshold,
+		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight, TopN: req.TopN,
+	})
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	h.RecordAudit(ctx, &model.AuditLog{
+		TenantID: tenantID, UserID: userID, Action: "memory.governed_search", Resource: "memory",
+		ResourceID: c.Param("id"), DetailJSON: result.Decision.ID, IP: c.ClientIP(),
+		TraceID: c.GetString("request_id"),
+	})
+	response.OK(c, result)
 }
 
 // GetMemoryMessageContent returns a memory message's full content.

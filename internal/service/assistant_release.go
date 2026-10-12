@@ -135,6 +135,14 @@ type ReleaseOperationPage struct {
 	Total int64                    `json:"total"`
 }
 
+type AssistantReleaseGateSummary struct {
+	ID                     string            `json:"id"`
+	Decision               string            `json:"decision"`
+	Reason                 string            `json:"reason"`
+	SubGateStates          map[string]string `json:"sub_gate_states"`
+	ReleaseEligibleForFull bool              `json:"release_eligible_for_full"`
+}
+
 var assistantReleaseTransitions = map[string][]string{
 	model.ReleaseDraft:          {model.ReleaseValidating},
 	model.ReleaseValidating:     {model.ReleaseSnapshotted},
@@ -183,6 +191,15 @@ func validateReleaseApprovalChain(ctx context.Context, tx Store, release *model.
 	if gate.EvidenceBundleID != release.EvidenceBundleID || !gate.ActiveGate ||
 		(gate.Decision != model.GateDecisionPass && gate.Decision != model.GateDecisionPassWithWarning) {
 		return httperr.New(422, 42230, "release gate evidence is invalid")
+	}
+	states, err := parseReleaseGateStates(json.RawMessage(gate.SubGateStates))
+	if err != nil {
+		return httperr.New(422, 42230, "release gate sub gate contract is invalid")
+	}
+	for _, name := range model.ReleaseGateNames {
+		if states[name] != model.GateReportPass {
+			return httperr.New(422, 42230, "release gate sub gate "+name+" is not passing")
+		}
 	}
 	if approval.Status != model.ApprovalStatusApproved && approval.Status != model.ApprovalStatusCompleted {
 		return httperr.New(422, 42230, "release approval is not approved")
@@ -600,6 +617,36 @@ func (s *Service) ListAssistantReleases(ctx context.Context, tenantID, assistant
 
 func (s *Service) GetAssistantRelease(ctx context.Context, tenantID, releaseID string) (*model.AssistantRelease, error) {
 	return s.getAssistantReleaseOrNotFound(ctx, tenantID, releaseID)
+}
+
+func (s *Service) GetAssistantReleaseGateSummary(ctx context.Context, tenantID, releaseID string) (*AssistantReleaseGateSummary, error) {
+	release, err := s.getAssistantReleaseOrNotFound(ctx, tenantID, releaseID)
+	if err != nil {
+		return nil, err
+	}
+	gate, err := s.Store.GetGateDecision(ctx, tenantID, release.GateDecisionID)
+	if err != nil {
+		return nil, httperr.New(502, 50230, "assistant release gate lookup failed")
+	}
+	if gate == nil {
+		return nil, httperr.NotFound("assistant release gate not found")
+	}
+	states, err := parseReleaseGateStates(json.RawMessage(gate.SubGateStates))
+	if err != nil {
+		return nil, httperr.New(422, 42230, "assistant release gate sub gate contract is invalid")
+	}
+	full := gate.ActiveGate &&
+		(gate.Decision == model.GateDecisionPass || gate.Decision == model.GateDecisionPassWithWarning)
+	for _, name := range model.ReleaseGateNames {
+		if states[name] != model.GateReportPass {
+			full = false
+			break
+		}
+	}
+	return &AssistantReleaseGateSummary{
+		ID: gate.ID, Decision: gate.Decision, Reason: gate.Reason,
+		SubGateStates: states, ReleaseEligibleForFull: full,
+	}, nil
 }
 
 func (s *Service) GetSnapshotManifest(ctx context.Context, tenantID, manifestID string) (*model.SnapshotManifest, error) {

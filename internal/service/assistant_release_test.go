@@ -26,6 +26,8 @@ type releaseFixture struct {
 	chatID      string
 }
 
+func int64Ptr(value int64) *int64 { return &value }
+
 func newReleaseFixture(t *testing.T, name string) (*Service, releaseFixture) {
 	t.Helper()
 	svc := newAuthzSvc(t)
@@ -93,7 +95,7 @@ func createReleaseEvidenceFixture(t *testing.T, svc *Service, tenantID, name str
 	now := time.Now().UTC()
 	candidateID := "cand-" + name
 	evidence := &model.EvidenceBundle{
-		ID: id.New(), TenantID: tenantID, ReleaseCandidateID: candidateID, CandidateVersion: 1,
+		ID: id.New(), TenantID: tenantID, ReleaseCandidateID: &candidateID, CandidateVersion: int64Ptr(1),
 		SnapshotID: "snapshot-" + name, SnapshotHash: "hash-" + name, ModelRouteVersion: "1",
 		EvaluationRunID: "run-" + name, EvalSetID: "set-" + name, EvalSetVersion: 1,
 		EvalSetHash: "set-hash-" + name, EvaluationPolicyVersion: "1", EvaluationPolicyHash: "policy-hash",
@@ -108,8 +110,9 @@ func createReleaseEvidenceFixture(t *testing.T, svc *Service, tenantID, name str
 	gate := &model.ReleaseGateDecision{
 		ID: id.New(), TenantID: tenantID, ReleaseCandidateID: candidateID, CandidateVersion: 1,
 		DecisionVersion: now.UnixNano(), EvidenceBundleID: evidence.ID, Environment: "production",
-		EnvironmentPolicyVersion: "1", EnvironmentPolicyHash: "env-hash", SubGateStates: "{}",
-		Decision: model.GateDecisionPass, ActiveGate: true, Actor: "tester",
+		EnvironmentPolicyVersion: "1", EnvironmentPolicyHash: "env-hash",
+		SubGateStates: passingReleaseGateStates(),
+		Decision:      model.GateDecisionPass, ActiveGate: true, Actor: "tester",
 		ApprovalID: id.New(), CreatedAt: now,
 	}
 	if _, err := svc.Store.CreateGateDecision(context.Background(), gate); err != nil {
@@ -126,6 +129,15 @@ func createReleaseEvidenceFixture(t *testing.T, svc *Service, tenantID, name str
 		t.Fatal(err)
 	}
 	return evidence.ID, gate.ID, approval.ID
+}
+
+func passingReleaseGateStates() string {
+	states := make(map[string]string, len(model.ReleaseGateNames))
+	for _, name := range model.ReleaseGateNames {
+		states[name] = model.GateReportPass
+	}
+	raw, _ := json.Marshal(states)
+	return string(raw)
 }
 
 func approveReleaseFixture(svc *Service, tenantID, userID, releaseID string) error {
@@ -189,6 +201,50 @@ func TestAssistantReleaseSnapshotLifecycleAndActivation(t *testing.T) {
 	}
 	if active.Total != 1 || active.Items[0].ID != fixture.releaseID {
 		t.Fatalf("expected exactly one ACTIVE release, got %+v", active.Items)
+	}
+}
+
+func TestAssistantReleaseRejectsIncompleteSubGates(t *testing.T) {
+	svc, fixture := newReleaseFixture(t, "sub-gates")
+	ctx := context.Background()
+	release, err := svc.GetAssistantRelease(ctx, fixture.tenantID, fixture.releaseID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	invalidGate := &model.ReleaseGateDecision{
+		ID: id.New(), TenantID: release.TenantID, ReleaseCandidateID: release.ID,
+		CandidateVersion: release.ReleaseVersion, DecisionVersion: now.UnixNano(),
+		EvidenceBundleID: release.EvidenceBundleID, Environment: "production",
+		EnvironmentPolicyVersion: "1", EnvironmentPolicyHash: "env-hash", SubGateStates: "{}",
+		Decision: model.GateDecisionPass, ActiveGate: true, Actor: "tester",
+		ApprovalID: release.ApprovalID, CreatedAt: now,
+	}
+	if created, err := svc.Store.CreateGateDecision(ctx, invalidGate); err != nil || !created {
+		t.Fatalf("create invalid gate: created=%v err=%v", created, err)
+	}
+	invalidRelease := *release
+	invalidRelease.GateDecisionID = invalidGate.ID
+	if err := validateReleaseApprovalChain(ctx, svc.Store, &invalidRelease); err == nil {
+		t.Fatal("expected release with missing sub gates to be rejected")
+	}
+}
+
+func TestAssistantReleaseGateSummaryRequiresFullPass(t *testing.T) {
+	svc, fixture := newReleaseFixture(t, "gate-summary")
+	summary, err := svc.GetAssistantReleaseGateSummary(
+		context.Background(), fixture.tenantID, fixture.releaseID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !summary.ReleaseEligibleForFull || len(summary.SubGateStates) != len(model.ReleaseGateNames) {
+		t.Fatalf("passing gate must permit full release: %+v", summary)
+	}
+	for _, name := range model.ReleaseGateNames {
+		if summary.SubGateStates[name] != model.GateReportPass {
+			t.Fatalf("gate %s is not PASS: %+v", name, summary)
+		}
 	}
 }
 

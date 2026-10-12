@@ -1,5 +1,5 @@
 import { api, ApiError, unwrap } from "../../lib/api";
-import { newId } from "../workbench/workbench-types";
+import { newId, restoredTurnId } from "../workbench/workbench-types";
 import {
   citationsFromReference,
   extractCitations,
@@ -137,12 +137,14 @@ function messageCitations(citations: Message["citations"]): Citation[] {
 }
 
 function messageFromRecord(record: Message, sessionId: string, index: number): Message {
+  const typedRecord = record as Message & { request_id?: string };
   return {
     ...record,
-    id: record.id ?? `${sessionId}:${index}`,
+    id: restoredTurnId(typedRecord, record.id ?? `${sessionId}:${index}`),
     kind: record.kind ?? "chat",
     citations: messageCitations(record.citations),
     status: record.status ?? "completed",
+    ...(typedRecord.request_id ? { turnId: `assistant-${typedRecord.request_id}` } : {}),
   };
 }
 
@@ -384,7 +386,7 @@ function startStream(
   connectTimer = setTimeout(() => failTimeout("connect"), 15_000);
   resetTransport();
   resetApplication();
-  const state: StreamState = { eventSequence: 0, assistantId: `assistant-${streamId}`, controller, streamId };
+  const state: StreamState = { eventSequence: 0, assistantId: `assistant-${requestId}`, controller, streamId };
   const request = async () => fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Request-Id": requestId },

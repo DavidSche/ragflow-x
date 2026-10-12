@@ -2,6 +2,7 @@ package ragflow
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -41,7 +42,34 @@ func (c *HTTPClient) GetPipeline(ctx context.Context, pipelineID string) (*Pipel
 	var pipeline PipelineTemplateDetail
 	path := "/pipelines/" + url.PathEscape(pipelineID)
 	if err := c.do(ctx, http.MethodGet, path, nil, "", &pipeline); err != nil {
-		return nil, err
+		var providerErr *Error
+		if !errors.As(err, &providerErr) || providerErr.Type != ErrorTypeBusiness ||
+			(providerErr.HTTPStatus != http.StatusNotFound && providerErr.Code != 102) {
+			return nil, err
+		}
+		return c.getUserPipeline(ctx, pipelineID)
 	}
 	return &pipeline, nil
+}
+
+type userPipelineResponse struct {
+	ID  string                 `json:"id"`
+	DSL map[string]interface{} `json:"dsl"`
+}
+
+func (c *HTTPClient) getUserPipeline(ctx context.Context, pipelineID string) (*PipelineTemplateDetail, error) {
+	var response userPipelineResponse
+	path := "/agents/" + url.PathEscape(pipelineID)
+	if err := c.do(ctx, http.MethodGet, path, nil, "", &response); err != nil {
+		return nil, err
+	}
+	if response.DSL == nil {
+		return nil, &Error{
+			Type:       ErrorTypeBusiness,
+			HTTPStatus: http.StatusNotFound,
+			Code:       102,
+			Message:    "pipeline not found",
+		}
+	}
+	return &PipelineTemplateDetail{DSL: response.DSL}, nil
 }

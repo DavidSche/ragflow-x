@@ -28,12 +28,20 @@ func writeEnvelope(t *testing.T, w http.ResponseWriter, data interface{}) {
 // ScenarioID: SC-PROVIDER-001
 func TestP0_PROVIDER_001_HTTPClientContract(t *testing.T) {
 	var gotPath, gotAuth string
+	var gotPayload map[string]interface{}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotAuth = r.Header.Get("Authorization")
 		switch r.URL.Path {
 		case "/api/v1/datasets":
+			body, bodyErr := io.ReadAll(r.Body)
+			if bodyErr != nil {
+				t.Fatalf("read create dataset body: %v", bodyErr)
+			}
+			if bodyErr := json.Unmarshal(body, &gotPayload); bodyErr != nil {
+				t.Fatalf("decode create dataset body: %v", bodyErr)
+			}
 			writeEnvelope(t, w, map[string]interface{}{"id": "ds-1", "name": "kb-a"})
 		case "/api/v1/datasets/ds-1/documents":
 			writeEnvelope(t, w, []map[string]interface{}{{"id": "doc-1", "name": "a.pdf"}})
@@ -46,7 +54,9 @@ func TestP0_PROVIDER_001_HTTPClientContract(t *testing.T) {
 	client := NewHTTPClient(srv.URL, "ragflow-test-key", 5*time.Second, 4)
 	ctx := context.Background()
 
-	ds, err := client.CreateDataset(ctx, CreateDatasetRequest{Name: "kb-a"})
+	ds, err := client.CreateDataset(ctx, CreateDatasetRequest{
+		Name: "kb-a", ParseType: 1, ParserID: "naive",
+	})
 	if err != nil {
 		t.Fatalf("CreateDataset: %v", err)
 	}
@@ -58,6 +68,9 @@ func TestP0_PROVIDER_001_HTTPClientContract(t *testing.T) {
 	}
 	if gotAuth != "ragflow-test-key" {
 		t.Fatalf("unexpected auth header: %s", gotAuth)
+	}
+	if gotPayload["parse_type"] != float64(1) || gotPayload["parser_id"] != "naive" {
+		t.Fatalf("unexpected dataset parser mode: %+v", gotPayload)
 	}
 
 	doc, err := client.CreateDocument(ctx, "ds-1", &DocumentUpload{Name: "a.pdf", Content: []byte("hello")})
@@ -293,6 +306,18 @@ func TestP0_PROVIDER_001_HTTPClientDocumentOps(t *testing.T) {
 	}
 	if !strings.Contains(string(gotBody), "document_ids") {
 		t.Fatalf("parse body must be an object with document_ids: %s", gotBody)
+	}
+
+	if err := client.IngestDocuments(ctx, []string{"doc-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/documents/ingest" || gotMethod != http.MethodPost {
+		t.Fatalf("ingest: path=%s method=%s", gotPath, gotMethod)
+	}
+	if !strings.Contains(string(gotBody), `"doc_ids"`) ||
+		!strings.Contains(string(gotBody), `"run":"1"`) ||
+		!strings.Contains(string(gotBody), `"delete":true`) {
+		t.Fatalf("ingest body must be deletion-safe pipeline ingest: %s", gotBody)
 	}
 
 	if err := client.StopDocuments(ctx, "ds-1", []string{"doc-a"}); err != nil {

@@ -126,6 +126,7 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/memories/:id/messages", Action: "read", Resource: "memory"},
 		{Method: "POST", Path: "/api/v1/memories/:id/messages", Action: "execute", Resource: "memory"},
 		{Method: "GET", Path: "/api/v1/memories/:id/messages/search", Action: "execute", Resource: "memory"},
+		{Method: "POST", Path: "/api/v1/memories/:id/governed-search", Action: "execute", Resource: "memory-policy"},
 		{Method: "GET", Path: "/api/v1/memories/:id/messages/:messageId/content", Action: "read", Resource: "memory"},
 		{Method: "PUT", Path: "/api/v1/memories/:id/messages/:messageId", Action: "manage", Resource: "memory"},
 		{Method: "DELETE", Path: "/api/v1/memories/:id/messages/:messageId", Action: "manage", Resource: "memory"},
@@ -284,6 +285,9 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/knowledge-ops/trace-runs", Action: "read", Resource: "knowledge-ops"},
 		{Method: "GET", Path: "/api/v1/knowledge-ops/trace-runs/:id", Action: "read", Resource: "knowledge-ops"},
 		{Method: "GET", Path: "/api/v1/knowledge-ops/metrics-contract", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/compilation/recovery", Action: "read", Resource: "knowledge-ops"},
+		{Method: "POST", Path: "/api/v1/knowledge-ops/compilation/runs/:runId/recovery-probe", Action: "execute", Resource: "compilation"},
+		{Method: "POST", Path: "/api/v1/knowledge-ops/compilation/runs/:runId/recovery-approval", Action: "execute", Resource: "compilation"},
 		{Method: "GET", Path: "/api/v1/knowledge-tasks", Action: "read", Resource: "knowledge-ops"},
 		{Method: "POST", Path: "/api/v1/knowledge-tasks", Action: "manage", Resource: "knowledge-ops"},
 		{Method: "GET", Path: "/api/v1/knowledge-tasks/summary", Action: "read", Resource: "knowledge-ops"},
@@ -337,16 +341,18 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "POST", Path: "/api/v1/release-candidates", Action: "manage", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/release-candidates/:id/ready", Action: "manage", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/execution-snapshots", Action: "manage", Resource: "release-governance"},
-		{Method: "POST", Path: "/api/v1/evaluation-set-versions", Action: "manage", Resource: "release-governance"},
-		{Method: "POST", Path: "/api/v1/evaluation-case-versions", Action: "manage", Resource: "release-governance"},
-		{Method: "POST", Path: "/api/v1/evaluation-runs", Action: "manage", Resource: "release-governance"},
-		{Method: "POST", Path: "/api/v1/evaluation-runs/:id/case-results", Action: "manage", Resource: "release-governance"},
-		{Method: "POST", Path: "/api/v1/evaluation-runs/:id/complete", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-set-versions", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-case-versions", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-runs", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-runs/:id/case-results", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-runs/:id/complete", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-runs/:id/execute", Action: "execute", Resource: "release-governance"},
 		{Method: "GET", Path: "/api/v1/evaluation-runs", Action: "read", Resource: "release-governance"},
-		{Method: "POST", Path: "/api/v1/evidence-bundles", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evidence-bundles", Action: "execute", Resource: "release-governance"},
 		{Method: "GET", Path: "/api/v1/evidence-bundles", Action: "read", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/release-gates", Action: "manage", Resource: "release-governance"},
 		{Method: "GET", Path: "/api/v1/release-gates", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/release-gates/evidence", Action: "read", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/releases", Action: "manage", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/releases/:id/complete", Action: "manage", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/releases/:id/rollback", Action: "manage", Resource: "release-governance"},
@@ -381,6 +387,7 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/assistant-releases", Action: "read", Resource: "release-governance"},
 		{Method: "GET", Path: "/api/v1/assistant-releases/:id", Action: "read", Resource: "release-governance"},
 		{Method: "GET", Path: "/api/v1/assistant-releases/:id/manifest", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistant-releases/:id/gate", Action: "read", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/assistant-releases/:id/transition", Action: "manage", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/assistant-releases/:id/apply", Action: "manage", Resource: "release-governance"},
 		{Method: "POST", Path: "/api/v1/assistant-releases/:id/activate", Action: "manage", Resource: "release-governance"},
@@ -468,6 +475,35 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "DELETE", Path: "/api/v1/knowledge-strategies/:id", Action: "manage", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
 		{Method: "POST", Path: "/api/v1/knowledge-strategies/:id/probe", Action: "execute", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
 		{Method: "POST", Path: "/api/v1/knowledge-strategies/:id/retrieve", Action: "execute", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "GET", Path: "/api/v1/knowledge-strategies/:id/quality-gate", Action: "read", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "GET", Path: "/api/v1/knowledge-profiles", Action: "read", Resource: "knowledge-profile"},
+		{Method: "POST", Path: "/api/v1/knowledge-profiles", Action: "manage", Resource: "knowledge-profile"},
+		{Method: "GET", Path: "/api/v1/knowledge-profiles/:profileId", Action: "read", Resource: "knowledge-profile"},
+		{Method: "PUT", Path: "/api/v1/knowledge-profiles/:profileId", Action: "manage", Resource: "knowledge-profile"},
+		{Method: "DELETE", Path: "/api/v1/knowledge-profiles/:profileId", Action: "manage", Resource: "knowledge-profile"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/compilation/runs", Action: "manage", Resource: "compilation"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/compilation/runs", Action: "read", Resource: "compilation"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/compilation/reconcile", Action: "execute", Resource: "compilation"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/artifacts", Action: "read", Resource: "compilation"},
+		{Method: "GET", Path: "/api/v1/memory-policies", Action: "read", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/memory-policies", Action: "manage", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-policies/:policyId", Action: "read", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-policies/:policyId/quality-gate", Action: "read", Resource: "memory-policy"},
+		{Method: "PUT", Path: "/api/v1/memory-policies/:policyId", Action: "manage", Resource: "memory-policy"},
+		{Method: "DELETE", Path: "/api/v1/memory-policies/:policyId", Action: "manage", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/memory-policies/:policyId/opt-in", Action: "execute", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/memory-policies/:policyId/opt-out", Action: "execute", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-privacy/self-policy-template", Action: "read", Resource: "memory-policy"},
+		{Method: "PUT", Path: "/api/v1/memory-privacy/self-policy-template", Action: "manage", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/self/memory-policies", Action: "read", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/self/memory-policies", Action: "execute", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-operations", Action: "read", Resource: "memory-operation"},
+		{Method: "GET", Path: "/api/v1/memory-operations/:operationId", Action: "read", Resource: "memory-operation"},
+		{Method: "POST", Path: "/api/v1/memory-operations/:operationId/tombstone", Action: "execute", Resource: "memory-forget", Resolve: resolveMemoryOperationScope(svc)},
+		{Method: "POST", Path: "/api/v1/conversation-context/preview", Action: "read", Resource: "context-decision"},
+		{Method: "GET", Path: "/api/v1/conversation-context/decisions/:decisionId", Action: "read", Resource: "context-decision"},
+		{Method: "GET", Path: "/api/v1/conversation-context/decisions/by-request/:requestId", Action: "read", Resource: "context-decision"},
+		{Method: "GET", Path: "/api/v1/conversation-context/decisions", Action: "read", Resource: "context-decision"},
 		{Method: "GET", Path: "/api/v1/evidence-snapshots", Action: "read", Resource: "evidence-snapshot"},
 		{Method: "GET", Path: "/api/v1/evidence-snapshots/:id", Action: "read", Resource: "evidence-snapshot", Resolve: resolveEvidenceSnapshotScope(svc)},
 		{Method: "GET", Path: "/api/v1/outbox-events", Action: "read", Resource: "outbox-event"},
@@ -614,6 +650,20 @@ func resolveEvalCaseScope(svc *service.Service) middleware.ResolveContext {
 			return "", "", "", err
 		}
 		return tenantID, "", "", nil
+	}
+}
+
+func resolveMemoryOperationScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		operation, err := svc.Store.GetMemoryOperation(c.Request.Context(), tenantID, c.Param("operationId"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if operation == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, operation.ProjectID, operation.UserID, nil
 	}
 }
 

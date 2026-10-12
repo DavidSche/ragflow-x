@@ -14,6 +14,7 @@ import {
 } from "./KnowledgeTasksCard";
 import { TraceRunLookup } from "./TraceRunLookup";
 import { MetricContractBoard } from "./MetricContractBoard";
+import { KnowledgeStrategyQualityGatePanel } from "./KnowledgeStrategyQualityGatePanel";
 
 interface Envelope<T> {
   code: number;
@@ -44,6 +45,7 @@ interface Summary {
   satisfaction_rate: number;
   avg_latency_ms: number;
   avg_resolution_hours: number;
+  cost_attribution?: CostAttribution[];
 }
 
 interface TopQuery {
@@ -54,6 +56,22 @@ interface TopQuery {
   failed_count: number;
   citation_missing_count: number;
   avg_latency_ms: number;
+}
+
+interface CostAttribution {
+  tenant_id: string;
+  project_id: string;
+  dataset_id: string;
+  profile_id: string;
+  assistant_id: string;
+  run_id: string;
+  requests: number;
+  tokens_in: number;
+  tokens_out: number;
+  estimated_cost: number;
+  budget_token_limit: number;
+  used_tokens: number;
+  status: string;
 }
 
 interface KnowledgeEvent {
@@ -77,6 +95,35 @@ interface KnowledgeEvent {
   reviewed_at?: string;
   feedback_rating?: string;
   feedback_attribution?: string;
+}
+
+interface CompilationRecoveryRun {
+  id: string;
+  dataset_id: string;
+  kind: string;
+  state: string;
+  recovery_state: string;
+  failure_code: string;
+  approval_id: string;
+  unknown_at: string;
+  recovery_first_no_match_at?: string;
+  recovery_no_match_count: number;
+}
+
+interface CompilationRecoveryEvidence {
+  queried_at?: string;
+  manifest_complete?: boolean;
+  no_match?: boolean;
+  artifact_total?: number;
+  binding_candidates?: string[];
+  probe_error?: string;
+}
+
+interface CompilationRecoveryItem {
+  run: CompilationRecoveryRun;
+  evidence?: CompilationRecoveryEvidence;
+  unknown_seconds: number;
+  unknown_age_bucket: string;
 }
 
 interface EvalSetOption {
@@ -158,6 +205,7 @@ export const KnowledgeOpsBoard = () => {
   const [attributionFilter, setAttributionFilter] = useState("");
   const [summary, setSummary] = useState<Summary>(emptySummary);
   const [topQueries, setTopQueries] = useState<TopQuery[]>([]);
+  const [costRows, setCostRows] = useState<CostAttribution[]>([]);
   const [events, setEvents] = useState<KnowledgeEvent[]>([]);
   const [eventTotal, setEventTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -166,7 +214,10 @@ export const KnowledgeOpsBoard = () => {
   const [evalSetId, setEvalSetId] = useState("");
   const [taskSummary, setTaskSummary] = useState<KnowledgeTaskSummary>(emptyTaskSummary);
   const [tasks, setTasks] = useState<KnowledgeTask[]>([]);
+  const [recoveries, setRecoveries] = useState<CompilationRecoveryItem[]>([]);
+  const [recoveryTotal, setRecoveryTotal] = useState(0);
   const { canAccess: canManage } = useCanAccess({ resource: "knowledge-ops", action: "manage" });
+  const { canAccess: canOperateCompilation } = useCanAccess({ resource: "compilation", action: "execute" });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -181,21 +232,25 @@ export const KnowledgeOpsBoard = () => {
     });
     if (attributionFilter) eventQuery.set("attribution", attributionFilter);
     try {
-      const [summaryRes, topRes, eventRes, evalSetRes, taskSummaryRes, taskRes] = await Promise.all([
+      const [summaryRes, topRes, eventRes, evalSetRes, taskSummaryRes, taskRes, recoveryRes] = await Promise.all([
         api.get<Envelope<Summary>>(`/knowledge-ops?${query.toString()}`),
         api.get<Envelope<TopQuery[]>>(`/knowledge-ops/top-queries?${new URLSearchParams({ ...Object.fromEntries(query), limit: "10" }).toString()}`),
         api.get<Envelope<PageEnvelope<KnowledgeEvent>>>(`/knowledge-ops/events?${eventQuery.toString()}`),
         api.get<Envelope<PageEnvelope<EvalSetOption>>>("/eval-sets?page=1&page_size=100"),
         api.get<Envelope<KnowledgeTaskSummary>>("/knowledge-tasks/summary"),
         api.get<Envelope<PageEnvelope<KnowledgeTask>>>("/knowledge-tasks?page=1&page_size=50"),
+        api.get<Envelope<PageEnvelope<CompilationRecoveryItem>>>("/knowledge-ops/compilation/recovery?page=1&page_size=50"),
       ]);
       setSummary(summaryRes.data.data ?? emptySummary);
+      setCostRows(summaryRes.data.data?.cost_attribution ?? []);
       setTopQueries(topRes.data.data ?? []);
       setEvents(eventRes.data.data?.items ?? []);
       setEventTotal(eventRes.data.data?.total ?? eventRes.data.data?.items.length ?? 0);
       setEvalSets(evalSetRes.data.data?.items ?? []);
       setTaskSummary(taskSummaryRes.data.data ?? emptyTaskSummary);
       setTasks(taskRes.data.data?.items ?? []);
+      setRecoveries(recoveryRes.data.data?.items ?? []);
+      setRecoveryTotal(recoveryRes.data.data?.total ?? 0);
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("knowledgeOps.load_failed"), { type: "error" });
     } finally {
@@ -284,6 +339,39 @@ export const KnowledgeOpsBoard = () => {
       await load();
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("knowledgeOps.task_update_failed"), { type: "error" });
+    } finally {
+      setReviewing(null);
+    }
+  };
+
+  const probeRecovery = async (run: CompilationRecoveryRun) => {
+    setReviewing(run.id);
+    try {
+      await api.post(`/knowledge-ops/compilation/runs/${run.id}/recovery-probe`, {});
+      notify(t("knowledgeOps.recovery_probed"), { type: "success" });
+      await load();
+    } catch (err) {
+      notify(err instanceof ApiError ? err.displayMessage : t("knowledgeOps.recovery_probe_failed"), { type: "error" });
+    } finally {
+      setReviewing(null);
+    }
+  };
+
+  const requestRecoveryApproval = async (run: CompilationRecoveryRun, action: "confirm_downstream_absent" | "create_replacement_run") => {
+    setReviewing(run.id);
+    try {
+      const firstMatchedAt = run.recovery_first_no_match_at ?? new Date().toISOString();
+      await api.post(`/knowledge-ops/compilation/runs/${run.id}/recovery-approval`, {
+        action,
+        idempotency_key: `${action}-${run.id}-${Date.now()}`,
+        observation_window_seconds: 1800,
+        observation_first_matched_at: firstMatchedAt,
+        reason: t("knowledgeOps.recovery_reason"),
+      });
+      notify(t("knowledgeOps.recovery_approval_submitted"), { type: "success" });
+      await load();
+    } catch (err) {
+      notify(err instanceof ApiError ? err.displayMessage : t("knowledgeOps.recovery_approval_failed"), { type: "error" });
     } finally {
       setReviewing(null);
     }
@@ -390,6 +478,51 @@ export const KnowledgeOpsBoard = () => {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <Database className="size-4" /> {t("knowledgeOps.cost_attribution_title")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">{t("knowledgeOps.cost_attribution_subtitle")}</p>
+            {costRows.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">{t("knowledgeOps.cost_attribution_empty")}</p>
+            ) : (
+              costRows.slice(0, 20).map((row) => (
+                <div
+                  key={`${row.tenant_id}-${row.project_id}-${row.dataset_id}-${row.profile_id}-${row.assistant_id}-${row.run_id}`}
+                  className={`rounded border p-2 ${row.status === "exceeded" ? "border-destructive" : ""}`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">{t("knowledgeOps.cost_dataset")}</span>
+                      <span className="font-mono">{row.dataset_id || "—"}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">{t("knowledgeOps.cost_profile")}</span>
+                      <span className="font-mono">{row.profile_id || "—"}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">{t("knowledgeOps.cost_assistant")}</span>
+                      <span className="font-mono">{row.assistant_id || "—"}</span>
+                    </div>
+                    <span
+                      className={
+                        row.status === "exceeded" ? "text-destructive" : row.status === "warning" ? "text-amber-600" : "text-muted-foreground"
+                      }
+                    >
+                      {t(`knowledgeOps.cost_status_${row.status}`)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span>{t("knowledgeOps.cost_requests", { count: compact(row.requests) })}</span>
+                    <span>{t("knowledgeOps.cost_tokens", { count: compact(row.used_tokens) })}</span>
+                    <span>{t("knowledgeOps.cost_budget", { count: row.budget_token_limit > 0 ? compact(row.budget_token_limit) : "—" })}</span>
+                    <span>{t("knowledgeOps.cost_amount", { amount: row.estimated_cost.toFixed(4) })}</span>
+                  </div>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
       </section>
@@ -507,6 +640,68 @@ export const KnowledgeOpsBoard = () => {
         onUpdateTask={updateTask}
       />
       <MetricContractBoard />
+      <KnowledgeStrategyQualityGatePanel />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm font-medium">
+            <RefreshCw className="size-4" /> {t("knowledgeOps.recovery_queue")}
+            <span className="ml-1 rounded bg-muted px-1.5 py-0.5 text-xs">{recoveryTotal}</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {recoveries.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">{t("knowledgeOps.recovery_empty")}</p>
+          ) : (
+            recoveries.map((item) => (
+              <div key={item.run.id} className="rounded border p-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span className="rounded bg-muted px-1.5 py-0.5">{item.run.kind}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">{item.unknown_age_bucket}</span>
+                      <span className={item.unknown_seconds >= 72 * 3600 ? "text-destructive" : item.unknown_seconds >= 24 * 3600 ? "text-amber-600" : ""}>
+                        {t("knowledgeOps.recovery_age", { seconds: item.unknown_seconds })}
+                      </span>
+                      <span className="rounded bg-muted px-1.5 py-0.5">
+                        {t(`knowledgeOps.recovery_state_${item.run.recovery_state || "pending_recovery"}`)}
+                      </span>
+                      <span>{t("knowledgeOps.recovery_no_match_count", { count: item.run.recovery_no_match_count })}</span>
+                      {item.evidence?.queried_at ? <span>{new Date(item.evidence.queried_at).toLocaleString()}</span> : null}
+                    </div>
+                    <p className="mt-2 font-mono text-xs">{item.run.id}</p>
+                    {item.evidence?.probe_error ? (
+                      <p className="mt-1 text-xs text-destructive">{t("knowledgeOps.recovery_probe_error")}: {item.evidence.probe_error}</p>
+                    ) : null}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {item.evidence?.manifest_complete
+                        ? t("knowledgeOps.recovery_manifest_complete")
+                        : t("knowledgeOps.recovery_manifest_incomplete")}
+                      {item.evidence?.artifact_total ? ` · ${item.evidence.artifact_total}` : ""}
+                    </p>
+                  </div>
+                  {canOperateCompilation ? (
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" disabled={reviewing === item.run.id} onClick={() => void probeRecovery(item.run)}>
+                        {t("knowledgeOps.recovery_probe")}
+                      </Button>
+                      {item.run.recovery_state === "needs_approval" ? (
+                        <Button size="sm" disabled={reviewing === item.run.id} onClick={() => void requestRecoveryApproval(item.run, "confirm_downstream_absent")}>
+                          {t("knowledgeOps.recovery_request_confirmation")}
+                        </Button>
+                      ) : null}
+                      {item.run.state === "reconciled" && item.run.recovery_state === "downstream_absent_confirmed" ? (
+                        <Button size="sm" disabled={reviewing === item.run.id} onClick={() => void requestRecoveryApproval(item.run, "create_replacement_run")}>
+                          {t("knowledgeOps.recovery_request_replacement")}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
       <TraceRunLookup />
     </div>
   );

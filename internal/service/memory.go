@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
@@ -188,7 +191,10 @@ func (s *Service) AddMemoryMessage(ctx context.Context, tenantID, memoryID, agen
 	if strings.TrimSpace(userInput) == "" || strings.TrimSpace(agentResponse) == "" {
 		return httperr.BadRequest(40096, "user_input and agent_response are required")
 	}
-	if err := s.RAGFlow.AddMemoryMessage(ctx, ragflow.AddMessageRequest{MemoryID: memoryID, AgentID: agentID, SessionID: sessionID, UserInput: userInput, AgentResponse: agentResponse}); err != nil {
+	if err := s.RAGFlow.AddMemoryMessage(ctx, ragflow.AddMessageRequest{
+		MemoryIDs: []string{memoryID}, AgentID: agentID, SessionID: sessionID,
+		UserInput: userInput, AgentResponse: agentResponse,
+	}); err != nil {
 		return httperr.New(502, 50275, "ragflow add memory message failed")
 	}
 	return nil
@@ -224,8 +230,21 @@ func (s *Service) UpdateMemoryMessageStatus(ctx context.Context, tenantID, memor
 	return nil
 }
 
+// MemorySearchInput carries explicit RAGFlow attribution and assistant filters.
+type MemorySearchInput struct {
+	Query                    string
+	AgentID                  string
+	SessionID                string
+	UserID                   string
+	SimilarityThreshold      float64
+	KeywordsSimilarityWeight float64
+	TopN                     int
+}
+
 // SearchMemoryMessages runs a semantic retrieval against an owned memory.
-func (s *Service) SearchMemoryMessages(ctx context.Context, tenantID, memoryID, query string, threshold, weight float64, topN int, scopeAll bool) ([]ragflow.MemoryMessage, error) {
+func (s *Service) SearchMemoryMessages(
+	ctx context.Context, tenantID, memoryID string, input MemorySearchInput, scopeAll bool,
+) ([]ragflow.MemoryMessage, error) {
 	mem, err := s.Store.GetMemoryShadow(ctx, tenantID, memoryID, scopeAll)
 	if err != nil {
 		return nil, err
@@ -233,7 +252,10 @@ func (s *Service) SearchMemoryMessages(ctx context.Context, tenantID, memoryID, 
 	if mem == nil {
 		return nil, httperr.NotFound("memory not found")
 	}
-	rows, err := s.RAGFlow.SearchMemoryMessages(ctx, memoryID, ragflow.MemorySearchParams{Query: query, SimilarityThreshold: threshold, KeywordsSimilarityWeight: weight, TopN: topN})
+	rows, err := s.RAGFlow.SearchMemoryMessages(ctx, memoryID, ragflow.MemorySearchParams{
+		Query: input.Query, AgentID: input.AgentID, SessionID: input.SessionID, UserID: input.UserID,
+		SimilarityThreshold: input.SimilarityThreshold, KeywordsSimilarityWeight: input.KeywordsSimilarityWeight, TopN: input.TopN,
+	})
 	if err != nil {
 		return nil, httperr.New(502, 50278, "ragflow search memory messages failed")
 	}
@@ -254,4 +276,191 @@ func (s *Service) GetMemoryMessageContent(ctx context.Context, tenantID, memoryI
 		return nil, httperr.New(502, 50279, "ragflow get memory message content failed")
 	}
 	return content, nil
+}
+
+type GovernedMemorySearchInput struct {
+	MemoryID                 string
+	Query                    string
+	AssistantID              string
+	SessionID                string
+	RequestID                string
+	SimilarityThreshold      float64
+	KeywordsSimilarityWeight float64
+	TopN                     int
+}
+
+type GovernedMemorySearchResult struct {
+	Decision *model.ContextDecision  `json:"decision"`
+	Messages []ragflow.MemoryMessage `json:"messages"`
+}
+
+func (s *Service) SearchGovernedMemory(
+	ctx context.Context, tenantID, actorID, memoryID string, input GovernedMemorySearchInput,
+) (*GovernedMemorySearchResult, error) {
+	memoryID = strings.TrimSpace(memoryID)
+	input.MemoryID = strings.TrimSpace(input.MemoryID)
+	input.Query = strings.TrimSpace(input.Query)
+	input.AssistantID = strings.TrimSpace(input.AssistantID)
+	input.SessionID = strings.TrimSpace(input.SessionID)
+	input.RequestID = strings.TrimSpace(input.RequestID)
+	input.MemoryID = memoryID
+	if tenantID == "" || actorID == "" || memoryID == "" || input.Query == "" ||
+		input.MemoryID == "" || input.AssistantID == "" || input.SessionID == "" || input.RequestID == "" {
+		return nil, httperr.BadRequest(40147, "memory_id, assistant_id, session_id, request_id and query are required")
+	}
+	if input.TopN <= 0 {
+		input.TopN = 5
+	}
+	if input.TopN > 100 || input.SimilarityThreshold < 0 || input.SimilarityThreshold > 1 ||
+		input.KeywordsSimilarityWeight < 0 || input.KeywordsSimilarityWeight > 1 {
+		return nil, httperr.BadRequest(40148, "memory search bounds are invalid")
+	}
+
+	policies, _, err := s.Store.ListMemoryPolicies(ctx, tenantID, repository.MemoryPolicyFilter{
+		MemoryID: memoryID, AssistantID: input.AssistantID, State: model.MemoryPolicyActive,
+	}, 1, 2)
+	if err != nil {
+		return nil, err
+	}
+	if len(policies) != 1 {
+		_, decisionErr := s.createMemorySearchDecision(ctx, tenantID, actorID, input, nil, "no_active_policy_binding")
+		if decisionErr != nil {
+			return nil, decisionErr
+		}
+		return nil, httperr.Forbidden("memory retrieval is not authorized by an active policy binding")
+	}
+	policy := policies[0]
+
+	principal, err := s.Store.GetUser(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if principal == nil || principal.TenantID != tenantID || principal.Status != model.UserStatusActive {
+		_, decisionErr := s.createMemorySearchDecision(ctx, tenantID, actorID, input, &policy, "principal_inactive")
+		if decisionErr != nil {
+			return nil, decisionErr
+		}
+		return nil, httperr.Forbidden("memory retrieval principal is not active")
+	}
+	if policyScope(&policy) == "user" {
+		if policy.UserID != actorID {
+			_, decisionErr := s.createMemorySearchDecision(ctx, tenantID, actorID, input, &policy, "owner_scope_denied")
+			if decisionErr != nil {
+				return nil, decisionErr
+			}
+			return nil, httperr.NotFound("memory retrieval is outside the caller scope")
+		}
+		if policy.ReadPolicy != "owner" {
+			_, decisionErr := s.createMemorySearchDecision(ctx, tenantID, actorID, input, &policy, "read_policy_denied")
+			if decisionErr != nil {
+				return nil, decisionErr
+			}
+			return nil, httperr.Forbidden("memory read policy denies retrieval")
+		}
+	} else {
+		member, err := s.Store.IsProjectMember(ctx, actorID, policy.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		if !member {
+			_, decisionErr := s.createMemorySearchDecision(ctx, tenantID, actorID, input, &policy, "project_membership_denied")
+			if decisionErr != nil {
+				return nil, decisionErr
+			}
+			return nil, httperr.NotFound("memory retrieval is outside the caller scope")
+		}
+		if policy.ReadPolicy != "project_member" {
+			_, decisionErr := s.createMemorySearchDecision(ctx, tenantID, actorID, input, &policy, "read_policy_denied")
+			if decisionErr != nil {
+				return nil, decisionErr
+			}
+			return nil, httperr.Forbidden("memory read policy denies retrieval")
+		}
+	}
+	memory, err := s.Store.GetMemoryShadow(ctx, tenantID, memoryID, false)
+	if err != nil {
+		return nil, err
+	}
+	if memory == nil {
+		return nil, httperr.NotFound("memory not found")
+	}
+	decision, err := s.createMemorySearchDecision(ctx, tenantID, actorID, input, &policy, "active_policy_binding")
+	if err != nil {
+		return nil, err
+	}
+	var attributionUserID string
+	if policyScope(&policy) == "user" {
+		attributionUserID = "rgx:" + tenantID + ":" + actorID
+	}
+	rows, err := s.RAGFlow.SearchMemoryMessages(ctx, memoryID, ragflow.MemorySearchParams{
+		Query: input.Query, AgentID: input.AssistantID, SessionID: input.SessionID,
+		UserID: attributionUserID, SimilarityThreshold: input.SimilarityThreshold,
+		KeywordsSimilarityWeight: input.KeywordsSimilarityWeight, TopN: input.TopN,
+	})
+	if err != nil {
+		return nil, httperr.New(502, 50278, "ragflow search memory messages failed")
+	}
+	return &GovernedMemorySearchResult{Decision: decision, Messages: rows}, nil
+}
+
+func (s *Service) createMemorySearchDecision(
+	ctx context.Context, tenantID, actorID string, input GovernedMemorySearchInput,
+	policy *model.MemoryPolicy, reason string,
+) (*model.ContextDecision, error) {
+	queryHash := sha256.Sum256([]byte(input.Query))
+	queryHashHex := hex.EncodeToString(queryHash[:])
+	if existing, err := s.Store.GetContextDecisionByRequest(ctx, tenantID, input.RequestID); err != nil {
+		return nil, err
+	} else if existing != nil {
+		var existingDetail map[string]interface{}
+		_ = json.Unmarshal([]byte(existing.Detail), &existingDetail)
+		existingMemoryID, _ := existingDetail["memory_id"].(string)
+		existingQueryHash, _ := existingDetail["query_hash"].(string)
+		if existing.TenantID != tenantID || existing.UserID != actorID ||
+			existing.AssistantID != input.AssistantID || existing.SessionID != input.SessionID ||
+			existingMemoryID != input.MemoryID || existingQueryHash != queryHashHex {
+			return nil, httperr.New(409, 40958, "memory search request id conflicts with an existing decision")
+		}
+		return existing, nil
+	}
+	detail := map[string]interface{}{
+		"contract_version": "memory-governed-read-v1", "reason": reason,
+		"memory_id": input.MemoryID, "assistant_id": input.AssistantID,
+		"session_id": input.SessionID, "principal_mapping": "tenant_prefixed_attribution",
+		"query_hash": queryHashHex, "search_side_effect": false,
+		"memory_operation_created": false,
+	}
+	if policy != nil {
+		detail["policy_id"] = policy.ID
+		detail["policy_scope"] = policyScope(policy)
+		detail["policy_generation"] = policy.PolicyGeneration
+		detail["consent_version"] = policy.ConsentVersion
+		detail["read_policy"] = policy.ReadPolicy
+	}
+	rawDetail, err := json.Marshal(detail)
+	if err != nil {
+		return nil, httperr.Internal("unable to serialize memory search decision")
+	}
+	filterHash := sha256.Sum256([]byte(strings.Join([]string{
+		"memory-governed-read-v1", tenantID, actorID, input.MemoryID,
+		input.AssistantID, input.SessionID, reason, queryHashHex,
+	}, "\x1f")))
+	decisionValue := "memory_denied"
+	memoryPolicyID := ""
+	if policy != nil && reason == "active_policy_binding" && policy.ReadPolicy != "deny" {
+		decisionValue = "memory_allowed"
+		memoryPolicyID = policy.ID
+	}
+	now := time.Now().UTC()
+	decision := &model.ContextDecision{
+		ID: id.New(), TenantID: tenantID, RequestID: input.RequestID,
+		RequestKind: model.ContextDecisionChat, AssistantID: input.AssistantID,
+		SessionID: input.SessionID, UserID: actorID, Decision: decisionValue,
+		MemoryPolicyID: memoryPolicyID, DecisionHash: hex.EncodeToString(filterHash[:]),
+		Detail: string(rawDetail), CreatedAt: now,
+	}
+	if err := s.Store.CreateContextDecision(ctx, decision); err != nil {
+		return nil, err
+	}
+	return decision, nil
 }

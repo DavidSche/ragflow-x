@@ -42,7 +42,10 @@ type Tenant struct {
 	BrandLogo string    `gorm:"column:brand_logo;size:512" json:"brand_logo"`
 	// AutoRouteMode is the tenant-level kill switch and gradual rollout mode.
 	// The system policy remains an outer boundary and can never be bypassed.
-	AutoRouteMode string `gorm:"column:auto_route_mode;size:24;not null;default:recommend_only" json:"auto_route_mode"`
+	AutoRouteMode             string `gorm:"column:auto_route_mode;size:24;not null;default:recommend_only" json:"auto_route_mode"`
+	SelfMemoryTemplate        string `gorm:"column:self_memory_template;type:text" json:"self_memory_template"`
+	SelfMemoryTemplateVersion int64  `gorm:"column:self_memory_template_version;not null;default:0" json:"self_memory_template_version"`
+	CompilationTokenBudget    int64  `gorm:"column:compilation_token_budget;not null;default:0" json:"compilation_token_budget"`
 }
 
 // TableName is the physical table name.
@@ -122,6 +125,7 @@ type DatasetLink struct {
 	// (doc/123 §3): when true, the dataset's sensitivity is synced to
 	// RAGFlow meta_fields and participates in metadata_condition filtering.
 	PushdownEnabled bool `gorm:"column:pushdown_enabled;not null;default:false" json:"pushdown_enabled"`
+	CompilationTokenBudget int64 `gorm:"column:compilation_token_budget;not null;default:0" json:"compilation_token_budget"`
 }
 
 // TableName is the physical table name.

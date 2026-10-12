@@ -32,6 +32,14 @@ const (
 	JobKindAlertDeliveryCompensation = "alert_delivery_compensation"
 	// JobKindOutboxDispatch periodically dispatches due durable domain events.
 	JobKindOutboxDispatch = "outbox_dispatch"
+	// JobKindMemoryCompensation reconciles tombstoned post-admission Memory
+	// writes against the external execution plane.
+	JobKindMemoryCompensation = "memory_compensation"
+	// JobKindCompilationReconcile dispatches accepted compilation runs and
+	// reconciles dispatched/unknown runs against RAGFlow read-only status.
+	JobKindCompilationReconcile = "compilation_reconcile"
+	// JobKindEvaluationRun executes a paired scoped evaluation run.
+	JobKindEvaluationRun = "evaluation_run"
 	// JobKindVersionPublishReconcile recovers interrupted document version
 	// publish coordination by comparing Attempt snapshots with RAGFlow state.
 	JobKindVersionPublishReconcile = "version_publish_reconcile"

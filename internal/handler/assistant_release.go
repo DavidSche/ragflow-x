@@ -67,6 +67,18 @@ func getAssistantRelease(c *gin.Context) {
 	response.OK(c, item)
 }
 
+func getAssistantReleaseGateSummary(c *gin.Context) {
+	tenantID := c.GetString(middleware.ContextTenantID)
+	item, err := handlerFrom(c).Service.GetAssistantReleaseGateSummary(
+		c.Request.Context(), tenantID, c.Param("id"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, item)
+}
+
 func getAssistantSnapshotManifest(c *gin.Context) {
 	tenantID, _ := assistantReleaseContext(c)
 	item, err := handlerFrom(c).Service.GetAssistantRelease(c.Request.Context(), tenantID, c.Param("id"))
@@ -284,6 +296,7 @@ func RegisterAssistantReleaseRoutes(group *gin.RouterGroup, handler *Handler) {
 	group.GET("/assistant-releases", listAssistantReleases)
 	group.GET("/assistant-releases/:id", getAssistantRelease)
 	group.GET("/assistant-releases/:id/manifest", getAssistantSnapshotManifest)
+	group.GET("/assistant-releases/:id/gate", getAssistantReleaseGateSummary)
 	group.POST("/assistant-releases/:id/transition", transitionAssistantRelease)
 	group.POST("/assistant-releases/:id/apply", applyAssistantRelease)
 	group.POST("/assistant-releases/:id/activate", activateAssistantRelease)

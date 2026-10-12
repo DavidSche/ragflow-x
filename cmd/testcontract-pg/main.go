@@ -29,6 +29,8 @@ import (
 // defaultPattern covers every internal/db test that requires
 // RGX_TEST_POSTGRES_DSN.
 const defaultPattern = "TestP0_PG_001_PostgresMigrationIsIdempotentUnderContract|" +
+	"TestPostgresMigrationSnapshotRollbackContract|" +
+	"TestPostgresReleaseRollbackContract|" +
 	"TestP0_PG_001_PostgresApprovalOrganizationAdaptability|" +
 	"TestP0_AUDIT_001_PostgresAuditAnchorImmutability|" +
 	"TestP0_PG_001_PostgresRuntimePrivilegeBaseline|" +

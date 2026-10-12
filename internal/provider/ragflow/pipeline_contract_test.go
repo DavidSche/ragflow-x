@@ -39,6 +39,36 @@ func TestHTTPClientPipelineContract(t *testing.T) {
 	}
 }
 
+func TestHTTPClientUserPipelineFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/pipelines/user-pipeline":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"code":102,"message":"pipeline not found"}`))
+		case "/api/v1/agents/user-pipeline":
+			if r.Method != http.MethodGet {
+				t.Errorf("agent method = %s, want GET", r.Method)
+			}
+			writeEnvelope(t, w, map[string]interface{}{
+				"id": "user-pipeline",
+				"dsl": map[string]interface{}{
+					"graph":      true,
+					"components": map[string]interface{}{},
+				},
+			})
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := NewHTTPClient(server.URL, "key", 2*time.Second, 1)
+	pipeline, err := client.GetPipeline(context.Background(), "user-pipeline")
+	if err != nil || pipeline == nil || pipeline.DSL["graph"] != true {
+		t.Fatalf("get user pipeline: %+v err=%v", pipeline, err)
+	}
+}
+
 func TestMockPipelineRegistry(t *testing.T) {
 	mock := NewMock()
 	mock.SetPipelineTemplate(PipelineTemplate{ID: "general"}, map[string]interface{}{"graph": true})

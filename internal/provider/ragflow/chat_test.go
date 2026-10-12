@@ -126,6 +126,39 @@ func TestHTTPClient_ChatContract(t *testing.T) {
 	}
 }
 
+func TestHTTPClient_ChatCompletionAcceptsV1ReferenceObject(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/chat/completions" {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		writeEnvelope(t, w, map[string]interface{}{
+			"id": "answer-1", "answer": "governed evidence", "session_id": "s1",
+			"reference": map[string]interface{}{
+				"chunks": []map[string]interface{}{{
+					"id": "chunk-1", "document_name": "doc", "dataset_id": "dataset-1",
+				}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "key", 5*time.Second, 1)
+	completion, err := client.ChatCompletion(context.Background(), "chat-1", CompletionRequest{
+		SessionID: "s1", Messages: []Message{{Role: "user", Content: "question"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completion.Answer != "governed evidence" || len(completion.Choices) != 1 ||
+		completion.Choices[0].Message.Content != "governed evidence" {
+		t.Fatalf("unexpected v1 completion: %+v", completion)
+	}
+	if len(completion.Reference) != 1 || completion.Reference[0]["id"] != "chunk-1" {
+		t.Fatalf("v1 reference chunks were not normalized: %+v", completion.Reference)
+	}
+}
+
 func TestHTTPClient_StreamChatCompletion(t *testing.T) {
 	sse := "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\ndata: [DONE]\n\n"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

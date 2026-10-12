@@ -74,6 +74,26 @@ type KnowledgeOpsSummary struct {
 	SatisfactionRate   float64          `json:"satisfaction_rate"`
 	AvgLatencyMs       float64          `json:"avg_latency_ms"`
 	AvgResolutionHours float64          `json:"avg_resolution_hours"`
+	CostAttribution    []KnowledgeOpsCostAttribution `json:"cost_attribution"`
+}
+
+// KnowledgeOpsCostAttribution is a read-only usage aggregate for the
+// KnowledgeOps board. Empty dimensions are grouped as "" and never expose
+// provider payloads.
+type KnowledgeOpsCostAttribution struct {
+	TenantID         string  `json:"tenant_id"`
+	ProjectID        string  `json:"project_id"`
+	DatasetID        string  `json:"dataset_id"`
+	ProfileID        string  `json:"profile_id"`
+	AssistantID      string  `json:"assistant_id"`
+	RunID            string  `json:"run_id"`
+	Requests         int64   `json:"requests"`
+	TokensIn         int64   `json:"tokens_in"`
+	TokensOut        int64   `json:"tokens_out"`
+	EstimatedCost    float64 `json:"estimated_cost"`
+	BudgetTokenLimit int64   `json:"budget_token_limit"`
+	UsedTokens       int64   `json:"used_tokens"`
+	Status           string  `json:"status"`
 }
 
 // KnowledgeOpsQueryRow is a normalized Top Query aggregate.

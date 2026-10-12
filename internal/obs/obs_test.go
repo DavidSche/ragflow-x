@@ -64,6 +64,8 @@ func TestUnconfiguredNoOpDoesNotPanic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	o := New(config.Observability{}) // metrics disabled + tracing off
 	o.AddAlertDeliveryCompensation(1, 1, 1, 1, 1)
+	o.AddMemoryDispatchExternalBind("bound")
+	o.AddMemoryCompensation(1, 1, 1, 1, 1, 1)
 	r := gin.New()
 	r.Use(o.Middleware())
 	r.GET("/ping", func(c *gin.Context) { c.Status(http.StatusOK) })
@@ -92,6 +94,30 @@ func TestP0_AUDIT_002_AlertDeliveryCompensationMetricsAreExposed(t *testing.T) {
 		"alertcomp_alert_delivery_compensation_skipped_total 1",
 		"alertcomp_alert_delivery_compensation_abandoned_total 1",
 		"alertcomp_alert_delivery_compensation_fenced_total 2",
+	} {
+		if !strings.Contains(body, metric) {
+			t.Fatalf("metrics output missing %q: %s", metric, body)
+		}
+	}
+}
+
+func TestMemoryCompensationMetricsAreExposed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	o := New(config.Observability{MetricsEnabled: true, MetricsNamespace: "memorycomp"})
+	o.AddMemoryDispatchExternalBind("bound")
+	o.AddMemoryDispatchExternalBind("unconfirmed")
+	o.AddMemoryCompensation(3, 1, 1, 1, 0, 1)
+
+	router := gin.New()
+	router.GET("/metrics", o.MetricsHandler())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := w.Body.String()
+	for _, metric := range []string{
+		`memorycomp_memory_dispatch_external_bind_total{result="bound"} 1`,
+		`memorycomp_memory_dispatch_external_bind_total{result="unconfirmed"} 1`,
+		"memorycomp_memory_tombstone_compensation_scanned_total 3",
+		"memorycomp_memory_tombstone_compensation_pass_failed_total 1",
 	} {
 		if !strings.Contains(body, metric) {
 			t.Fatalf("metrics output missing %q: %s", metric, body)
@@ -139,6 +165,58 @@ func TestP0_OBS_004_ResourceSyncProgressClearsAfterRun(t *testing.T) {
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if strings.Contains(w.Body.String(), "resource_sync_run_progress") {
 		t.Fatalf("completed run progress must not remain active: %s", w.Body.String())
+	}
+}
+
+func TestCompilationUpstreamStallMetricIsExposedAndCleared(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	o := New(config.Observability{MetricsEnabled: true, MetricsNamespace: "compilationstall"})
+	o.SetCompilationUpstreamStallAge("tenant-1", "page_index", 90000)
+
+	router := gin.New()
+	router.GET("/metrics", o.MetricsHandler())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	want := `compilationstall_compilation_upstream_stall_seconds{kind="page_index",tenant_id="tenant-1"} 90000`
+	if !strings.Contains(w.Body.String(), want) {
+		t.Fatalf("stall metric missing %q: %s", want, w.Body.String())
+	}
+
+	o.ClearCompilationUpstreamStallAge("tenant-1", "page_index")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if strings.Contains(w.Body.String(), "compilation_upstream_stall_seconds") {
+		t.Fatalf("cleared stall metric must not remain active: %s", w.Body.String())
+	}
+}
+
+func TestCompilationUnknownAgeMetricIsTenantScoped(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	o := New(config.Observability{MetricsEnabled: true, MetricsNamespace: "unknownage"})
+	o.SetCompilationUnknownAge("tenant-1", "page_index", 86400)
+	o.SetCompilationUnknownAge("tenant-2", "page_index", 259200)
+
+	router := gin.New()
+	router.GET("/metrics", o.MetricsHandler())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	for _, want := range []string{
+		`unknownage_compilation_unknown_age_seconds{kind="page_index",tenant_id="tenant-1"} 86400`,
+		`unknownage_compilation_unknown_age_seconds{kind="page_index",tenant_id="tenant-2"} 259200`,
+	} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Fatalf("unknown age metric missing %q: %s", want, w.Body.String())
+		}
+	}
+
+	o.ClearCompilationUnknownAge("tenant-1", "page_index")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if strings.Contains(w.Body.String(), `tenant_id="tenant-1"`) {
+		t.Fatalf("cleared tenant must not remain in unknown age metrics: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `unknownage_compilation_unknown_age_seconds{kind="page_index",tenant_id="tenant-2"} 259200`) {
+		t.Fatalf("other tenant must remain active: %s", w.Body.String())
 	}
 }
 

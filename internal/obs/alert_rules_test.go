@@ -4,6 +4,7 @@ package obs
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -56,8 +57,12 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 		if rule.Annotations["summary"] == "" || rule.Annotations["description"] == "" {
 			t.Fatalf("alert %q missing operator guidance: %+v", rule.Alert, rule.Annotations)
 		}
-		if !strings.HasSuffix(rule.Annotations["runbook"], "doc/08_部署运维与可观测性.md") {
+		runbook := rule.Annotations["runbook"]
+		if runbook == "" || strings.Contains(runbook, "..") {
 			t.Fatalf("alert %q has unexpected runbook %q", rule.Alert, rule.Annotations["runbook"])
+		}
+		if _, err := os.Stat(filepath.Join("..", "..", runbook)); err != nil {
+			t.Fatalf("alert %q runbook %q is missing: %v", rule.Alert, runbook, err)
 		}
 		rules[rule.Alert] = rule
 	}
@@ -79,6 +84,22 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 			expression: "increase(ragflow_x_alert_delivery_compensation_fenced_total[5m]) > 0",
 			pendingFor: "0m", severity: "critical",
 		},
+		"CompilationUpstreamStalled": {
+			expression: "max by (tenant_id, kind) (ragflow_x_compilation_upstream_stall_seconds) > 86400",
+			pendingFor: "10m", severity: "critical",
+		},
+		"CompilationUnknownAgeWarning": {
+			expression: "max by (tenant_id, kind) (ragflow_x_compilation_unknown_age_seconds) > 86400",
+			pendingFor: "10m", severity: "warning",
+		},
+		"CompilationUnknownAgeCritical": {
+			expression: "max by (tenant_id, kind) (ragflow_x_compilation_unknown_age_seconds) > 259200",
+			pendingFor: "10m", severity: "critical",
+		},
+		"EnhancementBudgetRejected": {
+			expression: "increase(ragflow_x_enhancement_budget_rejected_total[15m]) > 0",
+			pendingFor: "0m", severity: "warning",
+		},
 		"ResourceSyncItemsFailedHigh": {
 			expression: `increase(ragflow_x_resource_sync_items_total{status="failed"}[15m]) > 5`,
 			pendingFor: "10m", severity: "warning",
@@ -91,6 +112,23 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 			expression: `ragflow_x_resource_sync_run_progress{kind="total"} > 0 and on(source_id) sum by (source_id) (increase(ragflow_x_resource_sync_items_total[30m])) == 0`,
 			pendingFor: "10m", severity: "critical",
 		},
+	}
+	expectedRunbook := map[string]string{
+		"CompilationUpstreamStalled":    "doc/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"CompilationUnknownAgeWarning":  "doc/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"CompilationUnknownAgeCritical": "doc/runbooks/CompilationUpstreamRecoveryRunbook.md",
+	}
+	for alert, wantRunbook := range expectedRunbook {
+		rule, exists := rules[alert]
+		if !exists {
+			t.Fatalf("compilation alert %q is missing", alert)
+		}
+		if rule.Annotations["runbook"] != wantRunbook {
+			t.Fatalf("alert %q runbook = %q, want %q", alert, rule.Annotations["runbook"], wantRunbook)
+		}
+		if !strings.Contains(rule.Expr, "tenant_id") || !strings.Contains(rule.Expr, "kind") {
+			t.Fatalf("alert %q must retain tenant and kind dimensions: %s", alert, rule.Expr)
+		}
 	}
 	if len(rules) != len(expected) {
 		t.Fatalf("Prometheus alert count = %d, want %d: %+v", len(rules), len(expected), rules)

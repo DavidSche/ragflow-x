@@ -33,3 +33,21 @@ func (m *Mock) ListDatasetArtifacts(
 	}
 	return append([]DatasetArtifact(nil), artifacts[start:end]...), int64(len(artifacts)), nil
 }
+
+func (m *Mock) GetDatasetArtifact(
+	_ context.Context, datasetID, pageType, slug string,
+) (*DatasetArtifactDetail, error) {
+	datasetID, pageType, slug = strings.TrimSpace(datasetID), strings.TrimSpace(pageType), strings.TrimSpace(slug)
+	if datasetID == "" || pageType == "" || slug == "" {
+		return nil, fmt.Errorf("dataset_id, page_type and slug are required")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	detail, exists := m.artifactDetails[datasetID][pageType][slug]
+	if !exists {
+		m.lastArtifactDetail = nil
+		return nil, nil
+	}
+	m.lastArtifactDetail = &detail
+	return &detail, nil
+}

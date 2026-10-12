@@ -278,11 +278,12 @@ func TestReleaseCreationRevalidatesEnterprisePin(t *testing.T) {
 	if _, err := svc.CompleteEvaluationRun(ctx, workspace.ID, run.ID, false, ""); err != nil {
 		t.Fatal(err)
 	}
+	permissionEvidence, configurationEvidence := strictReleaseEvidenceRaw(candidate)
 	bundle, err := svc.CreateEvidenceBundle(ctx, workspace.ID, admin.ID, EvidenceBundleInput{
 		ReleaseCandidateID: candidate.CandidateID, CandidateVersion: candidate.CandidateVersion,
 		EvaluationRunID: run.ID, SecurityEvidence: json.RawMessage(`{}`), PolicyEvidence: json.RawMessage(`{}`),
-		RiskEvidence: json.RawMessage(`{}`), PermissionEvidence: json.RawMessage(`{}`),
-		ConfigurationEvidence: json.RawMessage(`{}`), ApprovalEvidence: json.RawMessage(`{}`),
+		RiskEvidence: json.RawMessage(`{}`), PermissionEvidence: permissionEvidence,
+		ConfigurationEvidence: configurationEvidence, ApprovalEvidence: json.RawMessage(`{}`),
 		EvidenceItems: json.RawMessage(`[]`),
 	})
 	if err != nil {

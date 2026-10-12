@@ -36,7 +36,8 @@ type createDatasetRequest struct {
 }
 
 type updateDatasetRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name                   string `json:"name" binding:"required"`
+	CompilationTokenBudget *int64 `json:"compilation_token_budget"`
 }
 
 // ListDatasets lists datasets bound to the authenticated tenant.
@@ -908,6 +909,12 @@ func (h *Handler) UpdateDataset(c *gin.Context) {
 	if err != nil {
 		response.Err(c, err)
 		return
+	}
+	if req.CompilationTokenBudget != nil {
+		if err := h.Service.UpdateDatasetCompilationBudget(ctx, tenantID, datasetID, *req.CompilationTokenBudget); err != nil {
+			response.Err(c, err)
+			return
+		}
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "dataset.update", Resource: "dataset", ResourceID: datasetID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
 	response.OK(c, ds)

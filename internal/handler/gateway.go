@@ -189,7 +189,7 @@ func (h *Handler) GatewaySearchApp(c *gin.Context) {
 		c.Header("Connection", "keep-alive")
 		c.Writer.WriteHeader(200)
 		var captured bytes.Buffer
-		if err := h.Service.StreamSearchAppCompletion(ctx, key.TenantID, searchAppID, input.Question, requestID, false, io.MultiWriter(c.Writer, &captured)); err != nil {
+		if err := h.Service.StreamSearchAppCompletion(ctx, key.TenantID, key.UserID, searchAppID, input.Question, requestID, false, io.MultiWriter(c.Writer, &captured)); err != nil {
 			h.gatewayStreamFailed(c, key, "search-app", searchAppID, requestID, idempotencyState, err)
 			return
 		}
@@ -198,7 +198,7 @@ func (h *Handler) GatewaySearchApp(c *gin.Context) {
 		h.RecordAudit(ctx, &model.AuditLog{TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.search_app.stream", Resource: "search-app", ResourceID: searchAppID, IP: c.ClientIP(), TraceID: requestID})
 		return
 	}
-	result, err := h.Service.SearchAppCompletion(ctx, key.TenantID, searchAppID, input.Question, requestID, false)
+	result, err := h.Service.SearchAppCompletion(ctx, key.TenantID, key.UserID, searchAppID, input.Question, requestID, false)
 	if err != nil {
 		h.Service.ReleaseGatewayQuota(ctx, key, requestID)
 		h.Service.FailGatewayIdempotency(ctx, idempotencyState, requestID, err.Error())

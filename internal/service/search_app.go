@@ -186,7 +186,7 @@ func (s *Service) DeleteSearchApp(ctx context.Context, tenantID, searchAppID str
 
 // SearchAppCompletion runs a retrieval against an owned Search App and meters
 // the real consumption.
-func (s *Service) SearchAppCompletion(ctx context.Context, tenantID, searchAppID, question, requestID string, scopeAll bool) (*ragflow.SearchAppCompletionResult, error) {
+func (s *Service) SearchAppCompletion(ctx context.Context, tenantID, actorID, searchAppID, question, requestID string, scopeAll bool) (*ragflow.SearchAppCompletionResult, error) {
 	sa, err := s.Store.GetSearchAppShadow(ctx, tenantID, searchAppID, scopeAll)
 	if err != nil {
 		return nil, err
@@ -196,6 +196,15 @@ func (s *Service) SearchAppCompletion(ctx context.Context, tenantID, searchAppID
 	}
 	if strings.TrimSpace(question) == "" {
 		return nil, httperr.BadRequest(40094, "question is required")
+	}
+	if requestID == "" {
+		requestID = id.New()
+	}
+	if _, err := s.AuthorizeConversationContext(ctx, tenantID, actorID, ConversationContextAuthorizationInput{
+		ActorID: actorID, RequestID: requestID, RequestKind: model.ContextDecisionSearch, TargetKind: "search",
+		AssistantID: searchAppID, Query: question,
+	}); err != nil {
+		return nil, err
 	}
 	startedAt := time.Now()
 	kbIDs, err := s.searchAppKbIDs(ctx, sa)
@@ -225,7 +234,7 @@ func (s *Service) SearchAppCompletion(ctx context.Context, tenantID, searchAppID
 }
 
 // StreamSearchAppCompletion proxies the SSE completion to w after authorization.
-func (s *Service) StreamSearchAppCompletion(ctx context.Context, tenantID, searchAppID, question, requestID string, scopeAll bool, w io.Writer) error {
+func (s *Service) StreamSearchAppCompletion(ctx context.Context, tenantID, actorID, searchAppID, question, requestID string, scopeAll bool, w io.Writer) error {
 	sa, err := s.Store.GetSearchAppShadow(ctx, tenantID, searchAppID, scopeAll)
 	if err != nil {
 		return err
@@ -239,6 +248,12 @@ func (s *Service) StreamSearchAppCompletion(ctx context.Context, tenantID, searc
 	startedAt := time.Now()
 	if requestID == "" {
 		requestID = id.New()
+	}
+	if _, err := s.AuthorizeConversationContext(ctx, tenantID, actorID, ConversationContextAuthorizationInput{
+		ActorID: actorID, RequestID: requestID, RequestKind: model.ContextDecisionSearch, TargetKind: "search",
+		AssistantID: searchAppID, Query: question,
+	}); err != nil {
+		return err
 	}
 	kbIDs, err := s.searchAppKbIDs(ctx, sa)
 	if err != nil {

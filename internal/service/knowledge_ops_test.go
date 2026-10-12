@@ -27,8 +27,24 @@ func TestKnowledgeOpsQuestionAndStatusHelpers(t *testing.T) {
 		t.Fatalf("expected sha256 hex, got %q", normalized)
 	}
 	long := strings.Repeat("长", 1200)
-	if got := truncateKnowledgeText(long, 1024); len([]rune(got)) != 1027 {
+	if got := truncateKnowledgeText(long, 1024); len([]rune(got)) != 1024 || !strings.HasSuffix(got, "...") {
 		t.Fatalf("unexpected truncation rune count: %d", len([]rune(got)))
+	}
+	if got := truncateKnowledgeText("  x  ", 2); got != "x" {
+		t.Fatalf("unexpected short truncation: %q", got)
+	}
+}
+
+func TestKnowledgeEventRespectsDatabasePayloadBudgets(t *testing.T) {
+	event := knowledgeEvent(
+		"t1", "u1", "chat", "chat-1", "session-1", "request-1",
+		strings.Repeat("题", 3000), strings.Repeat("答", 3000), 2, 10, 20, 350,
+	)
+	if len([]rune(event.Question)) != 2048 || !strings.HasSuffix(event.Question, "...") {
+		t.Fatalf("question payload budget violated: %d", len([]rune(event.Question)))
+	}
+	if len([]rune(event.AnswerExcerpt)) != 1024 || !strings.HasSuffix(event.AnswerExcerpt, "...") {
+		t.Fatalf("answer payload budget violated: %d", len([]rune(event.AnswerExcerpt)))
 	}
 }
 

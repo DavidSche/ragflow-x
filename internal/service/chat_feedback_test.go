@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
@@ -81,10 +82,11 @@ func TestNegativeFeedbackBecomesKnowledgeOpsBadcase(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	longComment := strings.Repeat("错", 1200)
 	feedback, err := svc.RecordMessageFeedback(ctx, tenant.ID, "user-1", FeedbackRequest{
 		ChatID: chat.ID, SessionID: "session-1", MessageID: "message-1",
 		RequestID: "request-feedback", Rating: model.FeedbackNegative,
-		Attribution: model.FeedbackAttributionKnowledge, Comment: "答案错误",
+		Attribution: model.FeedbackAttributionKnowledge, Comment: longComment,
 	})
 	if err != nil {
 		t.Fatalf("negative feedback: %v", err)
@@ -93,18 +95,29 @@ func TestNegativeFeedbackBecomesKnowledgeOpsBadcase(t *testing.T) {
 	if err != nil || updated == nil {
 		t.Fatalf("get event: %+v err=%v", updated, err)
 	}
-	if updated.FeedbackID != feedback.ID || updated.FeedbackRating != model.FeedbackNegative || updated.FeedbackComment != "答案错误" {
+	if len([]rune(feedback.Comment)) != 1024 || len([]rune(updated.FeedbackComment)) != 1024 {
+		t.Fatalf("feedback payload budget violated: feedback=%d event=%d",
+			len([]rune(feedback.Comment)), len([]rune(updated.FeedbackComment)))
+	}
+	if updated.FeedbackID != feedback.ID || updated.FeedbackRating != model.FeedbackNegative {
 		t.Fatalf("event feedback was not attached: %+v", updated)
 	}
 	if updated.ReviewStatus != model.KnowledgeOpsReviewOpen || updated.ReviewedBy != "" {
 		t.Fatalf("negative feedback must create an open badcase: %+v", updated)
 	}
 
-	ignored, err := svc.Store.ReviewKnowledgeOpsEvent(ctx, tenant.ID, event.ID, false, repository.KnowledgeOpsReview{
-		Status: model.KnowledgeOpsReviewIgnored, Note: "重复问题", Actor: "reviewer",
+	err = svc.ReviewKnowledgeOpsEvent(ctx, tenant.ID, event.ID, false, repository.KnowledgeOpsReview{
+		Status: model.KnowledgeOpsReviewIgnored, Note: longComment, Actor: "reviewer",
 	})
-	if err != nil || !ignored {
-		t.Fatalf("review event: updated=%v err=%v", ignored, err)
+	if err != nil {
+		t.Fatalf("review event: %v", err)
+	}
+	afterReview, err := svc.Store.GetKnowledgeOpsEvent(ctx, tenant.ID, event.ID, false)
+	if err != nil || afterReview == nil {
+		t.Fatalf("get reviewed event: %+v err=%v", afterReview, err)
+	}
+	if len([]rune(afterReview.ReviewNote)) != 1024 {
+		t.Fatalf("review payload budget violated: %d", len([]rune(afterReview.ReviewNote)))
 	}
 	ignoredFeedback, err := svc.RecordMessageFeedback(ctx, tenant.ID, "user-1", FeedbackRequest{
 		ChatID: chat.ID, SessionID: "session-1", MessageID: "message-1",

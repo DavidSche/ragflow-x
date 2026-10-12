@@ -93,6 +93,8 @@ func (VersionPublishAttempt) TableName() string { return "rgx_version_publish_at
 const (
 	EventTypeDocumentVersionPublished = "document_version_published"
 	AggregateTypeDocumentVersion      = "document_version"
+	EventTypeMemoryOperationDispatch  = "memory_operation_dispatch"
+	AggregateTypeMemoryOperation      = "memory_operation"
 )
 
 // OutboxEvent is a durable domain event written in the same transaction as

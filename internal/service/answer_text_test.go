@@ -178,7 +178,7 @@ func TestSearchCompletionSuppressesThinkingInResponseAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := svc.SearchAppCompletion(ctx, tenant.ID, app.ID, "question", "request-thinking-search", false)
+	resp, err := svc.SearchAppCompletion(ctx, tenant.ID, "user-1", app.ID, "question", "request-thinking-search", false)
 	if err != nil {
 		t.Fatal(err)
 	}

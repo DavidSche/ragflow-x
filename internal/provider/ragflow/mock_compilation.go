@@ -27,20 +27,26 @@ func (m *Mock) SetCompilationTemplates(
 	m.compilationTemplates[source] = append([]CompilationTemplate(nil), templates...)
 }
 
-func (m *Mock) GetCompilationStatus(_ context.Context, datasetID string) (*CompilationStatus, error) {
+func (m *Mock) GetCompilationStatus(ctx context.Context, datasetID string) (*CompilationStatus, error) {
+	return m.GetCompilationStatusForKind(ctx, datasetID, "")
+}
+
+func (m *Mock) GetCompilationStatusForKind(
+	_ context.Context, datasetID, kind string,
+) (*CompilationStatus, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, fmt.Errorf("dataset_id is required")
 	}
+	kind = strings.TrimSpace(kind)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastCompilationStatusDataset = datasetID
-	status, ok := m.compilationStatuses[datasetID]
-	if !ok {
-		return &CompilationStatus{State: "idle", UpdatedAt: time.Now().UTC()}, nil
+	if status, ok := m.compilationStatuses[datasetID]; ok {
+		status.Kind = kind
+		return &status, nil
 	}
-	captured := status
-	return &captured, nil
+	return &CompilationStatus{Kind: kind, State: "idle", UpdatedAt: time.Now().UTC()}, nil
 }
 
 func (m *Mock) ListCompilationTemplates(

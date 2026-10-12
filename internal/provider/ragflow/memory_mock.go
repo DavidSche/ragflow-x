@@ -149,35 +149,79 @@ func (m *Mock) DeleteMemory(ctx context.Context, memoryID string) error {
 
 // ListMemoryMessages returns a mock memory's messages.
 func (m *Mock) ListMemoryMessages(ctx context.Context, memoryID string) ([]MemoryMessage, error) {
+	return m.ListMemoryMessagesFiltered(ctx, memoryID, MemoryMessageListFilter{})
+}
+
+// ListMemoryMessagesFiltered returns filtered mock memory messages.
+func (m *Mock) ListMemoryMessagesFiltered(
+	ctx context.Context, memoryID string, filter MemoryMessageListFilter,
+) ([]MemoryMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.memoryListMessagesFilteredCalls++
+	if m.memoryListMessagesError != nil {
+		return nil, m.memoryListMessagesError
+	}
+	if m.suppressNextMemoryMessages {
+		m.suppressNextMemoryMessages = false
+		return []MemoryMessage{}, nil
+	}
 	mem, ok := m.memories[memoryID]
 	if !ok {
 		return nil, fmt.Errorf("memory not found: %s", memoryID)
 	}
 	out := make([]MemoryMessage, len(mem.messages))
-	copy(out, mem.messages)
-	return out, nil
+	next := 0
+	for _, message := range mem.messages {
+		if (filter.AgentID == "" || message.AgentID == filter.AgentID) &&
+			(filter.SessionID == "" || message.SessionID == filter.SessionID) &&
+			(filter.UserID == "" || message.UserID == filter.UserID) {
+			out[next] = message
+			next++
+		}
+	}
+	out = out[:next]
+	page, size := filter.Page, filter.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 50
+	}
+	start := (page - 1) * size
+	if start >= len(out) {
+		return []MemoryMessage{}, nil
+	}
+	end := min(start+size, len(out))
+	return out[start:end], nil
 }
 
 // AddMemoryMessage appends a message to all of the memory ids present.
 func (m *Mock) AddMemoryMessage(ctx context.Context, req AddMessageRequest) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if req.MemoryID == "" {
+	m.memoryAddCalls++
+	captured := req
+	m.lastMemoryAddRequest = &captured
+	if m.memoryAddError != nil {
+		return m.memoryAddError
+	}
+	if len(req.MemoryIDs) == 0 {
 		return fmt.Errorf("memory_id is required")
 	}
-	mem, ok := m.memories[req.MemoryID]
-	if !ok {
-		return fmt.Errorf("memory not found: %s", req.MemoryID)
+	for _, memoryID := range req.MemoryIDs {
+		mem, ok := m.memories[memoryID]
+		if !ok {
+			return fmt.Errorf("memory not found: %s", memoryID)
+		}
+		msg := MemoryMessage{
+			MessageID: mem.nextMessageID, MemoryID: mem.id, AgentID: req.AgentID, SessionID: req.SessionID,
+			UserID: req.UserID, UserInput: req.UserInput, AgentResponse: req.AgentResponse,
+			Status: true, CreateTime: time.Now().Unix(),
+		}
+		mem.messages = append(mem.messages, msg)
+		mem.nextMessageID++
 	}
-	msg := MemoryMessage{
-		MessageID: mem.nextMessageID, MemoryID: mem.id, AgentID: req.AgentID, SessionID: req.SessionID,
-		UserID: "", UserInput: req.UserInput, AgentResponse: req.AgentResponse,
-		Status: true, CreateTime: time.Now().Unix(),
-	}
-	mem.messages = append(mem.messages, msg)
-	mem.nextMessageID++
 	return nil
 }
 
@@ -189,13 +233,12 @@ func (m *Mock) DeleteMemoryMessage(ctx context.Context, memoryID string, message
 	if !ok {
 		return fmt.Errorf("memory not found: %s", memoryID)
 	}
-	kept := mem.messages[:0]
-	for _, msg := range mem.messages {
-		if msg.MessageID != messageID {
-			kept = append(kept, msg)
+	for i := range mem.messages {
+		if mem.messages[i].MessageID == messageID {
+			mem.messages[i].Status = false
+			mem.messages[i].ForgetAt = time.Now().UTC().Format(time.RFC3339Nano)
 		}
 	}
-	mem.messages = kept
 	return nil
 }
 
@@ -220,6 +263,9 @@ func (m *Mock) UpdateMemoryMessageStatus(ctx context.Context, memoryID string, m
 func (m *Mock) SearchMemoryMessages(ctx context.Context, memoryID string, p MemorySearchParams) ([]MemoryMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.memorySearchCalls++
+	params := p
+	m.lastMemorySearchParams = &params
 	mem, ok := m.memories[memoryID]
 	if !ok {
 		return nil, fmt.Errorf("memory not found: %s", memoryID)
@@ -228,13 +274,34 @@ func (m *Mock) SearchMemoryMessages(ctx context.Context, memoryID string, p Memo
 	var out []MemoryMessage
 	for _, msg := range mem.messages {
 		if q == "" || strings.Contains(strings.ToLower(msg.UserInput), q) || strings.Contains(strings.ToLower(msg.AgentResponse), q) {
-			out = append(out, msg)
+			if (p.AgentID == "" || msg.AgentID == p.AgentID) &&
+				(p.SessionID == "" || msg.SessionID == p.SessionID) &&
+				(p.UserID == "" || msg.UserID == p.UserID) {
+				out = append(out, msg)
+			}
 		}
 	}
 	if p.TopN > 0 && len(out) > p.TopN {
 		out = out[:p.TopN]
 	}
 	return out, nil
+}
+
+// MemorySearchCallCount exposes how many semantic searches reached the mock.
+func (m *Mock) MemorySearchCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.memorySearchCalls
+}
+
+// LastMemorySearchParams exposes the last forced search contract in tests.
+func (m *Mock) LastMemorySearchParams() MemorySearchParams {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lastMemorySearchParams == nil {
+		return MemorySearchParams{}
+	}
+	return *m.lastMemorySearchParams
 }
 
 // GetMemoryMessageContent returns a message's content as JSON.

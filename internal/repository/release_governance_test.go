@@ -16,6 +16,10 @@ import (
 	"gorm.io/gorm"
 )
 
+func int64Ptr(value int64) *int64 { return &value }
+
+func stringPtr(value string) *string { return &value }
+
 func TestListReleaseCandidatesUsesIndependentCountAndListQueries(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "release.db")
 	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dsn})
@@ -106,7 +110,7 @@ func TestPostgresEvaluationRunStateTransitions(t *testing.T) {
 	ctx := context.Background()
 
 	run := &model.EvaluationRun{
-		ID: id.New(), TenantID: id.New(), ReleaseCandidateID: id.New(), CandidateVersion: 1,
+		ID: id.New(), TenantID: id.New(), ReleaseCandidateID: stringPtr(id.New()), CandidateVersion: int64Ptr(1),
 		EvalSetID: id.New(), EvalSetVersion: 1, EvalSetHash: id.New(),
 		EvaluationPolicyVersion: "v1", EvaluationPolicyHash: id.New(),
 		AggregationPolicyVersion: "v1", AggregationPolicyHash: id.New(),

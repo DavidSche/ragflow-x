@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -20,6 +21,7 @@ type ReleaseGovernanceRepo interface {
 	TransitionReleaseCandidate(ctx context.Context, tenantID, id, fromStatus, toStatus string) error
 	CreateExecutionSnapshot(ctx context.Context, snapshot *model.ExecutionSnapshot) error
 	GetExecutionSnapshot(ctx context.Context, tenantID, id string) (*model.ExecutionSnapshot, error)
+	GetExecutionSnapshotByCandidate(ctx context.Context, tenantID, candidateID string, candidateVersion int64) (*model.ExecutionSnapshot, error)
 	ListExecutionSnapshots(ctx context.Context, tenantID, candidateID string, page, pageSize int) ([]model.ExecutionSnapshot, int64, error)
 	CreateEvaluationSetVersion(ctx context.Context, version *model.EvaluationSetVersion) error
 	CreateEvaluationSetVersionWithCases(ctx context.Context, version *model.EvaluationSetVersion, cases []model.EvaluationCaseVersion) error
@@ -30,13 +32,15 @@ type ReleaseGovernanceRepo interface {
 	CreateEvaluationRun(ctx context.Context, run *model.EvaluationRun) error
 	StartEvaluationRun(ctx context.Context, runID string) error
 	GetEvaluationRun(ctx context.Context, tenantID, id string) (*model.EvaluationRun, error)
-	ListEvaluationRuns(ctx context.Context, tenantID, candidateID string, page, pageSize int) ([]model.EvaluationRun, int64, error)
+	ListEvaluationRuns(ctx context.Context, tenantID string, filter EvaluationScopeFilter, page, pageSize int) ([]model.EvaluationRun, int64, error)
 	CompleteEvaluationRun(ctx context.Context, runID, status, metrics string, pass *bool) error
+	CompleteEvaluationRunWithGate(ctx context.Context, tenantID, runID, status, metrics string, pass *bool, gateStatus, gateReason string) error
+	SetEvaluationGate(ctx context.Context, tenantID, runID, status, gateStatus, gateReason string) error
 	CreateEvaluationCaseResult(ctx context.Context, result *model.EvaluationCaseResult) error
 	ListEvaluationCaseResults(ctx context.Context, tenantID, runID string) ([]model.EvaluationCaseResult, error)
 	CreateEvidenceBundle(ctx context.Context, bundle *model.EvidenceBundle) error
 	GetEvidenceBundle(ctx context.Context, tenantID, id string) (*model.EvidenceBundle, error)
-	ListEvidenceBundles(ctx context.Context, tenantID, candidateID string, page, pageSize int) ([]model.EvidenceBundle, int64, error)
+	ListEvidenceBundles(ctx context.Context, tenantID string, filter EvaluationScopeFilter, page, pageSize int) ([]model.EvidenceBundle, int64, error)
 	CreateGateDecision(ctx context.Context, decision *model.ReleaseGateDecision) (bool, error)
 	GetGateDecision(ctx context.Context, tenantID, id string) (*model.ReleaseGateDecision, error)
 	GetActiveGateDecision(ctx context.Context, tenantID, candidateID string, candidateVersion int64) (*model.ReleaseGateDecision, error)
@@ -50,6 +54,36 @@ type ReleaseGovernanceRepo interface {
 	GetQualityIssue(ctx context.Context, tenantID, id string) (*model.QualityIssue, error)
 	ListQualityIssues(ctx context.Context, tenantID, status string, page, pageSize int) ([]model.QualityIssue, int64, error)
 	UpdateQualityIssue(ctx context.Context, issue *model.QualityIssue) error
+	GetAppliedSchemaVersion(ctx context.Context) (int64, error)
+}
+
+func (s *store) CompleteEvaluationRunWithGate(
+	ctx context.Context, tenantID, runID, status, metrics string, pass *bool, gateStatus, gateReason string,
+) error {
+	var res *gorm.DB
+	res = s.WithContext(ctx).Model(&model.EvaluationRun{}).
+		Select("status", "metrics", "pass", "gate_status", "gate_reason", "completed_at", "updated_at").
+		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, runID, model.EvaluationRunRunning).
+		Updates(map[string]interface{}{
+			"status": status, "metrics": metrics, "pass": pass,
+			"gate_status": gateStatus, "gate_reason": gateReason,
+			"completed_at": time.Now().UTC(), "updated_at": time.Now().UTC(),
+		})
+	if res.Error == nil && res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return res.Error
+}
+
+// EvaluationScopeFilter prevents release, compilation strategy and memory
+// policy evaluation chains from being mixed in one query result.
+type EvaluationScopeFilter struct {
+	CandidateID     string
+	CandidateVer    int64
+	Scope           string
+	StrategyID      string
+	MemoryPolicyID  string
+	EvaluationRunID string
 }
 
 func (s *store) CreateReleaseCandidate(ctx context.Context, candidate *model.ReleaseCandidate) error {
@@ -97,6 +131,19 @@ func (s *store) CreateExecutionSnapshot(ctx context.Context, snapshot *model.Exe
 func (s *store) GetExecutionSnapshot(ctx context.Context, tenantID, id string) (*model.ExecutionSnapshot, error) {
 	var snapshot model.ExecutionSnapshot
 	err := s.WithContext(ctx).Where("tenant_id = ? AND id = ?", tenantID, id).First(&snapshot).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	return &snapshot, err
+}
+
+func (s *store) GetExecutionSnapshotByCandidate(
+	ctx context.Context, tenantID, candidateID string, candidateVersion int64,
+) (*model.ExecutionSnapshot, error) {
+	var snapshot model.ExecutionSnapshot
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND release_candidate_id = ? AND candidate_version = ?", tenantID, candidateID, candidateVersion).
+		First(&snapshot).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -181,11 +228,39 @@ func (s *store) StartEvaluationRun(ctx context.Context, runID string) error {
 	return res.Error
 }
 
-func (s *store) ListEvaluationRuns(ctx context.Context, tenantID, candidateID string, page, pageSize int) ([]model.EvaluationRun, int64, error) {
-	if candidateID == "" {
-		return listTenantPage(ctx, s.DB, &[]model.EvaluationRun{}, "tenant_id = ?", "created_at DESC", page, pageSize, tenantID)
+func appendEvaluationScopeConditions(conditions []string, args []interface{}, filter EvaluationScopeFilter) ([]string, []interface{}) {
+	if filter.CandidateID != "" {
+		conditions = append(conditions, "evaluation_scope = ?", "release_candidate_id = ?")
+		args = append(args, model.EvaluationScopeRelease, filter.CandidateID)
+		if filter.CandidateVer > 0 {
+			conditions = append(conditions, "candidate_version = ?")
+			args = append(args, filter.CandidateVer)
+		}
 	}
-	return listTenantPage(ctx, s.DB, &[]model.EvaluationRun{}, "tenant_id = ? AND release_candidate_id = ?", "created_at DESC", page, pageSize, tenantID, candidateID)
+	if filter.Scope != "" {
+		conditions = append(conditions, "evaluation_scope = ?")
+		args = append(args, filter.Scope)
+	}
+	if filter.StrategyID != "" {
+		conditions = append(conditions, "x_strategy_id = ?")
+		args = append(args, filter.StrategyID)
+	}
+	if filter.MemoryPolicyID != "" {
+		conditions = append(conditions, "x_memory_policy_id = ?")
+		args = append(args, filter.MemoryPolicyID)
+	}
+	if filter.EvaluationRunID != "" {
+		conditions = append(conditions, "evaluation_run_id = ?")
+		args = append(args, filter.EvaluationRunID)
+	}
+	return conditions, args
+}
+
+func (s *store) ListEvaluationRuns(ctx context.Context, tenantID string, filter EvaluationScopeFilter, page, pageSize int) ([]model.EvaluationRun, int64, error) {
+	conditions := []string{"tenant_id = ?"}
+	args := []interface{}{tenantID}
+	conditions, args = appendEvaluationScopeConditions(conditions, args, filter)
+	return listTenantPage(ctx, s.DB, &[]model.EvaluationRun{}, strings.Join(conditions, " AND "), "created_at DESC", page, pageSize, args...)
 }
 
 func (s *store) CompleteEvaluationRun(ctx context.Context, runID, status, metrics string, pass *bool) error {
@@ -194,6 +269,14 @@ func (s *store) CompleteEvaluationRun(ctx context.Context, runID, status, metric
 		Updates(map[string]interface{}{
 			"status": status, "metrics": metrics, "pass": pass,
 			"completed_at": time.Now().UTC(), "updated_at": time.Now().UTC(),
+		}).Error
+}
+
+func (s *store) SetEvaluationGate(ctx context.Context, tenantID, runID, status, gateStatus, gateReason string) error {
+	return s.WithContext(ctx).Model(&model.EvaluationRun{}).
+		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, runID, status).
+		Updates(map[string]interface{}{
+			"gate_status": gateStatus, "gate_reason": gateReason, "updated_at": time.Now().UTC(),
 		}).Error
 }
 
@@ -220,11 +303,11 @@ func (s *store) GetEvidenceBundle(ctx context.Context, tenantID, id string) (*mo
 	return &bundle, err
 }
 
-func (s *store) ListEvidenceBundles(ctx context.Context, tenantID, candidateID string, page, pageSize int) ([]model.EvidenceBundle, int64, error) {
-	if candidateID == "" {
-		return listTenantPage(ctx, s.DB, &[]model.EvidenceBundle{}, "tenant_id = ?", "created_at DESC", page, pageSize, tenantID)
-	}
-	return listTenantPage(ctx, s.DB, &[]model.EvidenceBundle{}, "tenant_id = ? AND release_candidate_id = ?", "created_at DESC", page, pageSize, tenantID, candidateID)
+func (s *store) ListEvidenceBundles(ctx context.Context, tenantID string, filter EvaluationScopeFilter, page, pageSize int) ([]model.EvidenceBundle, int64, error) {
+	conditions := []string{"tenant_id = ?"}
+	args := []interface{}{tenantID}
+	conditions, args = appendEvaluationScopeConditions(conditions, args, filter)
+	return listTenantPage(ctx, s.DB, &[]model.EvidenceBundle{}, strings.Join(conditions, " AND "), "created_at DESC", page, pageSize, args...)
 }
 
 func (s *store) CreateGateDecision(ctx context.Context, decision *model.ReleaseGateDecision) (bool, error) {
@@ -335,6 +418,13 @@ func (s *store) UpdateQualityIssue(ctx context.Context, issue *model.QualityIssu
 			"resolution_target_version", "eval_case_id", "evaluation_run_id", "release_id",
 			"reopen_count", "reopen_reason", "previous_resolution", "previous_run_id", "updated_at",
 		).Updates(issue).Error
+}
+
+func (s *store) GetAppliedSchemaVersion(ctx context.Context) (int64, error) {
+	var version int64
+	err := s.WithContext(ctx).Model(&model.SchemaVersion{}).
+		Select("COALESCE(MAX(version), 0)").Scan(&version).Error
+	return version, err
 }
 
 func listTenantPage[T any](ctx context.Context, db *gorm.DB, dest *[]T, query, order string, page, pageSize int, args ...interface{}) ([]T, int64, error) {

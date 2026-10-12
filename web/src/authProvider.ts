@@ -76,6 +76,7 @@ const RESOURCE_ACCESS: Record<string, { resource: string; action: string }> = {
   "scenario-templates": { resource: "scenario-template", action: "read" },
   "parser-policies": { resource: "parser-policy", action: "read" },
   "quality-profiles": { resource: "quality-profile", action: "read" },
+  "knowledge-compilation": { resource: "compilation", action: "read" },
   "logical-documents": { resource: "logical-document", action: "read" },
   "release-governance": { resource: "release-governance", action: "read" },
   "assistant-releases": { resource: "release-governance", action: "read" },

@@ -19,6 +19,8 @@ const excludeMermaidInitialPreload = {
   },
 };
 
+const apiProxyTarget = process.env.RGX_API_PROXY_TARGET || "http://localhost:9191";
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), excludeMermaidInitialPreload],
   build: {
@@ -52,7 +54,16 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": {
-        target: "http://localhost:9191",
+        target: apiProxyTarget,
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    port: 4173,
+    proxy: {
+      "/api": {
+        target: apiProxyTarget,
         changeOrigin: true,
       },
     },

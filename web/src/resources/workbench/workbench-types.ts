@@ -152,6 +152,10 @@ export function feedbackRequestId(turnId?: string): string {
   return turnId.startsWith("assistant-") ? turnId.slice("assistant-".length) : turnId;
 }
 
+export function restoredTurnId(record: { request_id?: string }, fallbackId: string): string {
+  return record.request_id ? `assistant-${record.request_id}` : fallbackId;
+}
+
 export function stableCitationId(value: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {

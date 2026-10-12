@@ -255,7 +255,7 @@ func TestLiveInternalEndpointContract(t *testing.T) {
 	// writes durable state, so it stays opt-in.
 	if os.Getenv("RGX_RAGFLOW_LIVE_MEMORY_MESSAGE_DRILL") == "1" {
 		if memories, _, err := client.ListMemories(ctx, ListMemoriesFilter{}); err == nil && len(memories) > 0 {
-			fail("POST /messages", client.AddMemoryMessage(ctx, AddMessageRequest{MemoryID: memories[0].ID, UserInput: "rgx live drill", AgentResponse: "drill ack"}))
+			fail("POST /messages", client.AddMemoryMessage(ctx, AddMessageRequest{MemoryIDs: []string{memories[0].ID}, UserInput: "rgx live drill", AgentResponse: "drill ack"}))
 		}
 	}
 
@@ -322,6 +322,7 @@ var drillableInternalEndpoints = map[string]string{
 	"PATCH /datasets/{dataset_id}/documents/{document_id}":                           "harness (write family covered by metadata replacement and document parse config contracts)",
 	"POST /datasets/{dataset_id}/documents/batch-update-status":                      "live (idempotent round-trip of current enabled state)",
 	"GET /datasets/{dataset_id}/artifacts":                                           "harness (offline dataset artifact GET contract covers the list response)",
+	"GET /datasets/{dataset_id}/artifacts/{page_type}/{slug}":                        "live (read-only artifact detail read; needs an existing slug)",
 	"POST /datasets/{dataset_id}/search":                                             "harness (offline scoped search contract covers request/response wire)",
 	"GET /datasets/{dataset_id}/compilation/status":                                  "live (idempotent compilation status read)",
 	"GET /compilation-templates/{source}":                                            "live (idempotent compilation template read)",

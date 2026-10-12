@@ -76,7 +76,7 @@ func TestP0_PG_001_PostgresApprovalOrganizationAdaptability(t *testing.T) {
 	runID := id.New()
 	pass := true
 	terminalRun := &model.EvaluationRun{
-		ID: runID, TenantID: tenantID, ReleaseCandidateID: id.New(), CandidateVersion: 1,
+		ID: runID, TenantID: tenantID, ReleaseCandidateID: stringPtr(id.New()), CandidateVersion: int64Ptr(1),
 		EvalSetID: "pg-set", EvalSetVersion: 1, EvalSetHash: "hash",
 		EvaluationPolicyVersion: "v1", EvaluationPolicyHash: "hash",
 		AggregationPolicyVersion: "v1", AggregationPolicyHash: "hash",

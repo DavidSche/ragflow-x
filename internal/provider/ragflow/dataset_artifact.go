@@ -2,6 +2,7 @@ package ragflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +13,17 @@ type DatasetArtifact struct {
 	Slug     string `json:"slug"`
 	Title    string `json:"title"`
 	PageType string `json:"page_type"`
+}
+
+type DatasetArtifactDetail struct {
+	Slug              string   `json:"slug"`
+	Title             string   `json:"title"`
+	PageType          string   `json:"page_type"`
+	Topic             string   `json:"topic"`
+	ContentMDRendered string   `json:"content_md_rendered"`
+	Summary           string   `json:"summary"`
+	SourceChunkIDs    []string `json:"source_chunk_ids"`
+	SourceDocIDs      []string `json:"source_doc_ids"`
 }
 
 type DatasetArtifactFilter struct {
@@ -72,4 +84,37 @@ func (c *HTTPClient) ListDatasetArtifacts(
 		out.Items = []DatasetArtifact{}
 	}
 	return out.Items, out.Total, nil
+}
+
+func (c *HTTPClient) GetDatasetArtifact(
+	ctx context.Context, datasetID, pageType, slug string,
+) (*DatasetArtifactDetail, error) {
+	datasetID = strings.TrimSpace(datasetID)
+	pageType = strings.TrimSpace(pageType)
+	slug = strings.TrimSpace(slug)
+	if datasetID == "" || pageType == "" || slug == "" {
+		return nil, protocolError("dataset_id, page_type and slug are required")
+	}
+	path := "/datasets/" + url.PathEscape(datasetID) + "/artifacts/" +
+		url.PathEscape(pageType) + "/" + url.PathEscape(slug)
+	var detail *DatasetArtifactDetail
+	err := c.doAndParse(ctx, http.MethodGet, path, nil, "", &detail)
+	var providerErr *Error
+	if errors.As(err, &providerErr) &&
+		providerErr.HTTPStatus == http.StatusOK && providerErr.Code == http.StatusNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(detail.Slug) == "" {
+		detail.Slug = slug
+	}
+	if strings.TrimSpace(detail.PageType) == "" {
+		detail.PageType = pageType
+	}
+	return detail, nil
 }

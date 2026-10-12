@@ -41,6 +41,7 @@ var builtinToolSpecs = map[string]model.ToolRegistry{
 	"fact_lookup":             {ToolID: "fact_lookup", ToolType: model.ToolTypeLookup, InputSchema: objectSchema([]string{"fact_key"}, "string"), OutputSchema: objectSchema([]string{"value", "unit"}, "string", "string"), ImplementationRef: "builtin:fact_lookup"},
 	"sql_query":               {ToolID: "sql_query", ToolType: model.ToolTypeSQLQuery, ImplementationRef: "builtin:sql_query"},
 	"knowledge_retrieval":     {ToolID: "knowledge_retrieval", ToolType: model.ToolTypeKnowledgeRetrieval, InputSchema: knowledgeRetrievalInputSchema(), OutputSchema: knowledgeRetrievalOutputSchema(), ImplementationRef: "builtin:knowledge_retrieval"},
+	"memory_retrieval":        {ToolID: "memory_retrieval", ToolType: model.ToolTypeMemoryRetrieval, InputSchema: memoryRetrievalInputSchema(), OutputSchema: memoryRetrievalOutputSchema(), ImplementationRef: "builtin:memory_retrieval"},
 }
 
 func objectSchema(required []string, propertyTypes ...string) string {
@@ -98,6 +99,48 @@ func knowledgeRetrievalOutputSchema() string {
 			"chunks": map[string]interface{}{
 				"type":  "array",
 				"items": map[string]string{"type": "string"},
+			},
+		},
+	})
+	return string(encoded)
+}
+
+func memoryRetrievalInputSchema() string {
+	encoded, _ := json.Marshal(map[string]interface{}{
+		"type":     "object",
+		"required": []string{"memory_id", "assistant_id", "session_id", "question"},
+		"properties": map[string]interface{}{
+			"memory_id":    map[string]string{"type": "string"},
+			"assistant_id": map[string]string{"type": "string"},
+			"session_id":   map[string]string{"type": "string"},
+			"question":     map[string]string{"type": "string"},
+			"top_n":        map[string]string{"type": "integer"},
+		},
+	})
+	return string(encoded)
+}
+
+func memoryRetrievalOutputSchema() string {
+	encoded, _ := json.Marshal(map[string]interface{}{
+		"type":     "object",
+		"required": []string{"decision_id", "policy_id", "memory_id", "total", "messages"},
+		"properties": map[string]interface{}{
+			"decision_id": map[string]string{"type": "string"},
+			"policy_id":   map[string]string{"type": "string"},
+			"memory_id":   map[string]string{"type": "string"},
+			"total":       map[string]string{"type": "integer"},
+			"messages": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type":     "object",
+					"required": []string{"message_id", "user_input", "agent_response"},
+					"properties": map[string]interface{}{
+						"message_id":     map[string]string{"type": "integer"},
+						"user_input":     map[string]string{"type": "string"},
+						"agent_response": map[string]string{"type": "string"},
+						"content":        map[string]string{"type": "string"},
+					},
+				},
 			},
 		},
 	})

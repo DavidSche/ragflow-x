@@ -61,6 +61,38 @@ func TestHTTPClient_SearchDatasetContract(t *testing.T) {
 	}
 }
 
+func TestHTTPClient_SearchDatasetNormalizesRAGFlowFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, map[string]interface{}{
+			"chunks": []map[string]interface{}{
+				{
+					"chunk_id":            "chunk-parent",
+					"doc_id":              "doc-1",
+					"content_with_weight": "# Page",
+					"compile_kwd":         "wiki_page",
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "key", 5*time.Second, 2)
+	result, err := client.SearchDataset(context.Background(), "dataset-1", SearchDatasetRequest{
+		Question: "What changed?",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Chunks) != 1 {
+		t.Fatalf("unexpected chunks: %+v", result.Chunks)
+	}
+	chunk := result.Chunks[0]
+	if chunk["id"] != "chunk-parent" || chunk["document_id"] != "doc-1" ||
+		chunk["content"] != "# Page" || chunk["compile_kwd"] != "wiki_page" {
+		t.Fatalf("RAGFlow fields were not normalized: %+v", chunk)
+	}
+}
+
 func TestSearchDatasetRejectsInvalidInput(t *testing.T) {
 	client := NewMock()
 	valid := SearchDatasetRequest{Question: "What changed?"}

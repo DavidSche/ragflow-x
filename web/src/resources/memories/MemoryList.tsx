@@ -11,6 +11,7 @@ import { Eye, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { api, ApiError } from "../../lib/api";
 import { MemoryConfigFields, emptyMemoryConfig, type MemoryConfigValues } from "./MemoryConfigFields";
+import { SelfMemoryPolicyPanel } from "./SelfMemoryPolicyPanel";
 import { clampInteger, clampNumber } from "@/lib/numeric";
 
 interface MemoryLike {
@@ -251,19 +252,22 @@ export const MemoryList = () => {
   const t = useTranslate();
   const filters = [<SearchInput source="name" key="name" alwaysOn />];
   return (
-    <List perPage={20} actions={<CreateMemoryDialog />} filters={filters} aria-label={t("memories.list_title")}>
-      <ListLoadingBar />
-      <DataTable aria-label={t("memories.data_table")} empty={<div className="p-6 text-center text-sm text-muted-foreground">{t("memories.empty")}</div>}>
-        <DataTable.Col source="name" label={t("memories.name")} />
-        <DataTable.Col source="memory_type" label={t("memories.memory_type")} className="hidden md:table-cell" />
-        <DataTable.Col label="">
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <EditMemoryCell />
-            <ViewDetailCell />
-            <DeleteMemoryCell />
-          </div>
-        </DataTable.Col>
-      </DataTable>
-    </List>
+    <>
+      <SelfMemoryPolicyPanel />
+      <List perPage={20} actions={<CreateMemoryDialog />} filters={filters} aria-label={t("memories.list_title")}>
+        <ListLoadingBar />
+        <DataTable aria-label={t("memories.data_table")} empty={<div className="p-6 text-center text-sm text-muted-foreground">{t("memories.empty")}</div>}>
+          <DataTable.Col source="name" label={t("memories.name")} />
+          <DataTable.Col source="memory_type" label={t("memories.memory_type")} className="hidden md:table-cell" />
+          <DataTable.Col label="">
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <EditMemoryCell />
+              <ViewDetailCell />
+              <DeleteMemoryCell />
+            </div>
+          </DataTable.Col>
+        </DataTable>
+      </List>
+    </>
   );
 };

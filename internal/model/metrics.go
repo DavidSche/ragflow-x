@@ -149,6 +149,11 @@ type QuotaReservation struct {
 	// prevents release/reconciliation from draining balances for a request
 	// rejected before reservation or interrupted before it could reserve.
 	Applied   bool      `gorm:"column:applied;not null;default:false" json:"applied"`
+	ProjectID string    `gorm:"column:project_id;size:32;index" json:"project_id,omitempty"`
+	DatasetID string    `gorm:"column:x_dataset_id;size:32;index" json:"x_dataset_id,omitempty"`
+	ProfileID string    `gorm:"column:x_profile_id;size:32;index" json:"x_profile_id,omitempty"`
+	AssistantID string  `gorm:"column:x_assistant_id;size:32;index" json:"x_assistant_id,omitempty"`
+	RunID       string  `gorm:"column:x_run_id;size:32;index" json:"x_run_id,omitempty"`
 	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
@@ -172,6 +177,11 @@ type CostMetric struct {
 	ChatID                  string    `gorm:"column:chat_id;size:64;index" json:"chat_id"`
 	SessionID               string    `gorm:"column:session_id;size:64;index" json:"session_id"`
 	DatasetIDs              string    `gorm:"column:dataset_ids;size:512" json:"dataset_ids"`
+	ProjectID               string    `gorm:"column:project_id;size:32;index" json:"project_id,omitempty"`
+	XDatasetID              string    `gorm:"column:x_dataset_id;size:32;index" json:"x_dataset_id,omitempty"`
+	XProfileID              string    `gorm:"column:x_profile_id;size:32;index" json:"x_profile_id,omitempty"`
+	XAssistantID            string    `gorm:"column:x_assistant_id;size:32;index" json:"x_assistant_id,omitempty"`
+	XRunID                  string    `gorm:"column:x_run_id;size:32;index" json:"x_run_id,omitempty"`
 	TokensIn                int64     `gorm:"column:tokens_in;not null;default:0" json:"tokens_in"`
 	TokensOut               int64     `gorm:"column:tokens_out;not null;default:0" json:"tokens_out"`
 	EstimatedCost           float64   `gorm:"column:cost;not null;default:0" json:"estimated_cost"`

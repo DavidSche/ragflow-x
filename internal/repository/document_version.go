@@ -50,6 +50,7 @@ type DocumentVersionRepo interface {
 	RetryVersionPublishAttempt(ctx context.Context, id string, attempts int, lastError string, now time.Time) error
 
 	CreateOutboxEvent(ctx context.Context, event *model.OutboxEvent) error
+	GetMemoryDispatchOutboxEvent(ctx context.Context, tenantID, id string) (*model.OutboxEvent, error)
 	ListOutboxEvents(ctx context.Context, tenantID string, filter OutboxEventFilter, page, pageSize int) ([]OutboxEventView, int64, error)
 	GetOutboxEvent(ctx context.Context, tenantID, id string) (*OutboxEventView, error)
 	RetryOutboxEventForTenant(ctx context.Context, tenantID, id string, now time.Time) (*OutboxEventView, bool, error)
@@ -388,6 +389,23 @@ func (s *store) RetryVersionPublishAttempt(ctx context.Context, id string, attem
 
 func (s *store) CreateOutboxEvent(ctx context.Context, event *model.OutboxEvent) error {
 	return s.WithContext(ctx).Create(event).Error
+}
+
+func (s *store) GetMemoryDispatchOutboxEvent(
+	ctx context.Context, tenantID, id string,
+) (*model.OutboxEvent, error) {
+	var event model.OutboxEvent
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND id = ? AND event_type = ? AND aggregate_type = ?",
+			tenantID, id, model.EventTypeMemoryOperationDispatch, model.AggregateTypeMemoryOperation).
+		First(&event).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
 }
 
 func (s *store) ListOutboxEvents(

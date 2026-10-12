@@ -47,6 +47,14 @@ func (s *Service) ProcessOutboxEvents(ctx context.Context, limit int) error {
 	var failures []error
 	for index := range events {
 		event := &events[index]
+		if event.EventType == model.EventTypeMemoryOperationDispatch &&
+			event.AggregateType == model.AggregateTypeMemoryOperation {
+			if err := s.dispatchMemoryOperationEvent(ctx, event); err != nil {
+				failures = append(failures, err)
+				continue
+			}
+			continue
+		}
 		if event.EventType != model.EventTypeDocumentVersionPublished ||
 			event.AggregateType != model.AggregateTypeDocumentVersion {
 			retryErr := s.Store.RetryOutboxEvent(
@@ -185,6 +193,10 @@ func (s *Service) RequestOutboxEventRetry(
 	}
 	if view.Status == repository.OutboxEventStatusPublished {
 		return nil, httperr.New(409, 40998, "published outbox event cannot be retried")
+	}
+	if view.EventType == model.EventTypeMemoryOperationDispatch &&
+		view.AggregateType == model.AggregateTypeMemoryOperation {
+		return nil, httperr.New(409, 40999, "memory dispatch events cannot be manually retried")
 	}
 	now := time.Now().UTC()
 	_, retried, err := s.Store.RetryOutboxEventForTenant(ctx, tenantID, eventID, now)

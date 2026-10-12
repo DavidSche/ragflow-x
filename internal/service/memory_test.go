@@ -73,13 +73,15 @@ func TestMemoryTenantIsolation(t *testing.T) {
 	if len(msgs) != 1 || msgs[0].UserInput != "q" {
 		t.Fatalf("unexpected messages: %+v", msgs)
 	}
-	if _, err := svc.SearchMemoryMessages(ctx, tb.ID, mem.ID, "q", 0.2, 0.7, 5, false); err == nil {
+	if _, err := svc.SearchMemoryMessages(ctx, tb.ID, mem.ID, MemorySearchInput{Query: "q", SimilarityThreshold: 0.2, KeywordsSimilarityWeight: 0.7, TopN: 5}, false); err == nil {
 		t.Fatal("tenant B must not search tenant A's memory")
 	}
 	if _, err := svc.GetMemoryMessageContent(ctx, tb.ID, mem.ID, msgs[0].MessageID, false); err == nil {
 		t.Fatal("tenant B must not read tenant A's memory message content")
 	}
-	hits, err := svc.SearchMemoryMessages(ctx, ta.ID, mem.ID, "q", 0.2, 0.7, 5, false)
+	hits, err := svc.SearchMemoryMessages(ctx, ta.ID, mem.ID, MemorySearchInput{
+		Query: "q", AgentID: "a", SessionID: "s", SimilarityThreshold: 0.2, KeywordsSimilarityWeight: 0.7, TopN: 5,
+	}, false)
 	if err != nil {
 		t.Fatalf("owner search: %v", err)
 	}

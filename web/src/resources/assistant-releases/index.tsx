@@ -42,6 +42,12 @@ interface RuntimeHealth {
   assistant_release_id: string; health: string; reason: string; checked_at: string;
 }
 
+interface ReleaseGateSummary {
+  id: string; decision: string; reason: string;
+  sub_gate_states: Record<string, string>;
+  release_eligible_for_full: boolean;
+}
+
 interface DatasetOption {
   id: string;
   name: string;
@@ -95,6 +101,7 @@ export function AssistantReleaseBoard() {
   const [manifest, setManifest] = useState<SnapshotManifest | null>(null);
   const [operations, setOperations] = useState<ReleaseOperation[]>([]);
   const [health, setHealth] = useState<RuntimeHealth | null>(null);
+  const [gateSummary, setGateSummary] = useState<ReleaseGateSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogKind>(null);
@@ -109,6 +116,9 @@ export function AssistantReleaseBoard() {
   const { data: datasets } = useGetList<DatasetOption>("datasets", { pagination: { page: 1, perPage: 200 } });
 
   const selected = releases.find((release) => release.id === selectedId) ?? null;
+  const fullReleaseBlocked = Boolean(
+    selected && canActivateRelease(selected.release_state) && !gateSummary?.release_eligible_for_full,
+  );
 
   const toggleDataset = (datasetId: string) => {
     setSelectedDatasetIds((previous) => previous.includes(datasetId)
@@ -141,18 +151,21 @@ export function AssistantReleaseBoard() {
         setManifest(null);
         setOperations([]);
         setHealth(null);
+        setGateSummary(null);
         return;
       }
-      const [manifestData, operationData, healthData] = await Promise.all([
+      const [manifestData, operationData, healthData, gateData] = await Promise.all([
         unwrap(api.get<ApiEnvelope<SnapshotManifest>>(`/assistant-releases/${nextId}/manifest`)),
         unwrap(api.get<ApiEnvelope<PageEnvelope<ReleaseOperation>>>(
           `/assistant-releases/${nextId}/operations?page=1&page_size=50`,
         )),
         unwrap(api.get<ApiEnvelope<RuntimeHealth | null>>(`/assistant-releases/${nextId}/health`)),
+        unwrap(api.get<ApiEnvelope<ReleaseGateSummary>>(`/assistant-releases/${nextId}/gate`)),
       ]);
       setManifest(manifestData);
       setOperations(operationData.items);
       setHealth(healthData);
+      setGateSummary(gateData);
     } catch (error) {
       notify(error instanceof ApiError ? error.displayMessage : t("assistant_release.load_failed"), { type: "error" });
     } finally {
@@ -388,6 +401,25 @@ export function AssistantReleaseBoard() {
                 </div>
               </div>
             </div>
+            <div className="rounded-lg border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-medium">{t("assistant_release.gate_summary")}</h3>
+                <Badge variant={gateSummary?.release_eligible_for_full ? "default" : "destructive"}>
+                  {gateSummary?.decision ?? "UNKNOWN"}
+                </Badge>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-1 text-xs lg:grid-cols-3">
+                {Object.entries(gateSummary?.sub_gate_states ?? {}).map(([name, state]) => (
+                  <div key={name} className="flex items-center justify-between rounded border px-2 py-1">
+                    <span className="truncate text-muted-foreground" title={name}>{name}</span>
+                    <Badge variant={state === "PASS" ? "default" : "destructive"}>{state}</Badge>
+                  </div>
+                ))}
+              </div>
+              {fullReleaseBlocked && (
+                <p className="mt-2 text-xs text-destructive">{t("assistant_release.full_release_blocked")}</p>
+              )}
+            </div>
             <div className="rounded-lg border">
               <div className="border-b p-3 text-sm font-medium">{t("assistant_release.operations")}</div>
               <div className="divide-y">
@@ -475,7 +507,7 @@ export function AssistantReleaseBoard() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setDialog(null)}>{t("assistant_release.cancel")}</Button>
             <Button variant="outline" onClick={() => activate(true)} disabled={busy}>{t("assistant_release.activate_canary")}</Button>
-            <Button onClick={() => activate(false)} disabled={busy}>{t("assistant_release.activate_stable")}</Button>
+            <Button onClick={() => activate(false)} disabled={busy || fullReleaseBlocked}>{t("assistant_release.activate_stable")}</Button>
           </div>
         </DialogContent>
       </Dialog>

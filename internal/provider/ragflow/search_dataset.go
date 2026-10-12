@@ -93,6 +93,9 @@ func (c *HTTPClient) SearchDataset(
 	if out.Chunks == nil {
 		out.Chunks = []map[string]interface{}{}
 	}
+	for _, chunk := range out.Chunks {
+		normalizeSearchDatasetChunk(chunk)
+	}
 	if out.Labels == nil {
 		out.Labels = []string{}
 	}
@@ -100,4 +103,22 @@ func (c *HTTPClient) SearchDataset(
 		out.Total = int64(len(out.Chunks))
 	}
 	return &SearchDatasetResult{Chunks: out.Chunks, Total: out.Total, Labels: out.Labels}, nil
+}
+
+func normalizeSearchDatasetChunk(chunk map[string]interface{}) {
+	if _, exists := chunk["id"]; !exists {
+		if value, exists := chunk["chunk_id"]; exists {
+			chunk["id"] = value
+		}
+	}
+	if _, exists := chunk["document_id"]; !exists {
+		if value, exists := chunk["doc_id"]; exists {
+			chunk["document_id"] = value
+		}
+	}
+	if _, exists := chunk["content"]; !exists {
+		if value, exists := chunk["content_with_weight"]; exists {
+			chunk["content"] = value
+		}
+	}
 }

@@ -17,6 +17,7 @@ interface ConversationMessageListProps {
   onOpenCitation?: (c: Citation) => void;
   onOpenDocument?: (c: Citation) => void;
   onCreateKnowledgeTask?: (turnId: string) => void;
+  onOpenContextSource?: (turnId: string) => void;
 }
 
 export function ConversationMessageList({
@@ -35,6 +36,7 @@ export function ConversationMessageList({
   onOpenCitation,
   onOpenDocument,
   onCreateKnowledgeTask,
+  onOpenContextSource,
 }: ConversationMessageListProps) {
   if (!messages.length && emptyText) {
     return <p className="m-auto text-sm text-muted-foreground">{emptyText}</p>;
@@ -59,6 +61,7 @@ export function ConversationMessageList({
           onOpenCitation={onOpenCitation}
           onOpenDocument={onOpenDocument}
           onCreateKnowledgeTask={onCreateKnowledgeTask}
+          onOpenContextSource={onOpenContextSource}
         />
       ))}
     </div>

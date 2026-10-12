@@ -68,6 +68,8 @@ func (s *Service) ExecuteToolRegistry(
 		output, sqlTrace, err = s.executeSQLQueryTool(ctx, tenantID, userID, input, decodedInput, tool)
 	case model.ToolTypeKnowledgeRetrieval:
 		output, err = s.executeKnowledgeRetrievalTool(ctx, tenantID, userID, decodedInput)
+	case model.ToolTypeMemoryRetrieval:
+		output, err = s.executeMemoryRetrievalTool(ctx, tenantID, userID, input, decodedInput)
 	default:
 		return nil, httperr.BadRequest(40131, "unsupported tool type")
 	}
@@ -342,5 +344,46 @@ func (s *Service) executeKnowledgeRetrievalTool(
 		"fallback_used":      execution.FallbackUsed,
 		"total":              json.Number(strconv.FormatInt(execution.Total, 10)),
 		"chunks":             chunks,
+	}, nil
+}
+
+func (s *Service) executeMemoryRetrievalTool(
+	ctx context.Context, tenantID, userID string, executionInput ToolExecutionInput,
+	input map[string]interface{},
+) (map[string]interface{}, error) {
+	memoryID, _ := input["memory_id"].(string)
+	assistantID, _ := input["assistant_id"].(string)
+	sessionID, _ := input["session_id"].(string)
+	question, _ := input["question"].(string)
+	topN := 5
+	if rawTopN, ok := input["top_n"].(json.Number); ok && rawTopN.String() != "" {
+		parsed, parseErr := strconv.ParseInt(rawTopN.String(), 10, 64)
+		if parseErr != nil {
+			return nil, httperr.BadRequest(40131, "input.top_n must be an integer")
+		}
+		topN = int(parsed)
+	}
+	result, err := s.SearchGovernedMemory(ctx, tenantID, userID, memoryID, GovernedMemorySearchInput{
+		Query: question, AssistantID: assistantID, SessionID: sessionID,
+		RequestID: executionInput.AnswerRunID, TopN: topN,
+	})
+	if err != nil {
+		return nil, err
+	}
+	messages := make([]interface{}, 0, len(result.Messages))
+	for _, message := range result.Messages {
+		messages = append(messages, map[string]interface{}{
+			"message_id":     json.Number(strconv.FormatInt(message.MessageID, 10)),
+			"user_input":     message.UserInput,
+			"agent_response": message.AgentResponse,
+			"content":        message.Content,
+		})
+	}
+	return map[string]interface{}{
+		"decision_id": result.Decision.ID,
+		"policy_id":   result.Decision.MemoryPolicyID,
+		"memory_id":   memoryID,
+		"total":       json.Number(strconv.Itoa(len(result.Messages))),
+		"messages":    messages,
 	}, nil
 }

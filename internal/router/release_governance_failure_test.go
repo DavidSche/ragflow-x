@@ -96,6 +96,37 @@ func governanceInt(t *testing.T, data map[string]interface{}, field string) int6
 	return int64(value)
 }
 
+func strictReleaseGateEvidence(candidateID string, candidateVersion int64) (map[string]interface{}, map[string]interface{}) {
+	return map[string]interface{}{
+			"permission_gate": map[string]interface{}{
+				"candidate_id": candidateID, "candidate_version": candidateVersion,
+				"contract_version": "release-gate-permission-v1", "passed": true,
+				"resource_matrix": true, "builtin_reconciliation": true,
+				"pre_model_authorization": true, "membership_revocation": true,
+				"endpoint_abac_matrix": true, "pii_template_tenant_boundary": true,
+				"preview_redaction": true,
+			},
+		}, map[string]interface{}{
+			"experience_gate": map[string]interface{}{
+				"candidate_id": candidateID, "candidate_version": candidateVersion,
+				"contract_version": "release-gate-experience-v1", "passed": true,
+				"dataset_details": true, "knowledge_ops": true, "memory_workbench": true,
+				"conversation_center": true, "assistant_release": true, "loading_state": true,
+				"empty_state": true, "wait_state": true, "error_state": true,
+				"unauthorized_state": true, "retry_state": true, "i18n_en": true, "i18n_zh": true,
+			},
+		}
+}
+
+func governanceMustJSON(t *testing.T, value any) string {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
 func newGovernanceChainThroughRun(
 	t *testing.T, app *testApp, token string, pass bool, failed bool,
 ) governanceChain {
@@ -168,11 +199,12 @@ func newGovernanceChainThroughEvidence(t *testing.T, app *testApp, token string)
 func newGovernanceChainThroughEvidenceWithPass(t *testing.T, app *testApp, token string, pass bool) governanceChain {
 	t.Helper()
 	chain := newGovernanceChainThroughRun(t, app, token, pass, false)
+	permission, configuration := strictReleaseGateEvidence(chain.CandidateID, chain.CandidateVersion)
 	evidence := governanceRequest(t, app, token, "create evidence", http.MethodPost, "/api/v1/evidence-bundles", map[string]interface{}{
 		"release_candidate_id": chain.CandidateID, "candidate_version": chain.CandidateVersion,
 		"evaluation_run_id": chain.RunID, "security_evidence": map[string]interface{}{},
 		"policy_evidence": map[string]interface{}{}, "risk_evidence": map[string]interface{}{},
-		"permission_evidence": map[string]interface{}{}, "configuration_evidence": map[string]interface{}{},
+		"permission_evidence": permission, "configuration_evidence": configuration,
 		"approval_evidence": map[string]interface{}{}, "evidence_items": []interface{}{},
 	}, http.StatusOK)
 	chain.EvidenceID = governanceString(t, evidence, "id")
@@ -184,8 +216,10 @@ func governanceGateInput(chain governanceChain, environment, decision string) ma
 		"release_candidate_id": chain.CandidateID, "candidate_version": chain.CandidateVersion,
 		"evidence_bundle_id": chain.EvidenceID, "environment": environment,
 		"sub_gate_states": map[string]string{
-			"security": decision, "policy": decision, "risk": decision,
-			"permission": decision, "configuration": decision, "approval": decision,
+			"compilation_contract": decision, "memory_contract": decision, "identity": decision,
+			"migration": decision, "permission": decision, "improvement": decision,
+			"privacy": decision, "cost": decision, "conversation": decision,
+			"experience": decision, "operations": decision,
 		},
 		"environment_policy_version": "v1", "environment_policy_hash": "env-hash", "activate": true,
 	}
@@ -221,11 +255,118 @@ func TestE2E_EvaluationBusinessFailBlocksReleaseAndCreatesIssue(t *testing.T) {
 	}
 }
 
+func TestE2E_LocalProductionReleaseGovernanceDrill(t *testing.T) {
+	app := newTestApp(t)
+	defer app.close()
+	token := app.login(t)
+	chain := newGovernanceChainThroughEvidence(t, app, token)
+
+	baselineGate := governanceRequest(t, app, token, "production baseline gate", http.MethodPost,
+		"/api/v1/release-gates", governanceGateInput(chain, "production", "PASS"), http.StatusOK)
+	if got := governanceString(t, baselineGate, "decision"); got != model.GateDecisionPass {
+		t.Fatalf("production baseline gate decision = %s, want PASS", got)
+	}
+	if active, _ := baselineGate["active_gate"].(bool); !active {
+		t.Fatal("production baseline gate must be activated for the local production drill")
+	}
+
+	currentGate := governanceRequest(t, app, token, "production current gate", http.MethodPost,
+		"/api/v1/release-gates", governanceGateInput(chain, "production", "PASS"), http.StatusOK)
+	if got := governanceString(t, currentGate, "decision"); got != model.GateDecisionPass {
+		t.Fatalf("production current gate decision = %s, want PASS", got)
+	}
+	if active, _ := currentGate["active_gate"].(bool); !active {
+		t.Fatal("production current gate must become the active gate")
+	}
+
+	releaseInput := func(gateID, baselineID string) string {
+		return `{
+			"release_candidate_id":"` + chain.CandidateID + `","candidate_version":` + governanceMustJSON(t, chain.CandidateVersion) + `,
+			"snapshot_id":"` + chain.SnapshotID + `","gate_decision_id":"` + gateID + `",
+			"environment":"production","rollback_baseline":"` + baselineID + `"
+		}`
+	}
+	baseline := governanceRequest(t, app, token, "production baseline release", http.MethodPost,
+		"/api/v1/releases", json.RawMessage(releaseInput(governanceString(t, baselineGate, "id"), "")), http.StatusOK)
+	baselineID := governanceString(t, baseline, "id")
+	baselineComplete := governanceRequest(t, app, token, "complete baseline release", http.MethodPost,
+		"/api/v1/releases/"+baselineID+"/complete", map[string]interface{}{"failed": false}, http.StatusOK)
+	if got := governanceString(t, baselineComplete, "status"); got != model.ReleaseStatusReleased {
+		t.Fatalf("baseline release status = %s, want RELEASED", got)
+	}
+
+	current := governanceRequest(t, app, token, "production current release", http.MethodPost,
+		"/api/v1/releases", json.RawMessage(releaseInput(governanceString(t, currentGate, "id"), baselineID)), http.StatusOK)
+	currentID := governanceString(t, current, "id")
+	if got := governanceString(t, current, "rollback_baseline"); got != baselineID {
+		t.Fatalf("rollback baseline = %s, want %s", got, baselineID)
+	}
+	currentComplete := governanceRequest(t, app, token, "complete current release", http.MethodPost,
+		"/api/v1/releases/"+currentID+"/complete", map[string]interface{}{"failed": false}, http.StatusOK)
+	if got := governanceString(t, currentComplete, "status"); got != model.ReleaseStatusReleased {
+		t.Fatalf("current release status = %s, want RELEASED", got)
+	}
+
+	rollbackBaseline := governanceRequest(t, app, token, "rollback current release", http.MethodPost,
+		"/api/v1/releases/"+currentID+"/rollback", map[string]interface{}{
+			"reason": "local production drill rollback",
+		}, http.StatusOK)
+	if got := governanceString(t, rollbackBaseline, "id"); got != baselineID {
+		t.Fatalf("rollback baseline id = %s, want %s", got, baselineID)
+	}
+	releases := governanceRequest(t, app, token, "list releases", http.MethodGet,
+		"/api/v1/releases?candidate_id="+chain.CandidateID, nil, http.StatusOK)
+	items, ok := releases["items"].([]interface{})
+	if !ok || len(items) != 2 {
+		t.Fatalf("release list items = %+v, want 2", releases["items"])
+	}
+	var rolledBackCount, releasedCount int
+	for _, raw := range items {
+		item, _ := raw.(map[string]interface{})
+		switch governanceString(t, item, "status") {
+		case model.ReleaseStatusRolledBack:
+			rolledBackCount++
+			if got := governanceString(t, item, "id"); got != currentID {
+				t.Fatalf("rolled back release id = %s, want %s", got, currentID)
+			}
+		case model.ReleaseStatusReleased:
+			releasedCount++
+			if got := governanceString(t, item, "id"); got != baselineID {
+				t.Fatalf("released baseline id = %s, want %s", got, baselineID)
+			}
+		}
+	}
+	if rolledBackCount != 1 || releasedCount != 1 {
+		t.Fatalf("release states mismatch: rolled_back=%d released=%d", rolledBackCount, releasedCount)
+	}
+}
+
 func TestE2E_FailedEvaluationRunCannotBecomeEvidence(t *testing.T) {
 	app := newTestApp(t)
 	defer app.close()
 	token := app.login(t)
 	chain := newGovernanceChainThroughRun(t, app, token, true, true)
+	permission, configuration := strictReleaseGateEvidence(chain.CandidateID, chain.CandidateVersion)
+
+	resp, raw := app.doAuth(t, http.MethodPost, "/api/v1/evidence-bundles", token, []byte(`{
+		"release_candidate_id":"`+chain.CandidateID+`","candidate_version":1,
+		"evaluation_run_id":"`+chain.RunID+`","security_evidence":{},"policy_evidence":{},
+		"risk_evidence":{},"permission_evidence":`+governanceMustJSON(t, permission)+`,"configuration_evidence":`+governanceMustJSON(t, configuration)+`,
+		"approval_evidence":{},"evidence_items":[]
+	}`))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("failed run evidence status = %d, want 400: %s", resp.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "evidence chain binding mismatch") {
+		t.Fatalf("unexpected evidence rejection: %s", raw)
+	}
+}
+
+func TestE2E_InvalidReleaseEvidenceContractIsRejected(t *testing.T) {
+	app := newTestApp(t)
+	defer app.close()
+	token := app.login(t)
+	chain := newGovernanceChainThroughRun(t, app, token, true, false)
 
 	resp, raw := app.doAuth(t, http.MethodPost, "/api/v1/evidence-bundles", token, []byte(`{
 		"release_candidate_id":"`+chain.CandidateID+`","candidate_version":1,
@@ -234,10 +375,10 @@ func TestE2E_FailedEvaluationRunCannotBecomeEvidence(t *testing.T) {
 		"approval_evidence":{},"evidence_items":[]
 	}`))
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("failed run evidence status = %d, want 400: %s", resp.StatusCode, raw)
+		t.Fatalf("invalid contract evidence status = %d, want 400: %s", resp.StatusCode, raw)
 	}
-	if !strings.Contains(string(raw), "evidence chain binding mismatch") {
-		t.Fatalf("unexpected evidence rejection: %s", raw)
+	if !strings.Contains(string(raw), "permission evidence contract invalid") {
+		t.Fatalf("unexpected contract rejection: %s", raw)
 	}
 }
 
@@ -259,7 +400,7 @@ func TestE2E_SnapshotHashTamperingIsRejected(t *testing.T) {
 	resp, raw := app.doAuth(t, http.MethodPost, "/api/v1/release-gates", token, []byte(`{
 		"release_candidate_id":"`+chain.CandidateID+`","candidate_version":1,
 		"evidence_bundle_id":"`+chain.EvidenceID+`","environment":"development",
-		"sub_gate_states":{"security":"PASS","policy":"PASS","risk":"PASS","permission":"PASS","configuration":"PASS","approval":"PASS"},
+		"sub_gate_states":{"compilation_contract":"PASS","memory_contract":"PASS","identity":"PASS","migration":"PASS","permission":"PASS","improvement":"PASS","privacy":"PASS","cost":"PASS","conversation":"PASS","experience":"PASS","operations":"PASS"},
 		"environment_policy_version":"v1","environment_policy_hash":"env-hash"
 	}`))
 	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(raw), "execution snapshot hash mismatch") {
@@ -315,7 +456,7 @@ func TestE2E_GateBindingAndDuplicateDecisionVersionErrors(t *testing.T) {
 	resp, raw := app.doAuth(t, http.MethodPost, "/api/v1/release-gates", token, []byte(`{
 		"release_candidate_id":"`+chain.CandidateID+`","candidate_version":2,
 		"evidence_bundle_id":"`+chain.EvidenceID+`","environment":"development",
-		"sub_gate_states":{"security":"PASS","policy":"PASS","risk":"PASS","permission":"PASS","configuration":"PASS","approval":"PASS"},
+		"sub_gate_states":{"compilation_contract":"PASS","memory_contract":"PASS","identity":"PASS","migration":"PASS","permission":"PASS","improvement":"PASS","privacy":"PASS","cost":"PASS","conversation":"PASS","experience":"PASS","operations":"PASS"},
 		"environment_policy_version":"v1","environment_policy_hash":"env-hash"
 	}`))
 	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(raw), "gate candidate binding mismatch") {
