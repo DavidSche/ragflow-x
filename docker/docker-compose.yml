@@ -1,0 +1,109 @@
+# RAGFlow-X local / self-hosted stack.
+#
+# Required external dependency: a RAGFlow engine instance. Point it at the
+# platform via RGX_RAGFLOW_BASE_URL / RGX_RAGFLOW_API_KEY (see .env.example).
+# An engine can also be added below under the "ragflow" profile.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ragflow_x
+      POSTGRES_PASSWORD: ${RGX_DB_PASSWORD:?set RGX_DB_PASSWORD in docker/.env}
+      POSTGRES_DB: ragflow_x
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ragflow_x -d ragflow_x"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ragflow-x:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      RGX_MODE: release
+      RGX_PORT: "9191"
+      RGX_JWT_SECRET: ${RGX_JWT_SECRET:?set RGX_JWT_SECRET in docker/.env}
+      RGX_MASTER_KEY: ${RGX_MASTER_KEY:-}
+      RGX_ADMIN_USER: ${RGX_ADMIN_USER:-admin}
+      RGX_ADMIN_PASSWORD: ${RGX_ADMIN_PASSWORD:-}
+      # Database (PostgreSQL service above)
+      RGX_DB_DRIVER: postgres
+      RGX_DB_HOST: postgres
+      RGX_DB_PORT: "5432"
+      RGX_DB_USER: ragflow_x
+      RGX_DB_PASSWORD: ${RGX_DB_PASSWORD:?set RGX_DB_PASSWORD in docker/.env}
+      RGX_DB_NAME: ragflow_x
+      # RAGFlow engine (external dependency)
+      RGX_RAGFLOW_PROVIDER: http
+      RGX_RAGFLOW_BASE_URL: ${RGX_RAGFLOW_BASE_URL:-http://ragflow:9380}
+      RGX_RAGFLOW_API_KEY: ${RGX_RAGFLOW_API_KEY:-}
+      # Distributed rate limiting (multi-replica consistency)
+      RGX_REDIS_ENABLED: "true"
+      RGX_REDIS_ADDR: redis:6379
+      # Persist setup secrets + state outside the container
+      RGX_DATA_DIR: /app/data
+      RGX_SETUP_SECRETS_FILE: /app/secrets/runtime.secrets.json
+      RGX_SETUP_RSA_KEY: /app/secrets/rsa_setup.pem
+    ports:
+      - "9191:9191"
+    volumes:
+      - ./ragflow-x.yaml:/app/config/config.yaml:ro
+      - secrets:/app/secrets
+      - appdata:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9191/api/v1/readyz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 25s
+      retries: 3
+
+  # Optional: an OTel collector for inline tracing/metrics export.
+  # otel-collector:
+  #   image: otel/opentelemetry-collector-contrib:latest
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+  #   ports:
+  #     - "4318:4318"
+  #   profiles: ["observability"]
+
+  # Optional: bundle a RAGFlow engine in the same stack (heavy).
+  # Depends on its own compose/image; enable with --profile ragflow.
+  # ragflow:
+  #   image: infinirag/ragflow:dev
+  #   restart: unless-stopped
+  #   profiles: ["ragflow"]
+  #   ports:
+  #     - "9380:80"
+  #   environment:
+  #     - SVR_HTTP_PORT=80
+
+volumes:
+  pgdata:
+  redisdata:
+  secrets:
+  appdata:

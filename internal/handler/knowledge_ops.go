@@ -1,0 +1,173 @@
+package handler
+
+import (
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/ragflow-x/ragflow-x/internal/middleware"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
+	"github.com/ragflow-x/ragflow-x/internal/repository"
+	"github.com/ragflow-x/ragflow-x/internal/service"
+)
+
+func knowledgeOpsScope(h *Handler, c *gin.Context) (string, bool) {
+	return c.GetString(middleware.ContextTenantID), h.Service.KnowledgeOpsScopeAll(c.Request.Context(), c.GetString(middleware.ContextUserID))
+}
+
+func knowledgeOpsRange(c *gin.Context) (string, string) {
+	return c.Query("date_from"), c.Query("date_to")
+}
+
+// KnowledgeOpsSummary returns aggregate KPIs for a date range.
+func (h *Handler) KnowledgeOpsSummary(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, scopeAll := knowledgeOpsScope(h, c)
+	from, to := knowledgeOpsRange(c)
+	out, err := h.Service.KnowledgeOpsSummary(
+		c.Request.Context(), tenantID, scopeAll, from, to, c.Query("x_dataset_id"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, out)
+}
+
+// KnowledgeOpsTopQueries returns the highest-volume questions in a date range.
+func (h *Handler) KnowledgeOpsTopQueries(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, scopeAll := knowledgeOpsScope(h, c)
+	from, to := knowledgeOpsRange(c)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	out, err := h.Service.TopKnowledgeQueries(c.Request.Context(), tenantID, scopeAll, from, to, limit)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, out)
+}
+
+// KnowledgeOpsEvents returns badcase candidates with review state.
+func (h *Handler) KnowledgeOpsEvents(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	page, pageSize := pageParams(c)
+	tenantID, scopeAll := knowledgeOpsScope(h, c)
+	out, total, err := h.Service.ListKnowledgeOpsEvents(c.Request.Context(), tenantID, scopeAll, page, pageSize, repository.KnowledgeOpsFilter{
+		AppType:      c.Query("app_type"),
+		AppID:        c.Query("app_id"),
+		Status:       c.Query("status"),
+		ReviewStatus: c.DefaultQuery("review_status", "open"),
+		Search:       c.Query("search"),
+		DateFrom:     c.Query("date_from"),
+		DateTo:       c.Query("date_to"),
+		Attribution:  c.Query("attribution"),
+	})
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OKPage(c, out, total, page, pageSize)
+}
+
+type knowledgeOpsReviewPayload struct {
+	Status string `json:"status"`
+	Note   string `json:"note"`
+}
+
+// ReviewKnowledgeOpsEvent closes a badcase candidate.
+func (h *Handler) ReviewKnowledgeOpsEvent(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "manage", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	var req knowledgeOpsReviewPayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40000, "invalid review payload")
+		return
+	}
+	tenantID, scopeAll := knowledgeOpsScope(h, c)
+	err := h.Service.ReviewKnowledgeOpsEvent(c.Request.Context(), tenantID, c.Param("id"), scopeAll, repository.KnowledgeOpsReview{
+		Status: req.Status,
+		Note:   req.Note,
+		Actor:  c.GetString(middleware.ContextUserID),
+	})
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, gin.H{"id": c.Param("id"), "status": req.Status})
+}
+
+// MetricsContract returns the frozen metric contract board (doc/107 §3.3.2):
+// the latest route evaluation gate plus the 30-day answer/operations KPIs.
+func (h *Handler) MetricsContract(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, _ := knowledgeOpsScope(h, c)
+	out, err := h.Service.MetricsContractSummary(c.Request.Context(), tenantID)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, out)
+}
+
+// ListCompilationRecovery exposes the unknown-run governance queue.
+func (h *Handler) ListCompilationRecovery(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	page, pageSize := pageParams(c)
+	items, total, err := h.Service.ListCompilationRecovery(
+		c.Request.Context(), c.GetString(middleware.ContextUserID), c.GetString(middleware.ContextTenantID),
+		c.Query("dataset_id"), page, pageSize,
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OKPage(c, items, total, page, pageSize)
+}
+
+// ProbeCompilationRecoveryRun performs one read-only downstream probe.
+func (h *Handler) ProbeCompilationRecoveryRun(c *gin.Context) {
+	item, err := h.Service.ProbeCompilationRecoveryRun(
+		c.Request.Context(), c.GetString(middleware.ContextUserID), c.GetString(middleware.ContextTenantID), c.Param("runId"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, item)
+}
+
+// RequestCompilationRecoveryApproval submits the governed recovery action.
+func (h *Handler) RequestCompilationRecoveryApproval(c *gin.Context) {
+	var req service.CompilationRecoveryApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40000, "invalid compilation recovery payload")
+		return
+	}
+	approval, err := h.Service.RequestCompilationRecoveryApproval(
+		c.Request.Context(), c.GetString(middleware.ContextUserID), c.GetString(middleware.ContextTenantID),
+		c.Param("runId"), req,
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.Accepted(c, approval)
+}

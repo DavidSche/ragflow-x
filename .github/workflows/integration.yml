@@ -1,0 +1,131 @@
+# Integration test workflow for ragflow-x
+#
+# Runs the full Go test suite on Linux, including PostgreSQL-dependent tests.
+#
+# Triggers:
+#   - On push/merge to main (post-merge validation)
+#   - On demand via workflow_dispatch
+
+name: Integration
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: 0
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ragflow_x_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 10); do
+            pg_isready -h localhost -U postgres && break
+            sleep 2
+          done
+
+      - name: Install CJK fonts (PDF export)
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
+      - name: Run all tests (with PostgreSQL)
+        env:
+          RGX_DB_DSN: "postgres://postgres:postgres@localhost:5432/ragflow_x_test?sslmode=disable"
+          RGX_TEST_POSTGRES_DSN: "postgres://postgres:postgres@localhost:5432/ragflow_x_test?sslmode=disable"
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          go test -v -count=1 -shuffle=on -timeout 30m ./... 2>&1 | tee test-results/integration-full.log || {
+            echo "## Integration full tests failed" >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^--- FAIL' test-results/integration-full.log | head -120 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -A 80 -E '^--- FAIL' test-results/integration-full.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true
+
+            grep -E '^[[:space:]]+/?[^ ]+_test\.go:[0-9]+:' test-results/integration-full.log | head -150 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -E '^(panic:|FAIL|ok .*FAIL)' test-results/integration-full.log | head -60 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            tail -40 test-results/integration-full.log | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            exit 1
+          }
+
+      - name: Run race gate
+        shell: bash
+        run: |
+          set -o pipefail
+          echo '--- race gate ---'
+          CGO_ENABLED=1 go test -race -count=1 -shuffle=on -timeout 30m ./... 2>&1 | tee test-results/integration-race.log || {
+            echo "## Integration race gate failed" >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^--- FAIL' test-results/integration-race.log | head -120 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -A 80 -E '^--- FAIL' test-results/integration-race.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true
+
+            grep -E '^[[:space:]]+/?[^ ]+_test\.go:[0-9]+:' test-results/integration-race.log | head -150 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -E '^(panic:|FAIL|ok .*FAIL|DATA RACE)' test-results/integration-race.log | head -60 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            tail -40 test-results/integration-race.log | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            exit 1
+          }
+
+      - name: Upload integration logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: test-results/*.log
+          retention-days: 7
+
+      - name: Generate quality report
+        run: make test-quality-report
+
+      - name: Upload quality report
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-scenario-quality-report
+          path: test-results/scenario-quality-report.json
+          retention-days: 30
+
+      # Build production binary with version stamp
+      - name: Build production server binary
+        run: |
+          VERSION=$(date +%Y%m%d-%H%M)
+          go build -ldflags="-s -w -X main.version=v$VERSION" -o ragflow-x-server ./cmd/server/
+          echo "Binary built: $(wc -c < ragflow-x-server) bytes"

@@ -1,0 +1,19 @@
+# CI quality-gate lint configuration (golangci-lint v2).
+#
+# Policy: keep the default linter set and all real-defect checks enabled
+# (errcheck/govet/ineffassign/unused, staticcheck SA*, S*, default ST*).
+# staticcheck's quickfix QF* family is stylistic-only ("could use tagged
+# switch", "could apply De Morgan's law", "could remove embedded field"),
+# so those diagnostics are excluded by convention to avoid churn on working,
+# readable code.
+#
+# NOTE: golangci-lint v2.5+ is built with Go 1.25, which matches go.mod's
+# `go 1.25.0` directive; keep the pinned CI version in sync with go.mod.
+version: "2"
+
+linters:
+  exclusions:
+    rules:
+      - linters:
+          - staticcheck
+        text: "QF1[0-9]{3}"

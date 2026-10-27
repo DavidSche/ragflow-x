@@ -1,0 +1,398 @@
+# CI workflow for ragflow-x
+#
+# Builds, lints, vets, and runs unit tests on every push/PR.
+# Go tests that require PostgreSQL are run separately via integration.yml.
+# Frontend typecheck and build are included to catch regressions early.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: 0
+
+# ──────────────────────────────────────────────────────────────────────
+# Go jobs
+# ──────────────────────────────────────────────────────────────────────
+jobs:
+  # ------------------------------------------------------------------
+  # Go Lint — golangci-lint
+  # ------------------------------------------------------------------
+  go-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: golangci-lint
+        # golangci-lint v2.5+ is built with Go 1.25 and accepts go.mod's
+        # `go 1.25.0` directive (v2.1 binaries compile with go1.24 and abort).
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.5
+          working-directory: .
+          only-new-issues: ${{ github.event_name == 'pull_request' }}
+
+  # ------------------------------------------------------------------
+  # Go Build & Unit Test — cross-platform (excl. PostgreSQL tests)
+  # ------------------------------------------------------------------
+  go-build:
+    needs: [go-lint]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Install CJK fonts (PDF export)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+
+      - name: Run unit tests (excl. integration)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          pkgs=$(go list ./... | grep -v -e '/internal/db')
+          # internal/service 包头重 ~13min；默认单包超时 10m 会误杀，显式放宽
+          go test -v -count=1 -shuffle=on -timeout 20m $pkgs 2>&1 | tee test-results/unit.log || {
+            echo "## go-build unit tests failed" >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^--- FAIL' test-results/unit.log | head -120 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -A 80 -E '^--- FAIL' test-results/unit.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true
+
+            grep -E '^[[:space:]]+/?[^ ]+_test\.go:[0-9]+:' test-results/unit.log | head -150 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -E '^(panic:|FAIL|ok .*FAIL)' test-results/unit.log | head -60 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            tail -40 test-results/unit.log | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            exit 1
+          }
+
+      - name: Upload unit log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-build-unit-log
+          path: test-results/unit.log
+          retention-days: 7
+
+  # ------------------------------------------------------------------
+  # Test Quality Gate — machine-verifiable P0 and contract regressions
+  # ------------------------------------------------------------------
+  quality-gate:
+    needs: [go-lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Run P0 scenario gate
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          make test-p0 2>&1 | tee test-results/p0.log || {
+            echo "## P0 gate failed" >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^--- FAIL' test-results/p0.log | head -80 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -A 80 -E '^--- FAIL' test-results/p0.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true
+
+            grep -E '^[[:space:]]+/?[^ ]+_test\.go:[0-9]+:' test-results/p0.log | head -120 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -E '^(panic:|FAIL|ok .*FAIL| *Test.* FAIL)' test-results/p0.log | head -40 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            tail -30 test-results/p0.log | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            exit 1
+          }
+
+      - name: Run contract gate
+        shell: bash
+        run: |
+          set -o pipefail
+          make test-contract 2>&1 | tee test-results/contract.log || {
+            echo "## Contract gate failed" >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^--- FAIL' test-results/contract.log | head -60 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -A 80 -E '^--- FAIL' test-results/contract.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true
+
+            grep -E '^[[:space:]]+/?[^ ]+_test\.go:[0-9]+:' test-results/contract.log | head -100 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -E '^(panic:|FAIL|ok .*FAIL)' test-results/contract.log | head -40 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            tail -20 test-results/contract.log | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            exit 1
+          }
+
+      - name: Generate quality report
+        run: make test-quality-report
+
+      - name: Upload quality report
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-quality-report
+          path: test-results/scenario-quality-report.json
+          retention-days: 30
+
+      - name: Upload gate logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-gate-logs
+          path: test-results/*.log
+          retention-days: 7
+
+  # ------------------------------------------------------------------
+  # Changed Lines Coverage Gate — P0 ≥ 85%, P1 ≥ 75%
+  # ------------------------------------------------------------------
+  changed-coverage-gate:
+    needs: [go-lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ragflow_x_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      RGX_DB_DSN: "postgres://postgres:postgres@localhost:5432/ragflow_x_test?sslmode=disable"
+      RGX_TEST_POSTGRES_DSN: "postgres://postgres:postgres@localhost:5432/ragflow_x_test?sslmode=disable"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Run Changed Lines Coverage gate
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          make test-coverage test-frontend-coverage test-changed-coverage 2>&1 | tee test-results/changed-coverage.log || {
+            echo "## Changed coverage gate failed" >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^--- FAIL' test-results/changed-coverage.log | head -60 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -A 80 -E '^--- FAIL' test-results/changed-coverage.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true
+
+            grep -E '^[[:space:]]+/?[^ ]+_test\.go:[0-9]+:' test-results/changed-coverage.log | head -100 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            grep -E '(^| )FAIL.*\(test timed out|panic:|is below|^FAIL)' test-results/changed-coverage.log | head -40 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            tail -30 test-results/changed-coverage.log | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            exit 1
+          }
+
+      - name: Upload changed-coverage log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: changed-coverage-log
+          path: test-results/changed-coverage.log
+          retention-days: 7
+
+      - name: Upload Changed Lines Coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: changed-lines-coverage-report
+          path: test-results/scenario-quality-report-changed.json
+          retention-days: 30
+
+  # ------------------------------------------------------------------
+  # Server binary — verify main entry point compiles
+  # ------------------------------------------------------------------
+  server-build:
+    needs: [go-lint]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Build server binary
+        run: go build -o /dev/null ./cmd/server/
+
+# ──────────────────────────────────────────────────────────────────────
+# Frontend jobs
+# ──────────────────────────────────────────────────────────────────────
+  # ------------------------------------------------------------------
+  # Frontend Typecheck — tsc --noEmit
+  # ------------------------------------------------------------------
+  fe-typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  # ------------------------------------------------------------------
+  # Frontend Build — vite build (production bundle)
+  # ------------------------------------------------------------------
+  fe-build:
+    needs: [fe-typecheck]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  # ------------------------------------------------------------------
+  # Frontend Unit / Component Tests — Vitest + RTL (jsdom)
+  # ------------------------------------------------------------------
+  fe-test:
+    needs: [fe-typecheck]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit & component tests (Vitest)
+        run: npm run test
+
+  # ------------------------------------------------------------------
+  # Frontend E2E — Playwright smoke against the production preview
+  # ------------------------------------------------------------------
+  fe-e2e:
+    needs: [fe-build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E smoke (playwright test)
+        run: npm run test:e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore

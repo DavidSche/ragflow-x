@@ -1,0 +1,8 @@
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Vitest v8 coverage output
+coverage/

@@ -1,0 +1,113 @@
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Runtime config carries real credentials (DB password, RAGFlow API key).
+# Secrets must be injected via RGX_* environment variables, never committed.
+config/config.yaml
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+.env.local
+*.secret
+
+# Runtime data and databases
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Encrypted runtime secrets and keys created by the first-run wizard
+config/runtime.secrets.json
+config/.master.key
+config/rsa_setup.pem
+
+# Logs
+logs/
+*.log
+
+# Build artifacts
+web/dist/
+
+# Staged frontend build for go:embed (copied from web/dist by the release
+# pipeline / release-drill before `go build -tags=webfs_embed`).
+internal/webfs/dist/
+web/dist2/
+web/dist3/
+web/web.rar
+web/node_modules/
+web/coverage/
+web/coverage-report/
+web/test-results/
+web/playwright-report/
+.gocache/
+bin/
+test-results/
+ragflow-x-server
+dist-drill/
+.go-test-service.json
+run/
+
+# IDE / OS
+.idea/
+.vscode/
+
+# Local scratch dirs (kept out of VCS pending per-file review)
+tmp/
+
+# Development docs and local test data: intentionally untracked until each
+# file is reviewed for release (see doc/126 pre-release review report).
+# Do NOT add these back in bulk; whitelist individual files after review.
+/doc/
+/test/
+
+# Local build artifacts that keep landing in the repo root
+/ragflow-x
+/ragflow-x-server
+/deploy-drill
+/difydsl
+/perf-baseline
+/perf-cleanup
+# Linux server binaries produced by release drills (M216: 64.94 MB binary
+# was accidentally committed in M213; untracked and ignored from now on).
+/build/
+/testcontract-pg
+/go-coverage
+/go-coverage-*
+/go-coverage.*
+/go-testquality.test
+*.test
+
+# Local integration runtime and scratch artifacts
+/.service-test*
+/blog/.tmp-*
+/blog/.tmp_*
+/blog/tmp-*
+/docs.zip
+/sync-*.png
+/tmp-query/

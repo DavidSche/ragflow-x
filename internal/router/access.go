@@ -1,0 +1,754 @@
+package router
+
+import (
+	"github.com/gin-gonic/gin"
+
+	"github.com/ragflow-x/ragflow-x/internal/middleware"
+	"github.com/ragflow-x/ragflow-x/internal/service"
+)
+
+// accessRules defines the (method, path) -> (action, resource) permission map
+// enforced centrally at the middleware layer, with ABAC scope resolvers where
+// the object carries tenant/project/owner attributes. Every route in the
+// authenticated group must be registered here; the RBAC middleware denies any
+// unregistered route by default.
+func accessRules(svc *service.Service) []middleware.Rule {
+	rules := []middleware.Rule{
+		// Governance
+		{Method: "GET", Path: "/api/v1/conversation/assistants", Action: "read", Resource: "assistant"},
+		{Method: "PUT", Path: "/api/v1/conversation/assistants/:kind/:targetId", Action: "manage", Resource: "assistant"},
+		{Method: "PUT", Path: "/api/v1/conversation/assistants/:kind/:targetId/governance", Action: "manage", Resource: "assistant"},
+		{Method: "POST", Path: "/api/v1/conversation/route", Action: "execute", Resource: "assistant"},
+		{Method: "POST", Path: "/api/v1/conversation/route/:routeId/select", Action: "execute", Resource: "assistant"},
+		{Method: "POST", Path: "/api/v1/conversation/route-selections/:routeSelectionId/bootstrap", Action: "execute", Resource: "assistant"},
+		{Method: "POST", Path: "/api/v1/conversation/routing/evaluations", Action: "manage", Resource: "assistant"},
+		{Method: "GET", Path: "/api/v1/conversation/routing/evaluations", Action: "read", Resource: "assistant"},
+		{Method: "GET", Path: "/api/v1/conversation/routing/evaluations/:runId", Action: "read", Resource: "assistant"},
+		{Method: "GET", Path: "/api/v1/conversation/routing/policy", Action: "manage", Resource: "assistant"},
+		{Method: "PUT", Path: "/api/v1/conversation/routing/policy", Action: "manage", Resource: "assistant"},
+		{Method: "GET", Path: "/api/v1/auth/me", Action: "read", Resource: "user"},
+		{Method: "GET", Path: "/api/v1/tenants", Action: "read", Resource: "tenant"},
+		{Method: "GET", Path: "/api/v1/tenants/export", Action: "read", Resource: "tenant"},
+		{Method: "GET", Path: "/api/v1/branding", Action: "read", Resource: "branding"},
+		{Method: "PUT", Path: "/api/v1/branding", Action: "manage", Resource: "branding"},
+		{Method: "POST", Path: "/api/v1/branding/logo", Action: "manage", Resource: "branding"},
+		{Method: "GET", Path: "/api/v1/system/config", Action: "read", Resource: "system"},
+		{Method: "GET", Path: "/api/v1/system/config/public-key", Action: "read", Resource: "system"},
+		{Method: "POST", Path: "/api/v1/system/config/preflight", Action: "read", Resource: "system"},
+		{Method: "POST", Path: "/api/v1/system/config/apply", Action: "manage", Resource: "system"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/settings", Action: "read", Resource: "ragflow-sync"},
+		{Method: "PATCH", Path: "/api/v1/system/ragflow/sync/settings", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/mappings", Action: "read", Resource: "ragflow-sync"},
+		{Method: "POST", Path: "/api/v1/system/ragflow/sync/mappings", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "DELETE", Path: "/api/v1/system/ragflow/sync/mappings/:externalTenantId", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "POST", Path: "/api/v1/system/ragflow/sync/scan", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/runs", Action: "read", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/runs/:id", Action: "read", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/runs/:id/items", Action: "read", Resource: "ragflow-sync"},
+		{Method: "POST", Path: "/api/v1/system/ragflow/sync/runs/:id/import", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "POST", Path: "/api/v1/system/ragflow/sync/runs/:id/assign", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "POST", Path: "/api/v1/system/ragflow/sync/reconcile", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/resources", Action: "read", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/relink/tenant-options", Action: "read", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/relink/resource-options", Action: "read", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/resources/:type/:externalTenantId/:id/versions", Action: "read", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/ragflow/sync/artifacts/:id", Action: "read", Resource: "ragflow-sync"},
+		{Method: "POST", Path: "/api/v1/system/ragflow/sync/resources/:type/:externalTenantId/:id/relink", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "POST", Path: "/api/v1/system/ragflow/sync/resources/:type/:externalTenantId/:id/conflicts/resolve", Action: "manage", Resource: "ragflow-sync"},
+		{Method: "GET", Path: "/api/v1/system/settings", Action: "read", Resource: "system"},
+		{Method: "PATCH", Path: "/api/v1/system/settings", Action: "manage", Resource: "system"},
+		{Method: "GET", Path: "/api/v1/system/settings/revisions", Action: "read", Resource: "system"},
+		{Method: "GET", Path: "/api/v1/system/settings/revisions/:id", Action: "read", Resource: "system"},
+		{Method: "POST", Path: "/api/v1/system/settings/revisions/:id/rollback", Action: "manage", Resource: "system"},
+		{Method: "POST", Path: "/api/v1/system/settings/secrets/:key", Action: "manage", Resource: "system"},
+		{Method: "POST", Path: "/api/v1/tenants", Action: "manage", Resource: "tenant"},
+		{Method: "PUT", Path: "/api/v1/tenants/status", Action: "manage", Resource: "tenant"},
+		{Method: "PUT", Path: "/api/v1/tenants/:id", Action: "manage", Resource: "tenant"},
+		{Method: "DELETE", Path: "/api/v1/tenants/:id", Action: "manage", Resource: "tenant"},
+
+		{Method: "GET", Path: "/api/v1/users", Action: "read", Resource: "user"},
+		{Method: "POST", Path: "/api/v1/users", Action: "manage", Resource: "user"},
+		{Method: "PUT", Path: "/api/v1/users/:id/role", Action: "manage", Resource: "user"},
+		{Method: "PUT", Path: "/api/v1/users/:id/status", Action: "manage", Resource: "user"},
+		{Method: "GET", Path: "/api/v1/users/:id/clearance", Action: "read", Resource: "user-clearance"},
+		{Method: "PUT", Path: "/api/v1/users/:id/clearance", Action: "manage", Resource: "user-clearance"},
+		{Method: "PUT", Path: "/api/v1/users/:id", Action: "manage", Resource: "user"},
+		{Method: "DELETE", Path: "/api/v1/users/:id", Action: "manage", Resource: "user"},
+
+		{Method: "GET", Path: "/api/v1/roles", Action: "read", Resource: "role"},
+		{Method: "GET", Path: "/api/v1/roles/permission-catalog", Action: "read", Resource: "role"},
+		{Method: "POST", Path: "/api/v1/roles", Action: "manage", Resource: "role"},
+		{Method: "PUT", Path: "/api/v1/roles/:id", Action: "manage", Resource: "role"},
+		{Method: "DELETE", Path: "/api/v1/roles/:id", Action: "manage", Resource: "role"},
+		{Method: "GET", Path: "/api/v1/roles/:id/permissions", Action: "read", Resource: "role"},
+		{Method: "PUT", Path: "/api/v1/roles/:id/permissions", Action: "manage", Resource: "role"},
+
+		{Method: "GET", Path: "/api/v1/approvals", Action: "read", Resource: "approval"},
+		{Method: "POST", Path: "/api/v1/approvals", Action: "execute", Resource: "approval"},
+		{Method: "GET", Path: "/api/v1/approvals/export", Action: "read", Resource: "approval"},
+		{Method: "GET", Path: "/api/v1/approvals/:id", Action: "read", Resource: "approval"},
+		{Method: "POST", Path: "/api/v1/approvals/:id/approve", Action: "execute", Resource: "approval"},
+		{Method: "POST", Path: "/api/v1/approvals/:id/reject", Action: "execute", Resource: "approval"},
+		{Method: "POST", Path: "/api/v1/approvals/:id/cancel", Action: "execute", Resource: "approval"},
+		{Method: "POST", Path: "/api/v1/approvals/:id/retry", Action: "manage", Resource: "approval"},
+		{Method: "POST", Path: "/api/v1/approvals/batch-approve", Action: "manage", Resource: "approval"},
+		{Method: "POST", Path: "/api/v1/approvals/batch-reject", Action: "manage", Resource: "approval"},
+		{Method: "GET", Path: "/api/v1/approval-delegations", Action: "read", Resource: "approval"},
+		{Method: "POST", Path: "/api/v1/approval-delegations", Action: "read", Resource: "approval"},
+		{Method: "DELETE", Path: "/api/v1/approval-delegations/:id", Action: "read", Resource: "approval"},
+		{Method: "GET", Path: "/api/v1/approval-policies", Action: "read", Resource: "approval-policy"},
+		{Method: "POST", Path: "/api/v1/approval-policies", Action: "manage", Resource: "approval-policy"},
+		{Method: "PUT", Path: "/api/v1/approval-policies/:id", Action: "manage", Resource: "approval-policy"},
+		{Method: "GET", Path: "/api/v1/chats", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chats/model-options", Action: "read", Resource: "chat"},
+		{Method: "POST", Path: "/api/v1/chat/completions", Action: "execute", Resource: "chat"},
+		{Method: "POST", Path: "/api/v1/chat/upload", Action: "execute", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chat/reference", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chat/document/chunks", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chat/document/preview", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chat/image", Action: "read", Resource: "chat"},
+		{Method: "POST", Path: "/api/v1/chat/feedback", Action: "execute", Resource: "chat"},
+		{Method: "POST", Path: "/api/v1/chats", Action: "manage", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/search-apps", Action: "read", Resource: "search-app"},
+		{Method: "POST", Path: "/api/v1/search-apps", Action: "manage", Resource: "search-app"},
+		{Method: "GET", Path: "/api/v1/search-apps/model-options", Action: "read", Resource: "search-app"},
+		{Method: "GET", Path: "/api/v1/search-apps/:id", Action: "read", Resource: "search-app"},
+		{Method: "GET", Path: "/api/v1/search-apps/:id/config", Action: "read", Resource: "search-app"},
+		{Method: "PUT", Path: "/api/v1/search-apps/:id", Action: "manage", Resource: "search-app"},
+		{Method: "DELETE", Path: "/api/v1/search-apps/:id", Action: "manage", Resource: "search-app"},
+		{Method: "POST", Path: "/api/v1/search-apps/:id/completion", Action: "execute", Resource: "search-app"},
+		{Method: "POST", Path: "/api/v1/search-apps/:id/completion/stream", Action: "execute", Resource: "search-app"},
+		{Method: "GET", Path: "/api/v1/memories", Action: "read", Resource: "memory"},
+		{Method: "GET", Path: "/api/v1/memories/model-options", Action: "read", Resource: "memory"},
+		{Method: "POST", Path: "/api/v1/memories", Action: "manage", Resource: "memory"},
+		{Method: "GET", Path: "/api/v1/memories/:id", Action: "read", Resource: "memory"},
+		{Method: "GET", Path: "/api/v1/memories/:id/config", Action: "read", Resource: "memory"},
+		{Method: "PUT", Path: "/api/v1/memories/:id", Action: "manage", Resource: "memory"},
+		{Method: "DELETE", Path: "/api/v1/memories/:id", Action: "manage", Resource: "memory"},
+		{Method: "GET", Path: "/api/v1/memories/:id/messages", Action: "read", Resource: "memory-content"},
+		{Method: "POST", Path: "/api/v1/memories/:id/messages", Action: "execute", Resource: "memory-write"},
+		{Method: "GET", Path: "/api/v1/memories/:id/messages/search", Action: "execute", Resource: "memory-content"},
+		{Method: "POST", Path: "/api/v1/memories/:id/governed-search", Action: "execute", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memories/:id/messages/:messageId/content", Action: "read", Resource: "memory-content"},
+		{Method: "PUT", Path: "/api/v1/memories/:id/messages/:messageId", Action: "manage", Resource: "memory-content"},
+		{Method: "DELETE", Path: "/api/v1/memories/:id/messages/:messageId", Action: "execute", Resource: "memory-forget"},
+		{Method: "POST", Path: "/api/v1/memories/:id/messages/:messageId/compliance-delete", Action: "manage", Resource: "memory-forget"},
+		{Method: "GET", Path: "/api/v1/agents", Action: "read", Resource: "agent"},
+		{Method: "POST", Path: "/api/v1/agents", Action: "manage", Resource: "agent"},
+		{Method: "GET", Path: "/api/v1/agents/:id", Action: "read", Resource: "agent"},
+		{Method: "GET", Path: "/api/v1/agents/:id/detail", Action: "read", Resource: "agent"},
+		{Method: "PUT", Path: "/api/v1/agents/:id", Action: "manage", Resource: "agent"},
+		{Method: "POST", Path: "/api/v1/agents/:id/publish", Action: "manage", Resource: "agent"},
+		{Method: "DELETE", Path: "/api/v1/agents/:id", Action: "manage", Resource: "agent"},
+		{Method: "GET", Path: "/api/v1/agents/:id/versions", Action: "read", Resource: "agent"},
+		{Method: "GET", Path: "/api/v1/agents/:id/versions/:versionId", Action: "read", Resource: "agent"},
+		{Method: "POST", Path: "/api/v1/agents/:id/versions/:versionId/rollback", Action: "manage", Resource: "agent"},
+		{Method: "GET", Path: "/api/v1/agents/:id/sessions", Action: "read", Resource: "agent"},
+		{Method: "POST", Path: "/api/v1/agents/:id/sessions", Action: "session:create", Resource: "agent"},
+		{Method: "GET", Path: "/api/v1/agents/:id/sessions/:sessionId", Action: "read", Resource: "agent"},
+		{Method: "GET", Path: "/api/v1/agents/:id/sessions/:sessionId/messages", Action: "read", Resource: "agent"},
+		{Method: "DELETE", Path: "/api/v1/agents/:id/sessions/:sessionId", Action: "manage", Resource: "agent"},
+		{Method: "POST", Path: "/api/v1/agents/:id/upload", Action: "execute", Resource: "agent"},
+		{Method: "POST", Path: "/api/v1/agents/:id/chat/completions", Action: "execute", Resource: "agent"},
+		{Method: "POST", Path: "/api/v1/agents/:id/chat/completions/stream", Action: "execute", Resource: "agent"},
+		{Method: "POST", Path: "/api/v1/chats/batch-status", Action: "manage", Resource: "chat"},
+		{Method: "DELETE", Path: "/api/v1/chats", Action: "manage", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chats/:id", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chats/:id/usage", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chats/:id/config", Action: "read", Resource: "chat"},
+		{Method: "PUT", Path: "/api/v1/chats/:id", Action: "manage", Resource: "chat"},
+		{Method: "DELETE", Path: "/api/v1/chats/:id", Action: "manage", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chats/:id/sessions", Action: "read", Resource: "chat"},
+		{Method: "POST", Path: "/api/v1/chats/:id/sessions", Action: "manage", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chats/:id/sessions/:sessionId", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/chats/:id/sessions/:sessionId/messages", Action: "read", Resource: "chat"},
+		{Method: "PATCH", Path: "/api/v1/chats/:id/sessions/:sessionId", Action: "manage", Resource: "chat"},
+		{Method: "DELETE", Path: "/api/v1/chats/:id/sessions/:sessionId", Action: "manage", Resource: "chat"},
+		{Method: "DELETE", Path: "/api/v1/chats/:id/sessions", Action: "manage", Resource: "chat"},
+
+		{Method: "GET", Path: "/api/v1/teams", Action: "read", Resource: "team"},
+		{Method: "GET", Path: "/api/v1/teams/:id", Action: "read", Resource: "team"},
+		{Method: "POST", Path: "/api/v1/teams", Action: "manage", Resource: "team"},
+		{Method: "PUT", Path: "/api/v1/teams/:id", Action: "manage", Resource: "team"},
+		{Method: "DELETE", Path: "/api/v1/teams/:id", Action: "manage", Resource: "team"},
+		{Method: "GET", Path: "/api/v1/teams/:id/users", Action: "read", Resource: "team"},
+		{Method: "POST", Path: "/api/v1/teams/:id/users", Action: "manage", Resource: "team"},
+		{Method: "DELETE", Path: "/api/v1/teams/:id/users/:userId", Action: "manage", Resource: "team"},
+		{Method: "GET", Path: "/api/v1/teams/:id/projects", Action: "read", Resource: "team"},
+		{Method: "PUT", Path: "/api/v1/teams/:id/projects", Action: "manage", Resource: "team"},
+
+		// Content
+		{Method: "GET", Path: "/api/v1/projects", Action: "read", Resource: "project"},
+		{Method: "POST", Path: "/api/v1/projects", Action: "manage", Resource: "project"},
+		{Method: "GET", Path: "/api/v1/projects/:id", Action: "read", Resource: "project", Resolve: resolveProjectScope(svc)},
+		{Method: "PUT", Path: "/api/v1/projects/:id", Action: "manage", Resource: "project"},
+		{Method: "DELETE", Path: "/api/v1/projects/:id", Action: "manage", Resource: "project"},
+		{Method: "GET", Path: "/api/v1/projects/:id/users", Action: "read", Resource: "project", Resolve: resolveProjectScope(svc)},
+		{Method: "POST", Path: "/api/v1/projects/:id/users", Action: "manage", Resource: "project"},
+		{Method: "DELETE", Path: "/api/v1/projects/:id/users/:userId", Action: "manage", Resource: "project"},
+		{Method: "GET", Path: "/api/v1/projects/:id/datasets", Action: "read", Resource: "project", Resolve: resolveProjectScope(svc)},
+		{Method: "PUT", Path: "/api/v1/projects/:id/datasets", Action: "manage", Resource: "project"},
+		{Method: "GET", Path: "/api/v1/projects/:id/teams", Action: "read", Resource: "project", Resolve: resolveProjectScope(svc)},
+		{Method: "PUT", Path: "/api/v1/projects/:id/teams", Action: "manage", Resource: "project"},
+
+		{Method: "GET", Path: "/api/v1/datasets", Action: "read", Resource: "dataset"},
+		{Method: "GET", Path: "/api/v1/datasets/model-options", Action: "read", Resource: "dataset"},
+		{Method: "POST", Path: "/api/v1/datasets", Action: "manage", Resource: "dataset"},
+		{Method: "PUT", Path: "/api/v1/datasets/:id/project", Action: "manage", Resource: "dataset"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/config", Action: "read", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+		{Method: "PUT", Path: "/api/v1/datasets/:id/config", Action: "manage", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/datasets", Action: "manage", Resource: "dataset"},
+		{Method: "GET", Path: "/api/v1/datasets/export", Action: "read", Resource: "dataset-export"},
+		{Method: "GET", Path: "/api/v1/datasets/:id", Action: "read", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+		{Method: "POST", Path: "/api/v1/datasets/:id/retrieval-test", Action: "read", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+		{Method: "GET", Path: "/api/v1/datasets/:id/graph", Action: "read", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/datasets/:id", Action: "manage", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+		{Method: "PUT", Path: "/api/v1/datasets/:id", Action: "manage", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents", Action: "read", Resource: "document"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/documents", Action: "append", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/incremental", Action: "read", Resource: "document"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/incremental/scan", Action: "execute", Resource: "document"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/parse", Action: "execute", Resource: "document"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/documents/stop", Action: "execute", Resource: "document"},
+		{Method: "DELETE", Path: "/api/v1/datasets/:id/documents", Action: "delete:own", Resource: "document"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/documents/status", Action: "execute", Resource: "document"},
+		{Method: "PUT", Path: "/api/v1/datasets/:id/documents/:docId/metadata", Action: "execute", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/governance", Action: "read", Resource: "document-governance", Resolve: resolveDatasetScope(svc)},
+		{Method: "PUT", Path: "/api/v1/datasets/:id/documents/:docId/governance", Action: "manage", Resource: "document-governance", Resolve: resolveDatasetScope(svc)},
+		{Method: "POST", Path: "/api/v1/datasets/:id/documents/:docId/governance/:decision", Action: "manage", Resource: "document-governance", Resolve: resolveDatasetScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/datasets/:id/documents/:docId/governance", Action: "manage", Resource: "document-governance", Resolve: resolveDatasetScope(svc)},
+		{Method: "GET", Path: "/api/v1/documents/governance", Action: "read", Resource: "document-governance"},
+		// T1 governance dictionary / schema registry (doc/224 §2.2).
+		{Method: "GET", Path: "/api/v1/governance/dictionary", Action: "read", Resource: "document-governance"},
+		{Method: "POST", Path: "/api/v1/governance/dictionary", Action: "manage", Resource: "document-governance"},
+		{Method: "POST", Path: "/api/v1/governance/dictionary/:id/:decision", Action: "manage", Resource: "document-governance"},
+		{Method: "DELETE", Path: "/api/v1/governance/dictionary/:id", Action: "manage", Resource: "document-governance"},
+		{Method: "GET", Path: "/api/v1/governance/schemas", Action: "read", Resource: "document-governance"},
+		{Method: "GET", Path: "/api/v1/governance/schemas/:id", Action: "read", Resource: "document-governance"},
+		{Method: "POST", Path: "/api/v1/governance/schemas", Action: "manage", Resource: "document-governance"},
+		{Method: "PUT", Path: "/api/v1/governance/schemas/:id", Action: "manage", Resource: "document-governance"},
+		{Method: "DELETE", Path: "/api/v1/governance/schemas/:id", Action: "manage", Resource: "document-governance"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/governance/auto-project", Action: "execute", Resource: "document-governance", Resolve: resolveDatasetScope(svc)},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/chunks", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/preview", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/parse-attempts", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/parse-quality-report", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/documents/:docId/parse-quality-reports", Action: "read", Resource: "document"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/parse-quality-reports", Action: "read", Resource: "document"},
+		{Method: "DELETE", Path: "/api/v1/datasets/:id/documents/:docId/chunks", Action: "execute", Resource: "document"},
+		{Method: "PATCH", Path: "/api/v1/datasets/:id/documents/:docId/chunks", Action: "execute", Resource: "document"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/documents/:docId/chunks", Action: "execute", Resource: "document"},
+		{Method: "PUT", Path: "/api/v1/datasets/:id/documents/:docId/chunks/:chunkId", Action: "execute", Resource: "document"},
+
+		{Method: "GET", Path: "/api/v1/tasks/jobs", Action: "read", Resource: "task"},
+		{Method: "GET", Path: "/api/v1/tasks", Action: "read", Resource: "task"},
+		{Method: "DELETE", Path: "/api/v1/tasks", Action: "manage", Resource: "task"},
+		{Method: "POST", Path: "/api/v1/tasks/sync", Action: "execute", Resource: "task"},
+
+		// Model & gateway
+		{Method: "GET", Path: "/api/v1/model-providers", Action: "read", Resource: "model-provider"},
+		{Method: "POST", Path: "/api/v1/model-providers", Action: "manage", Resource: "model-provider"},
+		{Method: "GET", Path: "/api/v1/model-providers/catalog", Action: "read", Resource: "model-provider"},
+		{Method: "GET", Path: "/api/v1/model-providers/:id", Action: "read", Resource: "model-provider"},
+		{Method: "DELETE", Path: "/api/v1/model-providers/:id", Action: "manage", Resource: "model-provider"},
+		{Method: "GET", Path: "/api/v1/model-providers/:id/instances", Action: "read", Resource: "model-provider"},
+		{Method: "POST", Path: "/api/v1/model-providers/:id/instances", Action: "manage", Resource: "model-provider"},
+		{Method: "PUT", Path: "/api/v1/model-providers/:id/instances/:instanceId", Action: "manage", Resource: "model-provider"},
+		{Method: "DELETE", Path: "/api/v1/model-providers/:id/instances", Action: "manage", Resource: "model-provider"},
+		{Method: "POST", Path: "/api/v1/model-providers/:id/verify", Action: "execute", Resource: "model-provider"},
+		{Method: "GET", Path: "/api/v1/model-providers/:id/instances/:instanceId/models", Action: "read", Resource: "model-provider"},
+		{Method: "POST", Path: "/api/v1/model-providers/:id/instances/:instanceId/models", Action: "manage", Resource: "model-provider"},
+		{Method: "PATCH", Path: "/api/v1/model-providers/:id/instances/:instanceId/models/:modelId", Action: "manage", Resource: "model-provider"},
+		{Method: "DELETE", Path: "/api/v1/model-providers/:id/instances/:instanceId/models", Action: "manage", Resource: "model-provider"},
+		{Method: "POST", Path: "/api/v1/model-providers/:id/instances/:instanceId/models/:modelId/test", Action: "execute", Resource: "model-provider"},
+		{Method: "GET", Path: "/api/v1/enterprise-connections", Action: "read", Resource: "enterprise-connection"},
+		{Method: "POST", Path: "/api/v1/enterprise-connections", Action: "manage", Resource: "enterprise-connection"},
+		{Method: "GET", Path: "/api/v1/enterprise-connections/:id", Action: "read", Resource: "enterprise-connection"},
+		{Method: "PUT", Path: "/api/v1/enterprise-connections/:id", Action: "manage", Resource: "enterprise-connection"},
+		{Method: "GET", Path: "/api/v1/enterprise-connections/:id/versions", Action: "read", Resource: "enterprise-connection"},
+		{Method: "POST", Path: "/api/v1/enterprise-connections/:id/rotate-credential", Action: "manage", Resource: "enterprise-connection"},
+		{Method: "POST", Path: "/api/v1/enterprise-connections/:id/deprecate", Action: "manage", Resource: "enterprise-connection"},
+		{Method: "POST", Path: "/api/v1/enterprise-connections/:id/retire", Action: "manage", Resource: "enterprise-connection"},
+		{Method: "POST", Path: "/api/v1/enterprise-connections/:id/test", Action: "test", Resource: "enterprise-connection"},
+		{Method: "GET", Path: "/api/v1/enterprise-connections/:id/health", Action: "read", Resource: "enterprise-connection"},
+		{Method: "GET", Path: "/api/v1/connectors", Action: "read", Resource: "connector"},
+		{Method: "GET", Path: "/api/v1/connectors/providers/meta", Action: "read", Resource: "connector"},
+		{Method: "POST", Path: "/api/v1/connectors", Action: "manage", Resource: "connector"},
+		{Method: "POST", Path: "/api/v1/connectors/test", Action: "manage", Resource: "connector"},
+		{Method: "GET", Path: "/api/v1/connectors/:id", Action: "read", Resource: "connector"},
+		{Method: "PUT", Path: "/api/v1/connectors/:id", Action: "manage", Resource: "connector"},
+		{Method: "DELETE", Path: "/api/v1/connectors/:id", Action: "manage", Resource: "connector"},
+		{Method: "POST", Path: "/api/v1/connectors/:id/enable", Action: "manage", Resource: "connector"},
+		{Method: "POST", Path: "/api/v1/connectors/:id/disable", Action: "manage", Resource: "connector"},
+		{Method: "POST", Path: "/api/v1/connectors/:id/test", Action: "manage", Resource: "connector"},
+		{Method: "POST", Path: "/api/v1/connectors/:id/sync", Action: "manage", Resource: "connector"},
+		{Method: "PUT", Path: "/api/v1/connectors/:id/schedule", Action: "manage", Resource: "connector"},
+		{Method: "GET", Path: "/api/v1/connectors/:id/runs", Action: "read", Resource: "connector"},
+		{Method: "GET", Path: "/api/v1/connectors/:id/runs/:runID", Action: "read", Resource: "connector"},
+		{Method: "POST", Path: "/api/v1/connectors/:id/preview", Action: "manage", Resource: "connector"},
+		{Method: "GET", Path: "/api/v1/enterprise-connections/:id/availability", Action: "read", Resource: "enterprise-connection"},
+		{Method: "GET", Path: "/api/v1/enterprise-connections/:id/bindings", Action: "read", Resource: "enterprise-connection"},
+		{Method: "GET", Path: "/api/v1/enterprise-connections/:id/bindings/:bindingId", Action: "read", Resource: "enterprise-connection"},
+		{Method: "POST", Path: "/api/v1/enterprise-connections/:id/bindings", Action: "manage", Resource: "enterprise-connection"},
+		{Method: "PUT", Path: "/api/v1/enterprise-connections/:id/bindings/:bindingId", Action: "manage", Resource: "enterprise-connection"},
+		{Method: "POST", Path: "/api/v1/enterprise-connections/:id/bindings/:bindingId/revoke", Action: "manage", Resource: "enterprise-connection"},
+		{Method: "GET", Path: "/api/v1/enterprise-connections/:id/bindings/:bindingId/versions", Action: "read", Resource: "enterprise-connection"},
+		{Method: "GET", Path: "/api/v1/model-routes", Action: "read", Resource: "model-route"},
+		{Method: "POST", Path: "/api/v1/model-routes", Action: "manage", Resource: "model-route"},
+		{Method: "PUT", Path: "/api/v1/model-routes/:id", Action: "manage", Resource: "model-route"},
+		{Method: "DELETE", Path: "/api/v1/model-routes/:id", Action: "manage", Resource: "model-route"},
+		{Method: "POST", Path: "/api/v1/model-routes/:id/enterprise-pin", Action: "manage", Resource: "model-route"},
+		{Method: "GET", Path: "/api/v1/model-routes/:id/enterprise-pins", Action: "read", Resource: "model-route"},
+		{Method: "GET", Path: "/api/v1/keys", Action: "read", Resource: "api-key"},
+		{Method: "POST", Path: "/api/v1/keys", Action: "manage", Resource: "api-key"},
+		{Method: "POST", Path: "/api/v1/keys/:id/revoke", Action: "manage", Resource: "api-key"},
+
+		// Operations
+		{Method: "GET", Path: "/api/v1/usage", Action: "read", Resource: "usage"},
+		{Method: "GET", Path: "/api/v1/usage/details", Action: "read", Resource: "usage"},
+		{Method: "GET", Path: "/api/v1/usage/attribution", Action: "read", Resource: "usage"},
+		{Method: "GET", Path: "/api/v1/audit", Action: "read", Resource: "audit"},
+		{Method: "GET", Path: "/api/v1/usage/export", Action: "read", Resource: "usage-export"},
+		{Method: "GET", Path: "/api/v1/audit/export", Action: "read", Resource: "audit"},
+		{Method: "GET", Path: "/api/v1/audit/anchors", Action: "read", Resource: "audit-anchor"},
+		{Method: "GET", Path: "/api/v1/audit/verify", Action: "read", Resource: "audit"},
+		{Method: "POST", Path: "/api/v1/audit/repair", Action: "manage", Resource: "audit"},
+		{Method: "GET", Path: "/api/v1/dashboard", Action: "read", Resource: "dashboard"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/top-queries", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/events", Action: "read", Resource: "knowledge-ops"},
+		{Method: "PATCH", Path: "/api/v1/knowledge-ops/events/:id/review", Action: "manage", Resource: "knowledge-ops"},
+		{Method: "POST", Path: "/api/v1/knowledge-ops/trace-runs", Action: "manage", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/trace-runs", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/trace-runs/:id", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/metrics-contract", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/compilation/recovery", Action: "read", Resource: "knowledge-ops"},
+		{Method: "POST", Path: "/api/v1/knowledge-ops/compilation/runs/:runId/recovery-probe", Action: "execute", Resource: "compilation"},
+		{Method: "POST", Path: "/api/v1/knowledge-ops/compilation/runs/:runId/recovery-approval", Action: "execute", Resource: "compilation"},
+		{Method: "GET", Path: "/api/v1/knowledge-tasks", Action: "read", Resource: "knowledge-ops"},
+		{Method: "POST", Path: "/api/v1/knowledge-tasks", Action: "manage", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-tasks/summary", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-tasks/:id", Action: "read", Resource: "knowledge-ops"},
+		{Method: "PATCH", Path: "/api/v1/knowledge-tasks/:id", Action: "manage", Resource: "knowledge-ops"},
+		// Answer delivery contract (doc/100 §4): snapshot reads/export stay on
+		// the chat resource because exports read chat answers; impact/duplicate
+		// governance rides the knowledge-ops resource.
+		{Method: "GET", Path: "/api/v1/answer-snapshots/:snapshotId", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/answer-snapshots/by-request/:requestId", Action: "read", Resource: "chat"},
+		{Method: "POST", Path: "/api/v1/answer-snapshots/:snapshotId/export", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/answer-snapshots/export-jobs/:jobId", Action: "read", Resource: "chat"},
+		{Method: "POST", Path: "/api/v1/answer-snapshots/export-jobs/:jobId/retry", Action: "read", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/answer-snapshots/artifacts/:artifactId/download", Action: "read", Resource: "chat"},
+		{Method: "POST", Path: "/api/v1/knowledge-impact-reports", Action: "manage", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-impact-reports", Action: "read", Resource: "knowledge-ops"},
+		{Method: "POST", Path: "/api/v1/knowledge-duplicate-candidates", Action: "manage", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-duplicate-candidates", Action: "read", Resource: "knowledge-ops"},
+		{Method: "POST", Path: "/api/v1/knowledge-duplicate-candidates/:id/decision", Action: "manage", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/workbench/recent-sessions", Action: "read", Resource: "assistant"},
+		{Method: "GET", Path: "/api/v1/scenario-template-assets", Action: "read", Resource: "scenario-template"},
+		{Method: "GET", Path: "/api/v1/scenario-template-catalog", Action: "read", Resource: "scenario-template"},
+		{Method: "GET", Path: "/api/v1/trial-runs", Action: "read", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/trial-runs", Action: "execute", Resource: "eval-set"},
+		{Method: "GET", Path: "/api/v1/trial-runs/:id", Action: "read", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/trial-runs/:id/cancel", Action: "execute", Resource: "eval-set"},
+		{Method: "GET", Path: "/api/v1/onboarding/readiness", Action: "read", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/scenario-template-assets", Action: "manage", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/scenario-template-assets/import", Action: "manage", Resource: "scenario-template"},
+		{Method: "PUT", Path: "/api/v1/scenario-template-assets/:id", Action: "manage", Resource: "scenario-template"},
+		{Method: "GET", Path: "/api/v1/scenario-template-assets/:id", Action: "read", Resource: "scenario-template"},
+		{Method: "GET", Path: "/api/v1/scenario-template-assets/:id/export", Action: "read", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/copy", Action: "manage", Resource: "scenario-template"},
+		{Method: "DELETE", Path: "/api/v1/scenario-template-assets/:id", Action: "manage", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/eval-set", Action: "manage", Resource: "eval-set"},
+		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/release-candidate", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/instantiate-chat", Action: "manage", Resource: "chat"},
+		{Method: "GET", Path: "/api/v1/prompt-policies", Action: "read", Resource: "prompt-policy"},
+		{Method: "POST", Path: "/api/v1/prompt-policies", Action: "manage", Resource: "prompt-policy"},
+		{Method: "GET", Path: "/api/v1/prompt-policies/:id", Action: "read", Resource: "prompt-policy"},
+		{Method: "POST", Path: "/api/v1/prompt-policies/:id/rollback", Action: "manage", Resource: "prompt-policy"},
+		{Method: "DELETE", Path: "/api/v1/prompt-policies/:id", Action: "manage", Resource: "prompt-policy"},
+		{Method: "GET", Path: "/api/v1/knowledge-lifecycle", Action: "read", Resource: "knowledge-lifecycle"},
+		{Method: "GET", Path: "/api/v1/knowledge-lifecycle/asset-map", Action: "read", Resource: "knowledge-lifecycle"},
+		{Method: "GET", Path: "/api/v1/knowledge-lifecycle/health", Action: "read", Resource: "knowledge-lifecycle"},
+		{Method: "PUT", Path: "/api/v1/datasets/:id/lifecycle", Action: "manage", Resource: "knowledge-lifecycle"},
+		{Method: "GET", Path: "/api/v1/eval-sets", Action: "read", Resource: "eval-set"},
+		{Method: "POST", Path: "/api/v1/eval-sets", Action: "manage", Resource: "eval-set"},
+		{Method: "POST", Path: "/api/v1/eval-sets/generate-from-templates", Action: "manage", Resource: "eval-set"},
+		{Method: "GET", Path: "/api/v1/eval-sets/:id", Action: "read", Resource: "eval-set"},
+		{Method: "PUT", Path: "/api/v1/eval-sets/:id", Action: "manage", Resource: "eval-set"},
+		{Method: "DELETE", Path: "/api/v1/eval-sets/:id", Action: "manage", Resource: "eval-set"},
+		{Method: "POST", Path: "/api/v1/knowledge-ops/events/:id/to-eval-case", Action: "manage", Resource: "eval-set"},
+		// Governance overview aggregates template/policy/dataset/eval counts, so it
+		// belongs to the knowledge-ops read surface rather than the template
+		// catalog read that business_user now holds (doc/242 §5).
+		{Method: "GET", Path: "/api/v1/governance/overview", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/release-candidates", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/execution-snapshots", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/release-candidates", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/release-candidates/:id/ready", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/execution-snapshots", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-set-versions", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-case-versions", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-runs", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-runs/:id/case-results", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-runs/:id/complete", Action: "execute", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-runs/:id/execute", Action: "execute", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/evaluation-runs", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-protocol-registrations", Action: "execute", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/evaluation-protocol-registrations", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evaluation-protocol-registrations/:id/revoke", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/evidence-bundles", Action: "execute", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/evidence-bundles", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/release-gates", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/release-gates", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/release-gates/evidence", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/releases", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/releases/:id/complete", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/releases/:id/rollback", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/releases", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/quality-issues", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/quality-issues", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/quality-issues/:id/state", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/quality-issues/:id/verify", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistants", Action: "read", Resource: "release-governance"},
+		// Template instance API family (doc/107 §3.1.5, doc/124 §2). The
+		// instantiate/dry-run endpoints additionally require
+		// scenario-template:manage inside the handler.
+		{Method: "POST", Path: "/api/v1/template-instances", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/template-instances", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/template-instances/:id", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/template-instances/:id/dry-run", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/template-instances/:id/evaluate", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/template-instances/:id/release", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/template-instances/:id/releases/:releaseId/activate", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/template-instances/:id/rollback", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/template-instances/:id/health", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/template-instances/:id/releases", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/template-instances/:id/releases/:releaseId/reconcile", Action: "manage", Resource: "release-governance"},
+		// Rollout policy management (doc/107 §3.1.5, doc/124 §3).
+		{Method: "GET", Path: "/api/v1/assistants/:id/rollout-policies", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistants/:id/rollout-policies", Action: "manage", Resource: "release-governance"},
+		{Method: "PUT", Path: "/api/v1/assistants/:id/rollout-policies/:policyId", Action: "manage", Resource: "release-governance"},
+		// Audit-grade export (doc/100 §7.3, doc/124 §4): separate permission
+		// from the ordinary chat:read export path.
+		{Method: "GET", Path: "/api/v1/answer-snapshots/:snapshotId/audit-export", Action: "read", Resource: "audit-export"},
+		{Method: "POST", Path: "/api/v1/assistant-releases", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistant-releases", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistant-releases/:id", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistant-releases/:id/manifest", Action: "read", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistant-releases/:id/gate", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/transition", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/apply", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/activate", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/promote-canary", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/rollback/:targetId", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/reconcile", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistant-releases/:id/operations", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/operations/:operationId/recover", Action: "manage", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/compensate", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistant-releases/:id/health", Action: "read", Resource: "release-governance"},
+		{Method: "PUT", Path: "/api/v1/assistant-releases/:id/health", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/assistant-releases/:id/authorization-snapshots", Action: "read", Resource: "release-governance"},
+		{Method: "POST", Path: "/api/v1/assistant-releases/:id/authorization-snapshots", Action: "manage", Resource: "release-governance"},
+		{Method: "GET", Path: "/api/v1/system/health", Action: "read", Resource: "system-health"},
+		{Method: "GET", Path: "/api/v1/alerts", Action: "read", Resource: "alert"},
+		{Method: "GET", Path: "/api/v1/alerts/deliveries", Action: "read", Resource: "alert"},
+		{Method: "POST", Path: "/api/v1/alerts/:id/deliveries/:channel/retry", Action: "manage", Resource: "alert"},
+		{Method: "POST", Path: "/api/v1/alerts/:id/read", Action: "manage", Resource: "alert"},
+		{Method: "POST", Path: "/api/v1/alerts/:id/claim", Action: "manage", Resource: "alert"},
+		{Method: "GET", Path: "/api/v1/system/capabilities", Action: "read", Resource: "system"},
+		{Method: "POST", Path: "/api/v1/system/capabilities/verify", Action: "manage", Resource: "system"},
+
+		// Parser policy and quality baseline management (doc/129 P0-A).
+		{Method: "GET", Path: "/api/v1/parser-policies", Action: "read", Resource: "parser-policy"},
+		{Method: "POST", Path: "/api/v1/parser-policies", Action: "manage", Resource: "parser-policy"},
+		{Method: "GET", Path: "/api/v1/parser-policies/:id", Action: "read", Resource: "parser-policy", Resolve: resolveParserPolicyScope(svc)},
+		{Method: "PUT", Path: "/api/v1/parser-policies/:id", Action: "manage", Resource: "parser-policy", Resolve: resolveParserPolicyScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/parser-policies/:id", Action: "manage", Resource: "parser-policy", Resolve: resolveParserPolicyScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/parser-policies/:id", Action: "manage", Resource: "parser-policy", Resolve: resolveParserPolicyScope(svc)},
+		{Method: "GET", Path: "/api/v1/quality-profiles", Action: "read", Resource: "quality-profile"},
+		{Method: "POST", Path: "/api/v1/quality-profiles", Action: "manage", Resource: "quality-profile"},
+		{Method: "GET", Path: "/api/v1/quality-profiles/:id", Action: "read", Resource: "quality-profile", Resolve: resolveQualityProfileScope(svc)},
+		{Method: "PUT", Path: "/api/v1/quality-profiles/:id", Action: "manage", Resource: "quality-profile", Resolve: resolveQualityProfileScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/quality-profiles/:id", Action: "manage", Resource: "quality-profile", Resolve: resolveQualityProfileScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/quality-profiles/:id", Action: "manage", Resource: "quality-profile", Resolve: resolveQualityProfileScope(svc)},
+		{Method: "GET", Path: "/api/v1/logical-documents", Action: "read", Resource: "logical-document"},
+		{Method: "POST", Path: "/api/v1/logical-documents", Action: "manage", Resource: "logical-document"},
+		{Method: "GET", Path: "/api/v1/logical-documents/:id", Action: "read", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "PUT", Path: "/api/v1/logical-documents/:id", Action: "manage", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/logical-documents/:id", Action: "manage", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/logical-documents/:id", Action: "manage", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "GET", Path: "/api/v1/logical-documents/:id/versions", Action: "read", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "POST", Path: "/api/v1/logical-documents/:id/supersede", Action: "execute", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "POST", Path: "/api/v1/logical-documents/:id/restore", Action: "execute", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "GET", Path: "/api/v1/logical-documents/:id/publish-attempts", Action: "read", Resource: "logical-document", Resolve: resolveLogicalDocumentScope(svc)},
+		{Method: "GET", Path: "/api/v1/tool-registry", Action: "read", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-registry", Action: "manage", Resource: "tool-registry"},
+		{Method: "GET", Path: "/api/v1/tool-registry/:id", Action: "read", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "PUT", Path: "/api/v1/tool-registry/:id", Action: "manage", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/tool-registry/:id", Action: "manage", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/tool-registry/:id", Action: "manage", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "POST", Path: "/api/v1/tool-registry/:id/execute", Action: "execute", Resource: "tool-registry", Resolve: resolveToolRegistryScope(svc)},
+		{Method: "POST", Path: "/api/v1/tool-routing/routed-sql-answer", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/routed-sql-answers", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/routed-mixed-tool-answers", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/planned-mixed-tool-answers", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/answer-runs", Action: "execute", Resource: "tool-registry"},
+		{Method: "POST", Path: "/api/v1/tool-routing/answer-runs/:answerRunId/evidence-facts", Action: "execute", Resource: "tool-registry"},
+		{Method: "GET", Path: "/api/v1/tool-routing/answer-runs/:answerRunId/evidence-facts", Action: "read", Resource: "tool-registry"},
+		{Method: "GET", Path: "/api/v1/tool-routing/answer-runs/:answerRunId/fact-guard", Action: "read", Resource: "tool-registry"},
+		{Method: "GET", Path: "/api/v1/source-routing-rules", Action: "read", Resource: "source-routing-rule"},
+		{Method: "POST", Path: "/api/v1/source-routing-rules", Action: "manage", Resource: "source-routing-rule"},
+		{Method: "GET", Path: "/api/v1/source-routing-rules/:id", Action: "read", Resource: "source-routing-rule", Resolve: resolveSourceRoutingRuleScope(svc)},
+		{Method: "PUT", Path: "/api/v1/source-routing-rules/:id", Action: "manage", Resource: "source-routing-rule", Resolve: resolveSourceRoutingRuleScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/source-routing-rules/:id", Action: "manage", Resource: "source-routing-rule", Resolve: resolveSourceRoutingRuleScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/source-routing-rules/:id", Action: "manage", Resource: "source-routing-rule", Resolve: resolveSourceRoutingRuleScope(svc)},
+		{Method: "GET", Path: "/api/v1/query-templates", Action: "read", Resource: "query-template"},
+		{Method: "POST", Path: "/api/v1/query-templates", Action: "manage", Resource: "query-template"},
+		{Method: "GET", Path: "/api/v1/query-templates/:id", Action: "read", Resource: "query-template", Resolve: resolveQueryTemplateScope(svc)},
+		{Method: "PUT", Path: "/api/v1/query-templates/:id", Action: "manage", Resource: "query-template", Resolve: resolveQueryTemplateScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/query-templates/:id", Action: "manage", Resource: "query-template", Resolve: resolveQueryTemplateScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/query-templates/:id", Action: "manage", Resource: "query-template", Resolve: resolveQueryTemplateScope(svc)},
+		{Method: "GET", Path: "/api/v1/db-connections", Action: "read", Resource: "db-connection"},
+		{Method: "POST", Path: "/api/v1/db-connections", Action: "manage", Resource: "db-connection"},
+		{Method: "GET", Path: "/api/v1/db-connections/:id", Action: "read", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "PUT", Path: "/api/v1/db-connections/:id", Action: "manage", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/db-connections/:id", Action: "manage", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/db-connections/:id", Action: "manage", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "POST", Path: "/api/v1/db-connections/:id/test", Action: "test", Resource: "db-connection", Resolve: resolveDBConnectionScope(svc)},
+		{Method: "GET", Path: "/api/v1/knowledge-strategies", Action: "read", Resource: "knowledge-strategy"},
+		{Method: "POST", Path: "/api/v1/knowledge-strategies", Action: "manage", Resource: "knowledge-strategy"},
+		{Method: "GET", Path: "/api/v1/knowledge-strategies/:id", Action: "read", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "PUT", Path: "/api/v1/knowledge-strategies/:id", Action: "manage", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "PATCH", Path: "/api/v1/knowledge-strategies/:id", Action: "manage", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "DELETE", Path: "/api/v1/knowledge-strategies/:id", Action: "manage", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "POST", Path: "/api/v1/knowledge-strategies/:id/probe", Action: "execute", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "POST", Path: "/api/v1/knowledge-strategies/:id/retrieve", Action: "execute", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "GET", Path: "/api/v1/knowledge-strategies/:id/quality-gate", Action: "read", Resource: "knowledge-strategy", Resolve: resolveKnowledgeStrategyScope(svc)},
+		{Method: "GET", Path: "/api/v1/knowledge-profiles", Action: "read", Resource: "knowledge-profile"},
+		{Method: "POST", Path: "/api/v1/knowledge-profiles", Action: "manage", Resource: "knowledge-profile"},
+		{Method: "GET", Path: "/api/v1/knowledge-profiles/:profileId", Action: "read", Resource: "knowledge-profile"},
+		{Method: "PUT", Path: "/api/v1/knowledge-profiles/:profileId", Action: "manage", Resource: "knowledge-profile"},
+		{Method: "DELETE", Path: "/api/v1/knowledge-profiles/:profileId", Action: "manage", Resource: "knowledge-profile"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/compilation/runs", Action: "manage", Resource: "compilation"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/compilation/runs/:runId/cancel", Action: "manage", Resource: "compilation"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/compilation/runs", Action: "read", Resource: "compilation"},
+		{Method: "POST", Path: "/api/v1/datasets/:id/compilation/reconcile", Action: "execute", Resource: "compilation"},
+		{Method: "GET", Path: "/api/v1/datasets/:id/artifacts", Action: "read", Resource: "compilation"},
+		{Method: "GET", Path: "/api/v1/memory-policies", Action: "read", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/memory-policies", Action: "manage", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-policies/:policyId", Action: "read", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-policies/:policyId/quality-gate", Action: "read", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-policies/:policyId/consents", Action: "read", Resource: "memory-policy"},
+		{Method: "PUT", Path: "/api/v1/memory-policies/:policyId", Action: "manage", Resource: "memory-policy"},
+		{Method: "DELETE", Path: "/api/v1/memory-policies/:policyId", Action: "manage", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/memory-policies/:policyId/opt-in", Action: "execute", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/memory-policies/:policyId/opt-out", Action: "execute", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-privacy/self-policy-template", Action: "read", Resource: "memory-policy"},
+		{Method: "PUT", Path: "/api/v1/memory-privacy/self-policy-template", Action: "manage", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-privacy/pii-exemptions", Action: "read", Resource: "memory-policy"},
+		{Method: "PUT", Path: "/api/v1/memory-privacy/pii-exemptions", Action: "manage", Resource: "memory-policy"},
+		{Method: "DELETE", Path: "/api/v1/memory-privacy/pii-exemptions/:exemptionId", Action: "manage", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/memory-privacy/pii-preview", Action: "manage", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/self/memory-policies", Action: "read", Resource: "memory-policy"},
+		{Method: "POST", Path: "/api/v1/self/memory-policies", Action: "execute", Resource: "memory-policy"},
+		{Method: "GET", Path: "/api/v1/memory-operations", Action: "read", Resource: "memory-operation"},
+		{Method: "GET", Path: "/api/v1/memory-operations/:operationId", Action: "read", Resource: "memory-operation"},
+		{Method: "POST", Path: "/api/v1/memory-operations/:operationId/tombstone", Action: "execute", Resource: "memory-forget", Resolve: resolveMemoryOperationScope(svc)},
+		{Method: "POST", Path: "/api/v1/conversation-context/preview", Action: "read", Resource: "context-decision"},
+		{Method: "GET", Path: "/api/v1/conversation-context/decisions/:decisionId", Action: "read", Resource: "context-decision"},
+		{Method: "GET", Path: "/api/v1/conversation-context/decisions/by-request/:requestId", Action: "read", Resource: "context-decision"},
+		{Method: "GET", Path: "/api/v1/conversation-context/decisions", Action: "read", Resource: "context-decision"},
+		{Method: "GET", Path: "/api/v1/evidence-snapshots", Action: "read", Resource: "evidence-snapshot"},
+		{Method: "GET", Path: "/api/v1/evidence-snapshots/:id", Action: "read", Resource: "evidence-snapshot", Resolve: resolveEvidenceSnapshotScope(svc)},
+		{Method: "GET", Path: "/api/v1/outbox-events", Action: "read", Resource: "outbox-event"},
+		{Method: "GET", Path: "/api/v1/outbox-events/:id", Action: "read", Resource: "outbox-event", Resolve: resolveOutboxEventScope(svc)},
+		{Method: "POST", Path: "/api/v1/outbox-events/:id/retry", Action: "execute", Resource: "outbox-event", Resolve: resolveOutboxEventScope(svc)},
+		{Method: "GET", Path: "/api/v1/eval-cases/:id/evidence", Action: "read", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
+		{Method: "PUT", Path: "/api/v1/eval-cases/:id/evidence", Action: "manage", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
+		{Method: "POST", Path: "/api/v1/eval-cases/:id/revalidate", Action: "execute", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
+	}
+	return withRouteContracts(rules)
+}
+
+func resolveParserPolicyScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		policy, err := svc.Store.GetParserPolicy(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if policy == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, policy.ProjectID, "", nil
+	}
+}
+
+func resolveQualityProfileScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetQualityProfile(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveLogicalDocumentScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		document, err := svc.Store.GetLogicalDocument(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if document == nil {
+			return tenantID, "", "", nil
+		}
+		dataset, err := svc.Store.GetDatasetLink(c.Request.Context(), tenantID, document.DatasetID)
+		if err != nil {
+			return "", "", "", err
+		}
+		if dataset == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, dataset.ProjectID, "", nil
+	}
+}
+
+func resolveToolRegistryScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetToolRegistry(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveSourceRoutingRuleScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetSourceRoutingRule(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveDBConnectionScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetDBConnection(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveQueryTemplateScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetQueryTemplate(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveKnowledgeStrategyScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		strategy, err := svc.Store.GetKnowledgeStrategy(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if strategy == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, strategy.ProjectID, "", nil
+	}
+}
+
+func resolveEvidenceSnapshotScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		if _, err := svc.Store.GetEvidenceSnapshotBundle(
+			c.Request.Context(), tenantID, c.Param("id"),
+		); err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveOutboxEventScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		if _, err := svc.Store.GetOutboxEvent(c.Request.Context(), tenantID, c.Param("id")); err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveEvalCaseScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		_, err := svc.Store.GetEvalCase(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		return tenantID, "", "", nil
+	}
+}
+
+func resolveMemoryOperationScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		operation, err := svc.Store.GetMemoryOperation(c.Request.Context(), tenantID, c.Param("operationId"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if operation == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, operation.ProjectID, operation.UserID, nil
+	}
+}
+
+func resolveDatasetScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		link, err := svc.Store.GetDatasetLink(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			// Fail closed: scope resolution errors must deny the request rather
+			// than degrade to a weak tenant-only check.
+			return "", "", "", err
+		}
+		if link == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, link.ProjectID, "", nil
+	}
+}
+
+func resolveProjectScope(svc *service.Service) middleware.ResolveContext {
+	return func(c *gin.Context) (string, string, string, error) {
+		tenantID := c.GetString(middleware.ContextTenantID)
+		p, err := svc.Store.GetProject(c.Request.Context(), tenantID, c.Param("id"))
+		if err != nil {
+			return "", "", "", err
+		}
+		if p == nil {
+			return tenantID, "", "", nil
+		}
+		return tenantID, p.ID, "", nil
+	}
+}

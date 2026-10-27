@@ -1,0 +1,1824 @@
+{
+  "version": 1,
+  "snapshots": [
+    {
+      "generatedAt": "2026-09-10T00:00:00Z",
+      "commit": "local",
+      "total": {
+        "path": "total",
+        "statements": 27349,
+        "coveredStatements": 12455,
+        "coverage": 45.541,
+        "targetPassed": true
+      },
+      "scopes": [
+        {
+          "path": "internal/provider/ragflow",
+          "statements": 1840,
+          "coveredStatements": 841,
+          "coverage": 45.7065,
+          "target": 75,
+          "targetPassed": false
+        },
+        {
+          "path": "internal/repository",
+          "statements": 2829,
+          "coveredStatements": 696,
+          "coverage": 24.6023,
+          "target": 55,
+          "targetPassed": false
+        },
+        {
+          "path": "internal/router",
+          "statements": 333,
+          "coveredStatements": 302,
+          "coverage": 90.6907,
+          "target": 95,
+          "targetPassed": false
+        },
+        {
+          "path": "internal/service",
+          "statements": 11650,
+          "coveredStatements": 6550,
+          "coverage": 56.2232,
+          "target": 75,
+          "targetPassed": false
+        },
+        {
+          "path": "other",
+          "statements": 10270,
+          "coveredStatements": 3781,
+          "coverage": 36.816,
+          "targetPassed": true
+        },
+        {
+          "path": "web/src",
+          "statements": 427,
+          "coveredStatements": 285,
+          "coverage": 66.7447,
+          "target": 80,
+          "targetPassed": false
+        }
+      ],
+      "files": [
+        {
+          "source": "go",
+          "path": "cmd/deploy-drill/main.go",
+          "statements": 50,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "cmd/difydsl/main.go",
+          "statements": 111,
+          "coveredStatements": 21,
+          "coverage": 18.9189
+        },
+        {
+          "source": "go",
+          "path": "cmd/perf-baseline/main.go",
+          "statements": 51,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "cmd/perf-cleanup/main.go",
+          "statements": 47,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "cmd/server/flags.go",
+          "statements": 9,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "cmd/server/main.go",
+          "statements": 87,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "cmd/testquality-coverage-trend/main.go",
+          "statements": 30,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "cmd/testquality-flake/main.go",
+          "statements": 25,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "cmd/testquality-governance/main.go",
+          "statements": 16,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "cmd/testquality-report/main.go",
+          "statements": 52,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/config/config.go",
+          "statements": 158,
+          "coveredStatements": 133,
+          "coverage": 84.1772
+        },
+        {
+          "source": "go",
+          "path": "internal/db/db.go",
+          "statements": 37,
+          "coveredStatements": 20,
+          "coverage": 54.0541
+        },
+        {
+          "source": "go",
+          "path": "internal/db/migrate.go",
+          "statements": 618,
+          "coveredStatements": 342,
+          "coverage": 55.3398
+        },
+        {
+          "source": "go",
+          "path": "internal/db/privileges.go",
+          "statements": 59,
+          "coveredStatements": 3,
+          "coverage": 5.0847
+        },
+        {
+          "source": "go",
+          "path": "internal/deployment/drill.go",
+          "statements": 346,
+          "coveredStatements": 255,
+          "coverage": 73.6994
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/agent.go",
+          "statements": 309,
+          "coveredStatements": 65,
+          "coverage": 21.0356
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/alerts.go",
+          "statements": 29,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/approval.go",
+          "statements": 148,
+          "coveredStatements": 87,
+          "coverage": 58.7838
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/audit.go",
+          "statements": 53,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/audit_anchor.go",
+          "statements": 10,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/auth.go",
+          "statements": 71,
+          "coveredStatements": 21,
+          "coverage": 29.5775
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/branding.go",
+          "statements": 57,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/capabilities.go",
+          "statements": 15,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/chat.go",
+          "statements": 277,
+          "coveredStatements": 45,
+          "coverage": 16.2455
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/chat_completion.go",
+          "statements": 34,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/chat_reference.go",
+          "statements": 47,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/chat_upload.go",
+          "statements": 27,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/conversation_center.go",
+          "statements": 94,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/dataset.go",
+          "statements": 525,
+          "coveredStatements": 247,
+          "coverage": 47.0476
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/enterprise_connection.go",
+          "statements": 299,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/feedback.go",
+          "statements": 16,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/gateway.go",
+          "statements": 145,
+          "coveredStatements": 7,
+          "coverage": 4.8276
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/governance.go",
+          "statements": 429,
+          "coveredStatements": 3,
+          "coverage": 0.6993
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/handler.go",
+          "statements": 7,
+          "coveredStatements": 4,
+          "coverage": 57.1429
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/keys.go",
+          "statements": 50,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/knowledge_ops.go",
+          "statements": 46,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/memory.go",
+          "statements": 189,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/model.go",
+          "statements": 383,
+          "coveredStatements": 118,
+          "coverage": 30.8094
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/ops.go",
+          "statements": 70,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/project.go",
+          "statements": 161,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/release_governance.go",
+          "statements": 225,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/resource_sync.go",
+          "statements": 145,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/role.go",
+          "statements": 62,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/scope.go",
+          "statements": 44,
+          "coveredStatements": 32,
+          "coverage": 72.7273
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/search_app.go",
+          "statements": 184,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/setting_revision.go",
+          "statements": 61,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/setup.go",
+          "statements": 48,
+          "coveredStatements": 10,
+          "coverage": 20.8333
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/system.go",
+          "statements": 22,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/system_config.go",
+          "statements": 37,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/team.go",
+          "statements": 132,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/tenant.go",
+          "statements": 97,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/usage.go",
+          "statements": 39,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/user.go",
+          "statements": 130,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/handler/workbench.go",
+          "statements": 9,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/auth.go",
+          "statements": 33,
+          "coveredStatements": 21,
+          "coverage": 63.6364
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/body_limit.go",
+          "statements": 8,
+          "coveredStatements": 7,
+          "coverage": 87.5
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/cors.go",
+          "statements": 33,
+          "coveredStatements": 32,
+          "coverage": 96.9697
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/csrf.go",
+          "statements": 37,
+          "coveredStatements": 29,
+          "coverage": 78.3784
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/dynamic_security.go",
+          "statements": 11,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/metrics_auth.go",
+          "statements": 29,
+          "coveredStatements": 27,
+          "coverage": 93.1034
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/ratelimit.go",
+          "statements": 31,
+          "coveredStatements": 29,
+          "coverage": 93.5484
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/rbac.go",
+          "statements": 109,
+          "coveredStatements": 37,
+          "coverage": 33.945
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/recovery.go",
+          "statements": 7,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/requestid.go",
+          "statements": 8,
+          "coveredStatements": 7,
+          "coverage": 87.5
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/requestlog.go",
+          "statements": 5,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/runtime_report.go",
+          "statements": 18,
+          "coveredStatements": 15,
+          "coverage": 83.3333
+        },
+        {
+          "source": "go",
+          "path": "internal/middleware/security.go",
+          "statements": 18,
+          "coveredStatements": 18,
+          "coverage": 100
+        },
+        {
+          "source": "go",
+          "path": "internal/model/agent_shadow.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/alerts.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/approval.go",
+          "statements": 22,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/approval_operation.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/assets.go",
+          "statements": 13,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/assistant_catalog.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/audit_anchor.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/auditlog.go",
+          "statements": 3,
+          "coveredStatements": 3,
+          "coverage": 100
+        },
+        {
+          "source": "go",
+          "path": "internal/model/chat_shadow.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/conversation_route.go",
+          "statements": 4,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/enterprise_connection.go",
+          "statements": 5,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/feedback.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/governance.go",
+          "statements": 5,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/job.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/knowledge_ops.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/memory_shadow.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/metrics.go",
+          "statements": 7,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/model_provider.go",
+          "statements": 16,
+          "coveredStatements": 14,
+          "coverage": 87.5
+        },
+        {
+          "source": "go",
+          "path": "internal/model/models.go",
+          "statements": 5,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/release_governance.go",
+          "statements": 10,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/resource_sync.go",
+          "statements": 8,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/search_app_shadow.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/model/setting_revision.go",
+          "statements": 4,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/notify/notify.go",
+          "statements": 93,
+          "coveredStatements": 62,
+          "coverage": 66.6667
+        },
+        {
+          "source": "go",
+          "path": "internal/obs/obs.go",
+          "statements": 102,
+          "coveredStatements": 44,
+          "coverage": 43.1373
+        },
+        {
+          "source": "go",
+          "path": "internal/performance/http.go",
+          "statements": 52,
+          "coveredStatements": 31,
+          "coverage": 59.6154
+        },
+        {
+          "source": "go",
+          "path": "internal/performance/performance.go",
+          "statements": 174,
+          "coveredStatements": 129,
+          "coverage": 74.1379
+        },
+        {
+          "source": "go",
+          "path": "internal/performance/report.go",
+          "statements": 67,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/performance/runner.go",
+          "statements": 196,
+          "coveredStatements": 144,
+          "coverage": 73.4694
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/approvalcache/redis.go",
+          "statements": 29,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/crypto/crypto.go",
+          "statements": 44,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/difydsl/converter.go",
+          "statements": 566,
+          "coveredStatements": 438,
+          "coverage": 77.3852
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/difydsl/helpers.go",
+          "statements": 102,
+          "coveredStatements": 83,
+          "coverage": 81.3725
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/difydsl/tools.go",
+          "statements": 46,
+          "coveredStatements": 28,
+          "coverage": 60.8696
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/httperr/httperr.go",
+          "statements": 8,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/id/id.go",
+          "statements": 1,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/jwt/jwt.go",
+          "statements": 39,
+          "coveredStatements": 20,
+          "coverage": 51.2821
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/keygen/keygen.go",
+          "statements": 10,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/logger/logger.go",
+          "statements": 139,
+          "coveredStatements": 108,
+          "coverage": 77.6978
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/password/password.go",
+          "statements": 3,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/ratelimit/ratelimit.go",
+          "statements": 23,
+          "coveredStatements": 22,
+          "coverage": 95.6522
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/ratelimit/redis.go",
+          "statements": 36,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/requestid/requestid.go",
+          "statements": 8,
+          "coveredStatements": 7,
+          "coverage": 87.5
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/response/error.go",
+          "statements": 6,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/response/response.go",
+          "statements": 6,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/routestate/redis.go",
+          "statements": 22,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/rsaseal/rsaseal.go",
+          "statements": 37,
+          "coveredStatements": 20,
+          "coverage": 54.0541
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/secretstore/secretstore.go",
+          "statements": 42,
+          "coveredStatements": 25,
+          "coverage": 59.5238
+        },
+        {
+          "source": "go",
+          "path": "internal/pkg/sseutil/sseutil.go",
+          "statements": 10,
+          "coveredStatements": 10,
+          "coverage": 100
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/provider.go",
+          "statements": 9,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/agent.go",
+          "statements": 193,
+          "coveredStatements": 111,
+          "coverage": 57.513
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/agent_mock.go",
+          "statements": 143,
+          "coveredStatements": 53,
+          "coverage": 37.0629
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/chat.go",
+          "statements": 98,
+          "coveredStatements": 53,
+          "coverage": 54.0816
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/chat_mock.go",
+          "statements": 144,
+          "coveredStatements": 76,
+          "coverage": 52.7778
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/errors.go",
+          "statements": 40,
+          "coveredStatements": 31,
+          "coverage": 77.5
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/http.go",
+          "statements": 383,
+          "coveredStatements": 133,
+          "coverage": 34.7258
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/memory.go",
+          "statements": 65,
+          "coveredStatements": 52,
+          "coverage": 80
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/memory_mock.go",
+          "statements": 127,
+          "coveredStatements": 64,
+          "coverage": 50.3937
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/middleware.go",
+          "statements": 86,
+          "coveredStatements": 63,
+          "coverage": 73.2558
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/mock.go",
+          "statements": 283,
+          "coveredStatements": 1,
+          "coverage": 0.3534
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/models.go",
+          "statements": 11,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/ragflow.go",
+          "statements": 41,
+          "coveredStatements": 30,
+          "coverage": 73.1707
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/search_app.go",
+          "statements": 99,
+          "coveredStatements": 80,
+          "coverage": 80.8081
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/search_app_mock.go",
+          "statements": 92,
+          "coveredStatements": 68,
+          "coverage": 73.913
+        },
+        {
+          "source": "go",
+          "path": "internal/provider/ragflow/version.go",
+          "statements": 35,
+          "coveredStatements": 26,
+          "coverage": 74.2857
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/acting_context.go",
+          "statements": 29,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/agent_shadow.go",
+          "statements": 68,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/alerts.go",
+          "statements": 43,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/approval.go",
+          "statements": 345,
+          "coveredStatements": 165,
+          "coverage": 47.8261
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/approval_operation.go",
+          "statements": 45,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/assistant_catalog.go",
+          "statements": 22,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/audit_anchor.go",
+          "statements": 26,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/chat_shadow.go",
+          "statements": 71,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/conversation_route.go",
+          "statements": 68,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/dateutil.go",
+          "statements": 7,
+          "coveredStatements": 6,
+          "coverage": 85.7143
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/enterprise_connection.go",
+          "statements": 157,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/feedback.go",
+          "statements": 16,
+          "coveredStatements": 15,
+          "coverage": 93.75
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/filters.go",
+          "statements": 8,
+          "coveredStatements": 8,
+          "coverage": 100
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/governance.go",
+          "statements": 180,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/job.go",
+          "statements": 115,
+          "coveredStatements": 51,
+          "coverage": 44.3478
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/knowledge_ops.go",
+          "statements": 109,
+          "coveredStatements": 76,
+          "coverage": 69.7248
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/m2.go",
+          "statements": 464,
+          "coveredStatements": 116,
+          "coverage": 25
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/memory_shadow.go",
+          "statements": 27,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/model_route_pin.go",
+          "statements": 26,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/project.go",
+          "statements": 30,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/quota.go",
+          "statements": 102,
+          "coveredStatements": 78,
+          "coverage": 76.4706
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/release_governance.go",
+          "statements": 112,
+          "coveredStatements": 9,
+          "coverage": 8.0357
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/repository.go",
+          "statements": 218,
+          "coveredStatements": 58,
+          "coverage": 26.6055
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/resource_sync.go",
+          "statements": 186,
+          "coveredStatements": 28,
+          "coverage": 15.0538
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/retention.go",
+          "statements": 61,
+          "coveredStatements": 52,
+          "coverage": 85.2459
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/search_app_shadow.go",
+          "statements": 60,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/setting_revision.go",
+          "statements": 126,
+          "coveredStatements": 34,
+          "coverage": 26.9841
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/team.go",
+          "statements": 36,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/repository/team_project.go",
+          "statements": 72,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/router/access.go",
+          "statements": 18,
+          "coveredStatements": 9,
+          "coverage": 50
+        },
+        {
+          "source": "go",
+          "path": "internal/router/route_registry.go",
+          "statements": 23,
+          "coveredStatements": 22,
+          "coverage": 95.6522
+        },
+        {
+          "source": "go",
+          "path": "internal/router/router.go",
+          "statements": 292,
+          "coveredStatements": 271,
+          "coverage": 92.8082
+        },
+        {
+          "source": "go",
+          "path": "internal/service/abac.go",
+          "statements": 28,
+          "coveredStatements": 20,
+          "coverage": 71.4286
+        },
+        {
+          "source": "go",
+          "path": "internal/service/acting_context.go",
+          "statements": 135,
+          "coveredStatements": 92,
+          "coverage": 68.1481
+        },
+        {
+          "source": "go",
+          "path": "internal/service/agent.go",
+          "statements": 269,
+          "coveredStatements": 142,
+          "coverage": 52.7881
+        },
+        {
+          "source": "go",
+          "path": "internal/service/agent_attachment.go",
+          "statements": 41,
+          "coveredStatements": 35,
+          "coverage": 85.3659
+        },
+        {
+          "source": "go",
+          "path": "internal/service/agent_upload.go",
+          "statements": 20,
+          "coveredStatements": 14,
+          "coverage": 70
+        },
+        {
+          "source": "go",
+          "path": "internal/service/alerts.go",
+          "statements": 30,
+          "coveredStatements": 25,
+          "coverage": 83.3333
+        },
+        {
+          "source": "go",
+          "path": "internal/service/api_key_ip.go",
+          "statements": 31,
+          "coveredStatements": 28,
+          "coverage": 90.3226
+        },
+        {
+          "source": "go",
+          "path": "internal/service/api_key_scope.go",
+          "statements": 21,
+          "coveredStatements": 19,
+          "coverage": 90.4762
+        },
+        {
+          "source": "go",
+          "path": "internal/service/approval.go",
+          "statements": 722,
+          "coveredStatements": 247,
+          "coverage": 34.2105
+        },
+        {
+          "source": "go",
+          "path": "internal/service/approval_action.go",
+          "statements": 455,
+          "coveredStatements": 151,
+          "coverage": 33.1868
+        },
+        {
+          "source": "go",
+          "path": "internal/service/approval_executor.go",
+          "statements": 723,
+          "coveredStatements": 199,
+          "coverage": 27.5242
+        },
+        {
+          "source": "go",
+          "path": "internal/service/approval_operation.go",
+          "statements": 15,
+          "coveredStatements": 12,
+          "coverage": 80
+        },
+        {
+          "source": "go",
+          "path": "internal/service/assistant_catalog.go",
+          "statements": 210,
+          "coveredStatements": 148,
+          "coverage": 70.4762
+        },
+        {
+          "source": "go",
+          "path": "internal/service/audit.go",
+          "statements": 83,
+          "coveredStatements": 56,
+          "coverage": 67.4699
+        },
+        {
+          "source": "go",
+          "path": "internal/service/audit_anchor.go",
+          "statements": 171,
+          "coveredStatements": 110,
+          "coverage": 64.3275
+        },
+        {
+          "source": "go",
+          "path": "internal/service/auth.go",
+          "statements": 101,
+          "coveredStatements": 96,
+          "coverage": 95.0495
+        },
+        {
+          "source": "go",
+          "path": "internal/service/branding.go",
+          "statements": 32,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/service/capabilities.go",
+          "statements": 84,
+          "coveredStatements": 77,
+          "coverage": 91.6667
+        },
+        {
+          "source": "go",
+          "path": "internal/service/chat_admin.go",
+          "statements": 274,
+          "coveredStatements": 146,
+          "coverage": 53.2847
+        },
+        {
+          "source": "go",
+          "path": "internal/service/chat_app.go",
+          "statements": 122,
+          "coveredStatements": 88,
+          "coverage": 72.1311
+        },
+        {
+          "source": "go",
+          "path": "internal/service/chat_feedback.go",
+          "statements": 13,
+          "coveredStatements": 10,
+          "coverage": 76.9231
+        },
+        {
+          "source": "go",
+          "path": "internal/service/chat_reference.go",
+          "statements": 57,
+          "coveredStatements": 8,
+          "coverage": 14.0351
+        },
+        {
+          "source": "go",
+          "path": "internal/service/chat_resolve.go",
+          "statements": 8,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/service/chat_upload.go",
+          "statements": 42,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/service/conversation_route_binding.go",
+          "statements": 141,
+          "coveredStatements": 87,
+          "coverage": 61.7021
+        },
+        {
+          "source": "go",
+          "path": "internal/service/conversation_route_evaluation.go",
+          "statements": 329,
+          "coveredStatements": 292,
+          "coverage": 88.7538
+        },
+        {
+          "source": "go",
+          "path": "internal/service/conversation_route_evaluation_data.go",
+          "statements": 23,
+          "coveredStatements": 23,
+          "coverage": 100
+        },
+        {
+          "source": "go",
+          "path": "internal/service/conversation_route_policy.go",
+          "statements": 219,
+          "coveredStatements": 133,
+          "coverage": 60.7306
+        },
+        {
+          "source": "go",
+          "path": "internal/service/conversation_router.go",
+          "statements": 235,
+          "coveredStatements": 205,
+          "coverage": 87.234
+        },
+        {
+          "source": "go",
+          "path": "internal/service/cost_metric.go",
+          "statements": 5,
+          "coveredStatements": 5,
+          "coverage": 100
+        },
+        {
+          "source": "go",
+          "path": "internal/service/cross_app_sessions.go",
+          "statements": 84,
+          "coveredStatements": 71,
+          "coverage": 84.5238
+        },
+        {
+          "source": "go",
+          "path": "internal/service/dashboard.go",
+          "statements": 41,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/service/dataset.go",
+          "statements": 283,
+          "coveredStatements": 139,
+          "coverage": 49.1166
+        },
+        {
+          "source": "go",
+          "path": "internal/service/dataset_document_approval.go",
+          "statements": 139,
+          "coveredStatements": 41,
+          "coverage": 29.4964
+        },
+        {
+          "source": "go",
+          "path": "internal/service/enterprise_connection.go",
+          "statements": 465,
+          "coveredStatements": 289,
+          "coverage": 62.1505
+        },
+        {
+          "source": "go",
+          "path": "internal/service/enterprise_connection_governance.go",
+          "statements": 377,
+          "coveredStatements": 164,
+          "coverage": 43.5013
+        },
+        {
+          "source": "go",
+          "path": "internal/service/enterprise_health.go",
+          "statements": 155,
+          "coveredStatements": 118,
+          "coverage": 76.129
+        },
+        {
+          "source": "go",
+          "path": "internal/service/gateway.go",
+          "statements": 113,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/service/gateway_idempotency.go",
+          "statements": 39,
+          "coveredStatements": 25,
+          "coverage": 64.1026
+        },
+        {
+          "source": "go",
+          "path": "internal/service/gateway_quota.go",
+          "statements": 78,
+          "coveredStatements": 67,
+          "coverage": 85.8974
+        },
+        {
+          "source": "go",
+          "path": "internal/service/governance.go",
+          "statements": 415,
+          "coveredStatements": 239,
+          "coverage": 57.5904
+        },
+        {
+          "source": "go",
+          "path": "internal/service/identity.go",
+          "statements": 181,
+          "coveredStatements": 110,
+          "coverage": 60.7735
+        },
+        {
+          "source": "go",
+          "path": "internal/service/keys.go",
+          "statements": 46,
+          "coveredStatements": 25,
+          "coverage": 54.3478
+        },
+        {
+          "source": "go",
+          "path": "internal/service/knowledge_ops.go",
+          "statements": 39,
+          "coveredStatements": 22,
+          "coverage": 56.4103
+        },
+        {
+          "source": "go",
+          "path": "internal/service/memory.go",
+          "statements": 131,
+          "coveredStatements": 79,
+          "coverage": 60.3053
+        },
+        {
+          "source": "go",
+          "path": "internal/service/model.go",
+          "statements": 484,
+          "coveredStatements": 150,
+          "coverage": 30.9917
+        },
+        {
+          "source": "go",
+          "path": "internal/service/name_validation.go",
+          "statements": 7,
+          "coveredStatements": 7,
+          "coverage": 100
+        },
+        {
+          "source": "go",
+          "path": "internal/service/project.go",
+          "statements": 213,
+          "coveredStatements": 154,
+          "coverage": 72.3005
+        },
+        {
+          "source": "go",
+          "path": "internal/service/provider_url.go",
+          "statements": 44,
+          "coveredStatements": 35,
+          "coverage": 79.5455
+        },
+        {
+          "source": "go",
+          "path": "internal/service/reconciliation.go",
+          "statements": 41,
+          "coveredStatements": 28,
+          "coverage": 68.2927
+        },
+        {
+          "source": "go",
+          "path": "internal/service/release_governance.go",
+          "statements": 434,
+          "coveredStatements": 263,
+          "coverage": 60.5991
+        },
+        {
+          "source": "go",
+          "path": "internal/service/resource_sync.go",
+          "statements": 1111,
+          "coveredStatements": 638,
+          "coverage": 57.4257
+        },
+        {
+          "source": "go",
+          "path": "internal/service/resource_sync_artifact.go",
+          "statements": 104,
+          "coveredStatements": 79,
+          "coverage": 75.9615
+        },
+        {
+          "source": "go",
+          "path": "internal/service/resource_sync_hash.go",
+          "statements": 57,
+          "coveredStatements": 50,
+          "coverage": 87.7193
+        },
+        {
+          "source": "go",
+          "path": "internal/service/resource_sync_scheduler.go",
+          "statements": 24,
+          "coveredStatements": 18,
+          "coverage": 75
+        },
+        {
+          "source": "go",
+          "path": "internal/service/resource_sync_worker.go",
+          "statements": 41,
+          "coveredStatements": 22,
+          "coverage": 53.6585
+        },
+        {
+          "source": "go",
+          "path": "internal/service/retention.go",
+          "statements": 105,
+          "coveredStatements": 85,
+          "coverage": 80.9524
+        },
+        {
+          "source": "go",
+          "path": "internal/service/role.go",
+          "statements": 110,
+          "coveredStatements": 60,
+          "coverage": 54.5455
+        },
+        {
+          "source": "go",
+          "path": "internal/service/search_app.go",
+          "statements": 165,
+          "coveredStatements": 76,
+          "coverage": 46.0606
+        },
+        {
+          "source": "go",
+          "path": "internal/service/service.go",
+          "statements": 165,
+          "coveredStatements": 134,
+          "coverage": 81.2121
+        },
+        {
+          "source": "go",
+          "path": "internal/service/setting_revision.go",
+          "statements": 582,
+          "coveredStatements": 462,
+          "coverage": 79.3814
+        },
+        {
+          "source": "go",
+          "path": "internal/service/setup.go",
+          "statements": 25,
+          "coveredStatements": 15,
+          "coverage": 60
+        },
+        {
+          "source": "go",
+          "path": "internal/service/shadow_ownership.go",
+          "statements": 14,
+          "coveredStatements": 2,
+          "coverage": 14.2857
+        },
+        {
+          "source": "go",
+          "path": "internal/service/tasks.go",
+          "statements": 78,
+          "coveredStatements": 4,
+          "coverage": 5.1282
+        },
+        {
+          "source": "go",
+          "path": "internal/service/team.go",
+          "statements": 180,
+          "coveredStatements": 117,
+          "coverage": 65
+        },
+        {
+          "source": "go",
+          "path": "internal/service/tenant.go",
+          "statements": 167,
+          "coveredStatements": 70,
+          "coverage": 41.9162
+        },
+        {
+          "source": "go",
+          "path": "internal/service/tenant_scope.go",
+          "statements": 49,
+          "coveredStatements": 39,
+          "coverage": 79.5918
+        },
+        {
+          "source": "go",
+          "path": "internal/service/usage.go",
+          "statements": 24,
+          "coveredStatements": 19,
+          "coverage": 79.1667
+        },
+        {
+          "source": "go",
+          "path": "internal/service/worker.go",
+          "statements": 201,
+          "coveredStatements": 166,
+          "coverage": 82.5871
+        },
+        {
+          "source": "go",
+          "path": "internal/setup/http.go",
+          "statements": 41,
+          "coveredStatements": 0,
+          "coverage": 0
+        },
+        {
+          "source": "go",
+          "path": "internal/setup/setup.go",
+          "statements": 410,
+          "coveredStatements": 227,
+          "coverage": 55.3659
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/changed_coverage.go",
+          "statements": 204,
+          "coveredStatements": 95,
+          "coverage": 46.5686
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/changed_coverage_module.go",
+          "statements": 8,
+          "coveredStatements": 7,
+          "coverage": 87.5
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/coverage_trend.go",
+          "statements": 249,
+          "coveredStatements": 190,
+          "coverage": 76.3052
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/flake.go",
+          "statements": 180,
+          "coveredStatements": 142,
+          "coverage": 78.8889
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/governance.go",
+          "statements": 116,
+          "coveredStatements": 84,
+          "coverage": 72.4138
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/mutation.go",
+          "statements": 87,
+          "coveredStatements": 61,
+          "coverage": 70.1149
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/pathutil.go",
+          "statements": 3,
+          "coveredStatements": 3,
+          "coverage": 100
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/report.go",
+          "statements": 42,
+          "coveredStatements": 31,
+          "coverage": 73.8095
+        },
+        {
+          "source": "go",
+          "path": "internal/testquality/scenario_catalogue.go",
+          "statements": 178,
+          "coveredStatements": 118,
+          "coverage": 66.2921
+        },
+        {
+          "source": "vitest",
+          "path": "web/src/dataProvider.ts",
+          "statements": 249,
+          "coveredStatements": 125,
+          "coverage": 50.2008
+        },
+        {
+          "source": "vitest",
+          "path": "web/src/hooks/use-mobile.ts",
+          "statements": 11,
+          "coveredStatements": 10,
+          "coverage": 90.9091
+        },
+        {
+          "source": "vitest",
+          "path": "web/src/lib/errors.ts",
+          "statements": 12,
+          "coveredStatements": 12,
+          "coverage": 100
+        },
+        {
+          "source": "vitest",
+          "path": "web/src/lib/utils.ts",
+          "statements": 1,
+          "coveredStatements": 1,
+          "coverage": 100
+        },
+        {
+          "source": "vitest",
+          "path": "web/src/resources/workbench/CitationLink.tsx",
+          "statements": 9,
+          "coveredStatements": 7,
+          "coverage": 77.7778
+        },
+        {
+          "source": "vitest",
+          "path": "web/src/resources/workbench/InlineCitations.tsx",
+          "statements": 32,
+          "coveredStatements": 26,
+          "coverage": 81.25
+        },
+        {
+          "source": "vitest",
+          "path": "web/src/resources/workbench/workbench-types.ts",
+          "statements": 113,
+          "coveredStatements": 104,
+          "coverage": 92.0354
+        }
+      ]
+    }
+  ]
+}

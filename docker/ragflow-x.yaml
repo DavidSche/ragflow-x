@@ -1,0 +1,96 @@
+# Runtime config for the ragflow-x container. Compose overrides the service
+# addresses / secrets via the RGX_* environment variables; values here are
+# safe container defaults.
+
+server:
+  port: 9191
+  mode: release
+  read_timeout: 30
+  write_timeout: 60
+
+app:
+  name: ragflow-x
+  jwt_secret: change-me-dev-only-with-RGX_JWT_SECRET
+  jwt_expire_hours: 24
+  refresh_expire_hours: 168
+  log_level: info
+  encryption_key: ""
+  data_dir: /app/data
+  request_id_header: X-Request-Id
+
+logging:
+  level: info
+  format: json
+  output: stdout
+  rotate_daily: true
+  max_size_mb: 0
+  max_backups: 7
+  retention_days: 0
+
+setup:
+  enabled: true
+  secrets_file: /app/secrets/runtime.secrets.json
+  master_key: ""
+  rsa_key_path: /app/secrets/rsa_setup.pem
+  rate_limit_per_min: 10
+
+database:
+  driver: postgres
+  host: postgres
+  port: 5432
+  user: ragflow_x
+  password: ragflow_x
+  name: ragflow_x
+  sslmode: disable
+  dsn: ""
+
+ragflow:
+  provider: http
+  base_url: http://ragflow:9380
+  api_key: ""
+  timeout: 30
+  max_conns: 20
+  auto_register: true
+  task_poll_seconds: 15
+
+redis:
+  enabled: false
+  addr: redis:6379
+  username: ""
+  password: ""
+  db: 0
+  pool_size: 10
+
+gateway:
+  rate_limit_per_min: 120
+  non_stream_timeout_sec: 60
+  stream_header_timeout_sec: 60
+  stream_timeout_sec: 300
+  max_conns: 20
+
+security:
+  allowed_origins: []
+  allow_credentials: true
+  max_age_sec: 600
+  hsts_enabled: false
+  hsts_max_age_sec: 31536000
+  content_security_policy: "default-src 'none'"
+  frame_options: DENY
+
+observability:
+  metrics_enabled: true
+  metrics_path: /metrics
+  metrics_namespace: ragflow_x
+  tracing_enabled: false
+  otel_endpoint: ""
+  service_name: ragflow-x
+  sample_ratio: 1.0
+
+usage:
+  cost_per_1k_tokens: 0.0002
+  currency: CNY
+
+alerting:
+  enabled: false
+  throttle_sec: 60
+  webhooks: []
