@@ -1,0 +1,4701 @@
+package db
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"gorm.io/gorm"
+
+	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/connectorid"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
+)
+
+// Migration is a versioned schema step. Each step either creates or alters
+// tables in a dialect-agnostic way via GORM AutoMigrate, which keeps both
+// PostgreSQL and SQLite targets in sync.
+type Migration struct {
+	Version int64
+	Name    string
+	Migrate func(tx *gorm.DB) error
+}
+
+// migrations is the ordered list of schema steps.
+var migrations = []Migration{
+	{
+		Version: 1,
+		Name:    "init_rgx_core",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(
+				&model.Tenant{},
+				&model.User{},
+				&model.DatasetLink{},
+			)
+		},
+	},
+	{
+		Version: 2,
+		Name:    "m2_rbac_model_keys_audit",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.Team{},
+				&model.Role{},
+				&model.Permission{},
+				&model.UserRole{},
+				&model.ModelProvider{},
+				&model.ModelRoute{},
+				&model.APIKey{},
+				&model.AuditLog{},
+			); err != nil {
+				return err
+			}
+			return seedDefaultRBAC(tx)
+		},
+	},
+	{
+		Version: 3,
+		Name:    "m2_tasks_usage",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(
+				&model.Task{},
+				&model.QuotaUsage{},
+			)
+		},
+	},
+	{
+		Version: 4,
+		Name:    "m2_user_team",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.UserTeam{})
+		},
+	},
+	{
+		Version: 5,
+		Name:    "m2_role_hierarchy_abac",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.Role{})
+		},
+	},
+	{
+		Version: 6,
+		Name:    "m2_project_and_audit_chain",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.Project{}, &model.ProjectMember{}, &model.DatasetLink{}, &model.AuditLog{})
+		},
+	},
+	{
+		Version: 7,
+		Name:    "backfill_audit_chain",
+		Migrate: func(tx *gorm.DB) error {
+			var rows []model.AuditLog
+			if err := tx.Order("tenant_id, at, id").Find(&rows).Error; err != nil {
+				return err
+			}
+			prev := map[string]string{}
+			for i := range rows {
+				r := &rows[i]
+				p := prev[r.TenantID]
+				r.PrevHash = p
+				r.Hash = model.AuditHash(p, r)
+				prev[r.TenantID] = r.Hash
+				if err := tx.Save(r).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 8,
+		Name:    "tenant_branding",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.Tenant{})
+		},
+	},
+	{
+		Version: 9,
+		Name:    "gateway_usage_idempotency",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.QuotaUsage{}, &model.MeterRequest{})
+		},
+	},
+	{
+		Version: 10,
+		Name:    "refresh_tokens",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.RefreshToken{})
+		},
+	},
+	{
+		Version: 11,
+		Name:    "usage_scope_unique",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.QuotaUsage{}); err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_scope ON rgx_quota_usage (tenant_id, user_id, key_id, date)`).Error
+		},
+	},
+	{
+		Version: 12,
+		Name:    "model_provider_hierarchy",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.ModelProvider{},
+				&model.ModelProviderInstance{},
+				&model.ModelProviderModel{},
+			); err != nil {
+				return err
+			}
+			return tx.Exec(`UPDATE rgx_model_provider SET status = ? WHERE status = '' OR status IS NULL`, model.ProviderStatusActive).Error
+		},
+	},
+	{
+		Version: 13,
+		Name:    "reconcile_builtin_rbac_matrix",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 14,
+		Name:    "m2_team_project_binding",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.TeamProject{})
+		},
+	},
+	{
+		Version: 15,
+		Name:    "m2_team_admin_role",
+		Migrate: func(tx *gorm.DB) error {
+			if err := reconcileBuiltinPermissions(tx); err != nil {
+				return err
+			}
+			return seedTeamAdminOwners(tx)
+		},
+	},
+	{
+		Version: 16,
+		Name:    "gateway_usage_detail",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.CostMetric{})
+		},
+	},
+	{
+		// Restored v17 (doc/33 A2): the durable async job table (rgx_job) that
+		// backed the in-process worker queue. Version 17 had been retired during
+		// early development and never shipped, so restoring the number keeps the
+		// version trajectory comparable across databases while un-skipping it for
+		// the async worker foundation.
+		Version: 17,
+		Name:    "async_job_table",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.Job{})
+		},
+	},
+	{
+		Version: 18,
+		Name:    "m2_chat_shadow",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ChatShadow{})
+		},
+	},
+	{
+		Version: 19,
+		Name:    "reconcile_chat_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 20,
+		Name:    "m2_message_feedback",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.MessageFeedback{})
+		},
+	},
+	{
+		Version: 21,
+		Name:    "chat_shadow_config_json",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ChatShadow{})
+		},
+	},
+	{
+		Version: 22,
+		Name:    "chat_shadow_owner_message_count",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ChatShadow{})
+		},
+	},
+	{
+		Version: 23,
+		Name:    "cost_metric_chat_id",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.CostMetric{})
+		},
+	},
+	{
+		// audit_chain_sequence hardens the tamper-evident hash chain against
+		// concurrent writers: a per-tenant monotonic seq with a unique
+		// (tenant_id, seq) index serializes chain appends at the database
+		// level. The column is added and backfilled BEFORE the unique index is
+		// created — legacy rows all carry seq=0, so indexing first would fail.
+		Version: 24,
+		Name:    "audit_chain_sequence",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.AuditLog{}); err != nil {
+				return err
+			}
+			var tenants []string
+			if err := tx.Model(&model.AuditLog{}).Distinct().Pluck("tenant_id", &tenants).Error; err != nil {
+				return err
+			}
+			for _, tid := range tenants {
+				var rows []model.AuditLog
+				// Same canonical order the original v7 backfill used.
+				if err := tx.Where("tenant_id = ?", tid).Order("at ASC, id ASC").Find(&rows).Error; err != nil {
+					return err
+				}
+				for i := range rows {
+					if err := tx.Model(&model.AuditLog{}).
+						Where("id = ? AND tenant_id = ?", rows[i].ID, tid).
+						Update("seq", i+1).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_tenant_seq ON rgx_audit_log (tenant_id, seq)").Error
+		},
+	},
+	{
+		Version: 25,
+		Name:    "search_app_shadow",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.SearchAppShadow{})
+		},
+	},
+	{
+		// Reconcile built-in role grants so operator/viewer/tenant_admin roles
+		// pick up the new "search-app" resource permissions on upgrade.
+		Version: 26,
+		Name:    "reconcile_search_app_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 27,
+		Name:    "memory_shadow",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.MemoryShadow{})
+		},
+	},
+	{
+		// Reconcile built-in role grants so roles pick up the "memory" resource.
+		Version: 28,
+		Name:    "reconcile_memory_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 29,
+		Name:    "agent_shadow",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.AgentShadow{})
+		},
+	},
+	{
+		// Reconcile built-in role grants so roles pick up the "agent" resource.
+		Version: 30,
+		Name:    "reconcile_agent_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Reconcile built-in grants after least-privilege tightening of
+		// operator/viewer (remove audit, gateway config, branding, etc.).
+		Version: 31,
+		Name:    "reconcile_least_privilege_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Gateway quota preauthorization: per-key monthly token budget
+		// (rgx_quota) plus the per-request reservation ledger. v17 now backs
+		// the async job table (doc/33 A2); this is v32 to keep the version order
+		// contiguous from v31.
+		Version: 32,
+		Name:    "gateway_quota_preauthorization",
+		Migrate: func(tx *gorm.DB) error {
+			// AutoMigrate(&model.APIKey{}) adds the new token_quota column in a
+			// backward-compatible way (existing keys default to 0 = unlimited).
+			return tx.AutoMigrate(&model.APIKey{}, &model.QuotaLimit{}, &model.QuotaReservation{})
+		},
+	},
+	{
+		Version: 33,
+		Name:    "approval_workflow",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.Approval{},
+				&model.ApprovalStep{},
+				&model.ApprovalPolicy{},
+				&model.ApprovalCredential{},
+			); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE UNIQUE INDEX IF NOT EXISTS uk_rgx_approval_request_no ON rgx_approval (tenant_id, request_no)`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS uk_rgx_approval_idempotency ON rgx_approval (tenant_id, idempotency_key)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_tenant_created ON rgx_approval (tenant_id, created_at DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_tenant_status ON rgx_approval (tenant_id, status, created_at DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_object ON rgx_approval (tenant_id, object_type, object_id, status)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_tenant_requester ON rgx_approval (tenant_id, requester_id, status, created_at DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_pending_due ON rgx_approval (tenant_id, expires_at) WHERE status = 'pending_approval'`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_policy_pending ON rgx_approval (tenant_id, policy_id) WHERE status = 'pending_approval'`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS uk_rgx_approval_step ON rgx_approval_step (approval_id, step_no)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_step_tenant_status ON rgx_approval_step (tenant_id, status, due_at)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_step_approval ON rgx_approval_step (approval_id, step_no)`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS uk_rgx_approval_policy ON rgx_approval_policy (tenant_id, object_type, action)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_policy_match ON rgx_approval_policy (object_type, action, priority)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_credential ON rgx_approval_credential (tenant_id, approval_id, consumed_at)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_credential_retain ON rgx_approval_credential (retain_until_at) WHERE consumed_at IS NOT NULL`,
+			}
+			for _, stmt := range indexes {
+				if err := tx.Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 34,
+		Name:    "approval_organization_adaptability",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.ApprovalStep{},
+				&model.ApprovalStepActor{},
+				&model.ApprovalDelegation{},
+			); err != nil {
+				return err
+			}
+			var steps []model.ApprovalStep
+			if err := tx.Where("approvers_json IS NULL OR approvers_json = '' OR approvers_json = '[]'").
+				Find(&steps).Error; err != nil {
+				return err
+			}
+			for _, step := range steps {
+				legacy, err := json.Marshal([]model.ApprovalApproverSpec{{
+					Type: step.ApproverType, Value: step.ApproverValue,
+				}})
+				if err != nil {
+					return err
+				}
+				mode := step.ApprovalMode
+				if mode == "" {
+					mode = model.ApprovalModeAny
+				}
+				if err := tx.Model(&model.ApprovalStep{}).
+					Where("id = ?", step.ID).
+					Updates(map[string]interface{}{
+						"approvers_json": string(legacy), "approval_mode": mode,
+						"required_approvals": 1,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			indexes := []string{
+				`DROP INDEX IF EXISTS uk_rgx_approval_policy`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_policy_tenant_object ON rgx_approval_policy (tenant_id, object_type, action, priority)`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS uk_rgx_approval_step_actor ON rgx_approval_step_actor (step_id, actor_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_approval_delegation_active ON rgx_approval_delegation (tenant_id, delegate_id, starts_at, ends_at)`,
+			}
+			for _, stmt := range indexes {
+				if err := tx.Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 35,
+		Name:    "task_detail_text",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.Task{})
+		},
+	},
+	{
+		Version: 36,
+		Name:    "knowledge_ops_event",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.KnowledgeOpsEvent{}); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_knowledge_ops_tenant_created ON rgx_knowledge_ops_event (tenant_id, created_at)`,
+				`CREATE INDEX IF NOT EXISTS idx_knowledge_ops_question_hash ON rgx_knowledge_ops_event (tenant_id, question_hash, created_at)`,
+			}
+			for _, stmt := range indexes {
+				if err := tx.Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 37,
+		Name:    "knowledge_ops_latency",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.KnowledgeOpsEvent{})
+		},
+	},
+	{
+		Version: 38,
+		Name:    "knowledge_ops_resolution",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.KnowledgeOpsEvent{})
+		},
+	},
+	{
+		Version: 39,
+		Name:    "p1_5_g_governance",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.ScenarioTemplateAsset{},
+				&model.ScenarioTemplateVersion{},
+				&model.PromptPolicyVersion{},
+				&model.EvalSet{},
+				&model.EvalCase{},
+				&model.DatasetLink{},
+				&model.KnowledgeOpsEvent{},
+			); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_scenario_template_tenant_status ON rgx_scenario_template (tenant_id, status)`,
+				`CREATE INDEX IF NOT EXISTS idx_prompt_policy_active ON rgx_prompt_policy_version (tenant_id, scope, object_id, active)`,
+				`CREATE INDEX IF NOT EXISTS idx_dataset_lifecycle_expiry ON rgx_dataset_link (tenant_id, expires_at, review_status)`,
+				`CREATE INDEX IF NOT EXISTS idx_eval_set_tenant_status ON rgx_eval_set (tenant_id, status)`,
+			}
+			for _, stmt := range indexes {
+				if err := tx.Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Existing databases may predate the unified permission-matrix
+		// reconciliation. Refresh immutable built-in role grants on upgrade.
+		Version: 40,
+		Name:    "reconcile_builtin_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 41,
+		Name:    "assistant_catalog",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.AssistantCatalog{}); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE UNIQUE INDEX IF NOT EXISTS uk_assistant_catalog_target ON rgx_assistant_catalog (tenant_id, kind, target_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_assistant_catalog_target ON rgx_assistant_catalog (tenant_id, kind, target_id)`,
+			}
+			for _, stmt := range indexes {
+				if err := tx.Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			backfill := func(kind string) error {
+				nameColumn := map[string]string{"chat": "name", "agent": "title"}[kind]
+				riskLevel := "low"
+				if kind == "agent" {
+					riskLevel = "medium"
+				}
+				query := `
+					INSERT INTO rgx_assistant_catalog (
+						id, tenant_id, kind, target_id, name, description,
+						upstream_status, governance_status, effective_status, effective_status_reason,
+						owner_id, categories_json, capabilities_json, intents_json, keywords_json, examples_json,
+						routing_weight, assistant_risk_level, capability_risk_json, workflow_risk_json,
+						workflow_risk_upper_bound, agent_flow_readiness, discoverable, auto_select_enabled, catalog_version,
+						routing_readiness, created_at, updated_at
+					)
+					SELECT
+						tenant_id || ':` + kind + `:' || id, tenant_id, ?, id,
+						` + nameColumn + `, '',
+						CASE WHEN status = 'active' THEN 'active' ELSE 'archived' END,
+						'enabled',
+						CASE WHEN status = 'active' THEN 'active' ELSE 'inactive' END,
+						CASE WHEN status = 'active' THEN 'ACTIVE' ELSE 'UPSTREAM_ARCHIVED' END,
+						owner_id, '[]', '[]', '[]', '[]', '[]',
+						1,
+						'` + riskLevel + `',
+						'{}', '{}',
+						'` + riskLevel + `',
+						CASE WHEN ? = 'chat' THEN 1 ELSE 0 END, TRUE, FALSE, 1,
+						0.25, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+					FROM ` + map[string]string{"chat": "rgx_chat", "agent": "rgx_agent"}[kind] + `
+					WHERE NOT EXISTS (
+						SELECT 1 FROM rgx_assistant_catalog c
+						WHERE c.tenant_id = ` + map[string]string{"chat": "rgx_chat", "agent": "rgx_agent"}[kind] + `.tenant_id
+						  AND c.kind = ?
+						  AND c.target_id = ` + map[string]string{"chat": "rgx_chat", "agent": "rgx_agent"}[kind] + `.id
+					)
+				`
+				return tx.Exec(query, kind, kind, kind).Error
+			}
+			if err := backfill("chat"); err != nil {
+				return err
+			}
+			return backfill("agent")
+		},
+	},
+	{
+		Version: 42,
+		Name:    "assistant_catalog_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 43,
+		Name:    "conversation_route_m2",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(
+				&model.RouteDecision{},
+				&model.RouteSelection{},
+				&model.BootstrapOperation{},
+			)
+		},
+	},
+	{
+		Version: 44,
+		Name:    "route_evaluation_m25",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.RouteEvaluationRun{}); err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 45,
+		Name:    "route_policy_m3",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.RouteEvaluationRun{})
+		},
+	},
+	{
+		Version: 46,
+		Name:    "agent_flow_readiness_and_tenant_route_mode",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.Tenant{}, &model.AssistantCatalog{}); err != nil {
+				return err
+			}
+			if err := tx.Exec(`UPDATE rgx_assistant_catalog SET agent_flow_readiness = 1 WHERE kind = 'chat'`).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`UPDATE rgx_tenant SET auto_route_mode = 'recommend_only' WHERE auto_route_mode IS NULL OR auto_route_mode = ''`).Error
+		},
+	},
+	{
+		Version: 47,
+		Name:    "assistant_catalog_boolean_type",
+		Migrate: func(tx *gorm.DB) error {
+			if err := reconcileBuiltinPermissions(tx); err != nil {
+				return err
+			}
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			var dataType string
+			if err := tx.Raw(`SELECT data_type FROM information_schema.columns WHERE table_name = 'rgx_assistant_catalog' AND column_name = 'discoverable'`).Scan(&dataType).Error; err != nil {
+				return err
+			}
+			if dataType != "integer" {
+				return nil
+			}
+			return tx.Exec(`ALTER TABLE rgx_assistant_catalog ALTER COLUMN discoverable TYPE boolean USING (discoverable <> 0)`).Error
+		},
+	},
+	{
+		Version: 48,
+		Name:    "assistant_execute_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 49,
+		Name:    "billing_to_usage_governance",
+		Migrate: func(tx *gorm.DB) error {
+			if err := reconcileBuiltinPermissions(tx); err != nil {
+				return err
+			}
+			if err := tx.Where("resource IN ?", []string{"billing", "billing-export"}).Delete(&model.Permission{}).Error; err != nil {
+				return err
+			}
+			if err := tx.AutoMigrate(&model.GatewayIdempotency{}); err != nil {
+				return err
+			}
+			if err := tx.AutoMigrate(&model.QuotaUsage{}, &model.CostMetric{}); err != nil {
+				return err
+			}
+			if err := tx.AutoMigrate(
+				&model.ReleaseCandidate{},
+				&model.ExecutionSnapshot{},
+				&model.EvaluationSetVersion{},
+				&model.EvaluationCaseVersion{},
+				&model.EvaluationRun{},
+				&model.EvaluationCaseResult{},
+				&model.EvidenceBundle{},
+				&model.ReleaseGateDecision{},
+				&model.Release{},
+				&model.QualityIssue{},
+			); err != nil {
+				return err
+			}
+			if err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_active_gate_decision ON rgx_release_gate_decision (tenant_id, release_candidate_id, candidate_version) WHERE active_gate IS TRUE`).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`DELETE FROM rgx_permission WHERE resource IN ('billing','billing-export')`).Error; err != nil {
+				return err
+			}
+			return createReleaseGovernanceGuards(tx)
+		},
+	},
+	{
+		Version: 50,
+		Name:    "gateway_request_count_quota",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.APIKey{}, &model.QuotaLimit{}, &model.QuotaReservation{}); err != nil {
+				return err
+			}
+			// Existing pending reservations were already represented in the
+			// quota row's pending balances. Mark them applied so a release or
+			// stale reap cannot release the same balance a second time.
+			return tx.Model(&model.QuotaReservation{}).
+				Where("status = ?", model.QuotaReservationPending).
+				Update("applied", true).Error
+		},
+	},
+	{
+		Version: 51,
+		Name:    "terminal_evaluation_run_freeze",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Dialector.Name() == "postgres" {
+				if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_terminal_evaluation_run_freeze() RETURNS trigger AS $$
+					BEGIN
+						IF TG_OP = 'DELETE' THEN
+							RETURN OLD;
+						END IF;
+						IF OLD.status IN ('COMPLETED','FAILED','CANCELLED') THEN
+							RAISE EXCEPTION 'terminal evaluation run is immutable';
+						END IF;
+						RETURN NEW;
+					END;
+				$$ LANGUAGE plpgsql`).Error; err != nil {
+					return err
+				}
+				if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_evaluation_run_terminal_guard ON rgx_evaluation_run`).Error; err != nil {
+					return err
+				}
+				return tx.Exec(`CREATE TRIGGER trg_evaluation_run_terminal_guard BEFORE UPDATE OR DELETE ON rgx_evaluation_run
+					FOR EACH ROW EXECUTE FUNCTION rgx_terminal_evaluation_run_freeze()`).Error
+			}
+
+			statements := []string{
+				`CREATE TRIGGER IF NOT EXISTS trg_evaluation_run_terminal_guard BEFORE UPDATE ON rgx_evaluation_run
+					WHEN OLD.status IN ('COMPLETED','FAILED','CANCELLED')
+					BEGIN SELECT RAISE(ABORT, 'terminal evaluation run is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_evaluation_run_terminal_delete_guard BEFORE DELETE ON rgx_evaluation_run
+					WHEN OLD.status IN ('COMPLETED','FAILED','CANCELLED')
+					BEGIN SELECT RAISE(ABORT, 'terminal evaluation run is immutable'); END`,
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 52,
+		Name:    "api_key_ip_allowlist",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.APIKey{})
+		},
+	},
+	{
+		Version: 53,
+		Name:    "alert_event_worklist",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.AlertEvent{}); err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 54,
+		Name:    "immutable_audit_anchor",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.AuditAnchor{}); err != nil {
+				return err
+			}
+			if tx.Dialector.Name() == "postgres" {
+				if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_audit_anchor_freeze() RETURNS trigger AS $$
+					BEGIN
+						RAISE EXCEPTION 'audit anchors are immutable';
+					END;
+				$$ LANGUAGE plpgsql`).Error; err != nil {
+					return err
+				}
+				if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_audit_anchor_guard ON rgx_audit_anchor`).Error; err != nil {
+					return err
+				}
+				return tx.Exec(`CREATE TRIGGER trg_audit_anchor_guard BEFORE UPDATE OR DELETE ON rgx_audit_anchor
+					FOR EACH ROW EXECUTE FUNCTION rgx_audit_anchor_freeze()`).Error
+			}
+
+			statements := []string{
+				`CREATE TRIGGER IF NOT EXISTS trg_audit_anchor_guard BEFORE UPDATE ON rgx_audit_anchor
+					BEGIN SELECT RAISE(ABORT, 'audit anchors are immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_audit_anchor_delete_guard BEFORE DELETE ON rgx_audit_anchor
+					BEGIN SELECT RAISE(ABORT, 'audit anchors are immutable'); END`,
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 55,
+		Name:    "tenant_type_and_platform_guard",
+		Migrate: func(tx *gorm.DB) error {
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "SelfMemoryTemplate") {
+				if err := tx.Exec("ALTER TABLE rgx_tenant ADD COLUMN self_memory_template TEXT").Error; err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "SelfMemoryTemplateVersion") {
+				if err := tx.Exec("ALTER TABLE rgx_tenant ADD COLUMN self_memory_template_version BIGINT NOT NULL DEFAULT 0").Error; err != nil {
+					return err
+				}
+			}
+			platform := model.Tenant{
+				ID: model.PlatformTenantID, Name: "Platform", Type: model.TenantTypePlatform,
+				Status: model.TenantStatusActive,
+			}
+			if err := tx.Where("id = ?", model.PlatformTenantID).Attrs(platform).FirstOrCreate(&platform).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.Tenant{}).Where("id = ?", model.PlatformTenantID).
+				Updates(map[string]interface{}{
+					"type":   model.TenantTypePlatform,
+					"status": model.TenantStatusActive,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.Tenant{}).Where("type IS NULL OR type = ''").
+				Update("type", model.TenantTypeWorkspace).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uk_one_platform_tenant ON rgx_tenant (type) WHERE type = 'platform'`).Error; err != nil {
+				return err
+			}
+			return createTenantPlatformGuards(tx)
+		},
+	},
+	{
+		Version: 56,
+		Name:    "enterprise_connection_catalog",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.EnterpriseConnection{},
+				&model.EnterpriseConnectionVersion{},
+				&model.EnterpriseConnectionBinding{},
+				&model.EnterpriseConnectionBindingVersion{},
+			); err != nil {
+				return err
+			}
+			if err := createEnterpriseConnectionGuards(tx); err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 57,
+		Name:    "model_route_enterprise_pinning",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.EnterpriseConnection{},
+				&model.EnterpriseConnectionVersion{},
+				&model.EnterpriseConnectionBinding{},
+				&model.EnterpriseConnectionBindingVersion{},
+				&model.ModelRoute{},
+				&model.ModelRouteEnterprisePin{},
+				&model.ExecutionSnapshot{},
+			); err != nil {
+				return err
+			}
+			if err := createEnterpriseConnectionGuards(tx); err != nil {
+				return err
+			}
+			return createModelRoutePinGuards(tx)
+		},
+	},
+	{
+		Version: 58,
+		Name:    "execution_snapshot_model_route_pin_version",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ExecutionSnapshot{})
+		},
+	},
+	{
+		Version: 59,
+		Name:    "release_evidence_connection_credential_identity",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(
+				&model.ExecutionSnapshot{},
+				&model.EvidenceBundle{},
+				&model.Release{},
+			)
+		},
+	},
+	{
+		Version: 60,
+		Name:    "enterprise_connection_health_checks",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.EnterpriseConnection{},
+				&model.EnterpriseConnectionHealthCheck{},
+			); err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 61,
+		Name:    "enterprise_connection_health_check_guards",
+		Migrate: func(tx *gorm.DB) error {
+			return createEnterpriseConnectionHealthCheckGuards(tx)
+		},
+	},
+	{
+		Version: 62,
+		Name:    "acting_context_and_approval_fingerprint",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.Approval{},
+				&model.ActingContext{},
+			); err != nil {
+				return err
+			}
+			return nil
+		},
+	},
+	{
+		Version: 63,
+		Name:    "approval_operation_result_ledger",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ApprovalOperation{})
+		},
+	},
+	{
+		Version: 64,
+		Name:    "runtime_tenant_row_security",
+		Migrate: func(tx *gorm.DB) error {
+			return createTenantRuntimeRowSecurity(tx)
+		},
+	},
+	{
+		Version: 65,
+		Name:    "ragflow_external_reference_tenant_isolation",
+		Migrate: func(tx *gorm.DB) error {
+			var duplicateCount int64
+			if err := tx.Table("rgx_dataset_link").
+				Select("COUNT(DISTINCT tenant_id)").
+				Where("ragflow_dataset_id IN (?)",
+					tx.Table("rgx_dataset_link").Select("ragflow_dataset_id").Group("ragflow_dataset_id").Having("COUNT(*) > 1"),
+				).
+				Count(&duplicateCount).Error; err != nil {
+				return err
+			}
+			if duplicateCount > 0 {
+				return fmt.Errorf("ragflow external dataset references must be unique per tenant")
+			}
+			if tx.Dialector.Name() == "postgres" {
+				if err := tx.Exec(`ALTER TABLE rgx_dataset_link DROP CONSTRAINT IF EXISTS rgx_dataset_link_ragflow_dataset_id_key`).Error; err != nil {
+					return err
+				}
+				if err := tx.Exec(`DROP INDEX IF EXISTS idx_rgx_dataset_link_ragflow_dataset_id`).Error; err != nil {
+					return err
+				}
+				return tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uk_dataset_link_tenant_ragflow_id ON rgx_dataset_link (tenant_id, ragflow_dataset_id)`).Error
+			}
+			if err := tx.Exec(`DROP INDEX IF EXISTS idx_rgx_dataset_link_ragflow_dataset_id`).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uk_dataset_link_tenant_ragflow_id ON rgx_dataset_link (tenant_id, ragflow_dataset_id)`).Error
+		},
+	},
+	{
+		Version: 66,
+		Name:    "audit_governance_fields",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.AuditLog{}); err != nil {
+				return err
+			}
+			var logs []model.AuditLog
+			if err := tx.Order("tenant_id ASC, seq ASC").Find(&logs).Error; err != nil {
+				return err
+			}
+			for index := range logs {
+				hash := model.AuditHash(logs[index].PrevHash, &logs[index])
+				if hash != logs[index].Hash {
+					if err := tx.Model(&model.AuditLog{}).Where("id = ?", logs[index].ID).
+						Update("hash", hash).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 67,
+		Name:    "enterprise_connection_reference_contract",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.EnterpriseConnection{},
+				&model.EnterpriseConnectionVersion{},
+				&model.EnterpriseConnectionBinding{},
+				&model.EnterpriseConnectionBindingVersion{},
+				&model.ModelRoute{},
+				&model.ModelRouteEnterprisePin{},
+				&model.ExecutionSnapshot{},
+				&model.EvidenceBundle{},
+			); err != nil {
+				return err
+			}
+			return createEnterpriseConnectionReferenceContracts(tx)
+		},
+	},
+	{
+		Version: 68,
+		Name:    "governance_list_and_audit_indexes",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.AuditLog{}); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_enterprise_connection_keyset ON rgx_enterprise_connection (created_at DESC, id DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_enterprise_connection_tenant_keyset ON rgx_enterprise_connection (owner_tenant_id, created_at DESC, id DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_audit_tenant_at ON rgx_audit_log (tenant_id, at DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_audit_tenant_action ON rgx_audit_log (tenant_id, action)`,
+				`CREATE INDEX IF NOT EXISTS idx_audit_tenant_resource_at ON rgx_audit_log (tenant_id, resource, at DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_audit_tenant_target_at ON rgx_audit_log (tenant_id, target_tenant_id, at DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_audit_tenant_approval ON rgx_audit_log (tenant_id, approval_id)`,
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 69,
+		Name:    "audit_acting_context_identity",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.AuditLog{}); err != nil {
+				return err
+			}
+			var logs []model.AuditLog
+			if err := tx.Order("tenant_id ASC, seq ASC").Find(&logs).Error; err != nil {
+				return err
+			}
+			prevHashes := map[string]string{}
+			for index := range logs {
+				row := &logs[index]
+				row.PrevHash = prevHashes[row.TenantID]
+				row.Hash = model.AuditHash(row.PrevHash, row)
+				prevHashes[row.TenantID] = row.Hash
+				if err := tx.Save(row).Error; err != nil {
+					return err
+				}
+			}
+			if tx.Dialector.Name() == "postgres" {
+				return tx.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_tenant_acting_context ON rgx_audit_log (tenant_id, acting_context_id)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		Version: 70,
+		Name:    "workspace_role_terms_and_permission_catalog",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.Model(&model.Role{}).Where("id = ? AND name = ?", model.RoleTenantAdmin, "租户管理员").Updates(map[string]interface{}{
+				"name":        "工作区管理员",
+				"description": "工作区内管理",
+			}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.Role{}).Where("id = ? AND description = ?", model.RoleOperator, "租户内读写与执行").Update("description", "工作区内读写与执行").Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&model.Role{}).Where("id = ? AND description = ?", model.RoleViewer, "租户内只读").Update("description", "工作区内只读").Error; err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 71,
+		Name:    "ragflow_resource_sync_and_binding_versions",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.ResourceSyncSetting{},
+				&model.SyncRun{},
+				&model.SyncItem{},
+				&model.ResourceSyncTenantMapping{},
+				&model.ResourceBinding{},
+				&model.ResourceBindingVersion{},
+			); err != nil {
+				return err
+			}
+			if tx.Dialector.Name() == "postgres" {
+				statements := []string{
+					`ALTER TABLE rgx_resource_binding_version
+					 ADD CONSTRAINT uk_resource_binding_version_pointer
+					 UNIQUE (binding_id, id)`,
+					`ALTER TABLE rgx_resource_binding ADD CONSTRAINT fk_resource_binding_current_version
+					 FOREIGN KEY (id, current_binding_version_id)
+					 REFERENCES rgx_resource_binding_version(binding_id, id)
+					 ON UPDATE RESTRICT ON DELETE RESTRICT`,
+					`CREATE OR REPLACE FUNCTION rgx_resource_binding_version_freeze() RETURNS trigger AS $$
+					 BEGIN
+						 RAISE EXCEPTION 'resource binding versions are immutable';
+					 END;
+					 $$ LANGUAGE plpgsql`,
+					`DROP TRIGGER IF EXISTS trg_resource_binding_version_freeze ON rgx_resource_binding_version;
+					 CREATE TRIGGER trg_resource_binding_version_freeze
+					 BEFORE UPDATE OR DELETE ON rgx_resource_binding_version
+					FOR EACH ROW EXECUTE FUNCTION rgx_resource_binding_version_freeze()`,
+				}
+				for _, statement := range statements {
+					if err := tx.Exec(statement).Error; err != nil {
+						return err
+					}
+				}
+			}
+			if tx.Dialector.Name() == "sqlite" {
+				statements := []string{
+					"CREATE TRIGGER IF NOT EXISTS trg_resource_binding_version_freeze_update BEFORE UPDATE ON rgx_resource_binding_version FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'resource binding versions are immutable'); END",
+					"CREATE TRIGGER IF NOT EXISTS trg_resource_binding_version_freeze_delete BEFORE DELETE ON rgx_resource_binding_version FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'resource binding versions are immutable'); END",
+					"CREATE TRIGGER IF NOT EXISTS trg_resource_binding_current_version_insert_guard BEFORE INSERT ON rgx_resource_binding FOR EACH ROW WHEN NEW.current_binding_version_id <> '' BEGIN SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM rgx_resource_binding_version WHERE binding_id = NEW.id AND id = NEW.current_binding_version_id) THEN RAISE(ABORT, 'current binding version must belong to binding') END; END",
+					"CREATE TRIGGER IF NOT EXISTS trg_resource_binding_current_version_update_guard BEFORE UPDATE ON rgx_resource_binding FOR EACH ROW WHEN NEW.current_binding_version_id <> '' BEGIN SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM rgx_resource_binding_version WHERE binding_id = NEW.id AND id = NEW.current_binding_version_id) THEN RAISE(ABORT, 'current binding version must belong to binding') END; END",
+				}
+				for _, statement := range statements {
+					if err := tx.Exec(statement).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 72,
+		Name:    "immutable_setting_revisions",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.SettingRevision{},
+				&model.SettingCurrent{},
+				&model.SettingSecretVersion{},
+				&model.RuntimeSettingInstanceState{},
+			); err != nil {
+				return err
+			}
+			if tx.Dialector.Name() == "postgres" {
+				statements := []string{
+					`ALTER TABLE rgx_setting_current ADD CONSTRAINT fk_setting_current_revision
+					 FOREIGN KEY (desired_revision_id) REFERENCES rgx_setting_revision(id)
+					 ON UPDATE RESTRICT ON DELETE RESTRICT`,
+					`CREATE OR REPLACE FUNCTION rgx_setting_revision_freeze() RETURNS trigger AS $$
+					 BEGIN
+						 RAISE EXCEPTION 'setting revisions are immutable';
+					 END;
+					 $$ LANGUAGE plpgsql`,
+					`DROP TRIGGER IF EXISTS trg_setting_revision_freeze ON rgx_setting_revision;
+					 CREATE TRIGGER trg_setting_revision_freeze
+					 BEFORE UPDATE OF revision, schema_version, snapshot_json, created_by, created_at,
+					 note, checksum, rollback_from_revision_id
+					 ON rgx_setting_revision
+					 FOR EACH ROW EXECUTE FUNCTION rgx_setting_revision_freeze()`,
+					`DROP TRIGGER IF EXISTS trg_setting_revision_delete_freeze ON rgx_setting_revision;
+					 CREATE TRIGGER trg_setting_revision_delete_freeze
+					 BEFORE DELETE ON rgx_setting_revision
+					 FOR EACH ROW EXECUTE FUNCTION rgx_setting_revision_freeze()`,
+					`DROP TRIGGER IF EXISTS trg_setting_secret_version_freeze ON rgx_setting_secret_version;
+					 CREATE TRIGGER trg_setting_secret_version_freeze
+					 BEFORE UPDATE OR DELETE ON rgx_setting_secret_version
+					 FOR EACH ROW EXECUTE FUNCTION rgx_setting_revision_freeze()`,
+					`CREATE OR REPLACE FUNCTION rgx_setting_current_revision_guard() RETURNS trigger AS $$
+					 BEGIN
+						 IF NOT EXISTS (
+							 SELECT 1 FROM rgx_setting_revision
+							 WHERE id = NEW.desired_revision_id AND revision_status = 'current'
+						 ) THEN
+							 RAISE EXCEPTION 'current setting revision must be committed';
+						 END IF;
+						 RETURN NEW;
+					 END;
+					 $$ LANGUAGE plpgsql`,
+					`DROP TRIGGER IF EXISTS trg_setting_current_revision_guard ON rgx_setting_current;
+					 CREATE TRIGGER trg_setting_current_revision_guard
+					 BEFORE INSERT OR UPDATE ON rgx_setting_current
+					 FOR EACH ROW EXECUTE FUNCTION rgx_setting_current_revision_guard()`,
+				}
+				for _, statement := range statements {
+					if err := tx.Exec(statement).Error; err != nil {
+						return err
+					}
+				}
+			}
+			if tx.Dialector.Name() == "sqlite" {
+				statements := []string{
+					`CREATE TRIGGER IF NOT EXISTS trg_setting_revision_freeze_update
+					 BEFORE UPDATE ON rgx_setting_revision
+					 FOR EACH ROW WHEN OLD.revision <> NEW.revision
+						 OR OLD.schema_version <> NEW.schema_version
+						 OR OLD.snapshot_json <> NEW.snapshot_json
+						 OR OLD.created_by <> NEW.created_by
+						 OR OLD.created_at <> NEW.created_at
+						 OR OLD.note <> NEW.note
+						 OR OLD.checksum <> NEW.checksum
+						 OR OLD.rollback_from_revision_id <> NEW.rollback_from_revision_id
+					 BEGIN SELECT RAISE(ABORT, 'setting revisions are immutable'); END`,
+					`CREATE TRIGGER IF NOT EXISTS trg_setting_revision_freeze_delete
+					 BEFORE DELETE ON rgx_setting_revision
+					 FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'setting revisions are immutable'); END`,
+					`CREATE TRIGGER IF NOT EXISTS trg_setting_secret_version_freeze_update
+					 BEFORE UPDATE ON rgx_setting_secret_version
+					 FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'setting secret versions are immutable'); END`,
+					`CREATE TRIGGER IF NOT EXISTS trg_setting_secret_version_freeze_delete
+					 BEFORE DELETE ON rgx_setting_secret_version
+					 FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'setting secret versions are immutable'); END`,
+					`CREATE TRIGGER IF NOT EXISTS trg_setting_current_revision_insert_guard
+					 BEFORE INSERT ON rgx_setting_current
+					 FOR EACH ROW WHEN NOT EXISTS (
+						 SELECT 1 FROM rgx_setting_revision
+						 WHERE id = NEW.desired_revision_id AND revision_status = 'current'
+					 ) BEGIN SELECT RAISE(ABORT, 'current setting revision must be committed'); END`,
+					`CREATE TRIGGER IF NOT EXISTS trg_setting_current_revision_update_guard
+					 BEFORE UPDATE ON rgx_setting_current
+					 FOR EACH ROW WHEN NOT EXISTS (
+						 SELECT 1 FROM rgx_setting_revision
+						 WHERE id = NEW.desired_revision_id AND revision_status = 'current'
+					 ) BEGIN SELECT RAISE(ABORT, 'current setting revision must be committed'); END`,
+				}
+				for _, statement := range statements {
+					if err := tx.Exec(statement).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 73,
+		Name:    "ragflow_resource_sync_artifacts",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ResourceSyncArtifact{}); err != nil {
+				return err
+			}
+			if tx.Dialector.Name() == "postgres" {
+				statements := []string{
+					`CREATE OR REPLACE FUNCTION rgx_resource_sync_artifact_freeze() RETURNS trigger AS $$
+					 BEGIN
+						 RAISE EXCEPTION 'resource sync artifacts are immutable';
+					 END;
+					 $$ LANGUAGE plpgsql`,
+					`DROP TRIGGER IF EXISTS trg_resource_sync_artifact_freeze ON rgx_resource_sync_artifact;
+					 CREATE TRIGGER trg_resource_sync_artifact_freeze
+					 BEFORE UPDATE OR DELETE ON rgx_resource_sync_artifact
+					 FOR EACH ROW EXECUTE FUNCTION rgx_resource_sync_artifact_freeze()`,
+				}
+				for _, statement := range statements {
+					if err := tx.Exec(statement).Error; err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			if tx.Dialector.Name() == "sqlite" {
+				statements := []string{
+					"CREATE TRIGGER IF NOT EXISTS trg_resource_sync_artifact_freeze_update BEFORE UPDATE ON rgx_resource_sync_artifact FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'resource sync artifacts are immutable'); END",
+					"CREATE TRIGGER IF NOT EXISTS trg_resource_sync_artifact_freeze_delete BEFORE DELETE ON rgx_resource_sync_artifact FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'resource sync artifacts are immutable'); END",
+				}
+				for _, statement := range statements {
+					if err := tx.Exec(statement).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 74,
+		Name:    "resource_sync_artifact_lifecycle",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ResourceSyncArtifactLifecycle{}); err != nil {
+				return err
+			}
+			backfill := `INSERT INTO rgx_resource_sync_artifact_lifecycle
+				(artifact_id, retain_until, created_at, updated_at)
+				SELECT id, retain_until, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+				FROM rgx_resource_sync_artifact
+				WHERE NOT EXISTS (
+					SELECT 1 FROM rgx_resource_sync_artifact_lifecycle
+					WHERE artifact_id = rgx_resource_sync_artifact.id
+				)`
+			return tx.Exec(backfill).Error
+		},
+	},
+	{
+		Version: 75,
+		Name:    "resource_sync_scheduled_reconcile_enabled",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ResourceSyncSetting{})
+		},
+	},
+	{
+		Version: 76,
+		Name:    "case_insensitive_unique_display_names",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.Tenant{}, &model.User{}, &model.DatasetLink{}, &model.AgentShadow{},
+				&model.Project{}, &model.Team{}, &model.Role{},
+			); err != nil {
+				return err
+			}
+			if err := trimDisplayNames(tx); err != nil {
+				return err
+			}
+			if err := dedupeUniqueNames(tx, "rgx_tenant", "id", "", "name"); err != nil {
+				return err
+			}
+			if err := dedupeUniqueNames(tx, "rgx_user", "id", "", "username"); err != nil {
+				return err
+			}
+			if err := dedupeUniqueNames(tx, "rgx_dataset_link", "id", "tenant_id", "name"); err != nil {
+				return err
+			}
+			if err := dedupeUniqueNames(tx, "rgx_agent", "id", "tenant_id", "title"); err != nil {
+				return err
+			}
+			if err := dedupeUniqueNames(tx, "rgx_project", "id", "tenant_id", "name"); err != nil {
+				return err
+			}
+			if err := dedupeUniqueNames(tx, "rgx_team", "id", "tenant_id", "name"); err != nil {
+				return err
+			}
+			if err := dedupeUniqueNames(tx, "rgx_role", "id", "tenant_id", "name"); err != nil {
+				return err
+			}
+			indexes := []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_tenant_name_ci ON rgx_tenant (LOWER(name))",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_user_username_ci ON rgx_user (LOWER(username))",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_dataset_link_tenant_name_ci ON rgx_dataset_link (tenant_id, LOWER(name))",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_tenant_title_ci ON rgx_agent (tenant_id, LOWER(title))",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_project_tenant_name_ci ON rgx_project (tenant_id, LOWER(name))",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_team_tenant_name_ci ON rgx_team (tenant_id, LOWER(name))",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_role_name_ci ON rgx_role (LOWER(name))",
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 77,
+		Name:    "model_provider_instance_identity",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ModelProviderInstance{}, &model.ModelProviderModel{}); err != nil {
+				return err
+			}
+			if err := deduplicateModelProviderIdentities(tx); err != nil {
+				return err
+			}
+			indexes := []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_model_provider_instance_name_ci ON rgx_model_provider_instance (tenant_id, provider_id, LOWER(TRIM(instance_name)))",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uk_model_provider_model_name_ci ON rgx_model_provider_model (tenant_id, instance_id, LOWER(TRIM(model_name)))",
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 78,
+		Name:    "alert_delivery_lifecycle",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.AlertDelivery{})
+		},
+	},
+	{
+		Version: 79,
+		Name:    "alert_delivery_lease",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.AlertDelivery{})
+		},
+	},
+	{
+		Version: 80,
+		Name:    "alert_delivery_lease_fencing",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.AlertDelivery{})
+		},
+	},
+	{
+		Version: 81,
+		Name:    "alert_postgres_storage_contracts",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.AlertEvent{}, &model.AlertDelivery{}); err != nil {
+				return err
+			}
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			if err := tx.Exec(`UPDATE rgx_alert_event SET fields_json = '{}' WHERE btrim(fields_json) = ''`).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`ALTER TABLE rgx_alert_event ALTER COLUMN fields_json TYPE jsonb USING fields_json::jsonb`).Error; err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_alert_delivery_failed_retry
+					ON rgx_alert_delivery (next_retry_at, alert_event_id, channel)
+					WHERE status = 'failed' AND next_retry_at IS NOT NULL`,
+				`CREATE INDEX IF NOT EXISTS idx_alert_delivery_pending_compensation
+					ON rgx_alert_delivery (last_attempt_at, alert_event_id, channel)
+					WHERE status = 'pending'`,
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 82,
+		Name:    "governance_postgres_json_contracts",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.SettingRevision{},
+				&model.ResourceSyncSetting{},
+				&model.SyncRun{},
+			); err != nil {
+				return err
+			}
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_setting_revision_freeze ON rgx_setting_revision`).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_setting_revision_delete_freeze ON rgx_setting_revision`).Error; err != nil {
+				return err
+			}
+			conversions := []struct {
+				table       string
+				column      string
+				emptyJSON   string
+				defaultJSON string
+				emptyAsNull bool
+			}{
+				{table: "rgx_setting_revision", column: "snapshot_json", emptyJSON: "{}"},
+				{table: "rgx_resource_sync_settings", column: "resource_types_json", emptyJSON: "[]", defaultJSON: "[]"},
+				{table: "rgx_resource_sync_settings", column: "scope_json", emptyJSON: "{}", defaultJSON: "{}"},
+				{table: "rgx_sync_run", column: "resource_types_json", emptyJSON: "[]"},
+				{table: "rgx_sync_run", column: "scope_json", emptyJSON: "{}"},
+				{table: "rgx_sync_run", column: "source_snapshot_json", emptyAsNull: true},
+				{table: "rgx_sync_run", column: "plan_summary_json", emptyAsNull: true},
+				{table: "rgx_sync_run", column: "result_summary_json", emptyAsNull: true},
+			}
+			for _, conversion := range conversions {
+				if !conversion.emptyAsNull {
+					if err := tx.Exec(
+						"UPDATE "+conversion.table+" SET "+conversion.column+" = ? WHERE btrim("+conversion.column+") = ''",
+						conversion.emptyJSON,
+					).Error; err != nil {
+						return err
+					}
+				}
+				expression := conversion.column + "::jsonb"
+				if conversion.emptyAsNull {
+					expression = "NULLIF(btrim(" + conversion.column + "), '')::jsonb"
+				}
+				if conversion.defaultJSON != "" {
+					if err := tx.Exec(
+						"ALTER TABLE " + conversion.table + " ALTER COLUMN " + conversion.column + " DROP DEFAULT",
+					).Error; err != nil {
+						return err
+					}
+				}
+				if err := tx.Exec(
+					"ALTER TABLE " + conversion.table + " ALTER COLUMN " + conversion.column + " TYPE jsonb USING " + expression,
+				).Error; err != nil {
+					return err
+				}
+				if conversion.defaultJSON != "" {
+					if err := tx.Exec(
+						"ALTER TABLE " + conversion.table + " ALTER COLUMN " + conversion.column + " SET DEFAULT '" + conversion.defaultJSON + "'::jsonb",
+					).Error; err != nil {
+						return err
+					}
+				}
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_sync_run_active_by_source
+					ON rgx_sync_run (source_id, updated_at)
+					WHERE status IN ('scanning', 'running')`,
+				`CREATE INDEX IF NOT EXISTS idx_sync_item_skipped_conflict_identity
+					ON rgx_sync_item (resource_type, external_scope_key, external_id, conflict_type)
+					WHERE status = 'skipped' AND action IN ('conflict', 'relink')`,
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			settingRevisionTriggers := []string{
+				`CREATE TRIGGER trg_setting_revision_freeze
+					BEFORE UPDATE OF revision, schema_version, snapshot_json, created_by, created_at,
+					note, checksum, rollback_from_revision_id
+					ON rgx_setting_revision
+					FOR EACH ROW EXECUTE FUNCTION rgx_setting_revision_freeze()`,
+				`CREATE TRIGGER trg_setting_revision_delete_freeze
+					BEFORE DELETE ON rgx_setting_revision
+					FOR EACH ROW EXECUTE FUNCTION rgx_setting_revision_freeze()`,
+			}
+			for _, statement := range settingRevisionTriggers {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 83,
+		Name:    "sync_run_progress_columns",
+		Migrate: func(tx *gorm.DB) error {
+			for _, field := range []string{"ProgressTotal", "ProgressDone", "ProgressFailed"} {
+				if tx.Migrator().HasColumn(&model.SyncRun{}, field) {
+					continue
+				}
+				if err := tx.Migrator().AddColumn(&model.SyncRun{}, field); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 84,
+		Name:    "preserve_governance_postgres_json_contracts",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			return tx.Exec(`
+				DO $$
+				DECLARE column_record record;
+				BEGIN
+					FOR column_record IN
+						SELECT table_schema, table_name, column_name, data_type
+						FROM information_schema.columns
+						WHERE table_schema = current_schema()
+							AND (
+								(table_name = 'rgx_setting_revision' AND column_name = 'snapshot_json')
+								OR (table_name = 'rgx_resource_sync_settings' AND column_name IN ('resource_types_json', 'scope_json'))
+								OR (table_name = 'rgx_sync_run' AND column_name IN (
+									'resource_types_json', 'scope_json', 'source_snapshot_json',
+									'plan_summary_json', 'result_summary_json'
+								))
+							)
+							AND data_type IN ('text', 'character varying')
+					LOOP
+						EXECUTE format(
+							'ALTER TABLE %I.%I ALTER COLUMN %I TYPE jsonb USING NULLIF(btrim(%I), '''')::jsonb',
+							column_record.table_schema, column_record.table_name,
+							column_record.column_name, column_record.column_name
+						);
+					END LOOP;
+				END $$;
+			`).Error
+		},
+	},
+	{
+		Version: 85,
+		Name:    "cost_metric_estimated_cost",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Migrator().HasColumn(&model.CostMetric{}, "EstimatedCost") {
+				return nil
+			}
+			return tx.Migrator().AddColumn(&model.CostMetric{}, "EstimatedCost")
+		},
+	},
+	{
+		Version: 86,
+		Name:    "feedback_to_knowledge_ops_badcase",
+		Migrate: func(tx *gorm.DB) error {
+			for _, field := range []string{"RequestID"} {
+				if tx.Migrator().HasColumn(&model.MessageFeedback{}, field) {
+					continue
+				}
+				if err := tx.Migrator().AddColumn(&model.MessageFeedback{}, field); err != nil {
+					return err
+				}
+			}
+			for _, field := range []string{"FeedbackID", "FeedbackRating", "FeedbackComment", "FeedbackAt"} {
+				if tx.Migrator().HasColumn(&model.KnowledgeOpsEvent{}, field) {
+					continue
+				}
+				if err := tx.Migrator().AddColumn(&model.KnowledgeOpsEvent{}, field); err != nil {
+					return err
+				}
+			}
+			for _, field := range []string{"SourceSessionID", "SourceRequestID", "SourceFeedbackComment"} {
+				if tx.Migrator().HasColumn(&model.EvalCase{}, field) {
+					continue
+				}
+				if err := tx.Migrator().AddColumn(&model.EvalCase{}, field); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 87,
+		Name:    "clarify_operator_role_terms",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.Model(&model.Role{}).Where("id = ?", model.RoleOperator).Updates(map[string]interface{}{
+				"name":        "内容运营员",
+				"description": "工作区内内容与业务运营",
+			}).Error
+		},
+	},
+	{
+		Version: 88,
+		Name:    "add_business_user_role",
+		Migrate: func(tx *gorm.DB) error {
+			return seedDefaultRBAC(tx)
+		},
+	},
+	{
+		Version: 89,
+		Name:    "document_ownership_and_auto_parse",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.DocumentOwnershipLink{})
+		},
+	},
+	{
+		Version: 90,
+		Name:    "enterprise_oidc_identity",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.OidcIdentity{}); err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uk_oidc_identity_issuer_subject ON rgx_oidc_identity (issuer, subject)`).Error
+		},
+	},
+	{
+		Version: 91,
+		Name:    "audit_approval_action_hash_identity",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.AuditLog{})
+		},
+	},
+	{
+		Version: 92,
+		Name:    "dataset_incremental_ledger",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.IncrementalLedger{}); err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE INDEX IF NOT EXISTS idx_incremental_ledger_document ON rgx_incremental_ledger (tenant_id, ragflow_document_id)`).Error
+		},
+	},
+	{
+		Version: 93,
+		Name:    "citation_reference_snapshot",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.CitationReference{}); err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE INDEX IF NOT EXISTS idx_citation_reference_request ON rgx_citation_reference (tenant_id, request_id, created_at)`).Error
+		},
+	},
+	{
+		Version: 94,
+		Name:    "canonical_assistant_release",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.TemplateInstance{},
+				&model.ScenarioPackVersion{},
+				&model.Assistant{},
+				&model.AssistantVersion{},
+				&model.AssistantRelease{},
+				&model.CapabilityBindingVersion{},
+				&model.DatasetBindingVersion{},
+				&model.ModelRouteBindingVersion{},
+				&model.ToolBindingVersion{},
+				&model.RuntimeProfileSnapshot{},
+				&model.PolicySnapshot{},
+				&model.SnapshotManifest{},
+				&model.ReleaseOperation{},
+				&model.RuntimeHealth{},
+				&model.DependencyHealthSignal{},
+				&model.RolloutPolicy{},
+				&model.AuthorizationSnapshot{},
+				&model.TemplateRunbook{},
+			); err != nil {
+				return err
+			}
+			if err := assertSingleAssistantReleaseState(tx, "ACTIVE"); err != nil {
+				return err
+			}
+			if err := assertSingleAssistantReleaseState(tx, "CANARY_ACTIVE"); err != nil {
+				return err
+			}
+			if err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_assistant_release_active ON rgx_assistant_release (assistant_id) WHERE release_state = 'ACTIVE'`).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_assistant_release_canary_active ON rgx_assistant_release (assistant_id) WHERE release_state = 'CANARY_ACTIVE'`).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS ux_rollout_running ON rgx_rollout_policy (assistant_id) WHERE status = 'RUNNING'`).Error; err != nil {
+				return err
+			}
+			return createAssistantReleaseGuards(tx)
+		},
+	},
+	{
+		Version: 95,
+		Name:    "canonical_release_immutability",
+		Migrate: func(tx *gorm.DB) error {
+			return createCanonicalReleaseImmutabilityGuards(tx)
+		},
+	},
+	{
+		Version: 96,
+		Name:    "assistant_release_gate_evidence",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.AssistantRelease{})
+		},
+	},
+	{
+		Version: 97,
+		Name:    "feedback_attribution",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MessageFeedback{}, &model.KnowledgeOpsEvent{}); err != nil {
+				return err
+			}
+			if err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_feedback_attribution ON rgx_message_feedback (tenant_id, rating, attribution)`).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_ops_feedback_attribution ON rgx_knowledge_ops_event (tenant_id, feedback_rating, feedback_attribution)`).Error
+		},
+	},
+	{
+		Version: 98,
+		Name:    "knowledge_task",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.KnowledgeTask{}); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_knowledge_task_tenant_status ON rgx_knowledge_task (tenant_id, status)`,
+				`CREATE INDEX IF NOT EXISTS idx_knowledge_task_tenant_due ON rgx_knowledge_task (tenant_id, due_at)`,
+				`CREATE INDEX IF NOT EXISTS idx_knowledge_task_source_event ON rgx_knowledge_task (tenant_id, source_event_id)`,
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 99,
+		Name:    "governance_trace_run",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.TraceRun{}); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_trace_run_tenant_request ON rgx_trace_run (tenant_id, request_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_trace_run_tenant_session ON rgx_trace_run (tenant_id, session_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_trace_run_tenant_release ON rgx_trace_run (tenant_id, assistant_release_id)`,
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 100,
+		Name:    "release_operation_request_fingerprint",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ReleaseOperation{})
+		},
+	},
+	{
+		Version: 101,
+		Name:    "evaluation_run_state_guard",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_terminal_evaluation_run_freeze() RETURNS trigger AS $$
+				BEGIN
+					IF TG_OP = 'DELETE' OR OLD.status IN ('COMPLETED','FAILED','CANCELLED') THEN
+						RAISE EXCEPTION 'terminal evaluation run is immutable';
+					END IF;
+					RETURN NEW;
+				END;
+			$$ LANGUAGE plpgsql`).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_evaluation_run_terminal_guard ON rgx_evaluation_run`).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE TRIGGER trg_evaluation_run_terminal_guard BEFORE UPDATE OR DELETE ON rgx_evaluation_run
+				FOR EACH ROW EXECUTE FUNCTION rgx_terminal_evaluation_run_freeze()`).Error
+		},
+	},
+	{
+		Version: 102,
+		Name:    "answer_delivery_contract",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.AnswerRun{},
+				&model.AnswerSnapshot{},
+				&model.AnswerEvent{},
+				&model.AuthorizationProjection{},
+				&model.ExportTemplateVersion{},
+				&model.ExportSnapshot{},
+				&model.ExportJob{},
+				&model.ExportArtifact{},
+				&model.ExportDownloadAudit{},
+			); err != nil {
+				return err
+			}
+			if tx.Dialector.Name() == "postgres" {
+				if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_answer_snapshot_freeze() RETURNS trigger AS $$
+			BEGIN
+				RETURN OLD;
+			END;
+			$$ LANGUAGE plpgsql`).Error; err != nil {
+					return err
+				}
+				// NOTE: this body was a no-op guard (F-02 in doc/118). Migration 108
+				// replaces it with RAISE EXCEPTION semantics; the CREATE TRIGGER
+				// statements below remain so fresh databases get the guards and 108
+				// then repairs the function body.
+				freezeTables := []string{"rgx_answer_snapshot", "rgx_answer_event", "rgx_answer_authorization_projection", "rgx_export_snapshot", "rgx_export_artifact", "rgx_export_download_audit"}
+				for _, table := range freezeTables {
+					if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_` + table + `_freeze ON ` + table).Error; err != nil {
+						return err
+					}
+					if err := tx.Exec(`CREATE TRIGGER trg_` + table + `_freeze BEFORE UPDATE OR DELETE ON ` + table + ` FOR EACH ROW EXECUTE FUNCTION rgx_answer_snapshot_freeze()`).Error; err != nil {
+						return err
+					}
+				}
+				return tx.Exec(`CREATE OR REPLACE FUNCTION rgx_answer_run_terminal_freeze() RETURNS trigger AS $$
+					BEGIN
+						IF OLD.lifecycle_state IN ('COMPLETED','CANCELLED','FAILED') THEN
+							RAISE EXCEPTION 'terminal answer run is immutable';
+						END IF;
+						RETURN NEW;
+					END;
+				$$ LANGUAGE plpgsql`).Error
+			}
+			statements := []string{
+				`CREATE TRIGGER IF NOT EXISTS trg_answer_snapshot_update_guard BEFORE UPDATE ON rgx_answer_snapshot BEGIN SELECT RAISE(ABORT, 'answer snapshot is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_answer_snapshot_delete_guard BEFORE DELETE ON rgx_answer_snapshot BEGIN SELECT RAISE(ABORT, 'answer snapshot is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_answer_event_update_guard BEFORE UPDATE ON rgx_answer_event BEGIN SELECT RAISE(ABORT, 'answer event is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_answer_event_delete_guard BEFORE DELETE ON rgx_answer_event BEGIN SELECT RAISE(ABORT, 'answer event is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_answer_authorization_projection_update_guard BEFORE UPDATE ON rgx_answer_authorization_projection BEGIN SELECT RAISE(ABORT, 'authorization projection is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_answer_authorization_projection_delete_guard BEFORE DELETE ON rgx_answer_authorization_projection BEGIN SELECT RAISE(ABORT, 'authorization projection is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_export_snapshot_update_guard BEFORE UPDATE ON rgx_export_snapshot BEGIN SELECT RAISE(ABORT, 'export snapshot is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_export_snapshot_delete_guard BEFORE DELETE ON rgx_export_snapshot BEGIN SELECT RAISE(ABORT, 'export snapshot is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_export_artifact_update_guard BEFORE UPDATE ON rgx_export_artifact BEGIN SELECT RAISE(ABORT, 'export artifact is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_export_artifact_delete_guard BEFORE DELETE ON rgx_export_artifact BEGIN SELECT RAISE(ABORT, 'export artifact is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_export_download_audit_update_guard BEFORE UPDATE ON rgx_export_download_audit BEGIN SELECT RAISE(ABORT, 'download audit is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_export_download_audit_delete_guard BEFORE DELETE ON rgx_export_download_audit BEGIN SELECT RAISE(ABORT, 'download audit is immutable'); END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_answer_run_terminal_guard AFTER UPDATE ON rgx_answer_run
+					WHEN OLD.lifecycle_state IN ('COMPLETED','CANCELLED','FAILED') AND (OLD.lifecycle_state IS NOT NEW.lifecycle_state OR OLD.answer_status IS NOT NEW.answer_status OR OLD.completion_reason IS NOT NEW.completion_reason)
+					BEGIN SELECT RAISE(ABORT, 'terminal answer run is immutable'); END`,
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 103 replays migration 101 verbatim (CREATE OR REPLACE
+		// FUNCTION + trigger re-creation) and is therefore idempotent. It is a
+		// historical artifact from the original rollout; version numbers that
+		// already shipped cannot be recycled, so keep both entries (doc/118
+		// F-15). Do not delete this migration — databases that recorded
+		// version 103 would fail on downgrade detection.
+		Version: 103,
+		Name:    "terminal_evaluation_run_delete_guard",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_terminal_evaluation_run_freeze() RETURNS trigger AS $$
+				BEGIN
+					IF TG_OP = 'DELETE' OR OLD.status IN ('COMPLETED','FAILED','CANCELLED') THEN
+						RAISE EXCEPTION 'terminal evaluation run is immutable';
+					END IF;
+					RETURN NEW;
+				END;
+			$$ LANGUAGE plpgsql`).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_evaluation_run_terminal_guard ON rgx_evaluation_run`).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE TRIGGER trg_evaluation_run_terminal_guard BEFORE UPDATE OR DELETE ON rgx_evaluation_run
+				FOR EACH ROW EXECUTE FUNCTION rgx_terminal_evaluation_run_freeze()`).Error
+		},
+	},
+	{
+		Version: 104,
+		Name:    "knowledge_impact_and_duplicate_contract",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ImpactReport{}, &model.DuplicateCandidate{})
+		},
+	},
+	{
+		Version: 105,
+		Name:    "knowledge_task_answer_context",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.KnowledgeTask{})
+		},
+	},
+	{
+		Version: 106,
+		Name:    "knowledge_task_document_context",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.KnowledgeTask{})
+		},
+	},
+	{
+		Version: 107,
+		Name:    "authorization_projection_channel",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.Exec("DROP INDEX IF EXISTS uk_authz_snapshot_principal").Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`CREATE UNIQUE INDEX uk_authz_snapshot_principal
+				ON rgx_answer_authorization_projection
+				(answer_snapshot_id, principal_id, channel)`).Error; err != nil {
+				return err
+			}
+			return tx.AutoMigrate(&model.AuthorizationProjection{})
+		},
+	},
+	{
+		// Version 108 repairs migration 102: its PostgreSQL branch created
+		// rgx_answer_snapshot_freeze() with a body of `RETURN OLD`, which
+		// silently allowed UPDATE and DELETE on the six immutable answer
+		// delivery tables (100 方案 §4.7 I2/I3/I16). The repaired function
+		// raises an exception for every row, matching the SQLite branch's
+		// RAISE(ABORT) semantics and migration 101's correct pattern.
+		Version: 108,
+		Name:    "answer_delivery_freeze_guard_repair",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_answer_snapshot_freeze() RETURNS trigger AS $$
+				BEGIN
+					RAISE EXCEPTION 'answer delivery rows are immutable';
+				END;
+				$$ LANGUAGE plpgsql`).Error; err != nil {
+				return err
+			}
+			// CREATE OR REPLACE FUNCTION already rebinds every trigger that
+			// references it; the per-table loop re-creates the triggers so a
+			// database that never ran migration 102's trigger creation still
+			// ends up with all six guards installed.
+			freezeTables := []string{"rgx_answer_snapshot", "rgx_answer_event", "rgx_answer_authorization_projection", "rgx_export_snapshot", "rgx_export_artifact", "rgx_export_download_audit"}
+			for _, table := range freezeTables {
+				if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_` + table + `_freeze ON ` + table).Error; err != nil {
+					return err
+				}
+				if err := tx.Exec(`CREATE TRIGGER trg_` + table + `_freeze BEFORE UPDATE OR DELETE ON ` + table + ` FOR EACH ROW EXECUTE FUNCTION rgx_answer_snapshot_freeze()`).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 109 adds the retrieval pushdown columns (doc/123): the
+		// per-dataset gate on rgx_dataset_link and the projection evidence
+		// column on rgx_answer_authorization_projection. Existing rows default
+		// to the pre-pushdown behavior (gate off, evidence absent).
+		Version: 109,
+		Name:    "retrieval_pushdown_columns",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.DatasetLink{}, &model.AuthorizationProjection{}); err != nil {
+				return err
+			}
+			hasColumn := func(table, column string) bool {
+				return tx.Migrator().HasColumn(table, column)
+			}
+			if !hasColumn("rgx_dataset_link", "pushdown_enabled") {
+				if err := tx.Exec(`ALTER TABLE rgx_dataset_link ADD COLUMN pushdown_enabled BOOLEAN NOT NULL DEFAULT FALSE`).Error; err != nil {
+					return err
+				}
+			}
+			if !hasColumn("rgx_answer_authorization_projection", "retrieval_pushdown_json") {
+				if err := tx.Exec(`ALTER TABLE rgx_answer_authorization_projection ADD COLUMN retrieval_pushdown_json TEXT NOT NULL DEFAULT '"{""status":""absent""}""'`).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 110 adds the first P0-A slice: tenant-owned parser policies
+		// and quality profiles. Parse quality reports and attempts are added
+		// by their execution-focused follow-up slice after the quality gate
+		// contract is wired to parse execution.
+		Version: 110,
+		Name:    "parser_policy_quality_profile",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ParserPolicy{}, &model.QualityProfile{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.ParserPolicy{}, "uk_rgx_parser_policy_active_scope") {
+				return tx.Exec(`CREATE UNIQUE INDEX uk_rgx_parser_policy_active_scope
+					ON rgx_parser_policy (tenant_id, project_id, dataset_id, document_type)
+					WHERE active`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 111 persists every parse attempt and the final quality
+		// decision so fallback chains remain auditable (doc/129 P0-A G7).
+		Version: 111,
+		Name:    "parse_attempt_quality_report",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ParseAttempt{}, &model.ParseQualityReport{})
+		},
+	},
+	{
+		// Version 112 starts the document version lifecycle (doc/129 P0-B).
+		// PostgreSQL additionally enforces non-overlap for governance-visible
+		// versions; draft rows are deliberately outside the exclusion set.
+		Version: 112,
+		Name:    "logical_document_version",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.LogicalDocument{}, &model.DocumentVersion{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.DocumentVersion{}, "idx_rgx_document_version_active") {
+				return tx.Exec(`CREATE UNIQUE INDEX idx_rgx_document_version_active
+					ON rgx_document_version (tenant_id, logical_document_id)
+					WHERE status = 'active'`).Error
+			}
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			if err := tx.Exec(`CREATE EXTENSION IF NOT EXISTS btree_gist`).Error; err != nil {
+				return err
+			}
+			var constraintCount int64
+			if err := tx.Raw(`SELECT COUNT(*) FROM pg_constraint WHERE conname = 'no_overlapping_effective_range' AND conrelid = 'rgx_document_version'::regclass`).Scan(&constraintCount).Error; err != nil {
+				return err
+			}
+			if constraintCount > 0 {
+				return nil
+			}
+			return tx.Exec(`ALTER TABLE rgx_document_version ADD CONSTRAINT no_overlapping_effective_range
+				EXCLUDE USING gist (
+					tenant_id WITH =,
+					logical_document_id WITH =,
+					tstzrange(effective_from, effective_to, '[)') WITH &&
+				)
+				WHERE (status IN ('active', 'superseded', 'publishing'))`).Error
+		},
+	},
+	{
+		// Version 113 repairs migration 109's default-contract gap. GORM's
+		// AutoMigrate added retrieval_pushdown_json as NOT NULL first, so the
+		// following hasColumn guard skipped the intended DEFAULT. Re-issuing
+		// SET DEFAULT here repairs databases that already applied v109 and
+		// keeps raw migrations/seed rows from failing when evidence is absent.
+		Version: 113,
+		Name:    "answer_pushdown_default_repair",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Dialector.Name() != "postgres" {
+				return nil
+			}
+			return tx.Exec(`ALTER TABLE rgx_answer_authorization_projection
+				ALTER COLUMN retrieval_pushdown_json
+				SET DEFAULT '{"status":"absent","policy_version":"retrieval-pushdown.v1"}'`).Error
+		},
+	},
+	{
+		// Version 114 adds the durable P0-B publish coordination records.
+		// Only one preparing/ragflow_updated attempt may exist per tenant and
+		// logical document; terminal states are always replayable history.
+		Version: 114,
+		Name:    "version_filter_policy_publish_attempt",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.VersionFilterPolicy{}, &model.VersionPublishAttempt{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.VersionPublishAttempt{}, "uq_rgx_version_publish_attempt_open") {
+				return tx.Exec(`CREATE UNIQUE INDEX uq_rgx_version_publish_attempt_open
+					ON rgx_version_publish_attempt (tenant_id, logical_document_id)
+					WHERE state IN ('preparing', 'ragflow_updated')`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 115 enables G4 durable domain events. Document version
+		// publication and its OutboxEvent share Transaction B; dispatch uses
+		// claim leases and retry backoff so crash recovery is at-least-once.
+		Version: 115,
+		Name:    "document_version_outbox",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.OutboxEvent{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.OutboxEvent{}, "idx_rgx_outbox_event_dispatch") {
+				return tx.Exec(`CREATE INDEX idx_rgx_outbox_event_dispatch
+					ON rgx_outbox_event (next_retry_at, published_at)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 116 gives open publish attempts a reconciliation lease and
+		// records the pre-publish local state needed for crash compensation.
+		Version: 116,
+		Name:    "version_publish_reconciler",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.VersionPublishAttempt{})
+		},
+	},
+	{
+		// Version 117 starts P1-A with normalized evidence facts, authoritative
+		// evidence conflicts, and durable claim validation decisions.
+		Version: 117,
+		Name:    "fact_guard_registry",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.FactRegistry{}, &model.ClaimValidation{}, &model.EvidenceConflict{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.FactRegistry{}, "idx_rgx_fact_registry_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_fact_registry_lookup
+					ON rgx_fact_registry (tenant_id, answer_run_id, fact_key, unit, time_range)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 118 starts P0-C with tenant-owned deterministic tool
+		// contracts. The partial unique index enforces one active version per
+		// tool while retaining inactive historical versions for audit.
+		Version: 118,
+		Name:    "tool_registry",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ToolRegistry{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.ToolRegistry{}, "uq_rgx_tool_registry_active") {
+				return tx.Exec(`CREATE UNIQUE INDEX uq_rgx_tool_registry_active
+					ON rgx_tool_registry (tenant_id, tool_id)
+					WHERE active IS TRUE`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 119 adds deterministic source routing rules. P0-C supports
+		// tool sources only; knowledge/db execution arrives with their policy
+		// registries in later slices.
+		Version: 119,
+		Name:    "source_routing_rule",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.SourceRoutingRule{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.SourceRoutingRule{}, "idx_rgx_source_routing_rule_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_source_routing_rule_lookup
+					ON rgx_source_routing_rule (tenant_id, active, assistant_id, source_type, priority)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 120 starts P1-B with tenant-owned read-only database
+		// connection contracts. DSNRef stores a secret-manager reference only;
+		// connection verification arrives with the secret resolver slice.
+		Version: 120,
+		Name:    "db_connection",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.DBConnection{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.DBConnection{}, "idx_rgx_db_connection_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_db_connection_lookup
+					ON rgx_db_connection (tenant_id, driver, health_status, created_at)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 121 adds tenant-owned SQL query templates. Execution is a
+		// later slice; this table holds the validated read-only contract.
+		Version: 121,
+		Name:    "query_template",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.QueryTemplate{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.QueryTemplate{}, "idx_rgx_query_template_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_query_template_lookup
+					ON rgx_query_template (tenant_id, active, connection_id, created_at)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 122 adds explicit resource scopes for the first and fourth
+		// authorization layers. Existing governance rows fail closed to the
+		// tenant/platform administrators until an administrator narrows them.
+		Version: 122,
+		Name:    "four_layer_authorization_scopes",
+		Migrate: func(tx *gorm.DB) error {
+			if tx.Migrator().HasTable(&model.SourceRoutingRule{}) {
+				if err := ensureFourLayerAuthorizationScopeColumn(
+					tx, &model.SourceRoutingRule{}, "rgx_source_routing_rule",
+				); err != nil {
+					return err
+				}
+			} else if err := tx.AutoMigrate(&model.SourceRoutingRule{}); err != nil {
+				return err
+			}
+			if tx.Migrator().HasTable(&model.DBConnection{}) {
+				if err := ensureFourLayerAuthorizationScopeColumn(
+					tx, &model.DBConnection{}, "rgx_db_connection",
+				); err != nil {
+					return err
+				}
+			} else if err := tx.AutoMigrate(&model.DBConnection{}); err != nil {
+				return err
+			}
+			adminScope := `{"roles":["platform_admin","tenant_admin"]}`
+			if err := tx.Exec(`UPDATE rgx_source_routing_rule
+				SET authorization_scope = ?
+				WHERE authorization_scope IS NULL OR authorization_scope IN ('', '{}')`, adminScope).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`UPDATE rgx_db_connection
+				SET authorization_scope = ?
+				WHERE authorization_scope IS NULL OR authorization_scope IN ('', '{}')`, adminScope).Error
+		},
+	},
+	{
+		// Version 123 starts P1-C with tenant-owned semantic knowledge
+		// strategies. Capability probing and retrieval execution arrive later.
+		Version: 123,
+		Name:    "knowledge_strategy",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.KnowledgeStrategy{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.KnowledgeStrategy{}, "idx_rgx_knowledge_strategy_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_knowledge_strategy_lookup
+					ON rgx_knowledge_strategy (tenant_id, dataset_id, active, strategy_type, created_at)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 124 persists non-HTTP-200 capability probe evidence.
+		Version: 124,
+		Name:    "knowledge_capability_probe",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.KnowledgeCapabilityProbe{}); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasIndex(&model.KnowledgeCapabilityProbe{}, "idx_rgx_knowledge_capability_probe_lookup") {
+				return tx.Exec(`CREATE INDEX idx_rgx_knowledge_capability_probe_lookup
+					ON rgx_knowledge_capability_probe (tenant_id, strategy_id, checked_at DESC)`).Error
+			}
+			return nil
+		},
+	},
+	{
+		// Version 125 starts P1-D with immutable evidence contracts and
+		// normalized dependencies. HTTP projection and stale dispatch arrive
+		// in later slices.
+		Version: 125,
+		Name:    "evidence_snapshot",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.EvidenceSnapshot{},
+				&model.EvalCaseEvidence{},
+				&model.EvalCaseDependency{},
+			); err != nil {
+				return err
+			}
+			indexes := []string{
+				`CREATE INDEX IF NOT EXISTS idx_rgx_evidence_snapshot_lookup
+					ON rgx_evidence_snapshot (tenant_id, created_at DESC)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_eval_case_evidence_lookup
+					ON rgx_eval_case_evidence (tenant_id, eval_case_id, stale_status)`,
+				`CREATE INDEX IF NOT EXISTS idx_rgx_eval_case_dependency_lookup
+					ON rgx_eval_case_dependency (tenant_id, logical_document_id, binding_type)`,
+			}
+			for _, stmt := range indexes {
+				if err := tx.Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 126 makes the mutable EvalCaseEvidence projection
+		// single-current while preserving immutable EvidenceSnapshot history.
+		Version: 126,
+		Name:    "eval_case_evidence_current_set",
+		Migrate: func(tx *gorm.DB) error {
+			olderDependencies := tx.Exec(`DELETE FROM rgx_eval_case_dependency
+				WHERE eval_case_evidence_id IN (
+					SELECT old.id FROM rgx_eval_case_evidence old
+					JOIN rgx_eval_case_evidence newest
+						ON newest.tenant_id = old.tenant_id
+						AND newest.eval_case_id = old.eval_case_id
+						AND (newest.created_at > old.created_at
+							OR (newest.created_at = old.created_at AND newest.id > old.id))
+				)`).Error
+			if olderDependencies != nil {
+				return olderDependencies
+			}
+			if err := tx.Exec(`DELETE FROM rgx_eval_case_evidence
+				WHERE EXISTS (
+					SELECT 1 FROM rgx_eval_case_evidence newest
+					WHERE rgx_eval_case_evidence.tenant_id = newest.tenant_id
+						AND rgx_eval_case_evidence.eval_case_id = newest.eval_case_id
+						AND (newest.created_at > rgx_eval_case_evidence.created_at
+							OR (newest.created_at = rgx_eval_case_evidence.created_at AND newest.id > rgx_eval_case_evidence.id))
+				)`).Error; err != nil {
+				return err
+			}
+			return tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_rgx_eval_case_evidence_case_unique
+				ON rgx_eval_case_evidence (tenant_id, eval_case_id)`).Error
+		},
+	},
+	{
+		// Version 127 projects immutable snapshot DatasetIDs into normalized
+		// rows so team-admin authorization can be evaluated in SQL without
+		// JSON queries or in-memory pagination.
+		Version: 127,
+		Name:    "evidence_snapshot_dataset_projection",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.EvidenceSnapshotDataset{}); err != nil {
+				return err
+			}
+			if err := tx.Where("1 = 1").Delete(&model.EvidenceSnapshotDataset{}).Error; err != nil {
+				return err
+			}
+			snapshots := make([]model.EvidenceSnapshot, 0)
+			if err := tx.Select("id", "tenant_id", "dataset_ids").Find(&snapshots).Error; err != nil {
+				return err
+			}
+			projections := make([]model.EvidenceSnapshotDataset, 0, len(snapshots))
+			for _, snapshot := range snapshots {
+				var datasetIDs []string
+				if err := json.Unmarshal([]byte(snapshot.DatasetIDs), &datasetIDs); err != nil {
+					return fmt.Errorf("evidence snapshot %s has malformed dataset_ids: %w", snapshot.ID, err)
+				}
+				if len(datasetIDs) == 0 {
+					return fmt.Errorf("evidence snapshot %s has no dataset_ids", snapshot.ID)
+				}
+				for _, datasetID := range datasetIDs {
+					if datasetID == "" {
+						return fmt.Errorf("evidence snapshot %s has an empty dataset_id", snapshot.ID)
+					}
+					projections = append(projections, model.EvidenceSnapshotDataset{
+						ID: id.New(), TenantID: snapshot.TenantID,
+						SnapshotID: snapshot.ID, DatasetID: datasetID,
+					})
+				}
+			}
+			if len(projections) == 0 {
+				return nil
+			}
+			return tx.Create(&projections).Error
+		},
+	},
+	{
+		// Version 128 repairs databases that were already at the latest
+		// schema version when newer built-in permissions (for example
+		// tool-registry) were introduced. Canonical built-in grants are
+		// intentionally reconciled as a migration, not only when a later
+		// schema change happens to exist.
+		Version: 128,
+		Name:    "reconcile_builtin_rbac_matrix_backfill",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.Role{},
+				&model.Permission{},
+				&model.UserRole{},
+			); err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 129 turns the AnswerSnapshot canonical hash into a content
+		// fingerprint. AnswerRun already supplies the per-run identity, while
+		// identical content can legitimately occur across runs or tenants.
+		Version: 129,
+		Name:    "answer_snapshot_hash_content_fingerprint",
+		Migrate: func(tx *gorm.DB) error {
+			if !tx.Migrator().HasTable(&model.AnswerSnapshot{}) {
+				if err := tx.AutoMigrate(&model.AnswerSnapshot{}); err != nil {
+					return err
+				}
+			}
+			if err := tx.Exec("DROP INDEX IF EXISTS idx_rgx_answer_snapshot_canonical_hash").Error; err != nil {
+				return err
+			}
+			return tx.Exec("CREATE INDEX IF NOT EXISTS idx_rgx_answer_snapshot_canonical_hash ON rgx_answer_snapshot (canonical_hash)").Error
+		},
+	},
+	{
+		// Version 130 introduces the governed Knowledge Compilation and
+		// Memory landing models. Operations stay fail-closed: service code
+		// must not dispatch an unverified RAGFlow contract from this migration.
+		Version: 130,
+		Name:    "knowledge_compilation_memory_landing",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.KnowledgeProfile{},
+				&model.CompilationRun{},
+				&model.ArtifactProjection{},
+				&model.MemoryPolicy{},
+				&model.MemoryOperation{},
+				&model.ContextDecision{},
+			); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "SelfMemoryTemplate") {
+				if err := tx.Exec("ALTER TABLE rgx_tenant ADD COLUMN self_memory_template TEXT").Error; err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "SelfMemoryTemplateVersion") {
+				if err := tx.Exec("ALTER TABLE rgx_tenant ADD COLUMN self_memory_template_version BIGINT NOT NULL DEFAULT 0").Error; err != nil {
+					return err
+				}
+			}
+			indexes := []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_compilation_run_idempotency ON rgx_compilation_run (tenant_id, dataset_id, idempotency_key)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_compilation_run_state ON rgx_compilation_run (tenant_id, dataset_id, state, created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_artifact_projection_dataset ON rgx_artifact_projection (tenant_id, dataset_id, run_id, state)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_idempotency ON rgx_memory_operation (tenant_id, policy_id, idempotency_key)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_scope ON rgx_memory_operation (tenant_id, project_id, user_id, memory_id, state, created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_context_decision_request ON rgx_context_decision (tenant_id, request_id)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_policy_scope ON rgx_memory_policy (tenant_id, project_id, user_id, assistant_id, state)",
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 131 completes the MemoryOperation/outbox contract. It keeps
+		// existing rows loadable, adds operation-level identity columns, and
+		// makes both request and idempotency identities unique per tenant,
+		// policy and operation.
+		Version: 131,
+		Name:    "memory_operation_outbox_contract",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MemoryPolicy{}, &model.MemoryOperation{}); err != nil {
+				return err
+			}
+			if err := tx.Exec("UPDATE rgx_memory_operation SET request_id = '' WHERE request_id IS NULL").Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("UPDATE rgx_memory_operation SET policy_version = 1 WHERE policy_version IS NULL OR policy_version = 0").Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("UPDATE rgx_memory_operation SET record_version = 1 WHERE record_version IS NULL OR record_version = 0").Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("DROP INDEX IF EXISTS idx_rgx_memory_operation_idempotency").Error; err != nil {
+				return err
+			}
+			indexes := []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_memory_operation_request ON rgx_memory_operation (tenant_id, operation_type, policy_id, request_id)",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_memory_operation_idempotency ON rgx_memory_operation (tenant_id, operation_type, policy_id, idempotency_key)",
+			}
+			for _, statement := range indexes {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 132 adds durable compensation evidence for memory
+		// tombstones. Hashes are keyed and irreversible; raw memory content
+		// is never persisted or exposed through this API.
+		Version: 132,
+		Name:    "memory_operation_tombstone_compensation",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MemoryOperation{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_memory_operation SET tombstone_scope_hash = '' WHERE tombstone_scope_hash IS NULL",
+				"UPDATE rgx_memory_operation SET tombstone_payload_hash = '' WHERE tombstone_payload_hash IS NULL",
+				"UPDATE rgx_memory_operation SET tombstone_message_hash = '' WHERE tombstone_message_hash IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_tombstone ON rgx_memory_operation (tenant_id, user_id, tombstone_active, tombstone_created_at DESC)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 133 binds an active memory policy to one RAGFlow Memory.
+		// Read admission resolves the policy through this durable binding and
+		// never derives authorization from attribution strings.
+		Version: 133,
+		Name:    "memory_policy_runtime_binding",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MemoryPolicy{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_memory_policy_active_memory ON rgx_memory_policy (tenant_id, ragflow_memory_id) WHERE state = 'active' AND ragflow_memory_id <> ''",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_memory_policy_active_scope ON rgx_memory_policy (tenant_id, assistant_id, (CASE WHEN user_id = '' THEN 'project' ELSE 'user' END), (CASE WHEN user_id = '' THEN project_id ELSE user_id END)) WHERE state = 'active'",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 134 reconciles the Context Decision grant that the Context
+		// Source UI requires for team admins who inspect their own runs. The
+		// canonical matrix still prevents cross-owner reads at service level.
+		Version: 134,
+		Name:    "context_decision_team_admin_read",
+		Migrate: func(tx *gorm.DB) error {
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 135 adds an irreversible external-message fingerprint so
+		// tombstone compensation can locate an already accepted write without
+		// retaining ciphertext or raw content after the dispatch terminal state.
+		Version: 135,
+		Name:    "memory_compensation_external_fingerprint",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.MemoryOperation{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_memory_operation SET external_message_hash = '' WHERE external_message_hash IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_compensation ON rgx_memory_operation (tombstone_active, state, claim_expires_at, created_at ASC)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 136 turns CompilationRun from a fail-closed request record
+		// into a bounded explicit-dispatch state machine. Document IDs and
+		// kind are dispatch inputs only; RAGFlow remains the execution plane.
+		Version: 136,
+		Name:    "compilation_dispatch_state_contract",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.CompilationRun{},
+				&model.ArtifactProjection{},
+			); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET kind = 'wiki' WHERE kind IS NULL OR kind = ''",
+				"UPDATE rgx_compilation_run SET document_ids = '[]' WHERE document_ids IS NULL",
+				"UPDATE rgx_compilation_run SET manifest_complete = false WHERE manifest_complete IS NULL",
+				"UPDATE rgx_artifact_projection SET artifact_hash = '' WHERE artifact_hash IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_artifact_projection_artifact ON rgx_artifact_projection (tenant_id, dataset_id, artifact_id, updated_at DESC)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 137 attributes evaluation runs and evidence bundles to a
+		// release, compiled retrieval strategy, or memory policy. Existing
+		// rows remain release-scoped. Strategy and policy runs have no
+		// release identity and can therefore never feed a Release Gate.
+		Version: 137,
+		Name:    "evaluation_governance_scope",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.EvaluationRun{}, &model.EvidenceBundle{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_evaluation_run SET evaluation_scope = 'release' WHERE evaluation_scope IS NULL OR evaluation_scope = ''",
+				"UPDATE rgx_evidence_bundle SET evaluation_scope = 'release' WHERE evaluation_scope IS NULL OR evaluation_scope = ''",
+				"DROP INDEX IF EXISTS idx_evidence_bundle_candidate",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_evaluation_run_scope ON rgx_evaluation_run (tenant_id, evaluation_scope, x_strategy_id, x_memory_policy_id, created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_evidence_bundle_scope ON rgx_evidence_bundle (tenant_id, evaluation_scope, x_strategy_id, x_memory_policy_id, created_at DESC)",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_evidence_bundle_run ON rgx_evidence_bundle (tenant_id, evaluation_run_id)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			if err := applyEvaluationScopeConstraints(tx); err != nil {
+				return err
+			}
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		// Version 138 records the capability-specific paired A/B protocol and
+		// evaluator output. Legacy release rows stay manual-result compatible.
+		Version: 138,
+		Name:    "evaluation_paired_ab_execution",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.EvaluationRun{}, &model.EvaluationCaseVersion{}, &model.EvaluationCaseResult{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_evaluation_run SET execution_mode = 'manual_result' WHERE execution_mode IS NULL OR execution_mode = ''",
+				"UPDATE rgx_evaluation_run SET execution_config = '{}' WHERE execution_config IS NULL OR execution_config = ''",
+				"UPDATE rgx_evaluation_case_result SET paired_sample_id = '' WHERE paired_sample_id IS NULL",
+				"UPDATE rgx_evaluation_case_result SET experiment_arm = '' WHERE experiment_arm IS NULL",
+				"UPDATE rgx_evaluation_case_version SET paired_sample_id = '' WHERE paired_sample_id IS NULL",
+				"DROP INDEX IF EXISTS idx_evaluation_case_result_run_case",
+				"CREATE UNIQUE INDEX IF NOT EXISTS idx_evaluation_case_result_run_case ON rgx_evaluation_case_result (tenant_id, run_id, case_id, paired_sample_id, experiment_arm)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_evaluation_run_capability ON rgx_evaluation_run (tenant_id, capability, gate_status, created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_evaluation_case_result_pair ON rgx_evaluation_case_result (tenant_id, run_id, paired_sample_id, experiment_arm)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 139 makes post-run source consistency durable. Legacy runs
+		// cannot claim a downstream snapshot or matching post-run manifest and
+		// therefore stay unverified.
+		Version: 139,
+		Name:    "compilation_source_consistency",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.CompilationRun{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET downstream_source_snapshot_id = '' WHERE downstream_source_snapshot_id IS NULL",
+				"UPDATE rgx_compilation_run SET post_run_source_manifest_hash = '' WHERE post_run_source_manifest_hash IS NULL",
+				"UPDATE rgx_compilation_run SET source_consistency = 'unverified' WHERE source_consistency IS NULL OR source_consistency NOT IN ('unverified', 'consistent', 'changed', 'unknown')",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 140 persists unknown-run recovery evidence and linkage.
+		// Legacy unknown evidence stays insufficient; the service never infers
+		// downstream absence from a historical state alone.
+		Version: 140,
+		Name:    "compilation_unknown_recovery_governance",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.CompilationRun{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET downstream_task_id = '' WHERE downstream_task_id IS NULL",
+				"UPDATE rgx_compilation_run SET triggered_by_x_run_id = '' WHERE triggered_by_x_run_id IS NULL",
+				"UPDATE rgx_compilation_run SET cancel_scope = 'x_scheduling_only' WHERE cancel_scope IS NULL OR cancel_scope = ''",
+				"UPDATE rgx_compilation_run SET failure_code = '' WHERE failure_code IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_state = '' WHERE recovery_state IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_evidence = '{}' WHERE recovery_evidence IS NULL OR recovery_evidence = ''",
+				"UPDATE rgx_compilation_run SET approval_id = '' WHERE approval_id IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_no_match_count = 0 WHERE recovery_no_match_count IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_observation_seconds = 0 WHERE recovery_observation_seconds IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_approved_by = '' WHERE recovery_approved_by IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_operated_by = '' WHERE recovery_operated_by IS NULL",
+				"UPDATE rgx_compilation_run SET recovery_state = 'pending_recovery' WHERE state = 'unknown' AND (recovery_state IS NULL OR recovery_state = '')",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_compilation_recovery_state ON rgx_compilation_run (tenant_id, state, recovery_state, unknown_at)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 141 gives artifact payload hashes their 137 schema
+		// identity. Legacy projection hashes describe the projection snapshot;
+		// payload hashes are recovered only when that snapshot explicitly
+		// proved run and content binding.
+		Version: 141,
+		Name:    "compilation_artifact_content_hash",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.ArtifactProjection{}); err != nil {
+				return err
+			}
+			var projections []model.ArtifactProjection
+			if err := tx.Select("id", "artifact_json").Find(&projections).Error; err != nil {
+				return err
+			}
+			for _, projection := range projections {
+				var snapshot map[string]interface{}
+				if err := json.Unmarshal([]byte(projection.ArtifactJSON), &snapshot); err != nil {
+					continue
+				}
+				contentHash, _ := snapshot["content_hash"].(string)
+				if bound, _ := snapshot["content_hash_binding"].(bool); !bound || contentHash == "" {
+					continue
+				}
+				if err := tx.Model(&model.ArtifactProjection{}).Where("id = ?", projection.ID).
+					Update("content_hash", contentHash).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 142 wires enhancement work into the existing quota ledger.
+		// Cost rows carry the X governance dimensions without changing the
+		// request_id idempotency contract; budget snapshots freeze the limits
+		// accepted at dispatch time.
+		Version: 142,
+		Name:    "enhancement_cost_budgets",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.DatasetLink{}, &model.CostMetric{},
+				&model.QuotaReservation{}, &model.CompilationRun{},
+			); err != nil {
+				return err
+			}
+			if !tx.Migrator().HasColumn(&model.Tenant{}, "CompilationTokenBudget") {
+				if err := tx.Migrator().AddColumn(&model.Tenant{}, "CompilationTokenBudget"); err != nil {
+					return err
+				}
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET budget_snapshot = '{}' WHERE budget_snapshot IS NULL OR budget_snapshot = ''",
+				"UPDATE rgx_compilation_run SET quota_reservation_id = '' WHERE quota_reservation_id IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_cost_metric_enhancement_scope ON rgx_cost_metric (tenant_id, project_id, x_dataset_id, x_profile_id, x_assistant_id, x_run_id, date)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_quota_reservation_enhancement_scope ON rgx_quota_reservation (tenant_id, project_id, x_dataset_id, x_profile_id, x_assistant_id, x_run_id, status)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 143 closes the Retrieval Improvement Gate loop for compiled
+		// strategies. strategy_id records the strategy governing a compilation
+		// run so confirmed runs can auto-create scoped evaluation runs;
+		// readiness_snapshot freezes the gate evaluation reference without
+		// recomputing A/B results.
+		Version: 143,
+		Name:    "compilation_improvement_gate_readiness",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.CompilationRun{}); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_compilation_run SET strategy_id = '' WHERE strategy_id IS NULL",
+				"UPDATE rgx_compilation_run SET readiness_snapshot = '{}' WHERE readiness_snapshot IS NULL OR readiness_snapshot = ''",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_compilation_run_strategy ON rgx_compilation_run (tenant_id, strategy_id, state, created_at DESC)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// Version 144 lands MEM-003/MEM-012/MEM-014 memory write privacy and
+		// consent governance: per-member consent rows for project shared
+		// memory, tenant versioned PII exemptions, and PII evaluation plus
+		// forget timestamps on memory operations.
+		Version: 144,
+		Name:    "memory_privacy_consent_governance",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.MemoryConsent{}, &model.MemoryPrivacyExemption{}, &model.MemoryOperation{},
+			); err != nil {
+				return err
+			}
+			statements := []string{
+				"UPDATE rgx_memory_operation SET pii_action = '' WHERE pii_action IS NULL",
+				"UPDATE rgx_memory_operation SET pii_labels = '' WHERE pii_labels IS NULL",
+				"UPDATE rgx_memory_operation SET pii_rule_version = '' WHERE pii_rule_version IS NULL",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_consent_policy ON rgx_memory_consent (tenant_id, policy_id, user_id)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_consent_project ON rgx_memory_consent (tenant_id, project_id, user_id, state)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_privacy_exemption_lookup ON rgx_memory_privacy_exemption (tenant_id, label, active)",
+				"CREATE INDEX IF NOT EXISTS idx_rgx_memory_operation_forget ON rgx_memory_operation (tenant_id, memory_id, tombstone_active)",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		// The enhancement budget quota key "rgx-enhancement:<tenant_id>" is 48
+		// chars; the key_id columns sized 32 rejected it on length-enforcing
+		// dialects (Postgres SQLSTATE 22001) while SQLite silently truncated
+		// nothing (it ignores varchar lengths) — so tests never caught it.
+		// Found by the milestone 201 production-equivalent deployment drill.
+		Version: 145,
+		Name:    "enhancement_quota_key_widen",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.QuotaLimit{}, &model.QuotaReservation{}, &model.CostMetric{})
+		},
+	},
+	{
+		Version: 146,
+		Name:    "evaluation_protocol_registration",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.EvaluationProtocolRegistration{})
+		},
+	},
+	{
+		// Version 147 enforces the plan-137 §4.3 compilation invariant: at most
+		// one active run (accepted/dispatched/unknown) per (tenant, dataset,
+		// kind). Pre-existing duplicates are resolved deterministically — the
+		// oldest active run is retained, later ones transition to cancelled with
+		// cancel_scope="invariant_backfill" so the §4.3 "cancelled records
+		// cancel_scope" contract stays intact. The partial unique index is the
+		// race backstop behind the service-level trigger guard.
+		Version: 147,
+		Name:    "compilation_run_active_invariant",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(&model.CompilationRun{}); err != nil {
+				return err
+			}
+			activeStates := []string{
+				model.CompilationRunAccepted, model.CompilationRunDispatched, model.CompilationRunUnknown,
+			}
+			var actives []model.CompilationRun
+			if err := tx.Where("state IN ?", activeStates).
+				Order("tenant_id ASC, dataset_id ASC, kind ASC, created_at ASC, id ASC").
+				Find(&actives).Error; err != nil {
+				return err
+			}
+			superseded := map[string]string{}
+			lastKey := ""
+			for _, run := range actives {
+				key := run.TenantID + "\x00" + run.DatasetID + "\x00" + run.Kind
+				if key == lastKey {
+					superseded[run.ID] = run.Detail
+					continue
+				}
+				lastKey = key
+			}
+			for runID, detail := range superseded {
+				// Merge the backfill marker into the existing detail JSON: the
+				// detail column must stay a single valid JSON object.
+				var detailMap map[string]interface{}
+				if json.Unmarshal([]byte(detail), &detailMap) != nil || detailMap == nil {
+					detailMap = map[string]interface{}{}
+				}
+				detailMap["reason"] = "superseded_active_invariant_backfill"
+				detailMap["cancelled_at"] = time.Now().UTC().Format(time.RFC3339)
+				encodedDetail, encodeErr := json.Marshal(detailMap)
+				if encodeErr != nil {
+					encodedDetail = []byte(`{"reason":"superseded_active_invariant_backfill"}`)
+				}
+				if err := tx.Model(&model.CompilationRun{}).
+					Where("id = ? AND state IN ?", runID, activeStates).
+					Updates(map[string]interface{}{
+						"state":        model.CompilationRunCancelled,
+						"cancel_scope": "invariant_backfill",
+						"failure_code": "superseded_active_invariant",
+						"updated_at":   time.Now().UTC(),
+						"detail":       string(encodedDetail),
+					}).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Exec(
+				"CREATE UNIQUE INDEX IF NOT EXISTS ux_rgx_compilation_run_active ON rgx_compilation_run " +
+					"(tenant_id, dataset_id, kind) WHERE state IN ('accepted','dispatched','unknown')",
+			).Error
+		},
+	},
+	{
+		// T2 (doc/224 §2.1 结构性新建顶点): document-level governance
+		// annotations + per-user 密级 clearance. Backward compatible: no
+		// existing table changes; un-annotated documents stay visible.
+		Version: 148,
+		Name:    "document_governance_and_user_clearance",
+		Migrate: func(tx *gorm.DB) error {
+			return tx.AutoMigrate(
+				&model.DocumentGovernance{},
+				&model.UserClearance{},
+			)
+		},
+	},
+	{
+		Version: 149,
+		Name:    "document_governance_permission_matrix",
+		Migrate: func(tx *gorm.DB) error {
+			// 为新 resource 登记内置 RBAC 权限（governor-only manage）。
+			// 幂等：reconcile 先删全部内置角色行再重建。
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 150,
+		Name:    "governance_dictionary_and_schema",
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.AutoMigrate(
+				&model.GovernanceDictionaryEntry{},
+				&model.GovernanceSchema{},
+			); err != nil {
+				return err
+			}
+			return seedBuiltinGovernanceDictionary(tx)
+		},
+	},
+	{
+		Version: 151,
+		Name:    "gateway_quota_bucket",
+		Migrate: func(tx *gorm.DB) error {
+			// T5.1 (doc/224 §2.5): gateway quota ledger dimensions beyond the
+			// API key — tenant/model/assistant bucket balances plus the
+			// per-request reservation ledger. Both are idempotent AutoMigrate
+			// (no backfill needed: buckets are opt-in configuration).
+			if err := tx.AutoMigrate(
+				&model.QuotaBucket{},
+				&model.QuotaBucketReservation{},
+			); err != nil {
+				return err
+			}
+			return nil
+		},
+	},
+	{
+		Version: 152,
+		Name:    "release_version_preflight",
+		Migrate: func(tx *gorm.DB) error {
+			// T6.3 (doc/223 T6 / doc/224 §2.4, merged into the v0.3.0 version
+			// line): production release fails closed until the capability
+			// version-band preflight passes. The observed engine version,
+			// decision and reason are recorded on the release row as audit
+			// evidence. AutoMigrate idempotently adds the columns; no backfill
+			// needed (older release rows predate the preflight and keep empty
+			// evidence).
+			return tx.AutoMigrate(&model.Release{})
+		},
+	},
+	{
+		Version: 153,
+		Name:    "connector_binding",
+		Migrate: func(tx *gorm.DB) error {
+			// 225 §5.1 (doc/225, F-series review): workspace-scoped data-source
+			// connector runtime binding. Idempotent AutoMigrate; no backfill.
+			return tx.AutoMigrate(&model.Connector{})
+		},
+	},
+	{
+		Version: 154,
+		Name:    "connector_run",
+		Migrate: func(tx *gorm.DB) error {
+			// 225 §5.2 (doc/225 F4): per-run execution record; pruned by the
+			// retention janitor, never by deletes. Idempotent AutoMigrate.
+			return tx.AutoMigrate(&model.ConnectorRun{})
+		},
+	},
+	{
+		Version: 155,
+		Name:    "connector_actor_enabled",
+		Migrate: func(tx *gorm.DB) error {
+			// 225 §5.1/§5.2 follow-up: explicit scheduling switch + self-
+			// describing actor columns. Existing rows derive Enabled from the
+			// legacy disabled status so upgrades preserve operator intent.
+			if err := tx.AutoMigrate(&model.Connector{}, &model.ConnectorRun{}); err != nil {
+				return err
+			}
+			// Boolean literals stay inline: binding Go bools as parameters makes
+			// PostgreSQL infer a text-typed CASE (SQLSTATE 42804), while MySQL and
+			// SQLite accept the TRUE/FALSE keywords verbatim.
+			return tx.Exec(
+				"UPDATE rgx_connector SET enabled = CASE WHEN status = ? THEN false ELSE true END",
+				model.ConnectorStatusDisabled,
+			).Error
+		},
+	},
+	{
+		Version: 156,
+		Name:    "connector_source_identity",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/227 C2.3: separate the execution adapter from the logical
+			// source identity. The unique ownership key is what makes "one
+			// logical source, one connector" enforceable instead of a UI
+			// convention; credential rotation must not change identity.
+			if err := tx.AutoMigrate(&model.Connector{}, &model.ConnectorRun{}); err != nil {
+				return err
+			}
+			if err := tx.Exec("UPDATE rgx_connector SET adapter_kind = ? WHERE adapter_kind = ''", model.ConnectorAdapterNative).Error; err != nil {
+				return err
+			}
+			// Existing rows predate ownership keys. Backfill the same canonical
+			// identity the service computes at runtime. If legacy data already
+			// contains duplicate active bindings for one source, keep the oldest
+			// as canonical and give later rows a legacy key so the unique index
+			// can still be created without deleting audit history; a later edit
+			// of those rows will fail closed with 409.
+			type identityRow struct {
+				ID                 string     `gorm:"column:id"`
+				TenantID           string     `gorm:"column:tenant_id"`
+				Provider           string     `gorm:"column:provider"`
+				TargetDatasetID    string     `gorm:"column:target_dataset_id"`
+				SpecJSON           string     `gorm:"column:spec_json"`
+				SourceOwnershipKey string     `gorm:"column:source_ownership_key"`
+				DeletedAt          *time.Time `gorm:"column:deleted_at"`
+			}
+			var rows []identityRow
+			if err := tx.Table("rgx_connector").
+				Select("id, tenant_id, provider, target_dataset_id, spec_json, source_ownership_key, deleted_at").
+				Order("created_at ASC, id ASC").
+				Scan(&rows).Error; err != nil {
+				return err
+			}
+			seen := make(map[string]bool, len(rows))
+			for _, row := range rows {
+				key := ""
+				if row.DeletedAt != nil {
+					key = "deleted:" + row.ID
+				} else {
+					var spec map[string]any
+					canonical := ""
+					if err := json.Unmarshal([]byte(row.SpecJSON), &spec); err == nil && spec != nil {
+						canonical = connectorid.OwnershipKey(row.TenantID, row.Provider, row.TargetDatasetID, spec)
+					}
+					if canonical == "" || seen[row.TenantID+"\x00"+canonical] {
+						key = "legacy:" + row.ID
+					} else {
+						key = canonical
+						seen[row.TenantID+"\x00"+canonical] = true
+					}
+				}
+				if key == row.SourceOwnershipKey {
+					continue
+				}
+				if err := tx.Exec("UPDATE rgx_connector SET source_ownership_key = ? WHERE id = ?", key, row.ID).Error; err != nil {
+					return err
+				}
+			}
+			if err := tx.Exec("UPDATE rgx_connector SET credential_version = CASE WHEN has_credential THEN 1 ELSE 0 END WHERE credential_version = 0").Error; err != nil {
+				return err
+			}
+			const index = "uk_connector_ownership"
+			if tx.Migrator().HasIndex(&model.Connector{}, index) {
+				return nil
+			}
+			statement := "CREATE UNIQUE INDEX " + index + " ON rgx_connector (tenant_id, source_ownership_key)"
+			if tx.Dialector.Name() != "mysql" {
+				statement = "CREATE UNIQUE INDEX IF NOT EXISTS " + index + " ON rgx_connector (tenant_id, source_ownership_key)"
+			}
+			return tx.Exec(statement).Error
+		},
+	},
+	{
+		Version: 157,
+		Name:    "trial_run",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/228 §3.6 / appendix B.1: retrieval-only trial runs are a
+			// separate diagnostic object, physically isolated from the release
+			// evidence chain (no gate fields, no pre-registration). The two
+			// unique keys make idempotent re-submission and per-case replay
+			// impossible to duplicate.
+			if err := tx.AutoMigrate(&model.TrialRun{}, &model.TrialCaseResult{}); err != nil {
+				return err
+			}
+			// Wizard-created assistants need provenance. Guarded explicitly so
+			// re-running 157 on an already-migrated database is a no-op, and
+			// skipped entirely when rgx_chat is not part of the chain being
+			// migrated (legacy partial-migration fixtures).
+			if !tx.Migrator().HasTable(&model.ChatShadow{}) {
+				return nil
+			}
+			if !tx.Migrator().HasColumn(&model.ChatShadow{}, "ScenarioTemplateID") {
+				if err := tx.Exec("ALTER TABLE rgx_chat ADD COLUMN scenario_template_id VARCHAR(32) NOT NULL DEFAULT ''").Error; err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&model.ChatShadow{}, "ScenarioTemplateVersion") {
+				if err := tx.Exec("ALTER TABLE rgx_chat ADD COLUMN scenario_template_version BIGINT NOT NULL DEFAULT 0").Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 158,
+		Name:    "rbac_business_user_read_intent",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/242: align the built-in roles with the declared read intents
+			// in permission_intent.go. `business_user` was added after `viewer`
+			// and had drifted into being dominated by it on 20 resources.
+			//
+			// This step is data-only (no DDL) and delegates to the same
+			// delete-then-insert reconciler every other permission migration
+			// uses, so it is idempotent and cannot leave duplicate rows.
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+}
+
+func evaluationScopeCondition(columnPrefix string) string {
+	return "(" +
+		"(" + columnPrefix + "evaluation_scope = 'release' AND " + columnPrefix + "release_candidate_id IS NOT NULL AND " + columnPrefix + "release_candidate_id <> '' AND " + columnPrefix + "candidate_version IS NOT NULL AND " + columnPrefix + "x_strategy_id IS NULL AND " + columnPrefix + "x_memory_policy_id IS NULL) OR " +
+		"(" + columnPrefix + "evaluation_scope = 'compilation_strategy' AND " + columnPrefix + "x_strategy_id IS NOT NULL AND " + columnPrefix + "x_strategy_id <> '' AND " + columnPrefix + "x_memory_policy_id IS NULL AND " + columnPrefix + "release_candidate_id IS NULL AND " + columnPrefix + "candidate_version IS NULL) OR " +
+		"(" + columnPrefix + "evaluation_scope = 'memory_policy' AND " + columnPrefix + "x_memory_policy_id IS NOT NULL AND " + columnPrefix + "x_memory_policy_id <> '' AND " + columnPrefix + "x_strategy_id IS NULL AND " + columnPrefix + "release_candidate_id IS NULL AND " + columnPrefix + "candidate_version IS NULL)" +
+		")"
+}
+
+func applyEvaluationScopeConstraints(tx *gorm.DB) error {
+	dialect := tx.Dialector.Name()
+	switch dialect {
+	case "postgres", "mysql":
+		statements := []string{
+			"ALTER TABLE rgx_evaluation_run ADD CONSTRAINT chk_rgx_evaluation_run_scope CHECK " + evaluationScopeCondition(""),
+			"ALTER TABLE rgx_evidence_bundle ADD CONSTRAINT chk_rgx_evidence_bundle_scope CHECK " + evaluationScopeCondition(""),
+		}
+		for _, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+	case "sqlite":
+		tables := []string{"rgx_evaluation_run", "rgx_evidence_bundle"}
+		for _, table := range tables {
+			triggerPrefix := strings.ReplaceAll(table, "rgx_", "trg_")
+			condition := evaluationScopeCondition("NEW.")
+			statements := []string{
+				"CREATE TRIGGER IF NOT EXISTS " + triggerPrefix + "_scope_insert BEFORE INSERT ON " + table +
+					" FOR EACH ROW WHEN NOT " + condition + " BEGIN SELECT RAISE(ABORT, 'invalid evaluation scope attribution'); END",
+				"CREATE TRIGGER IF NOT EXISTS " + triggerPrefix + "_scope_update BEFORE UPDATE ON " + table +
+					" FOR EACH ROW WHEN NOT " + condition + " BEGIN SELECT RAISE(ABORT, 'invalid evaluation scope attribution'); END",
+			}
+			for _, statement := range statements {
+				if err := tx.Exec(statement).Error; err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if dialect == "postgres" || dialect == "sqlite" {
+		return createScopedEvidenceUniqueIndex(tx)
+	}
+	return nil
+}
+
+func createScopedEvidenceUniqueIndex(tx *gorm.DB) error {
+	return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_evidence_bundle_scoped ON rgx_evidence_bundle " +
+		"(tenant_id, evaluation_scope, COALESCE(x_strategy_id, ''), COALESCE(x_memory_policy_id, ''), eval_set_id, eval_set_version, snapshot_hash) " +
+		"WHERE evaluation_scope <> 'release'").Error
+}
+
+func ensureFourLayerAuthorizationScopeColumn(tx *gorm.DB, target interface{}, table string) error {
+	if !tx.Migrator().HasTable(target) || tx.Migrator().HasColumn(target, "AuthorizationScope") {
+		return nil
+	}
+	return tx.Exec(fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN authorization_scope TEXT NOT NULL DEFAULT ''", table,
+	)).Error
+}
+
+func assertSingleAssistantReleaseState(tx *gorm.DB, state string) error {
+	var duplicates []struct {
+		AssistantID string `gorm:"column:assistant_id"`
+		Count       int64  `gorm:"column:count"`
+	}
+	if err := tx.Table("rgx_assistant_release").
+		Select("assistant_id, COUNT(*) AS count").
+		Where("release_state = ?", state).
+		Group("assistant_id").
+		Having("COUNT(*) > 1").
+		Find(&duplicates).Error; err != nil {
+		return err
+	}
+	if len(duplicates) > 0 {
+		return fmt.Errorf("multiple %s assistant releases require manual repair; assistant_id=%s", state, duplicates[0].AssistantID)
+	}
+	return nil
+}
+
+func createAssistantReleaseGuards(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_assistant_release_freeze() RETURNS trigger AS $$
+			BEGIN
+				IF OLD.assistant_id IS DISTINCT FROM NEW.assistant_id OR
+					OLD.assistant_version_id IS DISTINCT FROM NEW.assistant_version_id OR
+					OLD.release_version IS DISTINCT FROM NEW.release_version OR
+					OLD.desired_state_json IS DISTINCT FROM NEW.desired_state_json OR
+					OLD.desired_state_hash IS DISTINCT FROM NEW.desired_state_hash OR
+					OLD.snapshot_manifest_id IS DISTINCT FROM NEW.snapshot_manifest_id OR
+					OLD.previous_release_id IS DISTINCT FROM NEW.previous_release_id OR
+					OLD.created_by IS DISTINCT FROM NEW.created_by OR
+					OLD.created_at IS DISTINCT FROM NEW.created_at THEN
+					RAISE EXCEPTION 'assistant release core snapshot is immutable';
+				END IF;
+				RETURN NEW;
+			END;
+			$$ LANGUAGE plpgsql`).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`DROP TRIGGER IF EXISTS trg_assistant_release_guard ON rgx_assistant_release;
+			CREATE TRIGGER trg_assistant_release_guard BEFORE UPDATE ON rgx_assistant_release
+			FOR EACH ROW EXECUTE FUNCTION rgx_assistant_release_freeze()`).Error
+	}
+	statements := []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_assistant_release_guard BEFORE UPDATE ON rgx_assistant_release
+			WHEN OLD.assistant_id IS NOT NEW.assistant_id OR OLD.assistant_version_id IS NOT NEW.assistant_version_id OR
+				OLD.release_version IS NOT NEW.release_version OR OLD.desired_state_json IS NOT NEW.desired_state_json OR
+				OLD.desired_state_hash IS NOT NEW.desired_state_hash OR OLD.snapshot_manifest_id IS NOT NEW.snapshot_manifest_id OR
+				OLD.previous_release_id IS NOT NEW.previous_release_id OR OLD.created_by IS NOT NEW.created_by OR
+				OLD.created_at IS NOT NEW.created_at
+			BEGIN SELECT RAISE(ABORT, 'assistant release core snapshot is immutable'); END`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createCanonicalReleaseImmutabilityGuards(tx *gorm.DB) error {
+	tables := []string{
+		"rgx_scenario_pack_version",
+		"rgx_assistant_version",
+		"rgx_capability_binding_version",
+		"rgx_dataset_binding_version",
+		"rgx_model_route_binding_version",
+		"rgx_tool_binding_version",
+		"rgx_runtime_profile_snapshot",
+		"rgx_policy_snapshot",
+		"rgx_snapshot_manifest",
+	}
+	if tx.Dialector.Name() == "postgres" {
+		if err := tx.Exec("CREATE OR REPLACE FUNCTION rgx_canonical_release_freeze() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'canonical release snapshot is immutable'; END; $$ LANGUAGE plpgsql").Error; err != nil {
+			return err
+		}
+		for _, table := range tables {
+			if err := tx.Exec("DROP TRIGGER IF EXISTS trg_" + table + "_freeze ON " + table).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("CREATE TRIGGER trg_" + table + "_freeze BEFORE UPDATE OR DELETE ON " + table + " FOR EACH ROW EXECUTE FUNCTION rgx_canonical_release_freeze()").Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, table := range tables {
+		if err := tx.Exec("CREATE TRIGGER IF NOT EXISTS trg_" + table + "_update_freeze BEFORE UPDATE ON " + table + " BEGIN SELECT RAISE(ABORT, 'canonical release snapshot is immutable'); END").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("CREATE TRIGGER IF NOT EXISTS trg_" + table + "_delete_freeze BEFORE DELETE ON " + table + " BEGIN SELECT RAISE(ABORT, 'canonical release snapshot is immutable'); END").Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func deduplicateModelProviderIdentities(tx *gorm.DB) error {
+	dedupes := []struct {
+		table     string
+		partition string
+	}{
+		{"rgx_model_provider_instance", "tenant_id, provider_id, LOWER(TRIM(instance_name))"},
+		{"rgx_model_provider_model", "tenant_id, instance_id, LOWER(TRIM(model_name))"},
+	}
+	for _, dedupe := range dedupes {
+		statement := `
+			DELETE FROM ` + dedupe.table + `
+			WHERE id IN (
+				SELECT id FROM (
+					SELECT id, ROW_NUMBER() OVER (
+						PARTITION BY ` + dedupe.partition + `
+						ORDER BY created_at ASC, id ASC
+					) AS duplicate_rank
+					FROM ` + dedupe.table + `
+				) duplicates
+				WHERE duplicates.duplicate_rank > 1
+			)`
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type uniqueNameRow struct {
+	ID       string
+	TenantID string
+	Name     string
+}
+
+func trimDisplayNames(tx *gorm.DB) error {
+	updates := [][2]string{
+		{"rgx_tenant", "name"},
+		{"rgx_user", "username"},
+		{"rgx_user", "email"},
+		{"rgx_dataset_link", "name"},
+		{"rgx_agent", "title"},
+		{"rgx_project", "name"},
+		{"rgx_team", "name"},
+		{"rgx_role", "name"},
+	}
+	for _, item := range updates {
+		if err := tx.Exec(
+			"UPDATE " + item[0] + " SET " + item[1] + " = TRIM(" + item[1] + ") WHERE " + item[1] + " <> TRIM(" + item[1] + ")",
+		).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dedupeUniqueNames(tx *gorm.DB, table, primaryKey, tenantColumn, nameColumn string) error {
+	query := "SELECT " + primaryKey + " AS id, "
+	if tenantColumn == "" {
+		query += "'' AS tenant_id, "
+	} else {
+		query += tenantColumn + " AS tenant_id, "
+	}
+	query += nameColumn + " AS name FROM " + table
+	var rows []uniqueNameRow
+	if err := tx.Raw(query).Scan(&rows).Error; err != nil {
+		return err
+	}
+
+	used := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		used[uniqueNameKey(row.TenantID, row.Name)] = struct{}{}
+	}
+	counts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		key := uniqueNameKey(row.TenantID, row.Name)
+		counts[key]++
+		if counts[key] == 1 {
+			continue
+		}
+		next, err := nextUniqueName(row.TenantID, row.Name, used)
+		if err != nil {
+			return err
+		}
+		if err := tx.Exec(
+			"UPDATE "+table+" SET "+nameColumn+" = ? WHERE "+primaryKey+" = ?",
+			next, row.ID,
+		).Error; err != nil {
+			return err
+		}
+		used[uniqueNameKey(row.TenantID, next)] = struct{}{}
+	}
+	return nil
+}
+
+func uniqueNameKey(tenantID, name string) string {
+	return tenantID + "\x00" + strings.ToLower(name)
+}
+
+func nextUniqueName(tenantID, base string, used map[string]struct{}) (string, error) {
+	for sequence := 2; sequence < 1_000_000; sequence++ {
+		suffix := fmt.Sprintf(" (%d)", sequence)
+		limit := 128 - utf8.RuneCountInString(suffix)
+		runes := []rune(base)
+		if len(runes) > limit {
+			base = string(runes[:limit])
+		}
+		candidate := strings.TrimSpace(string(runes)) + suffix
+		key := uniqueNameKey(tenantID, candidate)
+		if _, exists := used[key]; !exists {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("unable to generate a unique display name")
+}
+
+func createModelRoutePinGuards(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_model_route_pin_pointer_guard() RETURNS trigger AS $$
+			BEGIN
+				IF NEW.current_pin_id <> '' AND NOT EXISTS (
+					SELECT 1 FROM rgx_model_route_enterprise_pin
+					WHERE tenant_id = NEW.tenant_id AND route_id = NEW.id
+						AND pin_id = NEW.current_pin_id AND version = NEW.current_pin_version
+				) THEN
+					RAISE EXCEPTION 'model route pin pointer must reference an immutable pin';
+				END IF;
+				RETURN NEW;
+			END;
+		$$ LANGUAGE plpgsql`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_model_route_pin_freeze() RETURNS trigger AS $$
+			BEGIN
+				RAISE EXCEPTION 'model route enterprise pins are immutable';
+			END;
+		$$ LANGUAGE plpgsql`).Error; err != nil {
+			return err
+		}
+		statements := []string{
+			`DROP TRIGGER IF EXISTS trg_model_route_pin_pointer_guard ON rgx_model_route;
+			 CREATE TRIGGER trg_model_route_pin_pointer_guard BEFORE UPDATE ON rgx_model_route
+			 FOR EACH ROW EXECUTE FUNCTION rgx_model_route_pin_pointer_guard()`,
+			`DROP TRIGGER IF EXISTS trg_model_route_pin_guard ON rgx_model_route_enterprise_pin;
+			 CREATE TRIGGER trg_model_route_pin_guard BEFORE UPDATE OR DELETE ON rgx_model_route_enterprise_pin
+			 FOR EACH ROW EXECUTE FUNCTION rgx_model_route_pin_freeze()`,
+		}
+		for _, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+
+	}
+
+	statements := []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_model_route_pin_pointer_guard BEFORE UPDATE ON rgx_model_route
+			WHEN NEW.current_pin_id <> '' AND NOT EXISTS (
+				SELECT 1 FROM rgx_model_route_enterprise_pin
+				WHERE tenant_id = NEW.tenant_id AND route_id = NEW.id
+					AND pin_id = NEW.current_pin_id AND version = NEW.current_pin_version
+			)
+			BEGIN SELECT RAISE(ABORT, 'model route pin pointer must reference an immutable pin'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_model_route_pin_guard BEFORE UPDATE ON rgx_model_route_enterprise_pin
+			BEGIN SELECT RAISE(ABORT, 'model route enterprise pins are immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_model_route_pin_delete_guard BEFORE DELETE ON rgx_model_route_enterprise_pin
+			BEGIN SELECT RAISE(ABORT, 'model route enterprise pins are immutable'); END`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createEnterpriseConnectionGuards(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		functions := []string{
+			`CREATE OR REPLACE FUNCTION rgx_enterprise_connection_pointer_guard() RETURNS trigger AS $$
+				BEGIN
+					IF NOT EXISTS (
+						SELECT 1 FROM rgx_enterprise_connection_version
+						WHERE connection_id = NEW.id AND version = NEW.current_connection_version
+					) THEN
+						RAISE EXCEPTION 'enterprise connection pointer must reference an immutable version';
+					END IF;
+					RETURN NEW;
+				END;
+			$$ LANGUAGE plpgsql`,
+			`CREATE OR REPLACE FUNCTION rgx_enterprise_connection_version_freeze() RETURNS trigger AS $$
+				BEGIN
+					RAISE EXCEPTION 'enterprise connection versions are immutable';
+				END;
+			$$ LANGUAGE plpgsql`,
+			`CREATE OR REPLACE FUNCTION rgx_enterprise_binding_pointer_guard() RETURNS trigger AS $$
+				BEGIN
+					IF NOT EXISTS (
+						SELECT 1 FROM rgx_enterprise_connection_binding_version
+						WHERE binding_id = NEW.binding_id AND version = NEW.current_binding_version
+					) THEN
+						RAISE EXCEPTION 'enterprise binding pointer must reference an immutable version';
+					END IF;
+					RETURN NEW;
+				END;
+			$$ LANGUAGE plpgsql`,
+			`CREATE OR REPLACE FUNCTION rgx_enterprise_binding_version_freeze() RETURNS trigger AS $$
+				BEGIN
+					RAISE EXCEPTION 'enterprise binding versions are immutable';
+				END;
+			$$ LANGUAGE plpgsql`,
+		}
+		for _, statement := range functions {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		triggers := []string{
+			`DROP TRIGGER IF EXISTS trg_enterprise_connection_pointer_guard ON rgx_enterprise_connection;
+			 CREATE TRIGGER trg_enterprise_connection_pointer_guard BEFORE UPDATE ON rgx_enterprise_connection
+			 FOR EACH ROW EXECUTE FUNCTION rgx_enterprise_connection_pointer_guard()`,
+			`DROP TRIGGER IF EXISTS trg_enterprise_connection_version_guard ON rgx_enterprise_connection_version;
+			 CREATE TRIGGER trg_enterprise_connection_version_guard BEFORE UPDATE OR DELETE ON rgx_enterprise_connection_version
+			 FOR EACH ROW EXECUTE FUNCTION rgx_enterprise_connection_version_freeze()`,
+			`DROP TRIGGER IF EXISTS trg_enterprise_binding_pointer_guard ON rgx_enterprise_connection_binding;
+			 CREATE TRIGGER trg_enterprise_binding_pointer_guard BEFORE UPDATE ON rgx_enterprise_connection_binding
+			 FOR EACH ROW EXECUTE FUNCTION rgx_enterprise_binding_pointer_guard()`,
+			`DROP TRIGGER IF EXISTS trg_enterprise_binding_version_guard ON rgx_enterprise_connection_binding_version;
+			 CREATE TRIGGER trg_enterprise_binding_version_guard BEFORE UPDATE OR DELETE ON rgx_enterprise_connection_binding_version
+			 FOR EACH ROW EXECUTE FUNCTION rgx_enterprise_binding_version_freeze()`,
+		}
+		for _, statement := range triggers {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	statements := []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_connection_pointer_guard BEFORE UPDATE ON rgx_enterprise_connection
+			WHEN NOT EXISTS (
+				SELECT 1 FROM rgx_enterprise_connection_version
+				WHERE connection_id = NEW.id AND version = NEW.current_connection_version
+			)
+			BEGIN SELECT RAISE(ABORT, 'enterprise connection pointer must reference an immutable version'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_connection_version_guard BEFORE UPDATE ON rgx_enterprise_connection_version
+			BEGIN SELECT RAISE(ABORT, 'enterprise connection versions are immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_connection_version_delete_guard BEFORE DELETE ON rgx_enterprise_connection_version
+			BEGIN SELECT RAISE(ABORT, 'enterprise connection versions are immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_binding_pointer_guard BEFORE UPDATE ON rgx_enterprise_connection_binding
+			WHEN NOT EXISTS (
+				SELECT 1 FROM rgx_enterprise_connection_binding_version
+				WHERE binding_id = NEW.binding_id AND version = NEW.current_binding_version
+			)
+			BEGIN SELECT RAISE(ABORT, 'enterprise binding pointer must reference an immutable version'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_binding_version_guard BEFORE UPDATE ON rgx_enterprise_connection_binding_version
+			BEGIN SELECT RAISE(ABORT, 'enterprise binding versions are immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_binding_version_delete_guard BEFORE DELETE ON rgx_enterprise_connection_binding_version
+			BEGIN SELECT RAISE(ABORT, 'enterprise binding versions are immutable'); END`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createEnterpriseConnectionHealthCheckGuards(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_enterprise_connection_health_check_freeze() RETURNS trigger AS $$
+			BEGIN
+				RAISE EXCEPTION 'enterprise connection health checks are immutable';
+			END;
+		$$ LANGUAGE plpgsql`).Error; err != nil {
+			return err
+		}
+		statements := []string{
+			`DROP TRIGGER IF EXISTS trg_enterprise_connection_health_check_guard ON rgx_enterprise_connection_health_check;
+			 CREATE TRIGGER trg_enterprise_connection_health_check_guard BEFORE UPDATE OR DELETE ON rgx_enterprise_connection_health_check
+			 FOR EACH ROW EXECUTE FUNCTION rgx_enterprise_connection_health_check_freeze()`,
+		}
+		for _, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	statements := []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_connection_health_check_guard BEFORE UPDATE ON rgx_enterprise_connection_health_check
+			BEGIN SELECT RAISE(ABORT, 'enterprise connection health checks are immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_connection_health_check_delete_guard BEFORE DELETE ON rgx_enterprise_connection_health_check
+			BEGIN SELECT RAISE(ABORT, 'enterprise connection health checks are immutable'); END`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createEnterpriseConnectionReferenceContracts(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		contractQueries := []struct {
+			name string
+			sql  string
+		}{
+			{"connection version", `SELECT COUNT(*) FROM rgx_enterprise_connection_version v LEFT JOIN rgx_enterprise_connection c ON c.id = v.connection_id WHERE c.id IS NULL`},
+			{"binding", `SELECT COUNT(*) FROM rgx_enterprise_connection_binding b LEFT JOIN rgx_enterprise_connection c ON c.id = b.connection_id WHERE c.id IS NULL`},
+			{"binding version", `SELECT COUNT(*) FROM rgx_enterprise_connection_binding_version bv LEFT JOIN rgx_enterprise_connection_binding b ON b.binding_id = bv.binding_id WHERE b.binding_id IS NULL`},
+			{"binding tenant mismatch", `SELECT COUNT(*) FROM rgx_enterprise_connection_binding_version bv JOIN rgx_enterprise_connection_binding b ON b.binding_id = bv.binding_id WHERE b.tenant_id <> bv.tenant_id`},
+			{"model route pin", `SELECT COUNT(*) FROM rgx_model_route_enterprise_pin p LEFT JOIN rgx_model_route r ON r.id = p.route_id AND r.tenant_id = p.tenant_id WHERE r.id IS NULL`},
+		}
+		for _, item := range contractQueries {
+			var count int64
+			if err := tx.Raw(item.sql).Scan(&count).Error; err != nil {
+				return err
+			}
+			if count > 0 {
+				return fmt.Errorf("%s violates the enterprise connection reference contract", item.name)
+			}
+		}
+
+		indexes := []string{
+			`CREATE UNIQUE INDEX IF NOT EXISTS uk_enterprise_binding_identity ON rgx_enterprise_connection_binding (binding_id, tenant_id)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uk_enterprise_binding_version_identity ON rgx_enterprise_connection_binding_version (binding_id, version, tenant_id)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uk_model_route_identity ON rgx_model_route (tenant_id, id)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS uk_model_route_enterprise_pin_identity ON rgx_model_route_enterprise_pin (pin_id, version)`,
+		}
+		for _, statement := range indexes {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		foreignKeys := []string{
+			`fk_enterprise_connection_version_connection|ALTER TABLE rgx_enterprise_connection_version ADD CONSTRAINT fk_enterprise_connection_version_connection FOREIGN KEY (connection_id) REFERENCES rgx_enterprise_connection(id) ON DELETE RESTRICT`,
+			`fk_enterprise_binding_connection|ALTER TABLE rgx_enterprise_connection_binding ADD CONSTRAINT fk_enterprise_binding_connection FOREIGN KEY (connection_id) REFERENCES rgx_enterprise_connection(id) ON DELETE RESTRICT`,
+			`fk_enterprise_binding_tenant|ALTER TABLE rgx_enterprise_connection_binding ADD CONSTRAINT fk_enterprise_binding_tenant FOREIGN KEY (tenant_id) REFERENCES rgx_tenant(id) ON DELETE RESTRICT`,
+			`fk_enterprise_binding_version_binding|ALTER TABLE rgx_enterprise_connection_binding_version ADD CONSTRAINT fk_enterprise_binding_version_binding FOREIGN KEY (binding_id, tenant_id) REFERENCES rgx_enterprise_connection_binding(binding_id, tenant_id) ON DELETE RESTRICT`,
+			`fk_enterprise_model_route_pin_route|ALTER TABLE rgx_model_route_enterprise_pin ADD CONSTRAINT fk_enterprise_model_route_pin_route FOREIGN KEY (tenant_id, route_id) REFERENCES rgx_model_route(tenant_id, id) ON DELETE RESTRICT`,
+			`fk_enterprise_model_route_pin_connection|ALTER TABLE rgx_model_route_enterprise_pin ADD CONSTRAINT fk_enterprise_model_route_pin_connection FOREIGN KEY (connection_id, connection_version) REFERENCES rgx_enterprise_connection_version(connection_id, version) ON DELETE RESTRICT`,
+			`fk_enterprise_model_route_pin_binding|ALTER TABLE rgx_model_route_enterprise_pin ADD CONSTRAINT fk_enterprise_model_route_pin_binding FOREIGN KEY (binding_id, binding_version) REFERENCES rgx_enterprise_connection_binding_version(binding_id, version) ON DELETE RESTRICT`,
+		}
+		for _, item := range foreignKeys {
+			parts := strings.SplitN(item, "|", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("invalid foreign key contract definition")
+			}
+			var count int64
+			if err := tx.Raw(`SELECT COUNT(*) FROM pg_constraint WHERE conname = ?`, parts[0]).Scan(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				if err := tx.Exec(parts[1]).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return createEnterpriseSnapshotReferenceGuard(tx)
+	}
+
+	statements := []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_connection_version_parent_guard BEFORE INSERT ON rgx_enterprise_connection_version
+			WHEN NOT EXISTS (SELECT 1 FROM rgx_enterprise_connection WHERE id = NEW.connection_id)
+			BEGIN SELECT RAISE(ABORT, 'enterprise connection version parent is required'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_binding_parent_guard BEFORE INSERT ON rgx_enterprise_connection_binding
+			WHEN NOT EXISTS (SELECT 1 FROM rgx_enterprise_connection WHERE id = NEW.connection_id)
+			BEGIN SELECT RAISE(ABORT, 'enterprise binding connection is required'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_binding_tenant_guard BEFORE INSERT ON rgx_enterprise_connection_binding
+			WHEN NOT EXISTS (SELECT 1 FROM rgx_tenant WHERE id = NEW.tenant_id)
+			BEGIN SELECT RAISE(ABORT, 'enterprise binding tenant is required'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_binding_version_parent_guard BEFORE INSERT ON rgx_enterprise_connection_binding_version
+			WHEN NOT EXISTS (SELECT 1 FROM rgx_enterprise_connection_binding WHERE binding_id = NEW.binding_id AND tenant_id = NEW.tenant_id)
+			BEGIN SELECT RAISE(ABORT, 'enterprise binding version parent is required'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_model_route_pin_parent_guard BEFORE INSERT ON rgx_model_route_enterprise_pin
+			WHEN NOT EXISTS (SELECT 1 FROM rgx_model_route WHERE id = NEW.route_id AND tenant_id = NEW.tenant_id)
+			BEGIN SELECT RAISE(ABORT, 'enterprise model route pin parent is required'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_model_route_pin_connection_guard BEFORE INSERT ON rgx_model_route_enterprise_pin
+			WHEN NOT EXISTS (SELECT 1 FROM rgx_enterprise_connection_version WHERE connection_id = NEW.connection_id AND version = NEW.connection_version)
+			BEGIN SELECT RAISE(ABORT, 'enterprise model route pin connection version is required'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_model_route_pin_binding_guard BEFORE INSERT ON rgx_model_route_enterprise_pin
+			WHEN NOT EXISTS (SELECT 1 FROM rgx_enterprise_connection_binding_version WHERE binding_id = NEW.binding_id AND version = NEW.binding_version)
+			BEGIN SELECT RAISE(ABORT, 'enterprise model route pin binding version is required'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_connection_delete_guard BEFORE DELETE ON rgx_enterprise_connection
+			WHEN EXISTS (SELECT 1 FROM rgx_enterprise_connection_version WHERE connection_id = OLD.id)
+			BEGIN SELECT RAISE(ABORT, 'enterprise connection versions must be removed first'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_binding_delete_guard BEFORE DELETE ON rgx_enterprise_connection_binding
+			WHEN EXISTS (SELECT 1 FROM rgx_enterprise_connection_binding_version WHERE binding_id = OLD.binding_id)
+			BEGIN SELECT RAISE(ABORT, 'enterprise binding versions must be removed first'); END`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return createEnterpriseSnapshotReferenceGuard(tx)
+}
+
+func createEnterpriseSnapshotReferenceGuard(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		function := `CREATE OR REPLACE FUNCTION rgx_enterprise_snapshot_reference_guard() RETURNS trigger AS $$
+			BEGIN
+				IF NEW.model_route_pin_id <> '' AND NOT EXISTS (
+					SELECT 1 FROM rgx_model_route_enterprise_pin
+					WHERE pin_id = NEW.model_route_pin_id AND version = NEW.model_route_pin_version
+				) THEN RAISE EXCEPTION 'snapshot model route pin reference is invalid'; END IF;
+				IF NEW.enterprise_connection_id <> '' AND NOT EXISTS (
+					SELECT 1 FROM rgx_enterprise_connection_version
+					WHERE connection_id = NEW.enterprise_connection_id AND version = NEW.enterprise_connection_version
+				) THEN RAISE EXCEPTION 'snapshot enterprise connection reference is invalid'; END IF;
+				IF NEW.enterprise_binding_id <> '' AND NOT EXISTS (
+					SELECT 1 FROM rgx_enterprise_connection_binding_version
+					WHERE binding_id = NEW.enterprise_binding_id AND version = NEW.enterprise_binding_version
+				) THEN RAISE EXCEPTION 'snapshot enterprise binding reference is invalid'; END IF;
+				RETURN NEW;
+			END;
+		$$ LANGUAGE plpgsql`
+		if err := tx.Exec(function).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_enterprise_snapshot_reference_guard ON rgx_execution_snapshot`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`CREATE TRIGGER trg_enterprise_snapshot_reference_guard BEFORE INSERT OR UPDATE ON rgx_execution_snapshot
+			FOR EACH ROW EXECUTE FUNCTION rgx_enterprise_snapshot_reference_guard()`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_enterprise_evidence_reference_guard ON rgx_evidence_bundle`).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`CREATE TRIGGER trg_enterprise_evidence_reference_guard BEFORE INSERT OR UPDATE ON rgx_evidence_bundle
+			FOR EACH ROW EXECUTE FUNCTION rgx_enterprise_snapshot_reference_guard()`).Error
+	}
+
+	statements := []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_snapshot_pin_reference_guard BEFORE INSERT ON rgx_execution_snapshot
+			WHEN NEW.model_route_pin_id <> '' AND NOT EXISTS (
+				SELECT 1 FROM rgx_model_route_enterprise_pin WHERE pin_id = NEW.model_route_pin_id AND version = NEW.model_route_pin_version
+			) BEGIN SELECT RAISE(ABORT, 'snapshot model route pin reference is invalid'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_snapshot_connection_reference_guard BEFORE INSERT ON rgx_execution_snapshot
+			WHEN NEW.enterprise_connection_id <> '' AND NOT EXISTS (
+				SELECT 1 FROM rgx_enterprise_connection_version WHERE connection_id = NEW.enterprise_connection_id AND version = NEW.enterprise_connection_version
+			) BEGIN SELECT RAISE(ABORT, 'snapshot enterprise connection reference is invalid'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_snapshot_binding_reference_guard BEFORE INSERT ON rgx_execution_snapshot
+			WHEN NEW.enterprise_binding_id <> '' AND NOT EXISTS (
+				SELECT 1 FROM rgx_enterprise_connection_binding_version WHERE binding_id = NEW.enterprise_binding_id AND version = NEW.enterprise_binding_version
+			) BEGIN SELECT RAISE(ABORT, 'snapshot enterprise binding reference is invalid'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_evidence_pin_reference_guard BEFORE INSERT ON rgx_evidence_bundle
+			WHEN NEW.model_route_pin_id <> '' AND NOT EXISTS (
+				SELECT 1 FROM rgx_model_route_enterprise_pin WHERE pin_id = NEW.model_route_pin_id AND version = NEW.model_route_pin_version
+			) BEGIN SELECT RAISE(ABORT, 'evidence model route pin reference is invalid'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_evidence_connection_reference_guard BEFORE INSERT ON rgx_evidence_bundle
+			WHEN NEW.enterprise_connection_id <> '' AND NOT EXISTS (
+				SELECT 1 FROM rgx_enterprise_connection_version WHERE connection_id = NEW.enterprise_connection_id AND version = NEW.enterprise_connection_version
+			) BEGIN SELECT RAISE(ABORT, 'evidence enterprise connection reference is invalid'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_enterprise_evidence_binding_reference_guard BEFORE INSERT ON rgx_evidence_bundle
+			WHEN NEW.enterprise_binding_id <> '' AND NOT EXISTS (
+				SELECT 1 FROM rgx_enterprise_connection_binding_version WHERE binding_id = NEW.enterprise_binding_id AND version = NEW.enterprise_binding_version
+			) BEGIN SELECT RAISE(ABORT, 'evidence enterprise binding reference is invalid'); END`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createTenantPlatformGuards(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_tenant_type_guard() RETURNS trigger AS $$
+			BEGIN
+				IF OLD.type <> NEW.type THEN
+					RAISE EXCEPTION 'tenant type is immutable';
+				END IF;
+				IF OLD.type = 'platform' AND (
+					OLD.status IS DISTINCT FROM NEW.status OR
+					OLD.id IS DISTINCT FROM NEW.id
+				) THEN
+					RAISE EXCEPTION 'platform tenant identity/status is immutable';
+				END IF;
+				RETURN NEW;
+			END;
+		$$ LANGUAGE plpgsql`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`CREATE OR REPLACE FUNCTION rgx_platform_tenant_delete_guard() RETURNS trigger AS $$
+			BEGIN
+				RAISE EXCEPTION 'platform tenant cannot be deleted';
+			END;
+		$$ LANGUAGE plpgsql`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_tenant_type_guard ON rgx_tenant`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`CREATE TRIGGER trg_tenant_type_guard BEFORE UPDATE ON rgx_tenant
+			FOR EACH ROW EXECUTE FUNCTION rgx_tenant_type_guard()`).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_platform_tenant_delete_guard ON rgx_tenant`).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`CREATE TRIGGER trg_platform_tenant_delete_guard BEFORE DELETE ON rgx_tenant
+			FOR EACH ROW WHEN (OLD.type = 'platform') EXECUTE FUNCTION rgx_platform_tenant_delete_guard()`).Error
+	}
+
+	statements := []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_tenant_type_guard BEFORE UPDATE ON rgx_tenant
+			WHEN OLD.type <> NEW.type OR (OLD.type = 'platform' AND (OLD.status <> NEW.status OR OLD.id <> NEW.id))
+			BEGIN SELECT RAISE(ABORT, 'tenant/platform lifecycle guard failed'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_platform_tenant_delete_guard BEFORE DELETE ON rgx_tenant
+			WHEN OLD.type = 'platform'
+			BEGIN SELECT RAISE(ABORT, 'platform tenant cannot be deleted'); END`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// createTenantRuntimeRowSecurity installs a defensive Platform-row guard only.
+// The SELECT/INSERT/UPDATE policies intentionally allow all rows because the
+// application tenant boundary is enforced in the service/repository layer.
+// This is not a general per-tenant database isolation boundary; a future
+// implementation must bind a runtime role/session GUC and add per-table
+// policies before it may be documented as RLS tenant isolation.
+func createTenantRuntimeRowSecurity(tx *gorm.DB) error {
+	if tx.Dialector.Name() != "postgres" {
+		return nil
+	}
+	statements := []string{
+		`ALTER TABLE rgx_tenant ENABLE ROW LEVEL SECURITY`,
+		`ALTER TABLE rgx_tenant FORCE ROW LEVEL SECURITY`,
+		`DROP POLICY IF EXISTS rgx_tenant_runtime_read ON rgx_tenant`,
+		`DROP POLICY IF EXISTS rgx_tenant_runtime_insert ON rgx_tenant`,
+		`DROP POLICY IF EXISTS rgx_tenant_runtime_update ON rgx_tenant`,
+		`DROP POLICY IF EXISTS rgx_tenant_runtime_delete ON rgx_tenant`,
+		`CREATE POLICY rgx_tenant_runtime_read ON rgx_tenant FOR SELECT TO PUBLIC USING (true)`,
+		`CREATE POLICY rgx_tenant_runtime_insert ON rgx_tenant FOR INSERT TO PUBLIC WITH CHECK (true)`,
+		`CREATE POLICY rgx_tenant_runtime_update ON rgx_tenant FOR UPDATE TO PUBLIC USING (true) WITH CHECK (true)`,
+		`CREATE POLICY rgx_tenant_runtime_delete ON rgx_tenant FOR DELETE TO PUBLIC USING (type <> 'platform')`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createReleaseGovernanceGuards(tx *gorm.DB) error {
+	if tx.Dialector.Name() == "postgres" {
+		statements := []string{
+			`CREATE OR REPLACE FUNCTION rgx_release_candidate_freeze() RETURNS trigger AS $$
+				BEGIN
+					IF OLD.status <> 'DRAFT' AND (
+						OLD.target_type IS DISTINCT FROM NEW.target_type OR
+						OLD.target_id IS DISTINCT FROM NEW.target_id OR
+						OLD.target_version IS DISTINCT FROM NEW.target_version OR
+						OLD.candidate_manifest IS DISTINCT FROM NEW.candidate_manifest OR
+						OLD.candidate_hash IS DISTINCT FROM NEW.candidate_hash OR
+						OLD.hash_algorithm IS DISTINCT FROM NEW.hash_algorithm
+					) THEN
+						RAISE EXCEPTION 'release candidate evidence is immutable';
+					END IF;
+					RETURN NEW;
+				END;
+			$$ LANGUAGE plpgsql`,
+			`CREATE OR REPLACE FUNCTION rgx_simple_evidence_freeze() RETURNS trigger AS $$
+				BEGIN
+					RAISE EXCEPTION 'evaluation evidence is immutable';
+				END;
+			$$ LANGUAGE plpgsql`,
+			`CREATE OR REPLACE FUNCTION rgx_case_result_freeze() RETURNS trigger AS $$
+				BEGIN
+					IF EXISTS (SELECT 1 FROM rgx_evaluation_run WHERE id = OLD.run_id AND status IN ('COMPLETED','FAILED','CANCELLED')) THEN
+						RAISE EXCEPTION 'case results are immutable after terminal run';
+					END IF;
+					IF TG_OP = 'DELETE' THEN
+						RETURN OLD;
+					END IF;
+					RETURN NEW;
+				END;
+			$$ LANGUAGE plpgsql`,
+			`CREATE OR REPLACE FUNCTION rgx_release_core_freeze() RETURNS trigger AS $$
+				BEGIN
+					IF OLD.release_candidate_id IS DISTINCT FROM NEW.release_candidate_id OR
+						OLD.candidate_version IS DISTINCT FROM NEW.candidate_version OR
+						OLD.snapshot_id IS DISTINCT FROM NEW.snapshot_id OR
+						OLD.gate_decision_id IS DISTINCT FROM NEW.gate_decision_id OR
+						OLD.environment IS DISTINCT FROM NEW.environment OR
+						OLD.released_by IS DISTINCT FROM NEW.released_by OR
+						OLD.rollback_baseline IS DISTINCT FROM NEW.rollback_baseline THEN
+						RAISE EXCEPTION 'release core evidence is immutable';
+					END IF;
+					RETURN NEW;
+				END;
+			$$ LANGUAGE plpgsql`,
+		}
+		for _, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return err
+			}
+		}
+		triggers := [][]string{
+			{"rgx_release_candidate", "rgx_release_candidate_freeze", "BEFORE UPDATE"},
+			{"rgx_execution_snapshot", "rgx_simple_evidence_freeze", "BEFORE UPDATE OR DELETE"},
+			{"rgx_evaluation_set_version", "rgx_simple_evidence_freeze", "BEFORE UPDATE OR DELETE"},
+			{"rgx_evaluation_case_version", "rgx_simple_evidence_freeze", "BEFORE UPDATE OR DELETE"},
+			{"rgx_evidence_bundle", "rgx_simple_evidence_freeze", "BEFORE UPDATE OR DELETE"},
+			{"rgx_evaluation_case_result", "rgx_case_result_freeze", "BEFORE UPDATE OR DELETE"},
+			{"rgx_release", "rgx_release_core_freeze", "BEFORE UPDATE"},
+		}
+		for _, trigger := range triggers {
+			sql := "DROP TRIGGER IF EXISTS trg_" + trigger[0] + "_guard ON " + trigger[0] +
+				"; CREATE TRIGGER trg_" + trigger[0] + "_guard " + trigger[2] +
+				" ON " + trigger[0] + " FOR EACH ROW EXECUTE FUNCTION " + trigger[1] + "()"
+			if err := tx.Exec(sql).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	statements := []string{
+		`CREATE TRIGGER IF NOT EXISTS trg_release_candidate_guard BEFORE UPDATE ON rgx_release_candidate
+			WHEN OLD.status <> 'DRAFT' AND (
+				OLD.target_type IS NOT NEW.target_type OR OLD.target_id IS NOT NEW.target_id OR
+				OLD.target_version IS NOT NEW.target_version OR OLD.candidate_manifest IS NOT NEW.candidate_manifest OR
+				OLD.candidate_hash IS NOT NEW.candidate_hash OR OLD.hash_algorithm IS NOT NEW.hash_algorithm
+			)
+			BEGIN SELECT RAISE(ABORT, 'release candidate evidence is immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_execution_snapshot_guard BEFORE UPDATE ON rgx_execution_snapshot
+			BEGIN SELECT RAISE(ABORT, 'execution snapshot is immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_evaluation_set_version_guard BEFORE UPDATE ON rgx_evaluation_set_version
+			BEGIN SELECT RAISE(ABORT, 'evaluation set version is immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_evaluation_case_version_guard BEFORE UPDATE ON rgx_evaluation_case_version
+			BEGIN SELECT RAISE(ABORT, 'evaluation case version is immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_evidence_bundle_guard BEFORE UPDATE ON rgx_evidence_bundle
+			BEGIN SELECT RAISE(ABORT, 'evidence bundle is immutable'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_evaluation_case_result_guard BEFORE UPDATE ON rgx_evaluation_case_result
+			WHEN (SELECT status FROM rgx_evaluation_run WHERE id = OLD.run_id) IN ('COMPLETED','FAILED','CANCELLED')
+			BEGIN SELECT RAISE(ABORT, 'case results are immutable after terminal run'); END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_release_guard BEFORE UPDATE ON rgx_release
+			WHEN OLD.release_candidate_id IS NOT NEW.release_candidate_id OR OLD.candidate_version IS NOT NEW.candidate_version OR
+				OLD.snapshot_id IS NOT NEW.snapshot_id OR OLD.gate_decision_id IS NOT NEW.gate_decision_id OR
+				OLD.environment IS NOT NEW.environment OR OLD.released_by IS NOT NEW.released_by OR
+				OLD.rollback_baseline IS NOT NEW.rollback_baseline
+			BEGIN SELECT RAISE(ABORT, 'release core evidence is immutable'); END`,
+	}
+	for _, statement := range statements {
+		if err := tx.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Exec(`DROP TRIGGER IF EXISTS trg_evaluation_case_result_guard`).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`CREATE TRIGGER trg_evaluation_case_result_guard BEFORE UPDATE ON rgx_evaluation_case_result
+		WHEN (SELECT status FROM rgx_evaluation_run WHERE id = OLD.run_id) IN ('COMPLETED','FAILED','CANCELLED')
+		BEGIN SELECT RAISE(ABORT, 'case results are immutable after terminal run'); END`).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`CREATE TRIGGER trg_evaluation_case_result_delete_guard BEFORE DELETE ON rgx_evaluation_case_result
+		WHEN (SELECT status FROM rgx_evaluation_run WHERE id = OLD.run_id) IN ('COMPLETED','FAILED','CANCELLED')
+		BEGIN SELECT RAISE(ABORT, 'case results are immutable after terminal run'); END`).Error
+}
+
+// Migrate applies all pending migrations within transactions and records the
+// applied version in rgx_schema_version. It is idempotent. PostgreSQL uses an
+// advisory lock so simultaneous replicas cannot run DDL concurrently.
+func Migrate(db *gorm.DB) error {
+	return migrateTo(db, LatestMigrationVersion(), true)
+}
+
+// MigrateTo applies every pending migration no newer than target. It never
+// rolls back applied versions; database snapshot restore is the rollback path.
+func MigrateTo(db *gorm.DB, target int64) error {
+	if !migrationTargetExists(target) {
+		return fmt.Errorf("unknown migration target %d", target)
+	}
+	return migrateTo(db, target, false)
+}
+
+func migrateTo(db *gorm.DB, target int64, requirePlatformTenant bool) error {
+	unlock, err := lockMigrations(db)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if err := db.AutoMigrate(&model.SchemaVersion{}); err != nil {
+		return fmt.Errorf("create schema version table: %w", err)
+	}
+
+	for _, m := range migrations {
+		if m.Version > target {
+			continue
+		}
+		var count int64
+		if err := db.Model(&model.SchemaVersion{}).
+			Where("version = ?", m.Version).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			continue
+		}
+
+		err := db.Transaction(func(tx *gorm.DB) error {
+			if err := m.Migrate(tx); err != nil {
+				return err
+			}
+			return tx.Create(&model.SchemaVersion{
+				Version:   m.Version,
+				AppliedAt: time.Now().UTC(),
+			}).Error
+		})
+		if err != nil {
+			return fmt.Errorf("migration %d (%s): %w", m.Version, m.Name, err)
+		}
+	}
+	if requirePlatformTenant {
+		// Reconcile built-in RBAC on every startup run so the canonical
+		// permission matrix (BuiltinPermissionMatrix) is applied even when the
+		// schema is already at the latest version and no migration callback
+		// fires (idempotent). Keeps the documented “startup reconciliation”
+		// contract true: built-in grants are replaced wholesale each boot.
+		if err := seedDefaultRBAC(db); err != nil {
+			return fmt.Errorf("seed default rbac: %w", err)
+		}
+		var platformCount int64
+		if err := db.Model(&model.Tenant{}).
+			Where("type = ?", model.TenantTypePlatform).
+			Count(&platformCount).Error; err != nil {
+			return err
+		}
+		if platformCount != 1 {
+			return fmt.Errorf("expected exactly one platform tenant, got %d", platformCount)
+		}
+	}
+	return nil
+}
+
+func migrationTargetExists(target int64) bool {
+	for _, m := range migrations {
+		if m.Version == target {
+			return true
+		}
+	}
+	return false
+}
+
+// LatestMigrationVersion returns the version encoded by the frozen migration list.
+func LatestMigrationVersion() int64 {
+	return migrations[len(migrations)-1].Version
+}
+
+func lockMigrations(db *gorm.DB) (func(), error) {
+	if db.Dialector.Name() != "postgres" {
+		return func() {}, nil
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	conn, err := sqlDB.Conn(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("acquire migration connection: %w", err)
+	}
+	if _, err := conn.ExecContext(context.Background(), "SELECT pg_advisory_lock(hashtext('ragflow_x_schema_migrations'))"); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("acquire migration lock: %w", err)
+	}
+	return func() {
+		defer func() { _ = conn.Close() }()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = conn.ExecContext(ctx, "SELECT pg_advisory_unlock(hashtext('ragflow_x_schema_migrations'))")
+	}, nil
+}
+
+// PermissionGrant is one row of the canonical built-in RBAC matrix.
+type PermissionGrant struct {
+	Role     string
+	Action   string
+	Resource string
+}
+
+// BuiltinPermissionMatrix is the single source of truth for built-in role
+// grants. Keep in sync with the permission matrix in doc/11_权限控制规范.md.
+func BuiltinPermissionMatrix() []PermissionGrant {
+	return []PermissionGrant{
+		// Platform governance is explicitly enumerated. Platform Admin must
+		// never become a wildcard superuser permission.
+		{model.RolePlatformAdmin, "governance.read", "tenant"},
+		{model.RolePlatformAdmin, "governance.manage", "tenant"},
+		{model.RolePlatformAdmin, "governance.read_sensitive", "tenant"},
+		{model.RolePlatformAdmin, "tenant.resource.manage", "tenant"},
+		{model.RolePlatformAdmin, "tenant.resource.delete", "tenant"},
+		{model.RolePlatformAdmin, "tenant.connection.manage", "tenant"},
+		{model.RolePlatformAdmin, "tenant.connection.bind", "tenant"},
+		{model.RolePlatformAdmin, "tenant.connection.unbind", "tenant"},
+		{model.RolePlatformAdmin, "tenant.connection.rotate_secret", "tenant"},
+		{model.RolePlatformAdmin, "tenant.audit.read", "tenant"},
+		{model.RolePlatformAdmin, "tenant.usage.read", "tenant"},
+		{model.RolePlatformAdmin, "read", "system"},
+		{model.RolePlatformAdmin, "manage", "system"},
+		{model.RolePlatformAdmin, "read", "tenant"},
+		{model.RolePlatformAdmin, "manage", "tenant"},
+		{model.RolePlatformAdmin, "read", "role"},
+		{model.RolePlatformAdmin, "manage", "role"},
+		{model.RolePlatformAdmin, "read", "branding"},
+		{model.RolePlatformAdmin, "manage", "branding"},
+		{model.RolePlatformAdmin, "read", "user"},
+		{model.RolePlatformAdmin, "manage", "user"},
+		{model.RolePlatformAdmin, "read", "team"},
+		{model.RolePlatformAdmin, "manage", "team"},
+		{model.RolePlatformAdmin, "read", "project"},
+		{model.RolePlatformAdmin, "manage", "project"},
+		{model.RolePlatformAdmin, "read", "dataset"},
+		{model.RolePlatformAdmin, "manage", "dataset"},
+		{model.RolePlatformAdmin, "read", "dataset-export"},
+		{model.RolePlatformAdmin, "read", "document"},
+		{model.RolePlatformAdmin, "append", "document"},
+		{model.RolePlatformAdmin, "delete:own", "document"},
+		{model.RolePlatformAdmin, "execute", "document"},
+		{model.RolePlatformAdmin, "read", "task"},
+		{model.RolePlatformAdmin, "manage", "task"},
+		{model.RolePlatformAdmin, "execute", "task"},
+		{model.RolePlatformAdmin, "read", "model-provider"},
+		{model.RolePlatformAdmin, "manage", "model-provider"},
+		{model.RolePlatformAdmin, "execute", "model-provider"},
+		{model.RolePlatformAdmin, "read", "enterprise-connection"},
+		{model.RolePlatformAdmin, "test", "enterprise-connection"},
+		{model.RolePlatformAdmin, "manage", "enterprise-connection"},
+		{model.RolePlatformAdmin, "read", "connector"},
+		{model.RolePlatformAdmin, "manage", "connector"},
+		{model.RolePlatformAdmin, "read", "model-route"},
+		{model.RolePlatformAdmin, "manage", "model-route"},
+		{model.RolePlatformAdmin, "read", "api-key"},
+		{model.RolePlatformAdmin, "manage", "api-key"},
+		{model.RolePlatformAdmin, "read", "usage"},
+		{model.RolePlatformAdmin, "read", "usage-export"},
+		{model.RolePlatformAdmin, "read", "audit"},
+		{model.RolePlatformAdmin, "manage", "audit"},
+		{model.RolePlatformAdmin, "read", "audit-anchor"},
+		{model.RolePlatformAdmin, "read", "audit-export"},
+		{model.RolePlatformAdmin, "read", "dashboard"},
+		{model.RolePlatformAdmin, "read", "knowledge-ops"},
+		{model.RolePlatformAdmin, "manage", "knowledge-ops"},
+		{model.RolePlatformAdmin, "read", "assistant"},
+		{model.RolePlatformAdmin, "manage", "assistant"},
+		{model.RolePlatformAdmin, "execute", "assistant"},
+		{model.RolePlatformAdmin, "read", "system-health"},
+		{model.RolePlatformAdmin, "read", "chat"},
+		{model.RolePlatformAdmin, "manage", "chat"},
+		{model.RolePlatformAdmin, "execute", "chat"},
+		{model.RolePlatformAdmin, "read", "search-app"},
+		{model.RolePlatformAdmin, "manage", "search-app"},
+		{model.RolePlatformAdmin, "execute", "search-app"},
+		{model.RolePlatformAdmin, "read", "scenario-template"},
+		{model.RolePlatformAdmin, "manage", "scenario-template"},
+		{model.RolePlatformAdmin, "read", "prompt-policy"},
+		{model.RolePlatformAdmin, "manage", "prompt-policy"},
+		{model.RolePlatformAdmin, "read", "parser-policy"},
+		{model.RolePlatformAdmin, "manage", "parser-policy"},
+		{model.RolePlatformAdmin, "read", "quality-profile"},
+		{model.RolePlatformAdmin, "manage", "quality-profile"},
+		{model.RolePlatformAdmin, "read", "logical-document"},
+		{model.RolePlatformAdmin, "manage", "logical-document"},
+		{model.RolePlatformAdmin, "execute", "logical-document"},
+		{model.RolePlatformAdmin, "read", "tool-registry"},
+		{model.RolePlatformAdmin, "manage", "tool-registry"},
+		{model.RolePlatformAdmin, "execute", "tool-registry"},
+		{model.RolePlatformAdmin, "read", "query-template"},
+		{model.RolePlatformAdmin, "manage", "query-template"},
+		{model.RolePlatformAdmin, "read", "source-routing-rule"},
+		{model.RolePlatformAdmin, "manage", "source-routing-rule"},
+		{model.RolePlatformAdmin, "read", "knowledge-strategy"},
+		{model.RolePlatformAdmin, "manage", "knowledge-strategy"},
+		{model.RolePlatformAdmin, "execute", "knowledge-strategy"},
+		{model.RolePlatformAdmin, "read", "knowledge-profile"},
+		{model.RolePlatformAdmin, "manage", "knowledge-profile"},
+		{model.RolePlatformAdmin, "read", "compilation"},
+		{model.RolePlatformAdmin, "manage", "compilation"},
+		{model.RolePlatformAdmin, "execute", "compilation"},
+		{model.RolePlatformAdmin, "read", "evidence-snapshot"},
+		{model.RolePlatformAdmin, "read", "outbox-event"},
+		{model.RolePlatformAdmin, "execute", "outbox-event"},
+		{model.RolePlatformAdmin, "read", "db-connection"},
+		{model.RolePlatformAdmin, "manage", "db-connection"},
+		{model.RolePlatformAdmin, "test", "db-connection"},
+		{model.RolePlatformAdmin, "read", "knowledge-lifecycle"},
+		{model.RolePlatformAdmin, "manage", "knowledge-lifecycle"},
+		{model.RolePlatformAdmin, "read", "eval-set"},
+		{model.RolePlatformAdmin, "manage", "eval-set"},
+		{model.RolePlatformAdmin, "execute", "eval-set"},
+		{model.RolePlatformAdmin, "read", "release-governance"},
+		{model.RolePlatformAdmin, "manage", "release-governance"},
+		{model.RolePlatformAdmin, "execute", "release-governance"},
+		{model.RolePlatformAdmin, "read", "alert"},
+		{model.RolePlatformAdmin, "manage", "alert"},
+		{model.RolePlatformAdmin, "read", "memory"},
+		{model.RolePlatformAdmin, "manage", "memory"},
+		{model.RolePlatformAdmin, "execute", "memory"},
+		{model.RolePlatformAdmin, "read", "memory-content"},
+		{model.RolePlatformAdmin, "manage", "memory-content"},
+		{model.RolePlatformAdmin, "execute", "memory-content"},
+		{model.RolePlatformAdmin, "execute", "memory-write"},
+		{model.RolePlatformAdmin, "read", "memory-policy"},
+		{model.RolePlatformAdmin, "manage", "memory-policy"},
+		{model.RolePlatformAdmin, "execute", "memory-policy"},
+		{model.RolePlatformAdmin, "manage", "memory-forget"},
+		{model.RolePlatformAdmin, "execute", "memory-forget"},
+		{model.RolePlatformAdmin, "read", "context-decision"},
+		{model.RolePlatformAdmin, "read", "memory-operation"},
+		{model.RolePlatformAdmin, "read", "agent"},
+		{model.RolePlatformAdmin, "manage", "agent"},
+		{model.RolePlatformAdmin, "execute", "agent"},
+		{model.RolePlatformAdmin, "session:create", "agent"},
+		{model.RolePlatformAdmin, "read", "approval"},
+		{model.RolePlatformAdmin, "execute", "approval"},
+		{model.RolePlatformAdmin, "manage", "approval"},
+		{model.RolePlatformAdmin, "read", "approval-policy"},
+		{model.RolePlatformAdmin, "manage", "approval-policy"},
+		// system is declared once above; ragflow-sync stays platform-only
+		{model.RolePlatformAdmin, "read", "ragflow-sync"},
+		{model.RolePlatformAdmin, "manage", "ragflow-sync"},
+		// tenant_admin
+		{model.RoleTenantAdmin, "read", "tenant"},
+		{model.RoleTenantAdmin, "read", "branding"},
+		{model.RoleTenantAdmin, "manage", "branding"},
+		{model.RoleTenantAdmin, "read", "user"},
+		{model.RoleTenantAdmin, "manage", "user"},
+		{model.RoleTenantAdmin, "read", "role"},
+		{model.RoleTenantAdmin, "manage", "role"},
+		{model.RoleTenantAdmin, "read", "team"},
+		{model.RoleTenantAdmin, "manage", "team"},
+		{model.RoleTenantAdmin, "read", "project"},
+		{model.RoleTenantAdmin, "manage", "project"},
+		{model.RoleTenantAdmin, "read", "dataset"},
+		{model.RoleTenantAdmin, "manage", "dataset"},
+		{model.RoleTenantAdmin, "read", "dataset-export"},
+		{model.RoleTenantAdmin, "read", "document"},
+		{model.RoleTenantAdmin, "append", "document"},
+		{model.RoleTenantAdmin, "delete:own", "document"},
+		{model.RoleTenantAdmin, "execute", "document"},
+		{model.RoleTenantAdmin, "read", "task"},
+		{model.RoleTenantAdmin, "execute", "task"},
+		{model.RoleTenantAdmin, "manage", "task"},
+		{model.RoleTenantAdmin, "read", "model-provider"},
+		{model.RoleTenantAdmin, "manage", "model-provider"},
+		{model.RoleTenantAdmin, "execute", "model-provider"},
+		{model.RoleTenantAdmin, "read", "enterprise-connection"},
+		{model.RoleTenantAdmin, "test", "enterprise-connection"},
+		{model.RoleTenantAdmin, "read", "connector"},
+		{model.RoleTenantAdmin, "manage", "connector"},
+		{model.RoleTenantAdmin, "read", "model-route"},
+		{model.RoleTenantAdmin, "manage", "model-route"},
+		{model.RoleTenantAdmin, "read", "api-key"},
+		{model.RoleTenantAdmin, "manage", "api-key"},
+		{model.RoleTenantAdmin, "execute", "chat"},
+		{model.RoleTenantAdmin, "read", "usage"},
+		{model.RoleTenantAdmin, "read", "usage-export"},
+		{model.RoleTenantAdmin, "read", "audit"},
+		{model.RoleTenantAdmin, "read", "audit-anchor"},
+		{model.RoleTenantAdmin, "read", "audit-export"},
+		{model.RoleTenantAdmin, "read", "dashboard"},
+		{model.RoleTenantAdmin, "read", "assistant"},
+		{model.RoleTenantAdmin, "execute", "assistant"},
+		{model.RoleTenantAdmin, "manage", "assistant"},
+		{model.RoleTenantAdmin, "read", "system-health"},
+		{model.RoleTenantAdmin, "read", "knowledge-ops"},
+		{model.RoleTenantAdmin, "manage", "knowledge-ops"},
+		{model.RoleTenantAdmin, "read", "chat"},
+		{model.RoleTenantAdmin, "manage", "chat"},
+		{model.RoleTenantAdmin, "execute", "search-app"},
+		{model.RoleTenantAdmin, "read", "search-app"},
+		{model.RoleTenantAdmin, "manage", "search-app"},
+		{model.RoleTenantAdmin, "read", "scenario-template"},
+		{model.RoleTenantAdmin, "manage", "scenario-template"},
+		{model.RoleTenantAdmin, "read", "prompt-policy"},
+		{model.RoleTenantAdmin, "manage", "prompt-policy"},
+		{model.RoleTenantAdmin, "read", "parser-policy"},
+		{model.RoleTenantAdmin, "manage", "parser-policy"},
+		{model.RoleTenantAdmin, "read", "quality-profile"},
+		{model.RoleTenantAdmin, "manage", "quality-profile"},
+		{model.RoleTenantAdmin, "read", "logical-document"},
+		{model.RoleTenantAdmin, "manage", "logical-document"},
+		{model.RoleTenantAdmin, "execute", "logical-document"},
+		{model.RoleTenantAdmin, "read", "tool-registry"},
+		{model.RoleTenantAdmin, "manage", "tool-registry"},
+		{model.RoleTenantAdmin, "execute", "tool-registry"},
+		{model.RoleTenantAdmin, "read", "query-template"},
+		{model.RoleTenantAdmin, "manage", "query-template"},
+		{model.RoleTenantAdmin, "read", "source-routing-rule"},
+		{model.RoleTenantAdmin, "manage", "source-routing-rule"},
+		{model.RoleTenantAdmin, "read", "knowledge-strategy"},
+		{model.RoleTenantAdmin, "manage", "knowledge-strategy"},
+		{model.RoleTenantAdmin, "execute", "knowledge-strategy"},
+		{model.RoleTenantAdmin, "read", "knowledge-profile"},
+		{model.RoleTenantAdmin, "manage", "knowledge-profile"},
+		{model.RoleTenantAdmin, "read", "compilation"},
+		{model.RoleTenantAdmin, "manage", "compilation"},
+		{model.RoleTenantAdmin, "execute", "compilation"},
+		{model.RoleTenantAdmin, "read", "evidence-snapshot"},
+		{model.RoleTenantAdmin, "read", "outbox-event"},
+		{model.RoleTenantAdmin, "execute", "outbox-event"},
+		{model.RoleTeamAdmin, "read", "knowledge-strategy"},
+		{model.RoleTeamAdmin, "manage", "knowledge-strategy"},
+		{model.RoleTeamAdmin, "execute", "knowledge-strategy"},
+		{model.RoleTeamAdmin, "read", "knowledge-profile"},
+		{model.RoleTeamAdmin, "manage", "knowledge-profile"},
+		{model.RoleTeamAdmin, "read", "compilation"},
+		{model.RoleTeamAdmin, "manage", "compilation"},
+		{model.RoleTeamAdmin, "execute", "compilation"},
+		{model.RoleTeamAdmin, "read", "evidence-snapshot"},
+		{model.RoleTeamAdmin, "read", "release-governance"},
+		{model.RoleTeamAdmin, "execute", "release-governance"},
+		{model.RoleTeamAdmin, "read", "context-decision"},
+		{model.RoleTenantAdmin, "read", "db-connection"},
+		{model.RoleTenantAdmin, "manage", "db-connection"},
+		{model.RoleTenantAdmin, "test", "db-connection"},
+		{model.RoleTenantAdmin, "read", "knowledge-lifecycle"},
+		{model.RoleTenantAdmin, "manage", "knowledge-lifecycle"},
+		{model.RoleTenantAdmin, "read", "eval-set"},
+		{model.RoleTenantAdmin, "manage", "eval-set"},
+		{model.RoleTenantAdmin, "execute", "eval-set"},
+		{model.RoleTenantAdmin, "read", "release-governance"},
+		{model.RoleTenantAdmin, "manage", "release-governance"},
+		{model.RoleTenantAdmin, "execute", "release-governance"},
+		{model.RoleTenantAdmin, "read", "alert"},
+		{model.RoleTenantAdmin, "manage", "alert"},
+		// operator
+		{model.RoleOperator, "read", "user"},
+		{model.RoleOperator, "read", "team"},
+		{model.RoleOperator, "read", "project"},
+		{model.RoleOperator, "read", "dataset"},
+		{model.RoleOperator, "read", "document"},
+		{model.RoleOperator, "append", "document"},
+		{model.RoleOperator, "delete:own", "document"},
+		{model.RoleOperator, "execute", "document"},
+		{model.RoleOperator, "read", "task"},
+		{model.RoleOperator, "execute", "task"},
+		{model.RoleOperator, "manage", "task"},
+		{model.RoleOperator, "execute", "chat"},
+		{model.RoleOperator, "read", "chat"},
+		{model.RoleOperator, "execute", "search-app"},
+		{model.RoleOperator, "read", "assistant"},
+		{model.RoleOperator, "execute", "assistant"},
+		{model.RoleOperator, "read", "search-app"},
+		{model.RoleOperator, "read", "usage"},
+		{model.RoleOperator, "read", "dashboard"},
+		{model.RoleOperator, "read", "knowledge-ops"},
+		{model.RoleOperator, "manage", "knowledge-ops"},
+		{model.RoleOperator, "read", "scenario-template"},
+		{model.RoleOperator, "read", "prompt-policy"},
+		{model.RoleOperator, "manage", "prompt-policy"},
+		{model.RoleOperator, "read", "parser-policy"},
+		{model.RoleOperator, "read", "quality-profile"},
+		{model.RoleOperator, "read", "logical-document"},
+		{model.RoleOperator, "read", "source-routing-rule"},
+		{model.RoleOperator, "read", "knowledge-strategy"},
+		{model.RoleOperator, "execute", "knowledge-strategy"},
+		{model.RoleOperator, "read", "knowledge-profile"},
+		{model.RoleOperator, "manage", "knowledge-profile"},
+		{model.RoleOperator, "read", "compilation"},
+		{model.RoleOperator, "manage", "compilation"},
+		{model.RoleOperator, "execute", "compilation"},
+		{model.RoleOperator, "read", "evidence-snapshot"},
+		{model.RoleOperator, "read", "outbox-event"},
+		{model.RoleOperator, "read", "knowledge-lifecycle"},
+		{model.RoleOperator, "read", "eval-set"},
+		{model.RoleOperator, "manage", "eval-set"},
+		{model.RoleOperator, "execute", "eval-set"},
+		{model.RoleOperator, "read", "release-governance"},
+		{model.RoleOperator, "execute", "release-governance"},
+		{model.RoleOperator, "read", "alert"},
+		// business_user
+		{model.RoleBusinessUser, "read", "user"},
+		{model.RoleBusinessUser, "read", "dataset"},
+		{model.RoleBusinessUser, "read", "document"},
+		{model.RoleBusinessUser, "append", "document"},
+		{model.RoleBusinessUser, "delete:own", "document"},
+		{model.RoleBusinessUser, "read", "assistant"},
+		{model.RoleBusinessUser, "execute", "assistant"},
+		{model.RoleBusinessUser, "read", "chat"},
+		{model.RoleBusinessUser, "execute", "chat"},
+		{model.RoleBusinessUser, "read", "search-app"},
+		{model.RoleBusinessUser, "execute", "search-app"},
+		{model.RoleBusinessUser, "read", "logical-document"},
+		// Consumers must be able to discover what the workspace offers: the
+		// template catalog and onboarding readiness are the only non-403 exits
+		// from the empty conversation state (doc/238 §3, doc/242).
+		{model.RoleBusinessUser, "read", "scenario-template"},
+		// viewer
+		{model.RoleViewer, "read", "user"},
+		{model.RoleViewer, "read", "team"},
+		{model.RoleViewer, "read", "project"},
+		{model.RoleViewer, "read", "dataset"},
+		{model.RoleViewer, "read", "document"},
+		{model.RoleViewer, "read", "task"},
+		{model.RoleViewer, "read", "usage"},
+		{model.RoleViewer, "read", "dashboard"},
+		{model.RoleViewer, "read", "knowledge-ops"},
+		{model.RoleViewer, "read", "chat"},
+		{model.RoleViewer, "read", "search-app"},
+		{model.RoleViewer, "read", "assistant"},
+		{model.RoleViewer, "read", "scenario-template"},
+		{model.RoleViewer, "read", "prompt-policy"},
+		{model.RoleViewer, "read", "parser-policy"},
+		{model.RoleViewer, "read", "quality-profile"},
+		{model.RoleViewer, "read", "logical-document"},
+		{model.RoleViewer, "read", "source-routing-rule"},
+		{model.RoleViewer, "read", "knowledge-strategy"},
+		{model.RoleViewer, "read", "knowledge-profile"},
+		{model.RoleViewer, "read", "compilation"},
+		{model.RoleViewer, "read", "evidence-snapshot"},
+		{model.RoleViewer, "read", "knowledge-lifecycle"},
+		{model.RoleViewer, "read", "eval-set"},
+		{model.RoleViewer, "read", "release-governance"},
+		// memory
+		{model.RoleTenantAdmin, "execute", "memory"},
+		{model.RoleTenantAdmin, "read", "memory"},
+		{model.RoleTenantAdmin, "manage", "memory"},
+		{model.RoleTenantAdmin, "read", "memory-content"},
+		{model.RoleTenantAdmin, "manage", "memory-content"},
+		{model.RoleTenantAdmin, "execute", "memory-content"},
+		{model.RoleTenantAdmin, "execute", "memory-write"},
+		{model.RoleTenantAdmin, "read", "memory-policy"},
+		{model.RoleTenantAdmin, "manage", "memory-policy"},
+		{model.RoleTenantAdmin, "execute", "memory-policy"},
+		{model.RoleTenantAdmin, "manage", "memory-forget"},
+		{model.RoleTenantAdmin, "execute", "memory-forget"},
+		{model.RoleTenantAdmin, "read", "context-decision"},
+		{model.RoleTenantAdmin, "read", "memory-operation"},
+		{model.RoleOperator, "execute", "memory"},
+		{model.RoleOperator, "read", "memory"},
+		{model.RoleOperator, "manage", "memory"},
+		{model.RoleOperator, "read", "memory-content"},
+		{model.RoleOperator, "execute", "memory-content"},
+		{model.RoleOperator, "execute", "memory-write"},
+		{model.RoleOperator, "read", "memory-policy"},
+		{model.RoleOperator, "manage", "memory-policy"},
+		{model.RoleOperator, "execute", "memory-policy"},
+		{model.RoleOperator, "read", "context-decision"},
+		{model.RoleOperator, "read", "memory-operation"},
+		{model.RoleViewer, "read", "memory"},
+		{model.RoleViewer, "read", "memory-policy"},
+		{model.RoleViewer, "read", "context-decision"},
+		{model.RoleViewer, "read", "memory-operation"},
+		{model.RoleBusinessUser, "read", "memory"},
+		{model.RoleBusinessUser, "execute", "memory"},
+		{model.RoleBusinessUser, "read", "memory-content"},
+		{model.RoleBusinessUser, "execute", "memory-content"},
+		{model.RoleBusinessUser, "execute", "memory-write"},
+		{model.RoleBusinessUser, "read", "memory-policy"},
+		{model.RoleBusinessUser, "execute", "memory-policy"},
+		{model.RoleBusinessUser, "execute", "memory-forget"},
+		{model.RoleBusinessUser, "read", "context-decision"},
+		{model.RoleBusinessUser, "read", "memory-operation"},
+		// agent
+		{model.RoleTenantAdmin, "execute", "agent"},
+		{model.RoleTenantAdmin, "read", "agent"},
+		{model.RoleTenantAdmin, "manage", "agent"},
+		{model.RoleTenantAdmin, "session:create", "agent"},
+		{model.RoleOperator, "execute", "agent"},
+		{model.RoleOperator, "read", "agent"},
+		{model.RoleOperator, "manage", "agent"},
+		{model.RoleOperator, "session:create", "agent"},
+		{model.RoleViewer, "read", "agent"},
+		{model.RoleBusinessUser, "execute", "agent"},
+		{model.RoleBusinessUser, "read", "agent"},
+		{model.RoleBusinessUser, "session:create", "agent"},
+		// team_admin
+		{model.RoleTeamAdmin, "read", "team"},
+		{model.RoleTeamAdmin, "manage", "team"},
+		{model.RoleTeamAdmin, "read", "project"},
+		{model.RoleTeamAdmin, "manage", "project"},
+		{model.RoleTeamAdmin, "read", "dataset"},
+		{model.RoleTeamAdmin, "manage", "dataset"},
+		{model.RoleTeamAdmin, "read", "document"},
+		{model.RoleTeamAdmin, "append", "document"},
+		{model.RoleTeamAdmin, "delete:own", "document"},
+		{model.RoleTeamAdmin, "execute", "document"},
+		{model.RoleTeamAdmin, "read", "user"},
+		{model.RoleTeamAdmin, "read", "scenario-template"},
+		{model.RoleTeamAdmin, "manage", "scenario-template"},
+		{model.RoleTeamAdmin, "read", "prompt-policy"},
+		{model.RoleTeamAdmin, "read", "parser-policy"},
+		{model.RoleTeamAdmin, "read", "quality-profile"},
+		{model.RoleTeamAdmin, "read", "logical-document"},
+		{model.RoleTeamAdmin, "manage", "logical-document"},
+		{model.RoleTeamAdmin, "execute", "logical-document"},
+		{model.RoleTeamAdmin, "read", "knowledge-lifecycle"},
+		{model.RoleTeamAdmin, "read", "eval-set"},
+		{model.RoleTeamAdmin, "manage", "eval-set"},
+		{model.RoleTeamAdmin, "read", "memory-operation"},
+		{model.RoleTeamAdmin, "execute", "memory-forget"},
+		{model.RoleTeamAdmin, "read", "memory-content"},
+		{model.RoleTeamAdmin, "manage", "memory-content"},
+		{model.RoleTeamAdmin, "execute", "memory-content"},
+		{model.RoleTeamAdmin, "execute", "memory-write"},
+		{model.RoleTeamAdmin, "read", "memory-policy"},
+		{model.RoleTeamAdmin, "execute", "memory-policy"},
+		// approval
+		{model.RoleTenantAdmin, "read", "approval"},
+		{model.RoleTenantAdmin, "execute", "approval"},
+		{model.RoleTenantAdmin, "manage", "approval"},
+		{model.RoleTenantAdmin, "read", "approval-policy"},
+		{model.RoleTenantAdmin, "manage", "approval-policy"},
+		{model.RoleOperator, "read", "approval"},
+		{model.RoleOperator, "execute", "approval"},
+		{model.RoleViewer, "read", "approval"},
+		// document governance (doc/224 T2) — manage is governor-only.
+		{model.RolePlatformAdmin, "read", "document-governance"},
+		{model.RolePlatformAdmin, "manage", "document-governance"},
+		{model.RolePlatformAdmin, "execute", "document-governance"},
+		{model.RoleTenantAdmin, "read", "document-governance"},
+		{model.RoleTenantAdmin, "manage", "document-governance"},
+		{model.RoleTenantAdmin, "execute", "document-governance"},
+		{model.RoleTeamAdmin, "read", "document-governance"},
+		{model.RoleOperator, "read", "document-governance"},
+		{model.RoleViewer, "read", "document-governance"},
+		{model.RolePlatformAdmin, "read", "user-clearance"},
+		{model.RolePlatformAdmin, "manage", "user-clearance"},
+		{model.RoleTenantAdmin, "read", "user-clearance"},
+		{model.RoleTenantAdmin, "manage", "user-clearance"},
+		{model.RoleTeamAdmin, "read", "user-clearance"},
+	}
+}
+
+// seedDefaultRBAC installs the built-in roles and reconciles the canonical
+// permission matrix on every run. Built-in role grants are immutable at
+// runtime, so rows are replaced wholesale to keep existing databases in sync.
+func seedDefaultRBAC(tx *gorm.DB) error {
+	roles := []model.Role{
+		{ID: model.RolePlatformAdmin, Name: "平台管理员", Scope: model.RoleScopePlatform, Description: "平台级全量管理"},
+		{ID: model.RoleTenantAdmin, Name: "工作区管理员", Scope: model.RoleScopeTenant, Description: "工作区内管理"},
+		{ID: model.RoleOperator, Name: "内容运营员", Scope: model.RoleScopeTenant, Description: "工作区内内容与业务运营"},
+		{ID: model.RoleViewer, Name: "只读", Scope: model.RoleScopeTenant, Description: "工作区内只读"},
+		{ID: model.RoleTeamAdmin, Name: "团队管理员", Scope: model.RoleScopeTenant, Description: "负责团队的项目/数据集管理"},
+		{ID: model.RoleBusinessUser, Name: "业务使用者", Scope: model.RoleScopeTenant, Description: "使用助手并维护数据集文档"},
+	}
+	for _, r := range roles {
+		var cnt int64
+		if err := tx.Model(&model.Role{}).Where("id = ?", r.ID).Count(&cnt).Error; err != nil {
+			return err
+		}
+		if cnt == 0 {
+			if err := tx.Create(&r).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return reconcileBuiltinPermissions(tx)
+}
+
+func seedBuiltinGovernanceDictionary(tx *gorm.DB) error {
+	now := time.Now().UTC()
+	for _, term := range model.BuiltinGovernanceDictionaryTerms() {
+		var cnt int64
+		if err := tx.Model(&model.GovernanceDictionaryEntry{}).
+			Where("tenant_id = ? AND category = ? AND key = ?", "", term.Category, term.Key).
+			Count(&cnt).Error; err != nil {
+			return err
+		}
+		if cnt > 0 {
+			continue
+		}
+		term.ID = id.New()
+		term.Origin = model.DictOriginPlatform
+		term.ApprovalState = model.DictApprovalApproved
+		term.Active = true
+		term.CreatedBy = "system"
+		term.CreatedAt = now
+		term.UpdatedAt = now
+		if err := tx.Create(&term).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reconcileBuiltinPermissions replaces the built-in roles' grants with the
+// canonical matrix. Because built-in roles are immutable, any stale or
+// coarse wildcard grants from earlier schema versions are dropped.
+// PermissionCatalog aggregates the built-in permission matrix into the set of
+// (resource, action) pairs a role may be granted. It drives the role permission
+// management UI so it always stays in sync with the built-in grants.
+type ResourceActions struct {
+	Resource string   `json:"resource"`
+	Actions  []string `json:"actions"`
+}
+
+func PermissionCatalog() []ResourceActions {
+	actions := map[string]map[string]bool{}
+	order := []string{}
+	for _, g := range BuiltinPermissionMatrix() {
+		if g.Resource == "*" {
+			continue
+		}
+		if _, ok := actions[g.Resource]; !ok {
+			actions[g.Resource] = map[string]bool{}
+			order = append(order, g.Resource)
+		}
+		actions[g.Resource][g.Action] = true
+	}
+	out := make([]ResourceActions, 0, len(order))
+	for _, r := range order {
+		acts := []string{}
+		for _, a := range []string{
+			"read", "manage", "execute", "session:create", "governance.read",
+			"append", "delete:own",
+			"test", "governance.read_sensitive", "governance.manage", "tenant.resource.manage",
+			"tenant.resource.delete", "tenant.connection.manage", "tenant.connection.bind",
+			"tenant.connection.unbind", "tenant.connection.rotate_secret",
+			"tenant.audit.read", "tenant.usage.read",
+		} {
+			if actions[r][a] {
+				acts = append(acts, a)
+			}
+		}
+		if len(acts) == 0 {
+			continue
+		}
+		out = append(out, ResourceActions{Resource: r, Actions: acts})
+	}
+	return out
+}
+
+func reconcileBuiltinPermissions(tx *gorm.DB) error {
+	builtin := []string{model.RolePlatformAdmin, model.RoleTenantAdmin, model.RoleOperator, model.RoleViewer, model.RoleTeamAdmin, model.RoleBusinessUser}
+	if err := tx.Where("role_id IN ?", builtin).Delete(&model.Permission{}).Error; err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, p := range BuiltinPermissionMatrix() {
+		key := p.Role + "|" + p.Action + "|" + p.Resource
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		perm := model.Permission{ID: id.New(), RoleID: p.Role, Action: p.Action, Resource: p.Resource, Effect: model.PermissionEffectAllow}
+		if err := tx.Create(&perm).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// seedTeamAdminOwners grants the team_admin role to every user who owns at
+// least one team, backfilling pre-existing teams created before the role.
+func seedTeamAdminOwners(tx *gorm.DB) error {
+	var ids []string
+	if err := tx.Model(&model.Team{}).Where("owner_id <> '' AND owner_id IS NOT NULL").Distinct().Pluck("owner_id", &ids).Error; err != nil {
+		return err
+	}
+	for _, id := range ids {
+		var n int64
+		if err := tx.Model(&model.UserRole{}).Where("user_id = ? AND role_id = ?", id, model.RoleTeamAdmin).Count(&n).Error; err != nil {
+			return err
+		}
+		if n == 0 {
+			if err := tx.Create(&model.UserRole{UserID: id, RoleID: model.RoleTeamAdmin}).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

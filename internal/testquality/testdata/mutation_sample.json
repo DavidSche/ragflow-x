@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-09T00:00:00Z",
+  "nextReviewAt": "2026-10-09T00:00:00Z",
+  "records": [
+    {
+      "scenarioId": "SC-TENANT-001",
+      "testPackage": "internal/service",
+      "testName": "TestP0_TENANT_001_ResolveTenantScopeRejectsTenantGovernanceRequests",
+      "evidenceType": "negative_proof",
+      "target": "tenant-filter",
+      "mutation": "remove tenant/project scope from governance resolution",
+      "expectedFailure": "cross-tenant governance request succeeds",
+      "actualResult": "the registered P0 regression fails the mutant by denying the request",
+      "mutationSurvived": false,
+      "reviewedAt": "2026-09-09T00:00:00Z"
+    },
+    {
+      "scenarioId": "SC-AUTHZ-001",
+      "testPackage": "internal/middleware",
+      "testName": "TestP0_AUTHZ_001_RBACRejectsCrossTenantGovernanceTarget",
+      "evidenceType": "negative_proof",
+      "target": "permission",
+      "mutation": "bypass authorization before resolving the governance target",
+      "expectedFailure": "unauthorized actor can access another tenant",
+      "actualResult": "the registered P0 regression fails the mutant with authorization denial",
+      "mutationSurvived": false,
+      "reviewedAt": "2026-09-09T00:00:00Z"
+    },
+    {
+      "scenarioId": "SC-APPROVAL-001",
+      "testPackage": "internal/service",
+      "testName": "TestP0_APPROVAL_001_RequesterCannotApproveOwn",
+      "evidenceType": "negative_proof",
+      "target": "state-check",
+      "mutation": "treat requester as an authorized approver",
+      "expectedFailure": "self approval transition succeeds",
+      "actualResult": "the registered P0 regression fails the mutant by rejecting self approval",
+      "mutationSurvived": false,
+      "reviewedAt": "2026-09-09T00:00:00Z"
+    },
+    {
+      "scenarioId": "SC-AUDIT-001",
+      "testPackage": "internal/service",
+      "testName": "TestP0_AUDIT_001_AuditAnchorCreatesImmutableTenantTails",
+      "evidenceType": "negative_proof",
+      "target": "audit-write",
+      "mutation": "skip audit anchor append",
+      "expectedFailure": "tenant audit tail is missing or mutable",
+      "actualResult": "the registered P0 regression fails the mutant on audit integrity assertions",
+      "mutationSurvived": false,
+      "reviewedAt": "2026-09-09T00:00:00Z"
+    },
+    {
+      "scenarioId": "SC-QUOTA-001",
+      "testPackage": "internal/repository",
+      "testName": "TestP0_QUOTA_001_ReserveQuotaTokensConcurrentNoOvershoot",
+      "evidenceType": "negative_proof",
+      "target": "quota-deduction",
+      "mutation": "omit quota deduction during concurrent reservation",
+      "expectedFailure": "concurrent requests overshoot quota",
+      "actualResult": "the registered P0 regression fails the mutant on concurrent no-overshoot assertions",
+      "mutationSurvived": false,
+      "reviewedAt": "2026-09-09T00:00:00Z"
+    },
+    {
+      "scenarioId": "SC-IDEM-001",
+      "testPackage": "internal/router",
+      "testName": "TestP0_IDEM_001_GatewayReplayCallsProviderOnce",
+      "evidenceType": "negative_proof",
+      "target": "idempotency-key",
+      "mutation": "ignore the gateway idempotency key on replay",
+      "expectedFailure": "provider side effect executes twice",
+      "actualResult": "the registered P0 regression fails the mutant on provider call count",
+      "mutationSurvived": false,
+      "reviewedAt": "2026-09-09T00:00:00Z"
+    },
+    {
+      "scenarioId": "SC-NETPOLICY-001",
+      "testPackage": "internal/service",
+      "testName": "TestP0_NETPOLICY_001_ValidateProviderBaseURLBlocksPrivateAndSSRFShapes",
+      "evidenceType": "negative_proof",
+      "target": "network-policy",
+      "mutation": "permit private and loopback provider endpoints",
+      "expectedFailure": "SSRF-shaped provider URL is accepted",
+      "actualResult": "the registered P0 regression fails the mutant with URL validation denial",
+      "mutationSurvived": false,
+      "reviewedAt": "2026-09-09T00:00:00Z"
+    },
+    {
+      "scenarioId": "SC-SSE-001",
+      "testPackage": "internal/provider/ragflow",
+      "testName": "TestP0_SSE_001_StreamChatCompletionPreservesUTF8BoundaryAndCancels",
+      "evidenceType": "negative_proof",
+      "target": "timeout-cancellation",
+      "mutation": "ignore context cancellation while streaming",
+      "expectedFailure": "cancelled stream continues consuming the provider response",
+      "actualResult": "the registered P0 regression fails the mutant on cancellation assertions",
+      "mutationSurvived": false,
+      "reviewedAt": "2026-09-09T00:00:00Z"
+    }
+  ]
+}

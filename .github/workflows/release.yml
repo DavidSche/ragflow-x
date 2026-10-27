@@ -1,0 +1,317 @@
+# Release workflow for ragflow-x
+#
+# Triggers:
+#   - Push a version tag (v1.2.3 etc.) -> build release packages + container image,
+#     then create the GitHub Release
+#   - workflow_dispatch manual trigger -> requires the `version` input
+#
+# Flow:
+#   1. build job: cross-compile Go binaries (linux/amd64, linux/arm64, darwin/amd64,
+#      windows/amd64) with the release version stamped into main.version, build the
+#      frontend, package everything into tarballs with SHA256SUMS
+#   2. docker job: build & push the multi-arch image to ghcr.io
+#   3. release job: download artifacts, verify SHA256 checksums (integrity gate),
+#      render release notes from git history, create the GitHub Release and upload
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.2.3; tag pushes take the tag)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            if [ -z "$VERSION" ]; then
+              echo "::error::workflow_dispatch requires the version input"
+              exit 1
+            fi
+            case "$VERSION" in
+              *[!0-9A-Za-z._-]*) echo "::error::version contains invalid characters"; exit 1 ;;
+            esac
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION#v}" >> "$GITHUB_OUTPUT"
+          echo "Building version: v$VERSION"
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: web
+        run: npm run build
+
+      # go:embed cannot reach outside internal/webfs, so the built web assets
+      # are copied there for embedding (and stay available for the standalone
+      # web tarball from web/dist).
+      - name: Stage frontend assets for embedding
+        run: |
+          rm -rf internal/webfs/dist
+          mkdir -p internal/webfs/dist
+          cp -r web/dist/. internal/webfs/dist/
+
+      - name: Build Go binaries (cross-platform, version stamped, frontend embedded)
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          LDFLAGS="-s -w -X main.version=v${VERSION}"
+          mkdir -p dist
+          # webfs_embed pulls the built frontend into every binary, so each
+          # release archive serves API + UI out of the box.
+
+          # linux/amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -tags=webfs_embed -ldflags="$LDFLAGS" -o dist/ragflow-x-linux-amd64 ./cmd/server/
+
+          # linux/arm64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+            go build -tags=webfs_embed -ldflags="$LDFLAGS" -o dist/ragflow-x-linux-arm64 ./cmd/server/
+
+          # darwin/amd64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 \
+            go build -tags=webfs_embed -ldflags="$LDFLAGS" -o dist/ragflow-x-darwin-amd64 ./cmd/server/
+
+          # windows/amd64
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
+            go build -tags=webfs_embed -ldflags="$LDFLAGS" -o dist/ragflow-x-windows-amd64.exe ./cmd/server/
+
+      - name: Package release artifacts
+        run: |
+          TAG="${{ steps.meta.outputs.version }}"
+          cd dist
+
+          # Shared layout staged once, then merged into every platform
+          # package: binary at the root + config/docker/README companions so
+          # users can configure and deploy right after unpacking.
+          mkdir -p bundle/config bundle/docker
+          cp ../config/config.example.yaml bundle/config/
+          cp ../docker/docker-compose.yml ../docker/.env.example ../docker/ragflow-x.yaml bundle/docker/
+          cp ../README.md bundle/
+
+          # Package each binary with the shared layout
+          for f in ragflow-x-*; do
+            case "$f" in
+              *.exe)
+                rm -rf stage; cp -r bundle stage; mv "$f" stage/ragflow-x.exe
+                ( cd stage && zip -qr "../ragflow-x-${TAG}-windows-amd64.zip" . )
+                ;;
+              *)
+                chmod +x "$f"
+                platform="$(echo "$f" | sed 's/ragflow-x-//')"
+                rm -rf stage; cp -r bundle stage; mv "$f" "stage/ragflow-x"
+                tar czf "ragflow-x-${TAG}-${platform}.tar.gz" -C stage .
+                ;;
+            esac
+          done
+
+          # Package frontend build (standalone, for separate static hosting)
+          tar czf "ragflow-x-${TAG}-web.tar.gz" -C ../web dist/
+
+          # Source snapshot
+          cd ..
+          git archive --format=tar.gz --prefix="ragflow-x-${TAG}/" -o "dist/ragflow-x-${TAG}-src.tar.gz" HEAD
+
+          # SHA256SUMS
+          cd dist
+          sha256sum *.tar.gz *.zip > SHA256SUMS
+          echo "--- Release artifacts ---"
+          ls -lh *.tar.gz *.zip SHA256SUMS
+
+          # Guard: every platform package must carry binary + config + docker
+          # companions (regression net for the bare-binary packaging bug).
+          for pkgname in ragflow-x-*.tar.gz ragflow-x-*.zip; do
+            case "$pkgname" in
+              ragflow-x-"${TAG}"-src.tar.gz|ragflow-x-"${TAG}"-web.tar.gz) continue ;;
+            esac
+            listing=$(tar tzf "$pkgname" 2>/dev/null || unzip -Z1 "$pkgname")
+            for required in "config/config.example.yaml" "docker/docker-compose.yml" "README.md"; do
+              echo "$listing" | grep -Eq "(^|/)${required}$" || {
+                echo "::error::${pkgname} is missing ${required}"; exit 1;
+              }
+            done
+          done
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  docker:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (arm64 emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Compute image tags (ghcr requires lowercase)
+        id: tags
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          VERSION="${{ needs.build.outputs.tag }}"
+          TAGS="${IMAGE}:${VERSION}"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            TAGS="${TAGS}
+          ${IMAGE}:latest"
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$TAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ needs.build.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository (full history for release notes)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: artifacts/dist
+
+      - name: Verify SHA256 checksums
+        run: |
+          set -euo pipefail
+          cd artifacts/dist
+          [ -f SHA256SUMS ] || { echo "::error::SHA256SUMS missing"; exit 1; }
+          sha256sum -c SHA256SUMS
+
+      # `gh release create` has no --notes-template flag; render the notes here
+      # and pass them via --notes-file.
+      - name: Render release notes
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.build.outputs.tag }}"
+          PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            echo "## ragflow-x ${TAG}"
+            echo
+            if [ -n "$PREV" ]; then
+              echo "自 **${PREV}** 以来的变更（共 $(git rev-list --count "${PREV}..${TAG}") 个提交）："
+              echo
+              git log --no-merges --format='- %s' "${PREV}..${TAG}"
+            else
+              echo "🎉 首次发版"
+            fi
+            echo
+            echo "---"
+            echo
+            echo "### 安装"
+            echo
+            echo '```bash'
+            echo "# Linux (amd64) — binary ships with the UI embedded; config is included"
+            echo "tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz"
+            echo "cp config/config.example.yaml config/config.yaml && ./ragflow-x"
+            echo
+            echo "# Docker"
+            echo "docker pull ${IMAGE}:${TAG}"
+            echo '```'
+            echo
+            echo "### 校验"
+            echo
+            echo '```bash'
+            echo "sha256sum -c SHA256SUMS"
+            echo '```'
+            echo
+            echo "---"
+            echo
+            echo "_本说明由 GitHub Actions 自动生成（release.yml）。资产清单见下方 Assets。_"
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Create GitHub Release and upload artifacts
+        run: |
+          TAG="${{ needs.build.outputs.tag }}"
+          echo "Creating release: $TAG"
+          ls -lh artifacts/dist/*.tar.gz artifacts/dist/*.zip artifacts/dist/SHA256SUMS
+          gh release create "$TAG" \
+            artifacts/dist/*.tar.gz \
+            artifacts/dist/*.zip \
+            artifacts/dist/SHA256SUMS \
+            --notes-file release-notes.md \
+            --title "ragflow-x $TAG"

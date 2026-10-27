@@ -1,0 +1,40 @@
+# VCS
+.git
+.github
+
+# Build artifacts
+bin
+dist
+web/dist
+web/dist2
+web/dist3
+
+# Dependencies and node tooling (the server image does not build/run the web app)
+web/node_modules
+web/node_modules*
+
+# Local runtime data & logs
+data
+logs
+run
+*.db
+*.log
+
+# Local validation artifacts
+.go-test-service.json
+
+# Local secrets / configs that must not bake into the image
+config/.master.key
+config/*.pem
+config/runtime.secrets.json
+docker/.env
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Docs and scripts (keep the server image lean; config.example is copied explicitly)
+doc
+scripts

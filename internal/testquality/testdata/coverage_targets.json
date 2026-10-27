@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "targets": [
+    {"path": "internal/service", "target": 75},
+    {"path": "internal/repository", "target": 55},
+    {"path": "internal/provider/ragflow", "target": 75},
+    {"path": "internal/router", "target": 95},
+    {"path": "web/src", "target": 80}
+  ]
+}

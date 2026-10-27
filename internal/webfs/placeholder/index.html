@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAGFlow-X — frontend not embedded</title>
+    <style>
+      body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 42rem; margin: 4rem auto; padding: 0 1rem; color: #1f2328; }
+      code, pre { background: #f6f8fa; padding: 0.15rem 0.35rem; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>RAGFlow-X API server is running ✔</h1>
+    <p>This binary was built <strong>without</strong> the frontend embedded.</p>
+    <p>Rebuild with the UI included:</p>
+    <pre><code>cd web &amp;&amp; npm ci &amp;&amp; npm run build
+cd .. &amp;&amp; mkdir -p internal/webfs/dist &amp;&amp; cp -r web/dist/* internal/webfs/dist/
+go build -tags=webfs_embed -o ragflow-x ./cmd/server/</code></pre>
+    <p>API remains available under <code>/api/v1</code> — try <code>GET /api/v1/health</code>.</p>
+  </body>
+</html>

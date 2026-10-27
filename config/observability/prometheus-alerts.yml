@@ -1,0 +1,344 @@
+groups:
+  - name: ragflow-x-operational-contracts
+    interval: 30s
+    rules:
+      - alert: AlertDeliveryCompensationSkippedHigh
+        expr: "increase(ragflow_x_alert_delivery_compensation_skipped_total[15m]) > 50"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Alert delivery compensation skipped rows are accumulating"
+          description: "More than 50 delivery compensation rows were skipped in 15 minutes. Inspect lease TTLs and compensation worker concurrency."
+          runbook: "doc/develop/08_部署运维与可观测性.md"
+
+      - alert: AlertDeliveryAbandoned
+        expr: "increase(ragflow_x_alert_delivery_compensation_abandoned_total[15m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Alert deliveries were abandoned"
+          description: "A delivery exhausted its compensation policy. Check webhook targets and delivery attempts, then perform manual recovery."
+          runbook: "doc/develop/08_部署运维与可观测性.md"
+
+      - alert: AlertDeliveryFencedResult
+        expr: "increase(ragflow_x_alert_delivery_compensation_fenced_total[5m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Stale alert delivery result was fenced"
+          description: "A stale worker attempted to write a delivery result. Preserve worker diagnostics and lease audit evidence before restarting."
+          runbook: "doc/develop/08_部署运维与可观测性.md"
+
+      - alert: ResourceSyncItemsFailedHigh
+        expr: "increase(ragflow_x_resource_sync_items_total{status=\"failed\"}[15m]) > 5"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Resource sync failure rate is elevated"
+          description: "More than five resource sync items failed in 15 minutes. Inspect RAGFlow connectivity, mappings, and item errors."
+          runbook: "doc/develop/08_部署运维与可观测性.md"
+
+      - alert: CompilationUpstreamStalled
+        expr: "max by (tenant_id, kind) (ragflow_x_compilation_upstream_stall_seconds) > 86400"
+        for: 10m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Compilation upstream status is stalled"
+          description: "A pending/running compilation has not advanced for 24 hours. Inspect the RAGFlow scheduler, phase, inflight and backlog diagnostics before manual recovery."
+          runbook: "doc/runbooks/CompilationUpstreamRecoveryRunbook.md"
+
+      - alert: CompilationUnknownAgeWarning
+        expr: "max by (tenant_id, kind) (ragflow_x_compilation_unknown_age_seconds) > 86400"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Compilation unknown recovery is aging"
+          description: "An unknown compilation run has remained unresolved for 24 hours. Use the read-only recovery probe and preserve evidence; never auto-retry."
+          runbook: "doc/runbooks/CompilationUpstreamRecoveryRunbook.md"
+
+      - alert: CompilationUnknownAgeCritical
+        expr: "max by (tenant_id, kind) (ragflow_x_compilation_unknown_age_seconds) > 259200"
+        for: 10m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Compilation unknown recovery requires escalation"
+          description: "An unknown compilation run has remained unresolved for 72 hours. Review the recovery evidence, tenant approval, and downstream-binding candidates."
+          runbook: "doc/runbooks/CompilationUpstreamRecoveryRunbook.md"
+
+      - alert: EnhancementBudgetRejected
+        expr: "increase(ragflow_x_enhancement_budget_rejected_total[15m]) > 0"
+        for: 0m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Enhancement budget governance rejected work"
+          description: "Compilation budget enforcement or cost accounting rejected or failed. Inspect tenant/dataset/profile/run budget status without changing raw retrieval."
+          runbook: "doc/develop/08_部署运维与可观测性.md"
+
+      - alert: ResourceSyncStaleRunRecovered
+        expr: "increase(ragflow_x_resource_sync_stale_runs_total[15m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "A stale resource sync run was recovered"
+          description: "A sync worker stopped refreshing its lease. Check worker liveness and scan duration before resuming imports."
+          runbook: "doc/develop/08_部署运维与可观测性.md"
+
+      - alert: ResourceSyncProgressStalled
+        expr: "ragflow_x_resource_sync_run_progress{kind=\"total\"} > 0 and on(source_id) sum by (source_id) (increase(ragflow_x_resource_sync_items_total[30m])) == 0"
+        for: 10m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Resource sync progress is stalled"
+          description: "A run reported work but no resource sync item has been processed for 30 minutes. Inspect the worker, lease, and current run."
+          runbook: "doc/develop/08_部署运维与可观测性.md"
+
+      - alert: MemorySearchUnauthorizedFilter
+        expr: "increase(ragflow_x_memory_search_authorized_filter_total{result=\"unauthorized\"}[15m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Governed memory search bypassed the authorization filter"
+          description: "An outbound memory search was recorded without enforced policy scope. Authorization filter enforcement is a fail-closed invariant (137 section 11.1); stop memory dispatch and inspect the search path before resuming."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: ContextPreModelAuthError
+        expr: "increase(ragflow_x_context_pre_model_auth_total{result=\"error\"}[15m]) > 0"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Pre-model context authorization ended in errors"
+          description: "Pre-model authorization calls failed on contract or conflict paths instead of an allow/deny decision (137 section 11.1). Inspect decision records and release manifest verification."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: MemoryPrincipalMappingFailure
+        expr: "increase(ragflow_x_memory_dispatch_principal_mapping_total{result=\"failure\"}[15m]) > 0"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Memory principal mapping failures observed"
+          description: "Principal mapping failed for memory operations or governed reads. The failure reason label classifies the cause (137 section 11.1). Verify principal state and identity derivation."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: MemoryUnauthorizedExternalDispatch
+        expr: "increase(ragflow_x_memory_dispatch_unauthorized_external_dispatch_total[15m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "External dispatch observed without a valid admission state"
+          description: "A memory operation reached the external write path without an admitted state. This is a fail-closed authorization contract violation (137 section 11.1); stop the dispatch worker and audit admission records."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: MemoryRevocationInvalidationAnomaly
+        expr: "increase(ragflow_x_memory_dispatch_pending_invalidated_total{reason_class=\"user_action\"}[30m]) > 0 and increase(ragflow_x_memory_dispatch_revocation_event_total[30m]) == 0"
+        for: 10m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "User-action invalidations without sampled revocation events"
+          description: "Pending memory operations were invalidated by user action but no revocation event (opt-out, member exit, tombstone) was sampled in the same window. Revocation may not be effective (137 section 11.1); audit consent and generation changes."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: CompilationRunFailedDetected
+        expr: "increase(ragflow_x_compilation_run_terminal_total{result=\"failed\"}[30m]) > 0"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Compilation runs transitioned to failed"
+          description: "One or more compilation runs ended in the failed state in 30 minutes (137 section 11.1). Inspect run failure codes and upstream pipeline health."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: CompilationRunUnknownDetected
+        expr: "increase(ragflow_x_compilation_run_terminal_total{result=\"unknown\"}[30m]) > 0"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Compilation runs entered the unknown state"
+          description: "Dispatch or reconciliation could not confirm the upstream outcome (137 section 11.1). Follow the unknown recovery observation window before any recovery action."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: CompilationReadyRatioLow
+        expr: "sum by (tenant_id) (increase(ragflow_x_compilation_ready_eval_total{result=\"ready\"}[1h])) / clamp_min(sum by (tenant_id) (increase(ragflow_x_compilation_ready_eval_total[1h])), 1) < 1 and sum by (tenant_id) (increase(ragflow_x_compilation_ready_eval_total[1h])) >= 5"
+        for: 15m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Compilation artifact readiness evaluations are incomplete"
+          description: "Not every readiness evaluation in the last hour produced fully bound artifacts (137 section 11.1). Inspect artifact scan completeness and binding verification."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: CompilationArtifactBindingIncomplete
+        expr: "increase(ragflow_x_compilation_artifact_binding_total{result=\"incomplete\"}[30m]) > 0"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Compilation artifact bindings are incomplete"
+          description: "Artifact projections failed run or content-hash binding verification (137 section 11.1). Compiled evidence must not be trusted until bindings are verified."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: CompilationQueueBacklogHigh
+        expr: "max(ragflow_x_compilation_queue_depth{dimension=\"backlog\"}) > 0"
+        for: 15m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Upstream compilation backlog is nonzero"
+          description: "The upstream queue reports a persistent backlog (137 section 11.1 expects zero at rest). Inspect upstream capacity and dataset fan-out before dispatching more runs."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: RetrievalRawFallbackRatioHigh
+        expr: "sum(increase(ragflow_x_retrieval_mode_total{result=\"raw_fallback\"}[30m])) / clamp_min(sum(increase(ragflow_x_retrieval_mode_total{mode=\"compiled_first\"}[30m])), 1) > 0.25 and sum(increase(ragflow_x_retrieval_mode_total{mode=\"compiled_first\"}[30m])) >= 5"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Compiled-first raw fallback ratio exceeds 25 percent"
+          description: "More than 25 percent of compiled-first retrieval attempts in 30 minutes fell back to raw-only evidence with at least 5 attempts (137 section 11.1). Check artifact projections and retrieval mode configuration."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: MemoryWriteSuccessRatioLow
+        expr: "sum(increase(ragflow_x_memory_dispatch_external_result_total{result=\"executed\"}[30m])) / clamp_min(sum(increase(ragflow_x_memory_dispatch_external_result_total[30m])), 1) < 0.95 and sum(increase(ragflow_x_memory_dispatch_external_result_total[30m])) >= 5"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Memory external write success ratio dropped below 95 percent"
+          description: "Less than 95 percent of memory external dispatch attempts ended executed in 30 minutes with at least 5 attempts (137 section 11.1). Inspect dispatch outcomes and provider health."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: MemoryUnknownResultAll
+        expr: "sum(increase(ragflow_x_memory_dispatch_external_result_total{result=\"unknown\"}[20m])) / clamp_min(sum(increase(ragflow_x_memory_dispatch_external_result_total[20m])), 1) == 1 and sum(increase(ragflow_x_memory_dispatch_external_result_total[20m])) >= 5"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "All memory external dispatch results are unknown"
+          description: "Every memory external dispatch in 20 minutes ended unknown with at least 5 attempts (137 section 11.1). Stop dispatch and follow tombstone compensation verification before resuming."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: MemoryPendingInvalidatedSystemMismatch
+        expr: "increase(ragflow_x_memory_dispatch_pending_invalidated_total{reason_class=\"system_mismatch\"}[30m]) > 0"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "System-mismatch invalidations without a user action"
+          description: "Admission invalidated accepted operations due to system-side drift (generation, identity) with no user action (137 section 11.1). Investigate races; user_action invalidations are audit-only and covered by the revocation anomaly alert."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: CompilationProjectionStaleDetected
+        expr: "increase(ragflow_x_compilation_projection_stale_total[30m]) > 0"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Compilation artifact projections marked stale"
+          description: "Artifact projections were marked stale in 30 minutes (137 section 11.1). Compiled-first retrieval must not trust stale projections; verify upstream artifacts and re-run projection maintenance."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: MemoryTombstoneVerificationFailed
+        expr: "increase(ragflow_x_memory_tombstone_verification_total{result=\"failed\"}[15m]) > 0"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Tombstone enforcement verification failed"
+          description: "Tombstone compensation could not verify external invisibility for one or more operations (137 section 11.1). Tombstone enforcement must stay at 100 percent; inspect provider errors and compensation audit."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: MemoryPrivacyGateBlockedRatioHigh
+        expr: "sum(increase(ragflow_x_memory_privacy_gate_decision_total{decision=\"block\"}[30m])) / clamp_min(sum(increase(ragflow_x_memory_privacy_gate_decision_total[30m])), 1) > 0.05 and sum(increase(ragflow_x_memory_privacy_gate_decision_total[30m])) >= 5"
+        for: 15m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Privacy gate blocks more than 5 percent of dispatch payloads"
+          description: "The deterministic privacy gate blocked an unusual share of memory dispatch payloads (137 section 11.1). Review payload sources and exemption configuration before changing the gate."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: ContextDecisionLatencyHigh
+        expr: "histogram_quantile(0.95, sum by (le, request_kind) (increase(ragflow_x_context_decision_duration_seconds_bucket{request_kind=~\"chat|preview\"}[15m]))) > 0.3"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Pre-model context decision p95 exceeds the 300ms budget"
+          description: "Context decision p95 latency is above the 300ms budget for chat or preview requests (137 section 11.1). Search and evaluation kinds carry separate budgets and are outside this alert. Inspect decision persistence and release manifest verification latency."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: ContextDecisionSearchLatencyHigh
+        expr: "histogram_quantile(0.95, sum by (le) (increase(ragflow_x_context_decision_duration_seconds_bucket{request_kind=\"search\"}[15m]))) > 0.5"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Search-kind context decision p95 exceeds the 500ms budget"
+          description: "Search-kind context decision p95 latency is above the 500ms budget calibrated on the production-equivalent stack (M213: p50 156ms, p95 259ms, max 333ms; 500ms leaves proxy-contention headroom, 137 section 11.1 row ragfx_context_decision_p95). The search decision includes the downstream embedding round trip over the shared model proxy."
+          runbook: "doc/runbooks/GovernanceMetricsRunbook.md"
+
+      - alert: ConnectorSyncFailureRateHigh
+        expr: "sum(increase(ragflow_x_connector_runs_total{status=\"failed\"}[1h])) / clamp_min(sum(increase(ragflow_x_connector_runs_total[1h])), 1) > 0.3 and sum(increase(ragflow_x_connector_runs_total[1h])) >= 3"
+        for: 10m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Data-source connector sync failure rate exceeds 30 percent"
+          description: "More than 30 percent of connector sync runs failed in the last hour (doc/225 section 10). Inspect connector run history, provider reachability and credential status; a degraded connector keeps its cursor and retries on the next schedule."
+          runbook: "doc/runbooks/ConnectorSyncRunbook.md"
+
+      - alert: ConnectorCredentialFailure
+        expr: "increase(ragflow_x_connector_credential_failure_total[30m]) >= 2"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Repeated connector credential decryption failures"
+          description: "At least two connector credential decryptions failed in 30 minutes (doc/225 section 10). Runs fail closed without touching the source. Verify the master encryption key version and rotate the credential through the approval flow."
+          runbook: "doc/runbooks/ConnectorSyncRunbook.md"
