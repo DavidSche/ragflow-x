@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload integration logs (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-logs
           path: test-results/*.log
@@ -117,7 +117,7 @@ jobs:
         run: make test-quality-report
 
       - name: Upload quality report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-scenario-quality-report
           path: test-results/scenario-quality-report.json
