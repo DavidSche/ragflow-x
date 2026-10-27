@@ -1,0 +1,42 @@
+{
+  "version": "d1-regression.v1",
+  "status": "draft",
+  "recorded_at": "",
+  "owner": "quality",
+  "corpus": {
+    "name": "knoweval-d1-corpus",
+    "source": "192.168.4.151:/data/david/KnowEval/tmp/d1_corpus_manifest.json",
+    "sha256": "",
+    "file_count": 39,
+    "build_id": "bd-272595"
+  },
+  "judge": {
+    "model": "",
+    "prompt_sha256": "",
+    "temperature": 0,
+    "disable_thinking": true
+  },
+  "protocol": {
+    "sample_size": 51,
+    "passes": 2,
+    "min_pass_agreement": 1.0,
+    "top_k": 8,
+    "primary_metric": "citation_precision"
+  },
+  "thresholds": {
+    "citation_precision_min": 0.35,
+    "citation_verifiable_min": 0.9,
+    "over_abstain_min": 0.1,
+    "over_abstain_max": 0.15,
+    "abstain_correct_min": 0.8,
+    "confident_wrong_max": 0.2,
+    "bucket_accuracy_min": {
+      "table": 0.45
+    }
+  },
+  "tuning": {
+    "allowed": false,
+    "role": "regression"
+  },
+  "note": "DRAFT: fill corpus.sha256 (frozen manifest file hash), judge.model and judge.prompt_sha256 from the recorded D1 run before citing any result as release evidence."
+}

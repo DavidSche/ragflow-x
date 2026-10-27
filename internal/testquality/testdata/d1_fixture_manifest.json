@@ -1,0 +1,42 @@
+{
+  "version": "d1-regression.fixture-v1",
+  "status": "frozen",
+  "recorded_at": "2026-10-26",
+  "owner": "quality",
+  "corpus": {
+    "name": "fixture-corpus",
+    "source": "internal/testquality/testdata/d1_fixture_manifest.json",
+    "sha256": "fixture-corpus-sha256",
+    "file_count": 2,
+    "build_id": "fixture-build"
+  },
+  "judge": {
+    "model": "fixture-judge",
+    "prompt_sha256": "fixture-judge-prompt-sha256",
+    "temperature": 0,
+    "disable_thinking": true
+  },
+  "protocol": {
+    "sample_size": 6,
+    "passes": 2,
+    "min_pass_agreement": 1.0,
+    "top_k": 8,
+    "primary_metric": "citation_precision"
+  },
+  "thresholds": {
+    "citation_precision_min": 0.35,
+    "citation_verifiable_min": 0.9,
+    "over_abstain_min": 0.1,
+    "over_abstain_max": 0.15,
+    "abstain_correct_min": 0.8,
+    "confident_wrong_max": 0.2,
+    "bucket_accuracy_min": {
+      "table": 0.45
+    }
+  },
+  "tuning": {
+    "allowed": false,
+    "role": "regression"
+  },
+  "note": "SYNTHETIC TEST FIXTURE for the D1 verifier. Never cite these numbers as a measurement."
+}
