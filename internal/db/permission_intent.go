@@ -8,7 +8,10 @@ package db
 // (migration v88 "add_business_user_role"). Every time a new governance
 // resource landed, the author added `read` for viewer/operator/admin but often
 // forgot the business user — which left 19 resources where a read-only role
-// could read more than the role that actually does the work.
+// could read more than the role that actually does the work. (doc/245 later
+// removed the viewer side of those 19 rows: viewer is now a strict read-only
+// slice of business_user, so the inversion is gone in both directions and this
+// file only has to decide what the working role may read.)
 //
 // Fixing those rows one by one would not fix the cause. Instead every resource
 // must now carry an explicit intent, so adding a resource without deciding what
@@ -107,6 +110,8 @@ var businessUserReadRules = []BusinessUserReadRule{
 		Rationale: "Agents are consumed by the same audience."},
 	{Resource: "scenario-template", Intent: BusinessUserReadAllowed, Journey: JourneyAssistant,
 		Rationale: "The template catalog and onboarding readiness are how a consumer discovers what a workspace can offer, and the only non-403 path out of the empty conversation state (doc/238 §3)."},
+	{Resource: "trial-run", Intent: BusinessUserReadAllowed, Journey: JourneyAssistant,
+		Rationale: "Trial runs keep exactly the visibility they had through scenario-template:read (doc/244): a consumer may inspect the practice result of an assistant they can use, but starting one is authoring work that stays with team admins and operators."},
 
 	// ---- interaction -----------------------------------------------------
 	{Resource: "chat", Intent: BusinessUserReadAllowed, Journey: JourneyInteraction,
@@ -140,7 +145,7 @@ var businessUserReadRules = []BusinessUserReadRule{
 	{Resource: "outbox-event", Intent: BusinessUserReadDenied, Journey: JourneyGovernance,
 		Rationale: "Outbox events exist for operator troubleshooting."},
 	{Resource: "eval-set", Intent: BusinessUserReadDenied, Journey: JourneyOperations,
-		Rationale: "Trial runs read through scenario-template:read; eval-set governs evaluation configuration and execution, which stays with operators."},
+		Rationale: "eval-set governs evaluation configuration and release evidence; trial runs have their own resource since doc/244, so nothing consumer-facing needs this."},
 	{Resource: "release-governance", Intent: BusinessUserReadDenied, Journey: JourneyGovernance,
 		Rationale: "Release gates and evidence packs are a governance surface."},
 	{Resource: "approval", Intent: BusinessUserReadDenied, Journey: JourneyGovernance,

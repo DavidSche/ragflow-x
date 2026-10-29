@@ -87,10 +87,24 @@ func ResourceTypeRegistry() map[string]ResourceTypeDefinition {
 		"system-health":         {ResourceScope: ResourceScopePlatform, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},
 		"task":                  {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage", "execute"), SupportsGovernanceRead: true},
 		"team":                  {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
-		"tenant":                {ResourceScope: ResourceScopePlatform, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
-		"usage":                 {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},
-		"usage-export":          {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},
-		"user":                  {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
+		// tenant is a platform-scoped resource whose fine-grained governance
+		// actions are enforced in the service layer (Service.Authorize) rather
+		// than by the route table, so they must be declared here too: a
+		// resource whose AllowedActions is a strict subset of the granted matrix
+		// makes the registry lie about the policy shape (doc/247).
+		// tenant.audit.read / tenant.usage.read / tenant.resource.manage /
+		// tenant.resource.delete are declared but have no enforcement point yet
+		// (tracked as R-26 in doc/247); they are kept so that wiring them does
+		// not require touching this registry under time pressure.
+		"tenant": {
+			ResourceScope:          ResourceScopePlatform,
+			AllowedActions:         resourceActions("read", "manage", "governance.read", "governance.read_sensitive", "governance.manage", "tenant.audit.read", "tenant.usage.read", "tenant.resource.manage", "tenant.resource.delete", "tenant.connection.bind", "tenant.connection.manage", "tenant.connection.unbind", "tenant.connection.rotate_secret"),
+			SupportsGovernanceRead: true,
+		},
+		"trial-run":    {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "execute"), SupportsGovernanceRead: true},
+		"usage":        {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},
+		"usage-export": {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},
+		"user":         {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
 	}
 }
 

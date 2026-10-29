@@ -209,7 +209,35 @@ func (s *Service) SetRolePermissions(ctx context.Context, actorID, actorRole, ro
 		}
 		perms = append(perms, model.Permission{ID: id.New(), RoleID: roleID, Action: sp.Action, Resource: sp.Resource, Effect: effect})
 	}
+	// "You cannot grant what you cannot exercise": without this check a
+	// workspace admin holding role:manage can attach any catalog permission
+	// (the catalog is the union of the builtin matrix, so it includes
+	// platform-only actions) to a tenant-scoped role and then assign that role
+	// to itself. The platform identity flag (ac.platform) would still be false,
+	// but handlers such as ListTenants treat governance.read on tenant as a
+	// full platform read, so the grant alone is the escalation (doc/247 R-24).
+	if err := s.assertCanDelegate(ctx, actorID, perms); err != nil {
+		return err
+	}
 	return s.Store.SetPermissions(ctx, roleID, perms)
+}
+
+// assertCanDelegate requires every allow-spec to be already exercisable by the
+// actor. Deny-specs only narrow a role, so they are always delegable.
+func (s *Service) assertCanDelegate(ctx context.Context, actorID string, perms []model.Permission) error {
+	ac, err := s.authz(ctx, actorID)
+	if err != nil {
+		return err
+	}
+	for _, p := range perms {
+		if p.Effect == model.PermissionEffectDeny {
+			continue
+		}
+		if ac.evaluate(p.Action, p.Resource) != nil {
+			return httperr.New(403, 40302, "cannot grant a permission you do not hold")
+		}
+	}
+	return nil
 }
 
 func isCatalogPermission(resource, action string) bool {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
+	"github.com/ragflow-x/ragflow-x/internal/db"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/jwt"
@@ -472,6 +473,15 @@ func (c *authzContext) evaluate(action, resource string) error {
 	}
 	for _, p := range c.allow {
 		if matches(p.Action, action) && matches(p.Resource, resource) {
+			return nil
+		}
+		// Write verbs imply read on the same resource (doc/247). The builtin
+		// matrix already satisfies this via TestActionImplicationRequiresRead,
+		// but custom roles are user-authored: without the implication a role
+		// could be saved with manage but no read and then fail on the very
+		// list/detail page it needs to use that permission. Deny rules stay
+		// literal on purpose: "deny execute" must not silently remove read.
+		if action == "read" && db.ReadImpliedByAction(p.Action) && matches(p.Resource, resource) {
 			return nil
 		}
 	}

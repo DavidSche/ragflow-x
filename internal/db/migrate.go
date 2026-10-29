@@ -3161,6 +3161,51 @@ var migrations = []Migration{
 			return reconcileBuiltinPermissions(tx)
 		},
 	},
+	{
+		Version: 159,
+		Name:    "rbac_team_admin_member_surfaces",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/243: make team_admin a superset of business_user so the
+			// built-in role lattice declared in role_lattice.go actually holds
+			// on existing databases. (operator is left alone: doc/137 §10.3
+			// keeps execute@memory-forget away from operators on purpose.)
+			//
+			// Before this step a team administrator could not read chat,
+			// search-app, agent, assistant or memory at all (the role was
+			// management-only), while a read-only viewer could. Owners are
+			// auto-granted team_admin, so the practical effect was a role that
+			// only worked when combined with business_user.
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 160,
+		Name:    "rbac_trial_run_resource",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/244: trial runs get their own resource instead of borrowing
+			// `eval-set:execute`. Borrowing made the only way to let a team
+			// administrator practise a template be "also hand over
+			// POST /eval-cases/:id/revalidate", which is tenant-scoped and has
+			// no team ABAC. Data-only: the new rows are reconciled in by the
+			// usual delete-then-insert path, so re-running is a no-op and no
+			// DDL is involved.
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 161,
+		Name:    "rbac_viewer_read_convergence",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/245: `viewer` is the read-only slice of `business_user`, not a
+			// second read audience. Nineteen rows let the read-only guest read
+			// what the working role could not (task queues, cost/dashboard
+			// aggregates, operations and governance ledgers, policy
+			// configuration) — the same inversion doc/242 fixed in the other
+			// direction. Data-only reconciliation: the reconciler deletes rows
+			// that are no longer declared, so re-running is a no-op.
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
 }
 
 func evaluationScopeCondition(columnPrefix string) string {
@@ -4190,6 +4235,8 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RolePlatformAdmin, "execute", "search-app"},
 		{model.RolePlatformAdmin, "read", "scenario-template"},
 		{model.RolePlatformAdmin, "manage", "scenario-template"},
+		{model.RolePlatformAdmin, "read", "trial-run"},
+		{model.RolePlatformAdmin, "execute", "trial-run"},
 		{model.RolePlatformAdmin, "read", "prompt-policy"},
 		{model.RolePlatformAdmin, "manage", "prompt-policy"},
 		{model.RolePlatformAdmin, "read", "parser-policy"},
@@ -4309,6 +4356,8 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "manage", "search-app"},
 		{model.RoleTenantAdmin, "read", "scenario-template"},
 		{model.RoleTenantAdmin, "manage", "scenario-template"},
+		{model.RoleTenantAdmin, "read", "trial-run"},
+		{model.RoleTenantAdmin, "execute", "trial-run"},
 		{model.RoleTenantAdmin, "read", "prompt-policy"},
 		{model.RoleTenantAdmin, "manage", "prompt-policy"},
 		{model.RoleTenantAdmin, "read", "parser-policy"},
@@ -4384,6 +4433,8 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleOperator, "read", "knowledge-ops"},
 		{model.RoleOperator, "manage", "knowledge-ops"},
 		{model.RoleOperator, "read", "scenario-template"},
+		{model.RoleOperator, "read", "trial-run"},
+		{model.RoleOperator, "execute", "trial-run"},
 		{model.RoleOperator, "read", "prompt-policy"},
 		{model.RoleOperator, "manage", "prompt-policy"},
 		{model.RoleOperator, "read", "parser-policy"},
@@ -4423,32 +4474,19 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		// template catalog and onboarding readiness are the only non-403 exits
 		// from the empty conversation state (doc/238 §3, doc/242).
 		{model.RoleBusinessUser, "read", "scenario-template"},
+		// Trial runs keep their current visibility: a consumer may inspect the
+		// practice result of an assistant, but practising is authoring work.
+		{model.RoleBusinessUser, "read", "trial-run"},
 		// viewer
 		{model.RoleViewer, "read", "user"},
-		{model.RoleViewer, "read", "team"},
-		{model.RoleViewer, "read", "project"},
 		{model.RoleViewer, "read", "dataset"},
 		{model.RoleViewer, "read", "document"},
-		{model.RoleViewer, "read", "task"},
-		{model.RoleViewer, "read", "usage"},
-		{model.RoleViewer, "read", "dashboard"},
-		{model.RoleViewer, "read", "knowledge-ops"},
 		{model.RoleViewer, "read", "chat"},
 		{model.RoleViewer, "read", "search-app"},
 		{model.RoleViewer, "read", "assistant"},
 		{model.RoleViewer, "read", "scenario-template"},
-		{model.RoleViewer, "read", "prompt-policy"},
-		{model.RoleViewer, "read", "parser-policy"},
-		{model.RoleViewer, "read", "quality-profile"},
+		{model.RoleViewer, "read", "trial-run"},
 		{model.RoleViewer, "read", "logical-document"},
-		{model.RoleViewer, "read", "source-routing-rule"},
-		{model.RoleViewer, "read", "knowledge-strategy"},
-		{model.RoleViewer, "read", "knowledge-profile"},
-		{model.RoleViewer, "read", "compilation"},
-		{model.RoleViewer, "read", "evidence-snapshot"},
-		{model.RoleViewer, "read", "knowledge-lifecycle"},
-		{model.RoleViewer, "read", "eval-set"},
-		{model.RoleViewer, "read", "release-governance"},
 		// memory
 		{model.RoleTenantAdmin, "execute", "memory"},
 		{model.RoleTenantAdmin, "read", "memory"},
@@ -4516,6 +4554,12 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTeamAdmin, "read", "user"},
 		{model.RoleTeamAdmin, "read", "scenario-template"},
 		{model.RoleTeamAdmin, "manage", "scenario-template"},
+		// doc/244: a dedicated trial-run action replaces borrowing
+		// eval-set:execute, which also unlocks POST /eval-cases/:id/revalidate
+		// (tenant scope, no team ABAC). A team administrator can now practise
+		// its own templates without gaining an evidence-recompute write.
+		{model.RoleTeamAdmin, "read", "trial-run"},
+		{model.RoleTeamAdmin, "execute", "trial-run"},
 		{model.RoleTeamAdmin, "read", "prompt-policy"},
 		{model.RoleTeamAdmin, "read", "parser-policy"},
 		{model.RoleTeamAdmin, "read", "quality-profile"},
@@ -4533,6 +4577,21 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTeamAdmin, "execute", "memory-write"},
 		{model.RoleTeamAdmin, "read", "memory-policy"},
 		{model.RoleTeamAdmin, "execute", "memory-policy"},
+		// team_admin = business_user + team-scoped management (doc/243). A team
+		// administrator must be able to enter the product surfaces its own team
+		// uses; without these rows the role cannot supervise anything, and
+		// "more privileged" roles end up weaker than viewer (doc/242 class).
+		{model.RoleTeamAdmin, "read", "assistant"},
+		{model.RoleTeamAdmin, "execute", "assistant"},
+		{model.RoleTeamAdmin, "read", "chat"},
+		{model.RoleTeamAdmin, "execute", "chat"},
+		{model.RoleTeamAdmin, "read", "search-app"},
+		{model.RoleTeamAdmin, "execute", "search-app"},
+		{model.RoleTeamAdmin, "read", "agent"},
+		{model.RoleTeamAdmin, "execute", "agent"},
+		{model.RoleTeamAdmin, "session:create", "agent"},
+		{model.RoleTeamAdmin, "read", "memory"},
+		{model.RoleTeamAdmin, "execute", "memory"},
 		// approval
 		{model.RoleTenantAdmin, "read", "approval"},
 		{model.RoleTenantAdmin, "execute", "approval"},
@@ -4541,7 +4600,6 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "manage", "approval-policy"},
 		{model.RoleOperator, "read", "approval"},
 		{model.RoleOperator, "execute", "approval"},
-		{model.RoleViewer, "read", "approval"},
 		// document governance (doc/224 T2) — manage is governor-only.
 		{model.RolePlatformAdmin, "read", "document-governance"},
 		{model.RolePlatformAdmin, "manage", "document-governance"},
@@ -4551,7 +4609,6 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "execute", "document-governance"},
 		{model.RoleTeamAdmin, "read", "document-governance"},
 		{model.RoleOperator, "read", "document-governance"},
-		{model.RoleViewer, "read", "document-governance"},
 		{model.RolePlatformAdmin, "read", "user-clearance"},
 		{model.RolePlatformAdmin, "manage", "user-clearance"},
 		{model.RoleTenantAdmin, "read", "user-clearance"},

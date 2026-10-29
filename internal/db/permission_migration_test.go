@@ -13,6 +13,210 @@ import (
 // openMigratedRBACDB builds a fresh database and runs the full migration chain
 // so the RBAC seeding behaviour is exercised exactly as a new deployment sees
 // it (doc/242).
+// TestMigrationV160AddsTrialRunResource proves the dedicated trial-run
+// resource reaches databases that were seeded while trial runs still borrowed
+// eval-set:execute (doc/244). It also pins the split that motivated the
+// resource: team_admin may execute, business_user and viewer may only read, and
+// team_admin still must not gain eval-set execute (that would re-open
+// POST /eval-cases/:id/revalidate).
+func TestMigrationV160AddsTrialRunResource(t *testing.T) {
+	gdb := openMigratedRBACDB(t)
+
+	var applied int64
+	if err := gdb.Model(&model.SchemaVersion{}).Where("version = ?", 160).Count(&applied).Error; err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Fatalf("expected migration 160 to be recorded once, got %d", applied)
+	}
+
+	grants := map[string]map[string]bool{}
+	var rows []model.Permission
+	if err := gdb.Where("resource = ?", "trial-run").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if grants[row.RoleID] == nil {
+			grants[row.RoleID] = map[string]bool{}
+		}
+		grants[row.RoleID][row.Action] = true
+	}
+	want := map[string][]string{
+		model.RolePlatformAdmin: {"read", "execute"},
+		model.RoleTenantAdmin:   {"read", "execute"},
+		model.RoleOperator:      {"read", "execute"},
+		model.RoleTeamAdmin:     {"read", "execute"},
+		model.RoleBusinessUser:  {"read"},
+		model.RoleViewer:        {"read"},
+	}
+	if len(grants) != len(want) {
+		t.Fatalf("trial-run granted to %d roles, want %d: %v", len(grants), len(want), grants)
+	}
+	for role, actions := range want {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s trial-run grants = %v, want %v", role, grants[role], actions)
+		}
+		for _, action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing trial-run %s", role, action)
+			}
+		}
+	}
+
+	// The whole point of doc/244: execute@trial-run must not be implemented by
+	// handing out execute@eval-set, whose other consumer is revalidate.
+	var teamEvalExecute int64
+	if err := gdb.Model(&model.Permission{}).
+		Where("role_id = ? AND action = ? AND resource = ?", model.RoleTeamAdmin, "execute", "eval-set").
+		Count(&teamEvalExecute).Error; err != nil {
+		t.Fatal(err)
+	}
+	if teamEvalExecute != 0 {
+		t.Fatalf("team_admin must not hold eval-set execute (doc/129 §1178), got %d", teamEvalExecute)
+	}
+}
+
+// TestMigrationV160IsReentrant deletes the grants the migration adds, plants a
+// stale row the migration must remove, and re-runs the reconciler twice.
+func TestMigrationV160IsReentrant(t *testing.T) {
+	gdb := openMigratedRBACDB(t)
+
+	if err := gdb.Where("resource = ?", "trial-run").Delete(&model.Permission{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stale := model.Permission{
+		ID: "perm-stale-160", RoleID: model.RoleTeamAdmin, Action: "manage", Resource: "trial-run",
+	}
+	if err := gdb.Create(&stale).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := reconcileBuiltinPermissions(gdb); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	var restored, staleRows int64
+	gdb.Model(&model.Permission{}).Where("resource = ?", "trial-run").Count(&restored)
+	gdb.Model(&model.Permission{}).Where("id = ?", "perm-stale-160").Count(&staleRows)
+	if restored != 10 {
+		t.Fatalf("expected 10 trial-run grant rows after reconcile, got %d", restored)
+	}
+	if staleRows != 0 {
+		t.Fatal("reconcile must drop grants that are not in the builtin matrix")
+	}
+
+	var before, after int64
+	gdb.Model(&model.Permission{}).Count(&before)
+	if err := reconcileBuiltinPermissions(gdb); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	gdb.Model(&model.Permission{}).Count(&after)
+	if before != after {
+		t.Fatalf("reconcile is not idempotent: %d rows then %d rows", before, after)
+	}
+}
+
+// TestMigrationV161ConvergesViewerReads proves the v0.5.0 convergence reaches
+// existing databases: `viewer` keeps exactly the 14 business reads it shares
+// with business_user, and the 19 tenant-wide operational/governance/config rows
+// are gone (doc/245).
+func TestMigrationV161ConvergesViewerReads(t *testing.T) {
+	gdb := openMigratedRBACDB(t)
+
+	var applied int64
+	if err := gdb.Model(&model.SchemaVersion{}).Where("version = ?", 161).Count(&applied).Error; err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Fatalf("expected migration 161 to be recorded once, got %d", applied)
+	}
+
+	viewerActions := map[string]map[string]bool{}
+	var rows []model.Permission
+	if err := gdb.Where("role_id = ?", model.RoleViewer).Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if viewerActions[row.Resource] == nil {
+			viewerActions[row.Resource] = map[string]bool{}
+		}
+		viewerActions[row.Resource][row.Action] = true
+	}
+	if len(viewerActions) != 14 {
+		t.Fatalf("viewer must read exactly 14 resources, got %d: %v", len(viewerActions), sortedKeys(viewerActions))
+	}
+	for resource, actions := range viewerActions {
+		if len(actions) != 1 || !actions["read"] {
+			t.Fatalf("viewer must be read-only on %q, got %v", resource, actions)
+		}
+	}
+	for _, resource := range viewerConvergenceRemovedReads {
+		if _, ok := viewerActions[resource]; ok {
+			t.Fatalf("migration 161 must remove viewer read on %q", resource)
+		}
+	}
+
+	// business_user must still hold every read viewer holds (viewer ⊆
+	// business_user), and must not have lost ground in the process.
+	businessReads := map[string]bool{}
+	var businessRows []model.Permission
+	if err := gdb.Where("role_id = ? AND action = ?", model.RoleBusinessUser, "read").Find(&businessRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range businessRows {
+		businessReads[row.Resource] = true
+	}
+	for resource := range viewerActions {
+		if !businessReads[resource] {
+			t.Fatalf("viewer reads %q but business_user does not: the inversion doc/245 removed came back", resource)
+		}
+	}
+	if len(businessReads) != 15 {
+		t.Fatalf("business_user read set must stay at 15 resources, got %d", len(businessReads))
+	}
+}
+
+// TestMigrationV161IsReentrant plants the removed rows back, re-runs the
+// reconciler twice, and expects them to disappear again with a stable count.
+func TestMigrationV161IsReentrant(t *testing.T) {
+	gdb := openMigratedRBACDB(t)
+
+	planted := []model.Permission{
+		{ID: "perm-v161-usage", RoleID: model.RoleViewer, Action: "read", Resource: "usage"},
+		{ID: "perm-v161-task", RoleID: model.RoleViewer, Action: "read", Resource: "task"},
+		{ID: "perm-v161-manage", RoleID: model.RoleViewer, Action: "manage", Resource: "dataset"},
+	}
+	for i := range planted {
+		if err := gdb.Create(&planted[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := reconcileBuiltinPermissions(gdb); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	for _, row := range planted {
+		var n int64
+		gdb.Model(&model.Permission{}).Where("id = ?", row.ID).Count(&n)
+		if n != 0 {
+			t.Fatalf("reconcile must drop %s@%s for viewer", row.Action, row.Resource)
+		}
+	}
+	var viewerRows int64
+	gdb.Model(&model.Permission{}).Where("role_id = ?", model.RoleViewer).Count(&viewerRows)
+	if viewerRows != 14 {
+		t.Fatalf("expected 14 viewer rows after reconcile, got %d", viewerRows)
+	}
+
+	var before, after int64
+	gdb.Model(&model.Permission{}).Count(&before)
+	if err := reconcileBuiltinPermissions(gdb); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	gdb.Model(&model.Permission{}).Count(&after)
+	if before != after {
+		t.Fatalf("reconcile is not idempotent: %d rows then %d rows", before, after)
+	}
+}
+
 func openMigratedRBACDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "rbac-intent.db")})

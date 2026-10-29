@@ -7,16 +7,16 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
-// Trial runs reuse the existing grant matrix instead of introducing a new
-// resource: creating/cancelling requires eval-set execute (tenant_admin,
-// operator) and reading requires scenario-template read. Adding a dedicated
-// permission row would change the 423-grant matrix, which is out of scope for
-// v0.4.0 (doc/228 §4.3).
+// Trial runs have their own resource (doc/244): reading requires
+// `trial-run:read`, starting or cancelling requires `trial-run:execute`.
+//
+// v0.4.0 borrowed `eval-set:execute` for the write path, which forced a choice
+// between "team administrators cannot practise a template" and "team
+// administrators may rewrite evidence snapshots" (that action also guards
+// POST /eval-cases/:id/revalidate). The dedicated action breaks the coupling:
+// practising is authoring, revalidating evidence is governance.
 func authorizeTrialRunWrite(c *gin.Context) error {
-	if err := authorizeResource(c, "scenario-template", "read"); err != nil {
-		return err
-	}
-	return authorizeResource(c, "eval-set", "execute")
+	return authorizeResource(c, "trial-run", "execute")
 }
 
 func createTrialRun(c *gin.Context) {
@@ -40,7 +40,7 @@ func createTrialRun(c *gin.Context) {
 }
 
 func getTrialRun(c *gin.Context) {
-	if err := authorizeResource(c, "scenario-template", "read"); err != nil {
+	if err := authorizeResource(c, "trial-run", "read"); err != nil {
 		response.Err(c, err)
 		return
 	}
@@ -55,7 +55,7 @@ func getTrialRun(c *gin.Context) {
 }
 
 func listTrialRuns(c *gin.Context) {
-	if err := authorizeResource(c, "scenario-template", "read"); err != nil {
+	if err := authorizeResource(c, "trial-run", "read"); err != nil {
 		response.Err(c, err)
 		return
 	}

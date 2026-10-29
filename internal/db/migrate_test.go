@@ -251,6 +251,9 @@ func TestMigrationV88BusinessUserRole(t *testing.T) {
 		// doc/242: consumers must be able to reach the template catalog and
 		// onboarding readiness; both are gated by scenario-template read.
 		"read|scenario-template",
+		// doc/244: trial runs moved to their own resource; consumers keep the
+		// read access they had through scenario-template:read.
+		"read|trial-run",
 	}
 	if len(permissions) != len(expected) {
 		t.Fatalf("expected %d business user permissions, got %d: %+v", len(expected), len(permissions), permissions)
