@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -168,5 +169,153 @@ func TestBootstrapAdminReconcile(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("platform_admin user_role missing: %+v", roles)
+	}
+}
+
+// TestAuthorizeImpliesReadFromWriteGrants covers the custom-role half of the
+// "write implies read" rule (doc/247). Builtin roles satisfy it through the
+// matrix guard, but roles authored via PUT /roles/:id/permissions are not
+// rewritten by any migration — the implication has to hold at authorization
+// time or the UI renders a page the API then 403s.
+func TestAuthorizeImpliesReadFromWriteGrants(t *testing.T) {
+	ctx := context.Background()
+	svc := newAuthzSvc(t)
+	admin, err := svc.Store.GetUserByUsername(ctx, "admin")
+	if err != nil || admin == nil {
+		t.Fatal(err)
+	}
+	workspace, err := svc.CreateTenant(ctx, "Implication Workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name  string
+		perms []PermissionSpec
+	}{
+		{
+			name:  "manage only",
+			perms: []PermissionSpec{{Action: "manage", Resource: "dataset", Effect: model.PermissionEffectAllow}},
+		},
+		{
+			name:  "execute only",
+			perms: []PermissionSpec{{Action: "execute", Resource: "chat", Effect: model.PermissionEffectAllow}},
+		},
+		{
+			name:  "append only",
+			perms: []PermissionSpec{{Action: "append", Resource: "document", Effect: model.PermissionEffectAllow}},
+		},
+		{
+			name: "manage allowed but execute denied",
+			perms: []PermissionSpec{
+				{Action: "manage", Resource: "chat", Effect: model.PermissionEffectAllow},
+				{Action: "execute", Resource: "chat", Effect: model.PermissionEffectDeny},
+			},
+		},
+	}
+	for i, tc := range cases {
+		role, rerr := svc.CreateRole(ctx, admin.ID, admin.Role, CreateRoleRequest{
+			Name: "implication-" + strconv.Itoa(i), Scope: model.RoleScopeTenant,
+		})
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		if serr := svc.SetRolePermissions(ctx, admin.ID, admin.Role, role.ID, tc.perms); serr != nil {
+			t.Fatal(serr)
+		}
+		user, uerr := svc.CreateUser(ctx, workspace.ID, "", CreateUserRequest{
+			Username: "implication-user-" + strconv.Itoa(i), Password: "secret123", Role: role.ID,
+		})
+		if uerr != nil {
+			t.Fatal(uerr)
+		}
+		resource := tc.perms[0].Resource
+		if aerr := svc.Authorize(ctx, user.ID, "read", resource); aerr != nil {
+			t.Fatalf("%s: read on %s should be implied: %v", tc.name, resource, aerr)
+		}
+	}
+
+	// Deny rules stay literal: denying read still wins over an implied/allow read.
+	role, err := svc.CreateRole(ctx, admin.ID, admin.Role, CreateRoleRequest{Name: "implication-deny", Scope: model.RoleScopeTenant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetRolePermissions(ctx, admin.ID, admin.Role, role.ID, []PermissionSpec{
+		{Action: "manage", Resource: "dataset", Effect: model.PermissionEffectAllow},
+		{Action: "read", Resource: "dataset", Effect: model.PermissionEffectDeny},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	user, err := svc.CreateUser(ctx, workspace.ID, "", CreateUserRequest{Username: "implication-deny-user", Password: "secret123", Role: role.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Authorize(ctx, user.ID, "read", "dataset"); err == nil {
+		t.Fatal("explicit deny read must not be overridden by an implied read")
+	}
+	if err := svc.Authorize(ctx, user.ID, "manage", "dataset"); err != nil {
+		t.Fatalf("manage must stay allowed: %v", err)
+	}
+}
+
+// TestSetRolePermissionsCannotExceedActorGrants pins the "you cannot grant what
+// you cannot exercise" rule (doc/247 R-24). Before this guard, a tenant_admin
+// (which holds role:manage) could create a tenant-scoped role carrying
+// governance.read/tenant — a permission only platform_admin holds — assign it to
+// itself, and then GET /api/v1/tenants would return every workspace, because
+// ListTenants treats that permission as the full platform read.
+func TestSetRolePermissionsCannotExceedActorGrants(t *testing.T) {
+	ctx := context.Background()
+	svc := newAuthzSvc(t)
+	admin, err := svc.Store.GetUserByUsername(ctx, "admin")
+	if err != nil || admin == nil {
+		t.Fatal(err)
+	}
+	tenant, err := svc.CreateTenant(ctx, "Escalation Workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenantAdmin, err := svc.CreateUser(ctx, tenant.ID, "", CreateUserRequest{Username: "escalation-admin", Password: "secret123", Role: model.RoleTenantAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	role, err := svc.CreateRole(ctx, tenantAdmin.ID, tenantAdmin.Role, CreateRoleRequest{Name: "escalation-role", Scope: model.RoleScopeTenant})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1) escalation attempt: grant a platform-only permission
+	err = svc.SetRolePermissions(ctx, tenantAdmin.ID, tenantAdmin.Role, role.ID, []PermissionSpec{
+		{Action: "governance.read", Resource: "tenant", Effect: model.PermissionEffectAllow},
+		{Action: "read", Resource: "chat", Effect: model.PermissionEffectAllow},
+	})
+	if err == nil {
+		t.Fatal("tenant_admin must not be able to grant governance.read on tenant")
+	}
+	perms, perr := svc.Store.GetPermissions(ctx, role.ID)
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	if len(perms) != 0 {
+		t.Fatalf("rejected request must not persist partial grants: %+v", perms)
+	}
+
+	// 2) delegating permissions the actor does hold still works
+	if err := svc.SetRolePermissions(ctx, tenantAdmin.ID, tenantAdmin.Role, role.ID, []PermissionSpec{
+		{Action: "read", Resource: "chat", Effect: model.PermissionEffectAllow},
+		{Action: "manage", Resource: "chat", Effect: model.PermissionEffectDeny},
+	}); err != nil {
+		t.Fatalf("tenant_admin should delegate a permission it holds: %v", err)
+	}
+
+	// 3) platform_admin holds the whole catalog, so the same grant is allowed for it
+	platformRole, err := svc.CreateRole(ctx, admin.ID, admin.Role, CreateRoleRequest{Name: "platform-delegation", Scope: model.RoleScopeTenant})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetRolePermissions(ctx, admin.ID, admin.Role, platformRole.ID, []PermissionSpec{
+		{Action: "governance.read", Resource: "tenant", Effect: model.PermissionEffectAllow},
+	}); err != nil {
+		t.Fatalf("platform_admin must be able to delegate governance.read: %v", err)
 	}
 }

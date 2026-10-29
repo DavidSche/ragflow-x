@@ -78,10 +78,39 @@ func TestBusinessUserReadIntentMatchesMatrix(t *testing.T) {
 	}
 }
 
-// TestViewerOnlyReadRequiresRationale is the inversion guard. Where a read-only
-// role may read but the working role may not, the denial must be a written
-// decision (doc/242 §3) — that is exactly the class of gap that let 19 rows
-// drift unnoticed.
+// TestViewerOnlyReadsAreGone is the v0.5.0 convergence guard (doc/245). It is
+// stricter than the rationale escape hatch below: after doc/245 removed the 19
+// viewer-only reads, *any* read the viewer holds that business_user does not is
+// a regression, full stop. Rationale is no longer an acceptable substitute for
+// convergence — a future resource must be readable by the working role first.
+func TestViewerOnlyReadsAreGone(t *testing.T) {
+	viewerReads := map[string]bool{}
+	businessReads := map[string]bool{}
+	for _, grant := range BuiltinPermissionMatrix() {
+		if grant.Action != "read" {
+			continue
+		}
+		switch grant.Role {
+		case model.RoleViewer:
+			viewerReads[grant.Resource] = true
+		case model.RoleBusinessUser:
+			businessReads[grant.Resource] = true
+		}
+	}
+	if len(viewerReads) != 14 {
+		t.Fatalf("viewer must read exactly 14 resources (doc/245), got %d: %v", len(viewerReads), sortedKeys(viewerReads))
+	}
+	for resource := range viewerReads {
+		if !businessReads[resource] {
+			t.Errorf("viewer reads %q but business_user does not: read-only roles must not out-read working roles (doc/242/doc/245)", resource)
+		}
+	}
+}
+
+// TestViewerOnlyReadRequiresRationale is the older inversion guard, kept as a
+// second net: *if* a viewer-only read ever returns, the denial must at least be
+// a written decision (doc/242 §3). TestViewerOnlyReadsAreGone above should fail
+// first.
 func TestViewerOnlyReadRequiresRationale(t *testing.T) {
 	readers := map[string]map[string]bool{}
 	for _, grant := range BuiltinPermissionMatrix() {

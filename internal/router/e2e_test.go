@@ -1514,14 +1514,17 @@ func TestE2E_AsyncJobsObservationAndRBAC(t *testing.T) {
 		t.Fatalf("team_admin reading jobs should be 403, got %d %s", resp.StatusCode, body)
 	}
 
-	// 越权 case 2: viewer has "read task" -> 200 (allowed).
+	// 越权 case 2: viewer must ALSO be denied since doc/245. The task queue is a
+	// tenant-level projection (every tenant's jobs, no team narrowing); giving it
+	// to the read-only guest while the working role cannot see it was the
+	// inversion doc/242 fixed in the other direction.
 	resp, body = app.doAuth(t, http.MethodPost, "/api/v1/users", adminToken, []byte(`{"username":"vw2","password":"secret123","role":"viewer"}`))
 	if resp.StatusCode != 200 {
 		t.Fatalf("create viewer: %d %s", resp.StatusCode, body)
 	}
 	vwToken := loginAs(t, app, "vw2", "secret123")
 	resp, body = app.doAuth(t, http.MethodGet, "/api/v1/tasks/jobs", vwToken, nil)
-	if resp.StatusCode != 200 {
-		t.Fatalf("viewer reading jobs should be 200, got %d %s", resp.StatusCode, body)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("viewer reading jobs should be 403 since doc/245, got %d %s", resp.StatusCode, body)
 	}
 }

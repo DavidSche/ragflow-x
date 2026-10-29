@@ -84,3 +84,46 @@ func TestGovernanceReadContractsAllowAuthorizedScopes(t *testing.T) {
 		}
 	}
 }
+
+// TestRegistryDeclaresEveryGrantedAction keeps ResourceTypeRegistry honest.
+//
+// TestP0_AUTHZ_001_RouteContractsMatchPermissionRegistry only proves that every
+// routed (action, resource) pair has some grant in the builtin matrix. It does
+// not prove the reverse direction: that a permitted action is actually declared
+// by the registry that calls itself "the authoritative policy shape". tenant is
+// the live example — its governance.* / tenant.connection.* actions are enforced
+// in the service layer, so an under-declared registry silently lied until
+// doc/247. This guard closes the loop for both directions.
+func TestRegistryDeclaresEveryGrantedAction(t *testing.T) {
+	registry := ResourceTypeRegistry()
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource == "*" {
+			continue
+		}
+		definition, ok := registry[grant.Resource]
+		if !ok {
+			t.Errorf("matrix grants %s on unregistered resource %q", grant.Action, grant.Resource)
+			continue
+		}
+		if !containsAction(definition.AllowedActions, grant.Action) {
+			t.Errorf("%s grants %q on %q but registry AllowedActions=%v does not declare it",
+				grant.Role, grant.Action, grant.Resource, definition.AllowedActions)
+		}
+	}
+	for _, rule := range accessRules(nil) {
+		definition := registry[rule.Resource]
+		if !containsAction(definition.AllowedActions, rule.Action) {
+			t.Errorf("%s %s requires %q on %q but registry AllowedActions=%v does not declare it",
+				rule.Method, rule.Path, rule.Action, rule.Resource, definition.AllowedActions)
+		}
+	}
+}
+
+func containsAction(actions []string, want string) bool {
+	for _, action := range actions {
+		if action == want {
+			return true
+		}
+	}
+	return false
+}

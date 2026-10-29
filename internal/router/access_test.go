@@ -1,6 +1,7 @@
 package router
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/db"
@@ -388,7 +389,8 @@ func TestP0CRoutingPermissionsMatchMinimumContract(t *testing.T) {
 			model.RolePlatformAdmin: {"read", "manage"},
 			model.RoleTenantAdmin:   {"read", "manage"},
 			model.RoleOperator:      {"read"},
-			model.RoleViewer:        {"read"},
+			// viewer lost routing-rule reads in doc/245: routing is workspace
+			// configuration, not a business read surface.
 		},
 	}
 	for resource, roles := range expected {
@@ -421,6 +423,9 @@ func TestP0CRoutingPermissionsMatchMinimumContract(t *testing.T) {
 					t.Fatalf("%s role %s is missing %s", resource, role, action)
 				}
 			}
+		}
+		if resource == "source-routing-rule" && len(grants[model.RoleViewer]) != 0 {
+			t.Fatalf("viewer must not hold source-routing-rule grants since doc/245, got %v", grants[model.RoleViewer])
 		}
 	}
 }
@@ -527,7 +532,8 @@ func TestKnowledgeStrategyPermissionsMatchMinimumContract(t *testing.T) {
 		model.RoleTenantAdmin:   {"read": true, "manage": true, "execute": true},
 		model.RoleTeamAdmin:     {"read": true, "manage": true, "execute": true},
 		model.RoleOperator:      {"read": true, "execute": true},
-		model.RoleViewer:        {"read": true},
+		// viewer lost parse/retrieval strategy configuration in doc/245: it is
+		// "how the workspace is tuned", not "what the workspace produced".
 	}
 	for role, actions := range expected {
 		if len(grants[role]) != len(actions) {
@@ -539,7 +545,7 @@ func TestKnowledgeStrategyPermissionsMatchMinimumContract(t *testing.T) {
 			}
 		}
 	}
-	for _, role := range []string{model.RoleBusinessUser} {
+	for _, role := range []string{model.RoleBusinessUser, model.RoleViewer} {
 		if len(grants[role]) != 0 {
 			t.Fatalf("%s must not receive knowledge-strategy permissions in this slice, got %v", role, grants[role])
 		}
@@ -568,9 +574,9 @@ func TestEvidenceSnapshotPermissionsMatchReadOnlyContract(t *testing.T) {
 		model.RolePlatformAdmin: {"read": true},
 		model.RoleTenantAdmin:   {"read": true},
 		model.RoleOperator:      {"read": true},
-		model.RoleViewer:        {"read": true},
 		model.RoleTeamAdmin:     {"read": true},
 	}
+	// viewer no longer reads the release evidence chain (doc/245).
 	for role, actions := range expected {
 		if len(grants[role]) != len(actions) {
 			t.Fatalf("%s evidence-snapshot grants = %v, want %v", role, grants[role], actions)
@@ -581,7 +587,7 @@ func TestEvidenceSnapshotPermissionsMatchReadOnlyContract(t *testing.T) {
 			}
 		}
 	}
-	for _, role := range []string{model.RoleBusinessUser} {
+	for _, role := range []string{model.RoleBusinessUser, model.RoleViewer} {
 		if len(grants[role]) != 0 {
 			t.Fatalf("%s must not receive evidence-snapshot permissions, got %v", role, grants[role])
 		}
@@ -625,6 +631,78 @@ func TestOutboxEventPermissionsMatchOperationalContract(t *testing.T) {
 	for _, role := range []string{model.RoleBusinessUser, model.RoleViewer, model.RoleTeamAdmin} {
 		if len(grants[role]) != 0 {
 			t.Fatalf("%s must not receive outbox-event permissions, got %v", role, grants[role])
+		}
+	}
+}
+
+// TestTrialRunExecutePermissionsMatchPracticeRunContract pins doc/244: trial
+// runs own their resource, so practising a template no longer requires
+// eval-set:execute (whose other consumer, POST /eval-cases/:id/revalidate, is
+// tenant-scoped governance). team_admin gains the practice run; business_user
+// and viewer keep read-only visibility, exactly what scenario-template:read
+// used to give them.
+func TestTrialRunExecutePermissionsMatchPracticeRunContract(t *testing.T) {
+	definition := ResourceTypeRegistry()["trial-run"]
+	if definition.ResourceScope != ResourceScopeWorkspace {
+		t.Fatalf("trial-run scope = %q, want workspace", definition.ResourceScope)
+	}
+	if len(definition.AllowedActions) != 2 || definition.AllowedActions[0] != "read" ||
+		definition.AllowedActions[1] != "execute" {
+		t.Fatalf("trial-run allowed actions = %v, want [read execute]", definition.AllowedActions)
+	}
+	for _, rule := range accessRules(nil) {
+		if !strings.HasPrefix(rule.Path, "/api/v1/trial-runs") {
+			continue
+		}
+		if rule.Resource != "trial-run" {
+			t.Errorf("%s %s still borrows %q; trial runs must use their own resource", rule.Method, rule.Path, rule.Resource)
+		}
+	}
+
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "trial-run" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	expected := map[string]map[string]bool{
+		model.RolePlatformAdmin: {"read": true, "execute": true},
+		model.RoleTenantAdmin:   {"read": true, "execute": true},
+		model.RoleOperator:      {"read": true, "execute": true},
+		model.RoleTeamAdmin:     {"read": true, "execute": true},
+		model.RoleBusinessUser:  {"read": true},
+		model.RoleViewer:        {"read": true},
+	}
+	for role, actions := range expected {
+		if len(grants[role]) != len(actions) {
+			t.Fatalf("%s trial-run grants = %v, want %v", role, grants[role], actions)
+		}
+		for action := range actions {
+			if !grants[role][action] {
+				t.Fatalf("%s is missing trial-run %s", role, action)
+			}
+		}
+	}
+
+	// Guard the coupling that doc/244 removed: a role that can practise must
+	// not need eval-set execute, and a role that must not revalidate evidence
+	// must not have gained it as a side effect.
+	var evalExecute []string
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource == "eval-set" && grant.Action == "execute" {
+			evalExecute = append(evalExecute, grant.Role)
+		}
+	}
+	if len(evalExecute) != 3 {
+		t.Fatalf("eval-set execute holders = %v, want exactly platform_admin/tenant_admin/operator", evalExecute)
+	}
+	for _, role := range evalExecute {
+		if role == model.RoleTeamAdmin {
+			t.Fatal("team_admin must not hold eval-set execute (doc/129 §1178)")
 		}
 	}
 }
@@ -695,8 +773,9 @@ func TestEvalSetExecutePermissionsMatchRevalidationContract(t *testing.T) {
 		model.RoleTenantAdmin:   {"read": true, "manage": true, "execute": true},
 		model.RoleOperator:      {"read": true, "manage": true, "execute": true},
 		model.RoleTeamAdmin:     {"read": true, "manage": true},
-		model.RoleViewer:        {"read": true},
 	}
+	// viewer no longer reads eval sets (doc/245: grading ledgers are a
+	// governance surface, not a business read).
 	for role, actions := range expected {
 		if len(grants[role]) != len(actions) {
 			t.Fatalf("%s eval-set grants = %v, want %v", role, grants[role], actions)
@@ -707,7 +786,9 @@ func TestEvalSetExecutePermissionsMatchRevalidationContract(t *testing.T) {
 			}
 		}
 	}
-	if len(grants[model.RoleBusinessUser]) != 0 {
-		t.Fatalf("business_user must not receive eval-set permissions, got %v", grants[model.RoleBusinessUser])
+	for _, role := range []string{model.RoleBusinessUser, model.RoleViewer} {
+		if len(grants[role]) != 0 {
+			t.Fatalf("%s must not receive eval-set permissions, got %v", role, grants[role])
+		}
 	}
 }
