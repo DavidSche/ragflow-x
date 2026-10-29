@@ -9,12 +9,22 @@ vi.mock("./lib/api", () => ({
 }));
 
 const allow = (resource: string, action: string) => ({ action, resource, effect: "allow" });
+// doc/245: viewer is the read-only slice of business_user. The 14 business
+// reads are mirrored exactly, so these tests fail if the UI starts trusting a
+// converged-away grant again.
 const viewerPermissions = [
-  ...["user", "team", "project", "dataset", "document", "task", "usage", "dashboard", "knowledge-ops", "chat", "search-app", "assistant", "scenario-template", "prompt-policy", "knowledge-lifecycle", "eval-set", "release-governance"]
+  ...["user", "dataset", "document", "assistant", "chat", "search-app", "agent", "memory", "memory-policy", "memory-operation", "context-decision", "logical-document", "scenario-template", "trial-run"]
+    .map((resource) => allow(resource, "read")),
+];
+// Reads viewer used to hold before doc/245. They are still valid for staff
+// roles, so the operator/admin fixtures keep them explicitly.
+const convergedViewerReads = [
+  ...["team", "project", "task", "usage", "dashboard", "knowledge-ops", "approval", "compilation", "prompt-policy", "parser-policy", "quality-profile", "knowledge-lifecycle", "knowledge-profile", "knowledge-strategy", "document-governance", "source-routing-rule", "evidence-snapshot", "eval-set", "release-governance"]
     .map((resource) => allow(resource, "read")),
 ];
 const operatorPermissions = [
   ...viewerPermissions,
+  ...convergedViewerReads,
   allow("task", "execute"),
   allow("chat", "execute"),
   allow("assistant", "execute"),
@@ -120,8 +130,13 @@ describe("authProvider navigation permission matrix", () => {
 
     await expect(authProvider.canAccess({ resource: "alerts", action: "list" })).resolves.toBe(false);
     await expect(authProvider.canAccess({ resource: "scenario-templates", action: "list" })).resolves.toBe(true);
-    await expect(authProvider.canAccess({ resource: "release-governance", action: "list" })).resolves.toBe(true);
-    await expect(authProvider.canAccess({ resource: "asset-governance", action: "list" })).resolves.toBe(true);
+    await expect(authProvider.canAccess({ resource: "trial-runs", action: "list" })).resolves.toBe(true);
+    await expect(authProvider.canAccess({ resource: "datasets", action: "list" })).resolves.toBe(true);
+    // doc/245: the tenant-wide operational and governance surfaces are gone.
+    await expect(authProvider.canAccess({ resource: "release-governance", action: "list" })).resolves.toBe(false);
+    await expect(authProvider.canAccess({ resource: "asset-governance", action: "list" })).resolves.toBe(false);
+    await expect(authProvider.canAccess({ resource: "knowledge-ops", action: "list" })).resolves.toBe(false);
+    await expect(authProvider.canAccess({ resource: "usage", action: "list" })).resolves.toBe(false);
     await expect(authProvider.canAccess({ resource: "workbench", action: "list" })).resolves.toBe(false);
   });
 

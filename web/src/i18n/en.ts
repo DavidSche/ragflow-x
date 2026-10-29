@@ -1935,6 +1935,7 @@ const enMessages = {
     res_usage: "Usage",
     res_usage_export: "Usage export",
     res_scenario_template: "Scenario template",
+    res_trial_run: "Practice run",
     res_prompt_policy: "Prompt policy",
     res_knowledge_lifecycle: "Knowledge lifecycle",
     res_knowledge_ops: "Knowledge ops",

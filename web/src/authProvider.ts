@@ -75,7 +75,7 @@ const RESOURCE_ACCESS: Record<string, { resource: string; action: string }> = {
   "alert-deliveries": { resource: "alert", action: "read" },
   "knowledge-ops": { resource: "knowledge-ops", action: "read" },
   "scenario-templates": { resource: "scenario-template", action: "read" },
-  "trial-runs": { resource: "scenario-template", action: "read" },
+  "trial-runs": { resource: "trial-run", action: "read" },
   "parser-policies": { resource: "parser-policy", action: "read" },
   "quality-profiles": { resource: "quality-profile", action: "read" },
   "knowledge-compilation": { resource: "compilation", action: "read" },

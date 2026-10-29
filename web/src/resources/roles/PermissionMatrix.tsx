@@ -18,7 +18,7 @@ const MODULES: { key: string; labelKey: string; resources: string[]; aliases?: s
   { key: "org", labelKey: "roles.mod_org", resources: ["tenant", "user", "role", "team", "project"] },
   {
     key: "content", labelKey: "roles.mod_content",
-    resources: ["dataset", "dataset-export", "document", "task", "eval-set", "knowledge-lifecycle", "knowledge-ops", "scenario-template", "prompt-policy"],
+    resources: ["dataset", "dataset-export", "document", "task", "eval-set", "knowledge-lifecycle", "knowledge-ops", "scenario-template", "trial-run", "prompt-policy"],
     aliases: ["asset-governance"],
   },
   {
