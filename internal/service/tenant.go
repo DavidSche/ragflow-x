@@ -171,8 +171,13 @@ type UpdateTenantRequest struct {
 // UpdateTenant edits a tenant. Platform admins may edit any tenant; tenant
 // admins may only edit their own.
 func (s *Service) UpdateTenant(ctx context.Context, actorID, actorTenantID, tenantID string, req UpdateTenantRequest) (*model.Tenant, error) {
-	if tenantID != actorTenantID && s.Authorize(ctx, actorID, "governance.manage", "tenant") != nil {
-		return nil, ErrForbidden
+	if tenantID != actorTenantID {
+		// governance.manage stays accepted so existing platform roles and
+		// delegated operators behave exactly as before; tenant.resource.manage
+		// makes the fine-grained capability executable (doc/248 / R-26).
+		if _, err := s.AuthorizeAny(ctx, actorID, TenantResourceRefs(false)...); err != nil {
+			return nil, ErrForbidden
+		}
 	}
 	t, err := s.Store.GetTenant(ctx, tenantID)
 	if err != nil {
@@ -223,7 +228,7 @@ func (s *Service) UpdateTenant(ctx context.Context, actorID, actorTenantID, tena
 // Only platform admins may modify other tenants' states in bulk; the platform
 // tenant itself is protected.
 func (s *Service) BatchUpdateTenantStatus(ctx context.Context, actorID string, ids []string, status string) error {
-	if s.Authorize(ctx, actorID, "governance.manage", "tenant") != nil {
+	if _, err := s.AuthorizeAny(ctx, actorID, TenantResourceRefs(false)...); err != nil {
 		return ErrForbidden
 	}
 	if status != model.TenantStatusActive && status != model.TenantStatusDisabled {
@@ -277,8 +282,12 @@ func (s *Service) ExportTenants(ctx context.Context, actorID, actorTenantID stri
 // with users/teams/datasets can only be removed with force (which also
 // removes its shadow users, teams, projects and dataset links).
 func (s *Service) DeleteTenant(ctx context.Context, actorID, actorTenantID, tenantID string, force bool) error {
-	if tenantID != actorTenantID && s.Authorize(ctx, actorID, "governance.manage", "tenant") != nil {
-		return ErrForbidden
+	if tenantID != actorTenantID {
+		// Deleting a workspace is its own capability (doc/77 §4.6): a delegated
+		// platform operator may edit settings without being able to delete.
+		if _, err := s.AuthorizeAny(ctx, actorID, TenantResourceRefs(true)...); err != nil {
+			return ErrForbidden
+		}
 	}
 	if tenantID == SystemTenantID {
 		return httperr.BadRequest(40003, "platform tenant cannot be deleted")

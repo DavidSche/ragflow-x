@@ -341,6 +341,41 @@ func (s *Service) Authorize(ctx context.Context, userID, action, resource string
 	return ac.evaluate(action, resource)
 }
 
+// PermissionRef is one acceptable (action, resource) pair for a gate that has
+// more than one way in, such as a fine-grained platform capability or its
+// broader legacy permission. It is deliberately not PermissionSpec: that type
+// describes a stored grant rule and carries an Effect (doc/248).
+type PermissionRef struct {
+	Action   string
+	Resource string
+}
+
+// String renders the ref the way audit entries record it ("action:resource").
+func (p PermissionRef) String() string { return p.Action + ":" + p.Resource }
+
+// AuthorizeAny grants the request if any ref is allowed and returns the ref that
+// matched, so callers can record the permission that actually justified the
+// access instead of hardcoding a label. Deny rules keep their literal precedence
+// inside each ref, and the first matching ref wins.
+func (s *Service) AuthorizeAny(ctx context.Context, userID string, refs ...PermissionRef) (PermissionRef, error) {
+	ac, err := s.authz(ctx, userID)
+	if err != nil {
+		return PermissionRef{}, err
+	}
+	ref, ok := ac.matchAny(refs)
+	if !ok {
+		return PermissionRef{}, ErrForbidden
+	}
+	return ref, nil
+}
+
+// CanAny is the boolean form of AuthorizeAny for call sites that only need a
+// yes/no answer and record no attribution.
+func (s *Service) CanAny(ctx context.Context, userID string, refs ...PermissionRef) bool {
+	_, err := s.AuthorizeAny(ctx, userID, refs...)
+	return err == nil
+}
+
 // AuthorizeObject extends RBAC with ABAC: the principal must hold the RBAC
 // permission AND the object must belong to the caller's tenant, be owned by the
 // caller, or the principal must be a platform role scoped to manage it.
@@ -463,6 +498,18 @@ func (s *Service) expandRoles(ctx context.Context, roles []model.Role) ([]string
 		}
 	}
 	return result, nil
+}
+
+// matchAny returns the first ref the principal is allowed to use, preserving the
+// caller's preference order (doc/248: broad permission first for audit
+// attribution stability).
+func (c *authzContext) matchAny(refs []PermissionRef) (PermissionRef, bool) {
+	for _, ref := range refs {
+		if c.evaluate(ref.Action, ref.Resource) == nil {
+			return ref, true
+		}
+	}
+	return PermissionRef{}, false
 }
 
 func (c *authzContext) evaluate(action, resource string) error {

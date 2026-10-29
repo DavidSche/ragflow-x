@@ -93,9 +93,11 @@ func ResourceTypeRegistry() map[string]ResourceTypeDefinition {
 		// resource whose AllowedActions is a strict subset of the granted matrix
 		// makes the registry lie about the policy shape (doc/247).
 		// tenant.audit.read / tenant.usage.read / tenant.resource.manage /
-		// tenant.resource.delete are declared but have no enforcement point yet
-		// (tracked as R-26 in doc/247); they are kept so that wiring them does
-		// not require touching this registry under time pressure.
+		// tenant.resource.delete are wired as fine-grained alternatives to the
+		// broader governance.* permission (doc/248 / R-26): a delegated platform
+		// auditor can read audit or usage across workspaces without holding the
+		// whole governance surface, and deleting a workspace stays separate from
+		// editing one.
 		"tenant": {
 			ResourceScope:          ResourceScopePlatform,
 			AllowedActions:         resourceActions("read", "manage", "governance.read", "governance.read_sensitive", "governance.manage", "tenant.audit.read", "tenant.usage.read", "tenant.resource.manage", "tenant.resource.delete", "tenant.connection.bind", "tenant.connection.manage", "tenant.connection.unbind", "tenant.connection.rotate_secret"),

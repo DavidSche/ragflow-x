@@ -5,6 +5,7 @@ import (
 
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
+	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
 // ListAuditAnchors returns immutable audit-chain tail snapshots.
@@ -14,7 +15,9 @@ func (h *Handler) ListAuditAnchors(c *gin.Context) {
 		return
 	}
 	page, pageSize := pageParams(c)
-	scopeAll := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "governance.read", "tenant") == nil
+	// Audit-chain anchors are audit data: a delegated auditor holding only
+	// tenant.audit.read may list them across workspaces (doc/248 / R-26).
+	scopeAll := h.Service.CanAny(c.Request.Context(), c.GetString(middleware.ContextUserID), service.GovernanceReadRefs("audit")...)
 	items, total, err := h.Service.ListAuditAnchors(
 		c.Request.Context(),
 		c.GetString(middleware.ContextTenantID),

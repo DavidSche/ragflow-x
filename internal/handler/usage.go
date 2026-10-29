@@ -6,19 +6,29 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
+	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
 // UsageReport returns a usage and estimated-cost report, optionally scoped to
 // all tenants for platform admins and filtered by a date range.
 func (h *Handler) UsageReport(c *gin.Context) {
 	tenantID := c.GetString(middleware.ContextTenantID)
-	scopeAll := c.Query("scope") == "all" && h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "governance.read", "tenant") == nil
-	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "usage"); err != nil {
+	userID := c.GetString(middleware.ContextUserID)
+	// A delegated platform auditor may read cross-workspace usage with
+	// tenant.usage.read alone; governance.read keeps working and stays first so
+	// existing audit attribution does not churn (doc/248 / R-26).
+	usageRef, usageErr := h.Service.AuthorizeAny(c.Request.Context(), userID, service.GovernanceReadRefs("usage")...)
+	scopeAll := c.Query("scope") == "all" && usageErr == nil
+	permittedBy := "governance.read:tenant"
+	if usageErr == nil {
+		permittedBy = usageRef.String()
+	}
+	if err := h.Service.Authorize(c.Request.Context(), userID, "read", "usage"); err != nil {
 		response.Err(c, err)
 		return
 	}
 	if scopeAll {
-		if err := h.RequireAudit(c.Request.Context(), &model.AuditLog{TenantID: tenantID, UserID: c.GetString(middleware.ContextUserID), Action: "usage.governance.read", Resource: "usage", Scope: "ALL_AUTHORIZED", TargetTenantID: tenantID, AuthorizationPermission: "governance.read:tenant", IP: c.ClientIP(), TraceID: c.GetString("request_id")}); err != nil {
+		if err := h.RequireAudit(c.Request.Context(), &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "usage.governance.read", Resource: "usage", Scope: "ALL_AUTHORIZED", TargetTenantID: tenantID, AuthorizationPermission: permittedBy, IP: c.ClientIP(), TraceID: c.GetString("request_id")}); err != nil {
 			response.Err(c, err)
 			return
 		}
@@ -43,9 +53,14 @@ func (h *Handler) UsageReport(c *gin.Context) {
 // ExportUsageReport returns the usage report as CSV.
 func (h *Handler) ExportUsageReport(c *gin.Context) {
 	tenantID := c.GetString(middleware.ContextTenantID)
-	scopeAll := c.Query("scope") == "all" && h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "governance.read", "tenant") == nil
 	ctx := c.Request.Context()
 	userID := c.GetString(middleware.ContextUserID)
+	usageRef, usageErr := h.Service.AuthorizeAny(ctx, userID, service.GovernanceReadRefs("usage")...)
+	scopeAll := c.Query("scope") == "all" && usageErr == nil
+	permittedBy := "governance.read:tenant"
+	if usageErr == nil {
+		permittedBy = usageRef.String()
+	}
 	if err := h.Service.Authorize(ctx, userID, "read", "usage-export"); err != nil {
 		response.Err(c, err)
 		return
@@ -59,7 +74,7 @@ func (h *Handler) ExportUsageReport(c *gin.Context) {
 	entry := &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "usage.export", Resource: "usage", DetailJSON: boolStr(scopeAll), IP: c.ClientIP(), TraceID: c.GetString("request_id")}
 	if scopeAll {
 		entry.Scope = "ALL_AUTHORIZED"
-		entry.AuthorizationPermission = "governance.read:tenant"
+		entry.AuthorizationPermission = permittedBy
 	}
 	if err := h.RequireAudit(ctx, entry); err != nil {
 		response.Err(c, err)

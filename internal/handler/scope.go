@@ -21,7 +21,10 @@ func (h *Handler) resolveGovernanceScope(c *gin.Context, resource string) (servi
 	}
 	tenantID := c.GetString(middleware.ContextTenantID)
 	userID := c.GetString(middleware.ContextUserID)
-	scope, err := h.Service.ResolveTenantScope(c.Request.Context(), userID, tenantID, c.Query("scope"), c.Query("tenant_id"))
+	// Pass the governance resource so a delegated platform capability (for
+	// example tenant.audit.read) can authorize a cross-workspace read without
+	// the broader governance.read permission (doc/248 / R-26).
+	scope, err := h.Service.ResolveTenantScopeFor(c.Request.Context(), userID, tenantID, c.Query("scope"), c.Query("tenant_id"), resource)
 	if err != nil {
 		response.Err(c, err)
 		return service.TenantScope{}, false
@@ -40,6 +43,11 @@ func (h *Handler) resolveGovernanceScope(c *gin.Context, resource string) (servi
 		entry.Scope = string(scope.Kind)
 		entry.TargetTenantID = scope.TargetTenantID
 		entry.AuthorizationPermission = "governance.read:tenant"
+		if scope.PermittedBy != "" {
+			// Name the permission that actually justified the access; the
+			// fallback keeps older call paths unchanged (doc/248).
+			entry.AuthorizationPermission = scope.PermittedBy
+		}
 		entry.AuthorizationPolicyVersion = "explicit-rbac-v1"
 		if err := h.RequireAudit(c.Request.Context(), entry); err != nil {
 			response.Err(c, err)
