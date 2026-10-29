@@ -27,6 +27,7 @@ go.work.sum
 # Runtime config carries real credentials (DB password, RAGFlow API key).
 # Secrets must be injected via RGX_* environment variables, never committed.
 config/config.yaml
+config/config.local.yaml
 
 # Local secrets and environment files
 .env
