@@ -55,7 +55,12 @@ func (h *Handler) CreateTenant(c *gin.Context) {
 	}
 	actorID := c.GetString(middleware.ContextUserID)
 	actorTenantID := c.GetString(middleware.ContextTenantID)
-	if err := h.Service.Authorize(ctx, actorID, "manage", "tenant"); err != nil {
+	// Creating a workspace is a workspace-record write, not a distinct
+	// capability: the RBAC middleware already requires the admin surface
+	// (manage tenant), and this check makes the operation permission
+	// executable (doc/248). Without it a role granted only
+	// tenant.resource.delete could still create workspaces.
+	if _, err := h.Service.AuthorizeAny(ctx, actorID, service.TenantResourceRefs(false)...); err != nil {
 		response.Err(c, err)
 		return
 	}

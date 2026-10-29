@@ -133,7 +133,11 @@ func RBAC(svc *service.Service, rules []Rule) gin.HandlerFunc {
 				return
 			}
 			if requestedScope != "current" {
-				if _, err := svc.ResolveTenantScope(c.Request.Context(), actorID, tenantID, requestedScope, requestedTenantID); err != nil {
+				// Resolve with the route's governance resource so a delegated
+				// platform capability (tenant.audit.read / tenant.usage.read)
+				// authorizes the scope here too; otherwise the middleware would
+				// reject the request before the handler ever sees it (doc/248).
+				if _, err := svc.ResolveTenantScopeFor(c.Request.Context(), actorID, tenantID, requestedScope, requestedTenantID, rule.Resource); err != nil {
 					response.Err(c, err)
 					c.Abort()
 					return
@@ -141,7 +145,11 @@ func RBAC(svc *service.Service, rules []Rule) gin.HandlerFunc {
 			}
 		}
 		if rule.AuditRequired && c.Request.Method == http.MethodGet {
-			scope, err := svc.ResolveTenantScope(c.Request.Context(), actorID, c.GetString(ContextTenantID), c.Query("scope"), c.Query("tenant_id"))
+			// Capability-aware on purpose: the RBAC layer runs before the
+			// handler, so it must accept the same fine-grained permissions the
+			// handler accepts, or the narrow delegations are unreachable
+			// (doc/248 / R-26).
+			scope, err := svc.ResolveTenantScopeFor(c.Request.Context(), actorID, c.GetString(ContextTenantID), c.Query("scope"), c.Query("tenant_id"), rule.Resource)
 			if err != nil {
 				response.Err(c, err)
 				c.Abort()
@@ -159,7 +167,13 @@ func RBAC(svc *service.Service, rules []Rule) gin.HandlerFunc {
 				}
 				entry.Scope = string(scope.Kind)
 				entry.TargetTenantID = scope.TargetTenantID
+				// Attribute the permission that actually justified the
+				// cross-workspace read (fine-grained when a delegated role only
+				// holds that one).
 				entry.AuthorizationPermission = "governance.read:tenant"
+				if scope.PermittedBy != "" {
+					entry.AuthorizationPermission = scope.PermittedBy
+				}
 				entry.AuthorizationPolicyVersion = "explicit-rbac-v1"
 				if err := svc.RecordAudit(c.Request.Context(), entry); err != nil {
 					response.Err(c, err)

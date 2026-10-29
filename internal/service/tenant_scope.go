@@ -26,6 +26,12 @@ type TenantScope struct {
 	ActorTenantID    string
 	TargetTenantID   string
 	AllowedTenantIDs []string
+	// PermittedBy records the permission that authorized a cross-workspace
+	// scope ("governance.read:tenant" or a fine-grained platform capability), so
+	// audit entries can name the real reason instead of a hardcoded label
+	// (doc/248). It is empty for CURRENT scopes, which need no cross-tenant
+	// permission.
+	PermittedBy string
 }
 
 func (s TenantScope) CurrentTenantID() string {
@@ -69,6 +75,15 @@ func (s TenantScope) RepositoryTenantIDs() []string {
 // service layer may consume. It never grants authority from tenant_id, scope,
 // or role alone: platform capability is resolved from authoritative RBAC.
 func (s *Service) ResolveTenantScope(ctx context.Context, userID, actorTenantID, requestedScope, requestedTenantID string) (TenantScope, error) {
+	return s.ResolveTenantScopeFor(ctx, userID, actorTenantID, requestedScope, requestedTenantID, "")
+}
+
+// ResolveTenantScopeFor is ResolveTenantScope with a governance capability
+// ("audit", "usage", ...). A caller that owns a dedicated platform capability
+// lets a delegated auditor read across workspaces without handing over the whole
+// governance.read surface; every other capability keeps the previous behaviour
+// (doc/248).
+func (s *Service) ResolveTenantScopeFor(ctx context.Context, userID, actorTenantID, requestedScope, requestedTenantID, capability string) (TenantScope, error) {
 	authzCtx, err := s.authz(ctx, userID)
 	if err != nil {
 		return TenantScope{}, err
@@ -88,7 +103,8 @@ func (s *Service) ResolveTenantScope(ctx context.Context, userID, actorTenantID,
 		}
 		return TenantScope{Kind: TenantScopeCurrent, ActorTenantID: actorTenantID, TargetTenantID: actorTenantID, AllowedTenantIDs: []string{actorTenantID}}, nil
 	case TenantScopeValueAll:
-		if authzCtx.evaluate("governance.read", "tenant") != nil {
+		ref, ok := authzCtx.matchAny(GovernanceReadRefs(capability))
+		if !ok {
 			return TenantScope{}, ErrForbidden
 		}
 		if strings.TrimSpace(requestedTenantID) != "" {
@@ -104,9 +120,11 @@ func (s *Service) ResolveTenantScope(ctx context.Context, userID, actorTenantID,
 		}
 		return TenantScope{
 			Kind: TenantScopeAllAuthorized, ActorTenantID: actorTenantID, AllowedTenantIDs: allowed,
+			PermittedBy: ref.String(),
 		}, nil
 	case TenantScopeValueSpecific:
-		if authzCtx.evaluate("governance.read", "tenant") != nil {
+		ref, ok := authzCtx.matchAny(GovernanceReadRefs(capability))
+		if !ok {
 			return TenantScope{}, ErrForbidden
 		}
 		target := strings.TrimSpace(requestedTenantID)
@@ -120,7 +138,10 @@ func (s *Service) ResolveTenantScope(ctx context.Context, userID, actorTenantID,
 		if tenant == nil {
 			return TenantScope{}, httperr.BadRequest(400, "target tenant not found")
 		}
-		return TenantScope{Kind: TenantScopeSpecific, ActorTenantID: actorTenantID, TargetTenantID: target, AllowedTenantIDs: []string{target}}, nil
+		return TenantScope{
+			Kind: TenantScopeSpecific, ActorTenantID: actorTenantID, TargetTenantID: target,
+			AllowedTenantIDs: []string{target}, PermittedBy: ref.String(),
+		}, nil
 	default:
 		return TenantScope{}, httperr.BadRequest(400, "scope must be current, specific or all")
 	}
