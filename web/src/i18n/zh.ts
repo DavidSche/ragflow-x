@@ -1893,6 +1893,7 @@ const zhMessages = {
     res_usage: "用量",
     res_usage_export: "用量导出",
     res_scenario_template: "场景模板",
+    res_trial_run: "试跑",
     res_prompt_policy: "提示词策略",
     res_knowledge_lifecycle: "知识生命周期",
     res_knowledge_ops: "知识运营",

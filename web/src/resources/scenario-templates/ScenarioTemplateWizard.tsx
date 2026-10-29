@@ -82,6 +82,10 @@ export const ScenarioTemplateWizard = () => {
 
   const { canAccess: canManageChat } = useCanAccess({ resource: "chat", action: "manage" });
   const { canAccess: canManageAgent } = useCanAccess({ resource: "agent", action: "manage" });
+  // Practice runs are their own resource since doc/244. A creator who may build
+  // assistants but not practise them (no trial-run:execute) must not fire a
+  // guaranteed 403 on the happy path — skip straight to the created assistant.
+  const { canAccess: canStartTrialRun } = useCanAccess({ resource: "trial-run", action: "execute" });
 
   useEffect(() => {
     let mounted = true;
@@ -186,7 +190,11 @@ export const ScenarioTemplateWizard = () => {
           authoring: { llm_id: modelId || undefined },
         });
         notify(t("scenarioTemplates.wizard.created"), { type: "success" });
-        await startTrialRun(template.id, chat.id);
+        if (canStartTrialRun === false) {
+          navigate(createPath({ resource: "chats", type: "show", id: chat.id }));
+        } else {
+          await startTrialRun(template.id, chat.id);
+        }
       } else if (appType === "search") {
         const parameters = template.parameters;
         const res = await api.post<{ code: number; data: { id: string } }>("/search-apps", {

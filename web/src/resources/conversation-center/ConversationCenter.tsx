@@ -1792,7 +1792,13 @@ export function ConversationCenter({
         scrollPinningRef={scrollPinningRef}
         messagesAriaLabel={t("conversationCenter.title")}
         sidebarClassName="max-md:h-[30dvh] overflow-y-auto shrink-0 border-b pr-3 md:w-80 md:border-b-0 md:border-r"
-        beforeMessages={!target ? <AssistantEmptyState /> : undefined}
+        beforeMessages={
+          // No `assistantId` on purpose: this branch only renders when no
+          // assistant is selected, so there is no id to scope readiness to. The
+          // component keys its `/onboarding/readiness` fetch on `assistantId`
+          // and therefore fires no request here (R-18 / doc/238 §3).
+          !target ? <AssistantEmptyState /> : undefined
+        }
         sidebar={
           <div className="flex min-h-full flex-col gap-3">
             <div
