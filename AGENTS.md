@@ -23,6 +23,7 @@ RAGFlow-X 的目标不是复述“RAGFlow 管控平面”，而是消除企业�
 - Build：`make build`；后端二进制 `make build-server`；前端 `make build-web`。
 - Lint + Check：提交前运行 `make check`（`go vet` + `go build` + `go test` + 前端 `tsc --noEmit`）；若环境可用，另跑 `make lint`。
 - Backend tests：`make test`；定向测试用 `go test ./internal/service/ -run TestApproval -count=1` 这类命令。
+- **全量后端测试必带 `-timeout 30m`**：`go test ./... -count=1 -timeout 30m`。`internal/service` 单包耗时 14 分钟级，默认 10 分钟超时会以 `panic: test timed out` 假红（栈顶常停在某个刚开始的用例上，不代表该用例失败）。
 - Frontend tests：`cd web && npm test`；单文件用 `npx vitest run src/lib/errors.test.ts`；浏览器 E2E 用 `npm run test:e2e`。
 - PostgreSQL 集成测试：先设置 `RGX_TEST_POSTGRES_DSN`，再运行 `make test-integration`。
 - Database migration：启动时自动执行；定义集中在 `internal/db/migrate.go`。
@@ -53,7 +54,7 @@ RAGFlow-X 的目标不是复述“RAGFlow 管控平面”，而是消除企业�
 - `internal/service/`：业务逻辑唯一归属。按领域拆分为 auth/tenant/team/project/dataset/model-provider/gateway/chat/agent/approval/worker/governance 等模块，而不是把新逻辑堆入 `service.go`。
 - `internal/repository/`：GORM 查询与事务边界。必须保持租户/项目过滤和可测试的数据访问；复杂 SQL 也放在这一层。
 - `internal/model/`：GORM 模型、RBAC/ABAC 枚举与领域常量的单一来源。
-- `internal/db/`：PostgreSQL/SQLite 连接、版本化迁移、内置角色与权限 reconciliation。**新增 RBAC 资源必须在 `internal/db/permission_intent.go` 登记 `business_user` 的读意图**（`read` 或带理由的 `none`），否则 `TestBusinessUserReadIntentCoversMatrix` 直接失败——这是防止「只读角色能读、干活角色不能读」倒挂的唯一强制点（doc/242）。
+- `internal/db/`：PostgreSQL/SQLite 连接、版本化迁移、内置角色与权限 reconciliation。**新增 RBAC 资源必须在 `internal/db/permission_intent.go` 登记 `business_user` 的读意图**（`read` 或带理由的 `none`），否则 `TestBusinessUserReadIntentCoversMatrix` 直接失败——这是防止「只读角色能读、干活角色不能读」倒挂的第一道强制点（doc/242）。**新增 RBAC 资源还要同步四处**：`internal/router/route_registry.go`（注册表形状与 action 白名单）、`BuiltinPermissionMatrix()`（grant 行）、`internal/db/permission_intent.go`（读意图）、`doc/user/{zh-CN,en}/permission-matrix.md`（用户矩阵），并新增一个**纯数据 migration** 让存量库生效——`TestAccessRulesHaveRegistryContracts`/`TestP0_AUTHZ_001_RouteContractsMatchPermissionRegistry`/`TestPermissionMatrixDocSync` 分别守前三处（doc/244 是完整样例）。**改内置角色之间的关系（新增角色、调整某角色该不该是另一角色的超集）必须先改 `internal/db/role_lattice.go` 的声明**，否则 `TestRoleLatticeIsFullyDeclared`/`TestRoleSupersetRelationsHoldOnMatrix`/`TestActionImplicationRequiresRead` 失败——这是防止「管理角色比只读角色还弱」「能 manage 却不能 read」的第二道强制点（doc/243）。**`viewer` 是 `business_user` 的只读切片，不是第二个读受众**（doc/245）：只读角色不得持有任何 `manage`/`execute`/`append`/`session:create`，其读集合必须是 `business_user` 读集合的真子集——`TestViewerOnlyReadsAreGone`（理由不再能豁免）+ `TestViewerIsTheReadOnlySliceOfBusinessUser`（精确读集合）双向守护。**第三道强制点之后的运行时收口**（doc/247）：①`evaluate()` 对 `read` 施加「写动作蕴含读」（`db.ReadImpliedByAction`，含 `delete:own`；`deny` 保持字面语义）——内置角色靠矩阵守护，自定义角色靠求值侧，二者不允许有两套语义；②`SetRolePermissions` 只能委派**授予者自己持有**的权限（403/40302），因为权限目录是矩阵并集、含平台级动作，「在目录内」≠「可委派」；③新增/调整服务层动作必须同步 `route_registry.go` 的 `AllowedActions`，否则反向断言 `TestRegistryDeclaresEveryGrantedAction` 失败。判据只有一句：**「工作区产出了什么」= 业务读面；「工作区怎么运转/怎么被调优」= 岗位读面**（`task`/`usage`/`dashboard`/`knowledge-ops`/`approval`/`eval-set`/`release-governance` 及策略阈值配置属后者，只读访客不得持有）。
 - `internal/provider/`：外部集成层。`Provider` 是 service 唯一依赖接口；RAGFlow 的 HTTP 实现与 mock 实现成对维护。
 - `internal/pkg/`、`internal/notify/`、`internal/obs/`：可复用工具、通知和可观测性；不得反向依赖 service/handler/router。
 - `internal/setup/`：首次启动向导与安全初始化；不承载常规业务 CRUD。
