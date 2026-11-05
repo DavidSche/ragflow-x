@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 )
@@ -42,7 +43,7 @@ func (s *Service) recordCitationReferences(ctx context.Context, tenantID, chatID
 		authorizedDatasetIDs[link.ID] = link
 		authorizedDatasetLinks = append(authorizedDatasetLinks, link)
 	}
-	for _, citation := range citations {
+	for index, citation := range citations {
 		documentID := stringFromAny(citation["document_id"])
 		if documentID == "" {
 			documentID = stringFromAny(citation["doc_id"])
@@ -83,7 +84,7 @@ func (s *Service) recordCitationReferences(ctx context.Context, tenantID, chatID
 			ID: id.New(), TenantID: tenantID, ChatID: chatID, SessionID: sessionID,
 			RequestID: requestID, DatasetID: datasetID, DocumentID: documentID,
 			ChunkID: chunkID, Revision: revision, Content: content,
-			Keywords: keywords, RetrievedAt: now,
+			Keywords: keywords, Index: index, Positions: citationPositionsJSON(citation), RetrievedAt: now,
 		}
 		if err := s.Store.CreateCitationReference(ctx, reference); err != nil {
 			logger.Warn("citation reference persistence failed", "request_id", requestID, "chunk_id", chunkID, "error", err)
@@ -123,6 +124,47 @@ func rawKeywords(citation map[string]interface{}) string {
 	}
 	raw, _ := json.Marshal(value)
 	return string(raw)
+}
+
+// citationPositionsJSON preserves the engine-provided in-document locator keys
+// (positions/bbox/page/offset/paragraph/line_*...) verbatim so the forward UI
+// can highlight the cited span inside the source document. Unknown or absent
+// locators yield an empty string rather than an invented location. The key set
+// is a whitelist because the engine envelope is dynamic and open-ended.
+func citationPositionsJSON(citation map[string]interface{}) string {
+	collected := make(map[string]interface{})
+	for _, key := range []string{
+		"positions", "bbox", "page", "page_number", "offset",
+		"paragraph", "line_start", "line_end", "line", "rects", "location",
+	} {
+		if value, ok := citation[key]; ok && value != nil {
+			collected[key] = value
+		}
+	}
+	if len(collected) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(collected)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// ListChatReferences returns the citation evidence (with in-document locator
+// positions) for a chat turn so the forward UI can render the citation drawer
+// and highlight the cited span (P2 citation experience, report §13.5.1). The
+// chat must be owned by the tenant or the call is rejected before any row is
+// read.
+func (s *Service) ListChatReferences(ctx context.Context, tenantID, chatID, sessionID string) ([]model.CitationReference, error) {
+	chat, err := s.getOwnedChat(ctx, tenantID, chatID, false)
+	if err != nil {
+		return nil, err
+	}
+	if chat == nil {
+		return nil, httperr.NotFound("chat not found")
+	}
+	return s.Store.ListChatCitationReferences(ctx, tenantID, chatID, sessionID)
 }
 
 func stringFromAny(value interface{}) string {
