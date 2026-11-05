@@ -29,6 +29,22 @@ env:
 # ──────────────────────────────────────────────────────────────────────
 jobs:
   # ------------------------------------------------------------------
+  # Secret Scan — fail any push/PR that commits credential material or
+  # local-environment fingerprints (see scripts/secret-scan.sh). Runs first
+  # and independently; this is the hard line that protect the tree.
+  # ------------------------------------------------------------------
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run secret & local-env leakage scan
+        shell: bash
+        run: |
+          bash scripts/secret-scan.sh --all
+
+  # ------------------------------------------------------------------
   # Go Lint — golangci-lint
   # ------------------------------------------------------------------
   go-lint:

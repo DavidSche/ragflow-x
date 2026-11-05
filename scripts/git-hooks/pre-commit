@@ -1,0 +1,13 @@
+#!/bin/sh
+# pre-commit hook: block commits that stage secrets or local-environment
+# fingerprints. Adopt per-clone with:
+#   git config core.hooksPath scripts/git-hooks
+# (or install a copy into .git/hooks/pre-commit). Delegates to
+# scripts/secret-scan.sh, which is shared with CI.
+bash scripts/secret-scan.sh
+status=$?
+if [ $status -ne 0 ]; then
+  echo "pre-commit: secret-scan blocked the commit." >&2
+  exit $status
+fi
+exit 0
