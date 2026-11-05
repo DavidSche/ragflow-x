@@ -28,6 +28,7 @@ type Config struct {
 	Approval            Approval            `yaml:"approval"`
 	Runtime             Runtime             `yaml:"runtime"`
 	FactGuard           FactGuard           `yaml:"fact_guard"`
+	KnowledgeOps        KnowledgeOps        `yaml:"knowledge_ops"`
 	ConversationRouting ConversationRouting `yaml:"conversation_routing"`
 	OIDC                OIDC                `yaml:"oidc"`
 	IM                  IM                  `yaml:"im"`
@@ -415,6 +416,36 @@ type FactGuard struct {
 	Mode string `yaml:"mode"`
 }
 
+// KnowledgeOps tunes the honesty discipline (report §13.2 P0-B): a structured
+// answerability claim per chat turn that flags evidence-starved or self-abstained
+// answers without rewriting the engine's wording, plus citation convergence
+// (same-document dedup and per-document cap). These are governance knobs, not
+// retrieval thresholds - the engine's own similarity gate stays authoritative.
+type KnowledgeOps struct {
+	// AnswerabilityEnabled toggles claim evaluation for chat turns. Off is only
+	// for development or test deployments; on by default.
+	AnswerabilityEnabled bool `yaml:"answerability_enabled"`
+	// NoEvidenceSimilarity is the top citation similarity below which an answer
+	// is flagged low_similarity (evidence-weak) in its claim. It only annotates;
+	// it never rewrites the engine answer (report §13.2.3 invitations stay out
+	// of the generation path).
+	NoEvidenceSimilarity float64 `yaml:"no_evidence_similarity"`
+	// MaxCitationsPerDocument converges citations per evidence document. Claims
+	// report distinct documents; the cap bounds how many chunks of the same
+	// source ride into the same-document set (report §13.2 ② 引文按需收敛).
+	MaxCitationsPerDocument int `yaml:"max_citations_per_document"`
+	// AbstainRateWarn is the no-answer (ABS) rate above which the operations
+	// board flags the window as unhealthy. 0 disables the flag (P2 ops levers).
+	AbstainRateWarn float64 `yaml:"abstain_rate_warn"`
+	// CitationRateBaseline is the citation-cover rate (with_citations / turns)
+	// below which the board flags a thin-evidence window. 0 disables (P2).
+	CitationRateBaseline float64 `yaml:"citation_rate_baseline"`
+	// TopSimilarityFloor is the average top retrieval similarity below which
+	// the board flags weak retrieval (evidence that never rises above noise).
+	// 0 disables (P2 ops levers).
+	TopSimilarityFloor float64 `yaml:"top_similarity_floor"`
+}
+
 // Database holds the operational store settings.
 type Database struct {
 	Driver             string `yaml:"driver"`
@@ -519,13 +550,14 @@ func defaults() *Config {
 			IntervalSec: 3600,
 			ExportDir:   "",
 		},
-		Retention: Retention{Enabled: false, AuditDays: 365, UsageDays: 180, FeedbackDays: 180, JobDays: 90, IntervalSec: 86400},
-		Connector: Connector{MaxConcurrent: 3, RunTimeoutSec: 1800, RetentionDays: 90, PreviewLimit: 20, MaxObjectMB: 25},
-		Approval:  Approval{DefaultExpireHours: 72, ExecutionMaxRetries: 3, ExpireScanIntervalSec: 3600, RetentionDays: 365, PolicyCacheTTLSec: 30},
-		Runtime:   Runtime{ReportToken: "", HeartbeatTimeoutSec: 60},
-		FactGuard: FactGuard{Mode: "warn"},
-		OIDC:      OIDC{RequireEmailVerified: true},
-		IM:        IM{WeCom: WeCom{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, Feishu: Feishu{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, DingTalk: DingTalk{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}},
+		Retention:    Retention{Enabled: false, AuditDays: 365, UsageDays: 180, FeedbackDays: 180, JobDays: 90, IntervalSec: 86400},
+		Connector:    Connector{MaxConcurrent: 3, RunTimeoutSec: 1800, RetentionDays: 90, PreviewLimit: 20, MaxObjectMB: 25},
+		Approval:     Approval{DefaultExpireHours: 72, ExecutionMaxRetries: 3, ExpireScanIntervalSec: 3600, RetentionDays: 365, PolicyCacheTTLSec: 30},
+		Runtime:      Runtime{ReportToken: "", HeartbeatTimeoutSec: 60},
+		FactGuard:    FactGuard{Mode: "warn"},
+		KnowledgeOps: KnowledgeOps{AnswerabilityEnabled: true, NoEvidenceSimilarity: 0.30, MaxCitationsPerDocument: 3, AbstainRateWarn: 0.24, CitationRateBaseline: 0.70, TopSimilarityFloor: 0.35},
+		OIDC:         OIDC{RequireEmailVerified: true},
+		IM:           IM{WeCom: WeCom{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, Feishu: Feishu{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, DingTalk: DingTalk{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}},
 		ConversationRouting: ConversationRouting{
 			Mode: "recommend_only", ConfidenceThreshold: 0.86, ConfidenceMargin: 0.12,
 			MinimumCandidates: 2, ReadinessThreshold: 0.80, TotalTimeoutMs: 1500, CatalogTTLSec: 300,
@@ -706,6 +738,12 @@ func applyEnv(cfg *Config) {
 	setStr(&cfg.Runtime.ReportToken, "RGX_RUNTIME_REPORT_TOKEN")
 	setInt(&cfg.Runtime.HeartbeatTimeoutSec, "RGX_RUNTIME_HEARTBEAT_TIMEOUT_SEC")
 	setStr(&cfg.FactGuard.Mode, "RGX_FACT_GUARD_MODE")
+	setBool(&cfg.KnowledgeOps.AnswerabilityEnabled, "RGX_KNOWLEDGE_OPS_ANSWERABILITY")
+	setFloat64(&cfg.KnowledgeOps.NoEvidenceSimilarity, "RGX_KNOWLEDGE_OPS_NO_EVIDENCE_SIMILARITY")
+	setInt(&cfg.KnowledgeOps.MaxCitationsPerDocument, "RGX_KNOWLEDGE_OPS_MAX_CITATIONS_PER_DOC")
+	setFloat64(&cfg.KnowledgeOps.AbstainRateWarn, "RGX_KNOWLEDGE_OPS_ABSTAIN_RATE_WARN")
+	setFloat64(&cfg.KnowledgeOps.CitationRateBaseline, "RGX_KNOWLEDGE_OPS_CITATION_RATE_BASELINE")
+	setFloat64(&cfg.KnowledgeOps.TopSimilarityFloor, "RGX_KNOWLEDGE_OPS_TOP_SIMILARITY_FLOOR")
 	setStr(&cfg.ConversationRouting.Mode, "RGX_CONVERSATION_ROUTE_MODE")
 	setFloat64(&cfg.ConversationRouting.ConfidenceThreshold, "RGX_CONVERSATION_ROUTE_CONFIDENCE")
 	setFloat64(&cfg.ConversationRouting.ConfidenceMargin, "RGX_CONVERSATION_ROUTE_MARGIN")

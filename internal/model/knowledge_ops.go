@@ -6,23 +6,31 @@ import "time"
 // question, answer state, citation evidence and usage required by the
 // knowledge-operations board without joining engine-internal tables.
 type KnowledgeOpsEvent struct {
-	ID             string    `gorm:"column:id;primaryKey;size:32" json:"id"`
-	RequestID      string    `gorm:"column:request_id;size:64;not null;uniqueIndex:uk_knowledge_ops_request" json:"request_id"`
-	TenantID       string    `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	UserID         string    `gorm:"column:user_id;size:32;not null;index" json:"user_id"`
-	AppType        string    `gorm:"column:app_type;size:16;not null;index" json:"app_type"` // chat | search | agent
-	AppID          string    `gorm:"column:app_id;size:64;not null;index" json:"app_id"`
-	SessionID      string    `gorm:"column:session_id;size:64;index" json:"session_id"`
-	Question       string    `gorm:"column:question;type:text" json:"question"`
-	QuestionHash   string    `gorm:"column:question_hash;size:64;not null;index" json:"question_hash"`
-	AnswerExcerpt  string    `gorm:"column:answer_excerpt;size:1024" json:"answer_excerpt"`
-	Status         string    `gorm:"column:status;size:16;not null;index" json:"status"` // completed | no_answer | failed
-	CitationsCount int       `gorm:"column:citations_count;not null;default:0" json:"citations_count"`
-	DurationMs     int64     `gorm:"column:duration_ms;not null;default:0" json:"duration_ms"`
-	TokensIn       int64     `gorm:"column:tokens_in;not null;default:0" json:"tokens_in"`
-	TokensOut      int64     `gorm:"column:tokens_out;not null;default:0" json:"tokens_out"`
-	CreatedAt      time.Time `gorm:"column:created_at;index" json:"created_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at" json:"updated_at"`
+	ID             string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	RequestID      string `gorm:"column:request_id;size:64;not null;uniqueIndex:uk_knowledge_ops_request" json:"request_id"`
+	TenantID       string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	UserID         string `gorm:"column:user_id;size:32;not null;index" json:"user_id"`
+	AppType        string `gorm:"column:app_type;size:16;not null;index" json:"app_type"` // chat | search | agent
+	AppID          string `gorm:"column:app_id;size:64;not null;index" json:"app_id"`
+	SessionID      string `gorm:"column:session_id;size:64;index" json:"session_id"`
+	Question       string `gorm:"column:question;type:text" json:"question"`
+	QuestionHash   string `gorm:"column:question_hash;size:64;not null;index" json:"question_hash"`
+	AnswerExcerpt  string `gorm:"column:answer_excerpt;size:1024" json:"answer_excerpt"`
+	Status         string `gorm:"column:status;size:16;not null;index" json:"status"` // completed | no_answer | failed
+	CitationsCount int    `gorm:"column:citations_count;not null;default:0" json:"citations_count"`
+	// AnswerabilityJSON is the per-turn honesty claim (report §13.2 P0-B):
+	// {answerable, confidence, source, abstain_reason, citation_count, distinct_docs}.
+	// It annotates the turn without rewriting the engine answer.
+	AnswerabilityJSON string `gorm:"column:answerability_json;type:text" json:"answerability_json,omitempty"`
+	// TopSimilarity is the highest retrieval similarity observed for the turn
+	// (engine reference similarity key); 0 means no measurable reference
+	// (P2 operations observability).
+	TopSimilarity float64   `gorm:"column:top_similarity;not null;default:0" json:"top_similarity"`
+	DurationMs    int64     `gorm:"column:duration_ms;not null;default:0" json:"duration_ms"`
+	TokensIn      int64     `gorm:"column:tokens_in;not null;default:0" json:"tokens_in"`
+	TokensOut     int64     `gorm:"column:tokens_out;not null;default:0" json:"tokens_out"`
+	CreatedAt     time.Time `gorm:"column:created_at;index" json:"created_at"`
+	UpdatedAt     time.Time `gorm:"column:updated_at" json:"updated_at"`
 
 	// Review state closes the loop from badcase detection to a disposition.
 	ReviewStatus         string     `gorm:"column:review_status;size:16;not null;default:open;index" json:"review_status"` // open | resolved | ignored
@@ -72,9 +80,22 @@ type KnowledgeOpsSummary struct {
 	NoAnswerRate       float64          `json:"no_answer_rate"`
 	FailureRate        float64          `json:"failure_rate"`
 	SatisfactionRate   float64          `json:"satisfaction_rate"`
-	AvgLatencyMs       float64          `json:"avg_latency_ms"`
-	AvgResolutionHours float64          `json:"avg_resolution_hours"`
-	CostAttribution    []KnowledgeOpsCostAttribution `json:"cost_attribution"`
+	// AvgTopSimilarity is the mean top retrieval similarity across completed
+	// turns that produced at least one measurable reference (P2 observability).
+	AvgTopSimilarity float64 `json:"avg_top_similarity"`
+	// Operator levers (config.knowledge_ops): thresholds the data engineer can
+	// tune. *RateWarn/Floor are echoed verbatim so the board renders the bar;
+	// *AboveWarn/*BelowBaseline/*BelowFloor flag when the observed value crosses
+	// the bar (ABS too high, citation rate too low, similarity too low).
+	AbstainRateWarn       float64                       `json:"abstain_rate_warn"`
+	CitationRateBaseline  float64                       `json:"citation_rate_baseline"`
+	TopSimilarityFloor    float64                       `json:"top_similarity_floor"`
+	AbstainAboveWarn      bool                          `json:"abstain_above_warn"`
+	CitationBelowBaseline bool                          `json:"citation_below_baseline"`
+	AvgTopSimBelowFloor   bool                          `json:"avg_top_sim_below_floor"`
+	AvgLatencyMs          float64                       `json:"avg_latency_ms"`
+	AvgResolutionHours    float64                       `json:"avg_resolution_hours"`
+	CostAttribution       []KnowledgeOpsCostAttribution `json:"cost_attribution"`
 }
 
 // KnowledgeOpsCostAttribution is a read-only usage aggregate for the

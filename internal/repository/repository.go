@@ -141,6 +141,10 @@ type DatasetRepo interface {
 	GetIncrementalLedgerByDocument(ctx context.Context, tenantID, ragflowDocumentID string) (*model.IncrementalLedger, error)
 	CreateCitationReference(ctx context.Context, reference *model.CitationReference) error
 	ListCitationReferences(ctx context.Context, tenantID, requestID string) ([]model.CitationReference, error)
+	// ListChatCitationReferences returns a chat turn's citation evidence,
+	// optionally narrowed by session, ordered by reference index then retrieval
+	// time (P2 citation drawer).
+	ListChatCitationReferences(ctx context.Context, tenantID, chatID, sessionID string) ([]model.CitationReference, error)
 	CreateKnowledgeTask(ctx context.Context, task *model.KnowledgeTask) error
 	GetKnowledgeTask(ctx context.Context, tenantID, taskID string, scopeAll bool) (*model.KnowledgeTask, error)
 	ListKnowledgeTasks(ctx context.Context, tenantID string, scopeAll bool, page, pageSize int, filter KnowledgeTaskFilter) ([]model.KnowledgeTask, int64, error)

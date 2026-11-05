@@ -117,7 +117,10 @@ func (s *Service) ChatAppCompletion(ctx context.Context, key *model.APIKey, chat
 		answer = resp.Choices[0].Message.Content
 	}
 	s.recordCitationReferences(ctx, key.TenantID, chatID, sessionID, requestID, resp.Reference)
-	s.recordKnowledgeEvent(ctx, knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, answer, citationCountFromMaps(resp.Reference), tIn, tOut, time.Since(startedAt).Milliseconds()))
+	turnEvent := knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, answer, citationCountFromMaps(resp.Reference), tIn, tOut, time.Since(startedAt).Milliseconds())
+	s.attachAnswerabilityClaim(turnEvent, answer, resp.Reference)
+	applyReferenceMetrics(turnEvent, resp.Reference)
+	s.recordKnowledgeEvent(ctx, turnEvent)
 	s.recordAnswerDeliveryWithPushdown(ctx, key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, answer, citationsFromProviderReferences(resp.Reference), pushdown)
 	s.bumpChatCount(ctx, chatID)
 	s.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, tIn+tOut)
@@ -174,7 +177,10 @@ func (s *Service) StreamChatAppCompletion(ctx context.Context, key *model.APIKey
 	// Streams do not expose a model name in the passthrough; attribute to the chat.
 	s.meterChat(ctx, key, chatID, chatID, sessionID, tIn, tOut, requestID)
 	s.recordCitationReferences(ctx, key.TenantID, chatID, sessionID, requestID, capture.reference)
-	s.recordKnowledgeEvent(ctx, knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, capture.answer.String(), int64(capture.citations), tIn, tOut, time.Since(startedAt).Milliseconds()))
+	streamEvent := knowledgeEvent(key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, capture.answer.String(), int64(capture.citations), tIn, tOut, time.Since(startedAt).Milliseconds())
+	s.attachAnswerabilityClaim(streamEvent, capture.answer.String(), capture.reference)
+	applyReferenceMetrics(streamEvent, capture.reference)
+	s.recordKnowledgeEvent(ctx, streamEvent)
 	s.recordAnswerDeliveryWithPushdown(ctx, key.TenantID, key.UserID, "chat", chatID, sessionID, requestID, question, capture.answer.String(), citationsFromProviderReferences(capture.reference), pushdown)
 	s.bumpChatCount(ctx, chatID)
 	s.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, tIn+tOut)

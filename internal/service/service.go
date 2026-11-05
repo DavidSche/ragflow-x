@@ -70,6 +70,8 @@ type Service struct {
 	securityConfig                   config.Security
 	factGuardMu                      sync.RWMutex
 	factGuardConfig                  config.FactGuard
+	knowledgeOpsMu                   sync.RWMutex
+	knowledgeOpsConfig               config.KnowledgeOps
 	observabilityMu                  sync.RWMutex
 	observabilityConfig              config.Observability
 	alertingMu                       sync.RWMutex
@@ -255,6 +257,21 @@ func (s *Service) CurrentObservabilityConfig() config.Observability {
 	s.observabilityMu.RLock()
 	defer s.observabilityMu.RUnlock()
 	return s.observabilityConfig
+}
+
+// SetKnowledgeOpsConfig replaces the honesty-discipline tuning (report §13.2
+// P0-B). A zero-value config keeps answerability evaluation off so callers that
+// never configure it do not silently change behaviour.
+func (s *Service) SetKnowledgeOpsConfig(cfg config.KnowledgeOps) {
+	s.knowledgeOpsMu.Lock()
+	s.knowledgeOpsConfig = cfg
+	s.knowledgeOpsMu.Unlock()
+}
+
+func (s *Service) currentKnowledgeOpsConfig() config.KnowledgeOps {
+	s.knowledgeOpsMu.RLock()
+	defer s.knowledgeOpsMu.RUnlock()
+	return s.knowledgeOpsConfig
 }
 
 func (s *Service) SetAlertingConfig(cfg config.Alerting) {
