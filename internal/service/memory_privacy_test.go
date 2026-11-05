@@ -1,5 +1,10 @@
 package service
 
+// secret-scan-exempt: synthetic fixture only
+// This file deliberately contains fake credentials (fake api keys, a PEM
+// header, example JWTs, password placeholders) used *only* to exercise the
+// memory privacy masking/blocking logic. They are not live credentials and
+// must never be copied into real configuration.
 import (
 	"context"
 	"strings"
