@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
@@ -167,7 +168,7 @@ func (s *Service) CreateChat(ctx context.Context, tenantID, name string, dataset
 		return nil, resolveErr
 	}
 	datasetIDs = resolvedDatasetIDs
-	if err := s.validateOwnedDatasets(ctx, datasetIDs); err != nil {
+	if err := s.validateOwnedDatasets(ctx, tenantID, datasetIDs); err != nil {
 		return nil, err
 	}
 	created, err := s.RAGFlow.CreateChat(ctx, ragflow.CreateChatRequest{
@@ -210,7 +211,7 @@ func (s *Service) UpdateChat(ctx context.Context, tenantID, chatID, name string,
 			return nil, resolveErr
 		}
 		datasetIDs = resolvedDatasetIDs
-		if err := s.validateOwnedDatasets(ctx, datasetIDs); err != nil {
+		if err := s.validateOwnedDatasets(ctx, tenantID, datasetIDs); err != nil {
 			return nil, err
 		}
 		req.DatasetIDs = datasetIDs
@@ -431,7 +432,7 @@ func (s *Service) CreateChatWithConfig(ctx context.Context, tenantID, name strin
 	if err != nil {
 		return nil, err
 	}
-	if err := s.validateOwnedDatasets(ctx, resolvedDatasetIDs); err != nil {
+	if err := s.validateOwnedDatasets(ctx, tenantID, resolvedDatasetIDs); err != nil {
 		return nil, err
 	}
 	a.PromptConfig = s.mergePromptConfig(ctx, "", a)
@@ -577,10 +578,107 @@ func (s *Service) ChatUsage(ctx context.Context, tenantID, chatID string, scopeA
 	return s.Store.SumCostMetricByChat(ctx, tenantID, chatID)
 }
 
+// closestDatasetNames returns up to limit dataset names that most resemble ref
+// (case-insensitive: exact, prefix, substring, then small edit distance) so a
+// binding failure can suggest recoveries instead of leaking a raw engine
+// "dataset not found" error (doc/252 §防呆). Names that are far from every
+// suggestion (edit distance > 2 and no shared prefix/substring) are dropped so
+// a garbage ref never floods the caller with unrelated options.
+func closestDatasetNames(owned []ragflow.Dataset, ref string, limit int) []string {
+	if limit <= 0 {
+		limit = 3
+	}
+	refLower := strings.ToLower(strings.TrimSpace(ref))
+	type ranked struct {
+		name  string
+		score int
+	}
+	all := make([]ranked, 0, len(owned))
+	for _, d := range owned {
+		n := strings.ToLower(strings.TrimSpace(d.Name))
+		var s int
+		switch {
+		case n == refLower:
+			s = 0
+		case strings.HasPrefix(n, refLower):
+			s = 1
+		case strings.Contains(n, refLower):
+			s = 2
+		default:
+			dist := levenshteinDistance(n, refLower)
+			if dist > 2 {
+				continue
+			}
+			s = 3 + dist
+		}
+		all = append(all, ranked{name: d.Name, score: s})
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].score != all[j].score {
+			return all[i].score < all[j].score
+		}
+		return all[i].name < all[j].name
+	})
+	n := min(limit, len(all))
+	out := make([]string, 0, n)
+	for i, r := range all {
+		if i >= n {
+			break
+		}
+		out = append(out, r.name)
+	}
+	return out
+}
+
+// levenshteinDistance is a small DP edit distance over runes, used by
+// closestDatasetNames to rank dataset-name suggestions.
+func levenshteinDistance(a, b string) int {
+	ar, br := []rune(a), []rune(b)
+	if len(ar) == 0 {
+		return len(br)
+	}
+	if len(br) == 0 {
+		return len(ar)
+	}
+	prev := make([]int, len(br)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ar); i++ {
+		cur := make([]int, len(br)+1)
+		cur[0] = i
+		for j := 1; j <= len(br); j++ {
+			cost := 0
+			if ar[i-1] != br[j-1] {
+				cost = 1
+			}
+			cur[j] = min3(cur[j-1]+1, prev[j]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(br)]
+}
+
+func min3(a, b, c int) int {
+	if a <= b && a <= c {
+		return a
+	}
+	if b <= c {
+		return b
+	}
+	return c
+}
+
 // validateOwnedDatasets verifies that the given dataset ids are owned by the
-// current RAGFlow engine account before binding them to a chat. It only runs
-// against the real HTTP engine (mock skips so offline/tests stay fast).
-func (s *Service) validateOwnedDatasets(ctx context.Context, datasetIDs []string) error {
+// given tenant before binding them to a chat or Search App. It only runs
+// against the real HTTP engine (mock skips so offline/tests stay fast). With a
+// single shared engine account ListDatasets returns every tenant's libraries,
+// so raw engine existence is not enough: any library another tenant has
+// already linked is decided NOT owned (the rgx_dataset_link tenant column is
+// the authoritative edge, doc/252 §隔离), and suggested recovery names also
+// skip other tenants' libraries. Unlinked orphan libraries still pass so the
+// picker's explicitly-tagged engine option stays bindable.
+func (s *Service) validateOwnedDatasets(ctx context.Context, tenantID string, datasetIDs []string) error {
 	if len(datasetIDs) == 0 || s.RAGFlow.Name() != "http" {
 		return nil
 	}
@@ -588,40 +686,86 @@ func (s *Service) validateOwnedDatasets(ctx context.Context, datasetIDs []string
 	if err != nil {
 		return httperr.New(502, 50248, "无法校验数据集归属")
 	}
+	claimedOther := map[string]bool{} // engine ids linked by ANY other tenant.
+	if allLinks, lerr := s.Store.ListDatasetLinksForScope(ctx, true, nil, repository.DatasetFilter{}); lerr == nil {
+		for _, l := range allLinks {
+			if l.RAGFlowDatasetID == "" || l.TenantID == tenantID {
+				continue
+			}
+			claimedOther[l.RAGFlowDatasetID] = true
+		}
+	}
 	has := map[string]bool{}
 	for _, d := range owned {
 		has[d.ID] = true
 	}
 	var missing []string
 	for _, id := range datasetIDs {
-		if !has[id] {
+		if !has[id] || claimedOther[id] {
 			missing = append(missing, id)
 		}
 	}
 	if len(missing) > 0 {
-		return httperr.BadRequest(40092, "以下数据集不属于当前RAGFlow引擎账号，无法绑定到该助手: "+strings.Join(missing, ","))
+		suggestible := owned[:0:0] // exclude other tenants' libraries from hints too.
+		for _, d := range owned {
+			if !claimedOther[d.ID] {
+				suggestible = append(suggestible, d)
+			}
+		}
+		suggestion := ""
+		if cands := closestDatasetNames(suggestible, missing[0], 3); len(cands) > 0 {
+			suggestion = "；相近可用: " + strings.Join(cands, ", ")
+		}
+		return httperr.BadRequest(40092, "以下数据集不属于当前RAGFlow引擎账号，无法绑定到该助手: "+strings.Join(missing, ",")+suggestion)
 	}
 	return nil
 }
 
-// resolveRAGFlowDatasetIDs maps any platform rgx_dataset_link ids to their
-// RAGFlow dataset ids so both id styles can be used when binding knowledge
-// bases to a chat.
+// resolveRAGFlowDatasetIDs maps any platform dataset reference to the RAGFlow
+// dataset id so both id styles can be used when binding knowledge bases to a
+// chat or Search App: a rgx_dataset_link id, a case-insensitive Link name, or
+// a raw RAGFlow dataset id (passed through unchanged).
 func (s *Service) resolveRAGFlowDatasetIDs(ctx context.Context, tenantID string, ids []string) ([]string, error) {
 	out := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if id == "" {
+	for _, ref := range ids {
+		if ref == "" {
 			continue
 		}
-		link, err := s.Store.GetDatasetLink(ctx, tenantID, id)
+		engineID, err := s.resolveDatasetRef(ctx, tenantID, ref)
 		if err != nil {
 			return nil, err
 		}
-		if link == nil || link.RAGFlowDatasetID == "" {
-			out = append(out, id)
-			continue
-		}
-		out = append(out, link.RAGFlowDatasetID)
+		out = append(out, engineID)
 	}
 	return out, nil
+}
+
+// resolveDatasetRef maps one platform dataset reference to its RAGFlow dataset
+// id. Lookup order: rgx_dataset_link id, then case-insensitive Link name, then
+// raw RAGFlow id passthrough. The final passthrough keeps raw engine ids
+// working and defers ownership checks to validateOwnedDatasets (doc/252).
+func (s *Service) resolveDatasetRef(ctx context.Context, tenantID, ref string) (string, error) {
+	link, err := s.Store.GetDatasetLink(ctx, tenantID, ref)
+	if err != nil {
+		return "", err
+	}
+	if link != nil && link.RAGFlowDatasetID != "" {
+		return link.RAGFlowDatasetID, nil
+	}
+	if link != nil && link.RAGFlowDatasetID == "" {
+		// Broken link state: the rgx_dataset_link row exists but has no engine
+		// dataset id. Surface a 40095 so the caller picks again (doc/252).
+		return "", httperr.BadRequest(40095, "数据集绑定记录缺少引擎数据集ID，请同步后经 dataset-options 重新绑定: "+ref)
+	}
+	byName, err := s.Store.GetDatasetLinkByName(ctx, tenantID, ref, "")
+	if err != nil {
+		return "", err
+	}
+	if byName != nil && byName.RAGFlowDatasetID != "" {
+		return byName.RAGFlowDatasetID, nil
+	}
+	if byName != nil && byName.RAGFlowDatasetID == "" {
+		return "", httperr.BadRequest(40095, "数据集绑定记录缺少引擎数据集ID，请同步后经 dataset-options 重新绑定: "+ref)
+	}
+	return ref, nil
 }

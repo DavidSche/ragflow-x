@@ -125,6 +125,28 @@ func (h *Handler) SearchAppModelOptions(c *gin.Context) {
 	}
 	response.OK(c, opts)
 }
+
+// SearchAppDatasetOptions returns the datasets that can be bound to a Search
+// App for the current governance scope: linked rgx_dataset_link rows first,
+// raw engine datasets as fallback (doc/252 §向导数据面). The picker keeps
+// engine ids out of the UI by favouring link_id/name references.
+func (h *Handler) SearchAppDatasetOptions(c *gin.Context) {
+	ctx := c.Request.Context()
+	if err := h.Service.Authorize(ctx, c.GetString(middleware.ContextUserID), "read", "search-app"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	scope, ok := h.resolveGovernanceScope(c, "search-app")
+	if !ok {
+		return
+	}
+	opts, err := h.Service.SearchAppDatasetOptions(ctx, scope)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, opts)
+}
 func (h *Handler) ListSearchApps(c *gin.Context) {
 	ctx := c.Request.Context()
 	if err := h.Service.Authorize(ctx, c.GetString(middleware.ContextUserID), "read", "search-app"); err != nil {

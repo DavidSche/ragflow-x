@@ -1153,6 +1153,7 @@ const enMessages = {
     create_fail: "Failed to create Search App",
     datasets: "Datasets",
     no_datasets: "No accessible datasets in current workspace",
+    with_documents: "%{count} docs",
     edit_title: "Edit Search App",
     name: "Name",
     dataset_ids: "Dataset IDs (comma-separated)",

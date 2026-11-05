@@ -21,6 +21,7 @@ import { Eye, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { api, ApiError } from "../../lib/api";
 import { datasetOptions } from "../chats/chat-types";
+import { useSearchAppDatasetOptions } from "./dataset-options";
 import type { DatasetLike } from "../chats/chat-types";
 
 interface SearchAppLike {
@@ -37,7 +38,9 @@ const CreateSearchAppDialog = () => {
   const notify = useNotify();
   const qc = useQueryClient();
   const { data: datasets } = useGetList("datasets", { pagination: { page: 1, perPage: 200 } });
-  const { values, mapId } = datasetOptions(datasets as DatasetLike[] | undefined);
+  const { options: boundOptions } = useSearchAppDatasetOptions();
+  // 成功走治理数据面（linked 优先+引擎去重），失败/加载中回退 /datasets 保持兼容。
+  const { values, mapId } = datasetOptions((boundOptions ?? datasets) as DatasetLike[] | undefined);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
@@ -86,7 +89,14 @@ const CreateSearchAppDialog = () => {
                   return (
                     <label key={d.id} className="flex items-center gap-2 text-sm">
                       <input type="checkbox" checked={selected.includes(dsId)} onChange={() => toggle(dsId)} />
-                      {d.name}
+                      <span>
+                        {d.name}
+                        {d.document_count !== undefined && d.document_count > 0 && (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            {t("searchApps.with_documents", { count: d.document_count })}
+                          </span>
+                        )}
+                      </span>
                     </label>
                   );
                 })}
@@ -157,7 +167,8 @@ const EditSearchAppCell = () => {
   const notify = useNotify();
   const qc = useQueryClient();
   const { data: datasets } = useGetList("datasets", { pagination: { page: 1, perPage: 200 } });
-  const { values: editValues, mapId: editMapId } = datasetOptions(datasets as DatasetLike[] | undefined);
+  const { options: boundOptions } = useSearchAppDatasetOptions();
+  const { values: editValues, mapId: editMapId } = datasetOptions((boundOptions ?? datasets) as DatasetLike[] | undefined);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadingCfg, setLoadingCfg] = useState(false);
@@ -243,7 +254,14 @@ const EditSearchAppCell = () => {
                     return (
                       <label key={d.id} className="flex items-center gap-2 text-sm">
                         <input type="checkbox" checked={selected.includes(dsId)} onChange={() => toggle(dsId)} />
-                        {d.name}
+                        <span>
+                          {d.name}
+                          {d.document_count !== undefined && d.document_count > 0 && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              {t("searchApps.with_documents", { count: d.document_count })}
+                            </span>
+                          )}
+                        </span>
                       </label>
                     );
                   })}

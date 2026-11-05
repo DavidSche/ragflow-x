@@ -14,6 +14,9 @@ export interface DatasetLike {
   id: string;
   name: string;
   ragflow_dataset_id?: string;
+  /** metric metadata optional（P1 dataset-options 接线透出）。 */
+  document_count?: number;
+  sensitivity?: string;
 }
 
 export interface ChatConfigLike {
