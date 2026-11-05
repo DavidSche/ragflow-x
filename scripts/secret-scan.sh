@@ -71,7 +71,7 @@ scan_file() {
 
   # One grep per file (single process; Git Bash forks are expensive), then a
   # single awk classifies every hit as hard-block or soft-warning.
-  out="$(grep -nE -- '-----BEGIN (RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----|(^|[^A-Za-z0-9])(sk-[A-Za-z0-9]{24,}|ghp_[A-Za-z0-9]{24,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,})([^A-Za-z0-9]|$)|192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+|/data/[A-Za-z]|zhixiang|llm2024' "$f" 2>/dev/null)"
+  out="$(grep -nE -- '-----BEGIN (RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----|(^|[^A-Za-z0-9])(sk-[A-Za-z0-9]{24,}|ghp_[A-Za-z0-9]{24,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,})([^A-Za-z0-9]|$)|192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+|/data/[A-Za-z0-9_-]+/|zhixiang|llm2024' "$f" 2>/dev/null)"
   [ -n "$out" ] || return 0
 
   aws="$(printf '%s\n' "$out" | awk -v fn="$f" '
