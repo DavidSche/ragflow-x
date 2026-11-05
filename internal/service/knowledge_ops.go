@@ -66,6 +66,20 @@ func (s *Service) KnowledgeOpsSummary(
 		}
 	}
 	summary.CostAttribution = rows
+	// P2 operations levers: echo the operator-tunable thresholds verbatim (so
+	// the board renders its own bar) and flag when the observed value crosses
+	// the bar. A 0 threshold disables its flag (defaults annotated in
+	// config.Defaults). Only completed turns with measurable similarity count
+	// toward the similarity floor.
+	s.knowledgeOpsMu.RLock()
+	cfg := s.knowledgeOpsConfig
+	s.knowledgeOpsMu.RUnlock()
+	summary.AbstainRateWarn = cfg.AbstainRateWarn
+	summary.CitationRateBaseline = cfg.CitationRateBaseline
+	summary.TopSimilarityFloor = cfg.TopSimilarityFloor
+	summary.AbstainAboveWarn = cfg.AbstainRateWarn > 0 && summary.NoAnswerRate > cfg.AbstainRateWarn
+	summary.CitationBelowBaseline = cfg.CitationRateBaseline > 0 && summary.TotalTurns > 0 && summary.CitationRate < cfg.CitationRateBaseline
+	summary.AvgTopSimBelowFloor = cfg.TopSimilarityFloor > 0 && summary.Completed > 0 && summary.AvgTopSimilarity > 0 && summary.AvgTopSimilarity < cfg.TopSimilarityFloor
 	return summary, nil
 }
 
@@ -154,6 +168,26 @@ func knowledgeEvent(
 		event.DurationMs = durationMs[0]
 	}
 	return event
+}
+
+// maxReferenceSimilarity returns the highest retrieval similarity observed in
+// the turn's engine references. Archived to bestReferenceSimilarity so the
+// operations observability and the honesty claim share one canonical extraction.
+func maxReferenceSimilarity(reference []map[string]interface{}) float64 {
+	return bestReferenceSimilarity(reference)
+}
+
+// applyReferenceMetrics annotates a knowledge ops event with retrieval quality
+// signals extracted from the engine reference envelope (P2 operations
+// observability). It is additive: a nil/empty reference leaves the event
+// untouched and never rewrites existing fields.
+func applyReferenceMetrics(event *model.KnowledgeOpsEvent, reference []map[string]interface{}) {
+	if event == nil {
+		return
+	}
+	if top := maxReferenceSimilarity(reference); top > 0 {
+		event.TopSimilarity = top
+	}
 }
 
 func (s *Service) recordKnowledgeEvent(ctx context.Context, event *model.KnowledgeOpsEvent) {

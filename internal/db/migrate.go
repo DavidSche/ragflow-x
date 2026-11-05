@@ -3206,6 +3206,18 @@ var migrations = []Migration{
 			return reconcileBuiltinPermissions(tx)
 		},
 	},
+	{
+		Version: 162,
+		Name:    "p2_citation_positions_knowledge_ops_similarity",
+		Migrate: func(tx *gorm.DB) error {
+			// P2 (doc/253): add the citation drawer locator columns (ref_index /
+			// positions) and the per-turn top retrieval similarity so operations
+			// can trend citation depth and retrieval quality. AutoMigrate adds
+			// the missing columns to already-created tables; both dialects
+			// tolerate the additive DDL.
+			return tx.AutoMigrate(&model.CitationReference{}, &model.KnowledgeOpsEvent{})
+		},
+	},
 }
 
 func evaluationScopeCondition(columnPrefix string) string {

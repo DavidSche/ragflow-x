@@ -101,6 +101,7 @@ func (s *store) KnowledgeOpsSummary(ctx context.Context, tenantID string, scopeA
 		TokensOut  int64   `gorm:"column:tokens_out"`
 		Latency    float64 `gorm:"column:avg_latency_ms"`
 		Resolution float64 `gorm:"column:avg_resolution_duration_ms"`
+		AvgTopSim  float64 `gorm:"column:avg_top_similarity"`
 	}
 	q := s.WithContext(ctx).Model(&model.KnowledgeOpsEvent{}).Select(`
 		COUNT(*) AS total_turns,
@@ -114,6 +115,7 @@ func (s *store) KnowledgeOpsSummary(ctx context.Context, tenantID string, scopeA
 		COALESCE(SUM(tokens_out), 0) AS tokens_out
 		,COALESCE(AVG(duration_ms), 0) AS avg_latency_ms
 		,COALESCE(AVG(resolution_duration_ms), 0) AS avg_resolution_duration_ms
+		,COALESCE(AVG(CASE WHEN top_similarity > 0 THEN top_similarity END), 0) AS avg_top_similarity
 	`, model.KnowledgeOpsCompleted, model.KnowledgeOpsNoAnswer, model.KnowledgeOpsFailed)
 	if !scopeAll {
 		q = q.Where("tenant_id = ?", tenantID)
@@ -135,6 +137,7 @@ func (s *store) KnowledgeOpsSummary(ctx context.Context, tenantID string, scopeA
 		WithCitations: row.Citations, TokensIn: row.TokensIn, TokensOut: row.TokensOut,
 		AvgLatencyMs:       row.Latency,
 		AvgResolutionHours: row.Resolution / 3600000,
+		AvgTopSimilarity:   row.AvgTopSim,
 		Positive:           positive, Negative: negative, AttributionSummary: attribution,
 	}
 	if row.Total > 0 {
