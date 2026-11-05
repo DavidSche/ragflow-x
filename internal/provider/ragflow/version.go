@@ -12,7 +12,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 )
 
-const baselineVersion = "0.27.1"
+const baselineVersion = "1.0.0-rc3"
 
 // VersionProbe checks the RAGFlow version at startup and compares it against
 // the pinned baseline. It reuses the HTTPClient's http.Client for connection

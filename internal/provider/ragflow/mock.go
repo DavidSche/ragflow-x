@@ -325,7 +325,7 @@ func (m *Mock) ChatCreateRequests() []CreateChatRequest {
 }
 
 func (m *Mock) EngineVersion(ctx context.Context) (string, error) {
-	return "0.27.1", nil
+	return "1.0.0-rc3", nil
 }
 
 func (m *Mock) CreateDataset(ctx context.Context, req CreateDatasetRequest) (*Dataset, error) {

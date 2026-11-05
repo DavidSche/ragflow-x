@@ -32,6 +32,7 @@ type RAGFlowCapability struct {
 	TrialPattern    string     `json:"trial_pattern,omitempty"`
 	ContractTest    bool       `json:"contract_test"`
 	Fallback        string     `json:"fallback"`
+	BindingContract string     `json:"binding_contract,omitempty"` // dataset_ids = link_id | link_name | engine_id → kb_ids (doc/252)
 	Status          string     `json:"status"`
 	VerifiedVersion string     `json:"verified_version,omitempty"`
 	VerifiedAt      *time.Time `json:"verified_at,omitempty"`
@@ -87,7 +88,7 @@ type capabilityRegistry struct {
 	items           map[string]*RAGFlowCapability
 }
 
-var pinnedRAGFlowVersion = "0.27.1"
+var pinnedRAGFlowVersion = "1.0.0-rc3"
 
 func newCapabilityRegistry() *capabilityRegistry {
 	registry := &capabilityRegistry{
@@ -97,14 +98,14 @@ func newCapabilityRegistry() *capabilityRegistry {
 		items:         map[string]*RAGFlowCapability{},
 	}
 	declarations := []RAGFlowCapability{
-		{Name: "chat", APIProfile: "chat.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc1", TrialPattern: "0.28.*", ContractTest: true, Fallback: "stable chat contract"},
-		{Name: "session", APIProfile: "session.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc1", TrialPattern: "0.28.*", ContractTest: true, Fallback: "new session"},
-		{Name: "agent", APIProfile: "agent.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "private endpoint disabled"},
-		{Name: "agent_session", APIProfile: "agent-session.v1", Lifecycle: "BETA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "non-streaming result"},
-		{Name: "search_app", APIProfile: "search-app.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "chat.v1"},
-		{Name: "memory", APIProfile: "memory.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "empty memory"},
-		{Name: "references", APIProfile: "references.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc1", TrialPattern: "0.28.*", ContractTest: true, Fallback: "no citation"},
-		{Name: "stream", APIProfile: "stream.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: true, Fallback: "non-streaming"},
+		{Name: "chat", APIProfile: "chat.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc3", TrialPattern: "0.28.*", ContractTest: true, Fallback: "stable chat contract", BindingContract: "dataset_ids = rgx_dataset_link.id | link.name | engine_id, resolved to kb_ids (doc/252 §1)"},
+		{Name: "session", APIProfile: "session.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc3", TrialPattern: "0.28.*", ContractTest: true, Fallback: "new session"},
+		{Name: "agent", APIProfile: "agent.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc3", TrialPattern: "0.28.*", ContractTest: true, Fallback: "private endpoint disabled"},
+		{Name: "agent_session", APIProfile: "agent-session.v1", Lifecycle: "BETA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc3", TrialPattern: "0.28.*", ContractTest: true, Fallback: "non-streaming result"},
+		{Name: "search_app", APIProfile: "search-app.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc3", TrialPattern: "0.28.*", ContractTest: true, Fallback: "chat.v1", BindingContract: "dataset_ids = rgx_dataset_link.id | link.name | engine_id, resolved to kb_ids (doc/252 §1)"},
+		{Name: "memory", APIProfile: "memory.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc3", TrialPattern: "0.28.*", ContractTest: true, Fallback: "empty memory"},
+		{Name: "references", APIProfile: "references.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc3", TrialPattern: "0.28.*", ContractTest: true, Fallback: "no citation"},
+		{Name: "stream", APIProfile: "stream.v1", Lifecycle: "GA", MinVersion: "0.27.0", MaxVerified: "0.27.*|1.0.0-rc3", TrialPattern: "0.28.*", ContractTest: true, Fallback: "non-streaming"},
 		{Name: "structured_output", APIProfile: "structured-output.v1", Lifecycle: "EXPERIMENTAL", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: false, Fallback: "text"},
 		{Name: model.RAGFlowCapabilityDocumentGovernance, APIProfile: "document-governance.v1", Lifecycle: "PREVIEW", MinVersion: "", MaxVerified: "", ContractTest: true, Fallback: "X-side result-only filter (no engine pushdown)"},
 		{Name: "openai_compatibility", APIProfile: "openai-compatible.v1", Lifecycle: "BETA", MinVersion: "0.27.0", MaxVerified: "0.27.*", TrialPattern: "0.28.*", ContractTest: false, Fallback: "ragflow-native"},

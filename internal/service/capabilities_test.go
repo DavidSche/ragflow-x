@@ -71,14 +71,14 @@ func TestRAGFlowCapabilityVerificationSeparatesVerifiedFromRuntimeHealth(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.DetectedVersion != "0.27.1" || report.RuntimeHealth != RuntimeHealthy {
+	if report.DetectedVersion != "1.0.0-rc3" || report.RuntimeHealth != RuntimeHealthy {
 		t.Fatalf("report: %+v", report)
 	}
 	byName := map[string]RAGFlowCapability{}
 	for _, item := range report.Items {
 		byName[item.Name] = item
 	}
-	if byName["chat"].Status != CapabilityVerified || byName["chat"].VerifiedVersion != "0.27.1" {
+	if byName["chat"].Status != CapabilityVerified || byName["chat"].VerifiedVersion != "1.0.0-rc3" {
 		t.Fatalf("chat capability: %+v", byName["chat"])
 	}
 	if byName["structured_output"].Status != CapabilityUnverified {

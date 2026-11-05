@@ -194,8 +194,11 @@ func newLiveProjectSharedMemoryFixture(
 		t.Fatal(err)
 	}
 	store := repository.NewStore(gdb)
+	// Align the live client budget with memory_e2e_live_test.go: AMD completion
+	// drills answer in ~60-90s per single round and must not be killed by a 15s
+	// client timeout (T6.3).
 	live := ragflow.NewHTTPClientWithMiddleware(
-		baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 15*time.Second, 4,
+		baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 5*time.Minute, 4,
 	)
 	client := &liveMemoryDispatchClient{Client: live}
 	svc := New(store, client, jwt.NewManager("secret", 24), "key")

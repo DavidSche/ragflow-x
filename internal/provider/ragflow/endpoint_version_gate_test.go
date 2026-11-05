@@ -45,10 +45,10 @@ func TestCompareReleaseVersionsRejectsMalformed(t *testing.T) {
 	}
 }
 
-func TestVerifiedMaxVersionResolvesRC1AfterT62(t *testing.T) {
+func TestVerifiedMaxVersionResolvesRC3AfterT63(t *testing.T) {
 	verified := VerifiedMaxVersion()
-	if verified != "v1.0.0-rc1" {
-		t.Fatalf("T6.2 set MaxVerified=v1.0.0-rc1 everywhere; VerifiedMaxVersion = %q", verified)
+	if verified != "v1.0.0-rc3" {
+		t.Fatalf("T6.3 re-based MaxVerified=v1.0.0-rc3 everywhere; VerifiedMaxVersion = %q", verified)
 	}
 }
 
@@ -70,7 +70,7 @@ func TestEvaluateVersionGateFailClosed(t *testing.T) {
 
 func TestEvaluateVersionGateBandSemantics(t *testing.T) {
 	// Inside the verified band -> pass.
-	if decision, _ := EvaluateVersionGate("v1.0.0-rc1", nil); decision != VersionGatePass {
+	if decision, _ := EvaluateVersionGate("v1.0.0-rc3", nil); decision != VersionGatePass {
 		t.Fatalf("verified engine must pass, got %q", decision)
 	}
 	// Newer engine -> verification required (contract re-drill gate).
@@ -90,7 +90,7 @@ func TestRunVersionPreflightAggregatesPerCapability(t *testing.T) {
 		t.Fatalf("probe-error preflight must block at face level, got %+v", blocked.Decision)
 	}
 	// Verified band: every capability endpoint passes.
-	passing := RunVersionPreflight("v1.0.0-rc1", nil)
+	passing := RunVersionPreflight("v1.0.0-rc3", nil)
 	if passing.Decision != VersionGatePass {
 		t.Fatalf("verified engine preflight must pass, got %q", passing.Decision)
 	}

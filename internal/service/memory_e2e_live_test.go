@@ -82,8 +82,12 @@ func newLiveMemoryE2EFixture(
 		t.Fatal(err)
 	}
 	store := repository.NewStore(gdb)
+	// The drill LLM (AMD radeon-external) answers in ~60-90s per single round;
+	// a 15s client timeout silently kills the completion before the model
+	// streams back, surfacing as a generic "ragflow chat completion failed".
+	// Raise the live client budget alongside the single-round red line (T6.3).
 	live := ragflow.NewHTTPClientWithMiddleware(
-		baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 15*time.Second, 4,
+		baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 5*time.Minute, 4,
 		middlewares...,
 	)
 	client := &liveMemoryDispatchClient{Client: live}
@@ -146,6 +150,18 @@ func newLiveMemoryE2EFixture(
 	return svc, client, target, policy, memoryID, gdb
 }
 
+// liveMemoryModelID resolves a live engine model of the given type to a
+// composite llm_id (model@instance@provider).
+//
+// Red-line clamp (T6.3 / rc3 re-validation): chat-type models are the LLM
+// that chat, agent and memory completion drills invoke, and every one of
+// those drills MUST target the AMD external pool (instance "radeon-external",
+// the 192.168.4.151:18082 proxy), never the 192.168.31.211 GPUStack pool
+// (instance "gpustack-local", ~15 tok/s). Selection therefore prefers a
+// radeon-external chat model and fail-closes if none is enrolled, so a
+// fixture can never silently bind a drill LLM to 31.211. Embedding/rerank
+// models execute on the engine's own GPU and keep the generic first-enabled
+// selection.
 func liveMemoryModelID(
 	t *testing.T, client *ragflow.HTTPClient, ctx context.Context, modelType string,
 ) string {
@@ -153,6 +169,9 @@ func liveMemoryModelID(
 	models, err := client.ListModels(ctx, modelType)
 	if err != nil {
 		t.Fatalf("list live %s models: %v", modelType, err)
+	}
+	if modelType == "chat" {
+		return liveMemoryChatModelID(t, models)
 	}
 	for _, candidate := range models {
 		if strings.TrimSpace(candidate.Name) == "" || strings.TrimSpace(candidate.Provider) == "" {
@@ -166,6 +185,45 @@ func liveMemoryModelID(
 		return modelID
 	}
 	t.Skipf("live Memory E2E requires an enabled %s model", modelType)
+	return ""
+}
+
+// liveMemoryChatModelID picks the drill LLM for chat/agent/memory completion
+// drills. RGX_RAGFLOW_LIVE_CHAT_MODEL optionally pins a model by name; either
+// way the chosen model must live on the AMD radeon-external instance or the
+// drill fails closed. This is the same red line the chatdrill tool enforces.
+func liveMemoryChatModelID(t *testing.T, models []ragflow.AddedModel) string {
+	t.Helper()
+	isAMD := func(m ragflow.AddedModel) bool {
+		return strings.Contains(strings.ToLower(m.Instance), "radeon")
+	}
+	pinned := strings.TrimSpace(os.Getenv("RGX_RAGFLOW_LIVE_CHAT_MODEL"))
+	if pinned != "" {
+		for _, candidate := range models {
+			if strings.TrimSpace(candidate.Name) != pinned {
+				continue
+			}
+			if !isAMD(candidate) {
+				t.Fatalf("RGX_RAGFLOW_LIVE_CHAT_MODEL=%q resolves to %q (non-AMD instance); "+
+					"chat/agent completion drills must target radeon-external, never 192.168.31.211",
+					pinned, candidate.Instance)
+			}
+			modelID := candidate.Name + "@" + candidate.Instance + "@" + candidate.Provider
+			t.Logf("selected live chat model %s (pinned)", modelID)
+			return modelID
+		}
+		t.Fatalf("RGX_RAGFLOW_LIVE_CHAT_MODEL=%q not enrolled as a chat model", pinned)
+	}
+	for _, candidate := range models {
+		if strings.TrimSpace(candidate.Name) == "" || !isAMD(candidate) {
+			continue
+		}
+		modelID := candidate.Name + "@" + candidate.Instance + "@" + candidate.Provider
+		t.Logf("selected live chat model %s (AMD radeon-external)", modelID)
+		return modelID
+	}
+	t.Skipf("live chat/agent completion drill requires an AMD radeon-external chat model " +
+		"(192.168.31.211 GPUStack models are off-limits for chat drills)")
 	return ""
 }
 

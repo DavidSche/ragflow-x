@@ -252,10 +252,12 @@ func TestLiveInternalEndpointContract(t *testing.T) {
 	}())
 
 	// Memory message drill: POST /messages is documented (§Add Message) but
-	// writes durable state, so it stays opt-in.
+	// writes durable state, so it stays opt-in. rc3 marks agent_id / session_id
+	// / user_id / user_input / agent_response binding:"required" (D1 drift), so
+	// the drill must supply non-empty values exactly like production handlers do.
 	if os.Getenv("RGX_RAGFLOW_LIVE_MEMORY_MESSAGE_DRILL") == "1" {
 		if memories, _, err := client.ListMemories(ctx, ListMemoriesFilter{}); err == nil && len(memories) > 0 {
-			fail("POST /messages", client.AddMemoryMessage(ctx, AddMessageRequest{MemoryIDs: []string{memories[0].ID}, UserInput: "rgx live drill", AgentResponse: "drill ack"}))
+			fail("POST /messages", client.AddMemoryMessage(ctx, AddMessageRequest{MemoryIDs: []string{memories[0].ID}, AgentID: "rgx-drill-agent", SessionID: "rgx-drill-session", UserID: "rgx-drill-user", UserInput: "rgx live drill", AgentResponse: "drill ack"}))
 		}
 	}
 

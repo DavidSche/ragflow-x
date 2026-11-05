@@ -74,14 +74,14 @@ func TestKnownVersionIssuesCopyIsDefensive(t *testing.T) {
 	}
 }
 
-// TestT62ReconciliationMarkedEveryEndpoint pins the T6.2 收口: every registry
-// endpoint carries MaxVerified=v1.0.0-rc1 (evidence: X production gateway on
-// the 151 rc1 engine + live contract drills + D1 three-arm measurements), and
-// none over-claims a MinVersion floor that was never verified.
+// TestT62ReconciliationMarkedEveryEndpoint pins the T6.2 收口 re-based at T6.3:
+// every registry endpoint carries MaxVerified=v1.0.0-rc3 (evidence: 151 rc3
+// engine re-verification 2026-11-03 + live contract drills), and no endpoint
+// over-claims a MinVersion floor that was never verified.
 func TestT62ReconciliationMarkedEveryEndpoint(t *testing.T) {
 	for _, e := range endpointRegistry {
-		if e.MaxVerified != "v1.0.0-rc1" {
-			t.Errorf("endpoint %s %s missing T6.2 MaxVerified (want v1.0.0-rc1, got %q)", e.Method, e.Path, e.MaxVerified)
+		if e.MaxVerified != "v1.0.0-rc3" {
+			t.Errorf("endpoint %s %s missing T6.3 MaxVerified (want v1.0.0-rc3, got %q)", e.Method, e.Path, e.MaxVerified)
 		}
 		if e.MinVersion != "" {
 			t.Errorf("endpoint %s %s must not claim an unverified MinVersion floor yet (got %q)", e.Method, e.Path, e.MinVersion)
