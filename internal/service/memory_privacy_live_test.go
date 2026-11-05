@@ -20,7 +20,7 @@ import (
 // recorded for a memory message. The Governed message list API is
 // metadata-only, so the closed-loop drill verifies the redaction placeholder
 // (and, for exemptions, the raw PII) directly against memory_task.input.
-// RGX_PRIVACY_LIVE_MYSQL_DSN (e.g. root:pass4mysql@tcp(192.168.4.151:3306)/rag_flow)
+// RGX_PRIVACY_LIVE_MYSQL_DSN (e.g. user:pass@tcp(<mysql-host>:3306)/rag_flow)
 // is required; without it the outbound payload assertions are skipped.
 func liveMemoryTaskInput(t *testing.T, memoryID string, sourceID int64) string {
 	t.Helper()

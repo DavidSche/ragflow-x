@@ -51,7 +51,9 @@ func main() {
 				stream, i = os.Args[i+1] == "1", i+1
 			}
 		case os.Args[i] == "-keep-session":
-			keep, i = os.Args[i] == "1", i
+			if i+1 < len(os.Args) {
+				keep, i = os.Args[i+1] == "1", i+1
+			}
 		case os.Args[i] == "-question" && i+1 < len(os.Args):
 			question, i = os.Args[i+1], i+1
 		case os.Args[i] == "-h":
@@ -95,7 +97,7 @@ func main() {
 	}
 	failIf(bound == "", "ChatBinding", "chat "+chatID+" not found in /chats")
 	failIf(!strings.Contains(bound, "radeon-external"), "ChatBindingAMD",
-		fmt.Sprintf("resolved LLM=%q must be radeon-external (red line: no 31.211)", bound))
+		fmt.Sprintf("resolved LLM=%q must be radeon-external (red line: local GPUStack pool off-limits)", bound))
 	pass("ChatBinding", "resolved LLM="+bound)
 
 	// 2) create a disposable session.

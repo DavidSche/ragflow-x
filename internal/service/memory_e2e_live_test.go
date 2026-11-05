@@ -155,13 +155,13 @@ func newLiveMemoryE2EFixture(
 //
 // Red-line clamp (T6.3 / rc3 re-validation): chat-type models are the LLM
 // that chat, agent and memory completion drills invoke, and every one of
-// those drills MUST target the AMD external pool (instance "radeon-external",
-// the 192.168.4.151:18082 proxy), never the 192.168.31.211 GPUStack pool
-// (instance "gpustack-local", ~15 tok/s). Selection therefore prefers a
+// those drills MUST target the external AMD inference proxy (instance
+// "radeon-external"), never the local GPUStack pool (instance
+// "gpustack-local", ~15 tok/s). Selection therefore prefers a
 // radeon-external chat model and fail-closes if none is enrolled, so a
-// fixture can never silently bind a drill LLM to 31.211. Embedding/rerank
-// models execute on the engine's own GPU and keep the generic first-enabled
-// selection.
+// fixture can never silently bind a drill LLM to the local pool. Embedding/
+// rerank models execute on the engine's own GPU and keep the generic
+// first-enabled selection.
 func liveMemoryModelID(
 	t *testing.T, client *ragflow.HTTPClient, ctx context.Context, modelType string,
 ) string {
@@ -205,7 +205,7 @@ func liveMemoryChatModelID(t *testing.T, models []ragflow.AddedModel) string {
 			}
 			if !isAMD(candidate) {
 				t.Fatalf("RGX_RAGFLOW_LIVE_CHAT_MODEL=%q resolves to %q (non-AMD instance); "+
-					"chat/agent completion drills must target radeon-external, never 192.168.31.211",
+					"chat/agent completion drills must target radeon-external (local GPUStack pool off-limits)",
 					pinned, candidate.Instance)
 			}
 			modelID := candidate.Name + "@" + candidate.Instance + "@" + candidate.Provider
@@ -223,7 +223,7 @@ func liveMemoryChatModelID(t *testing.T, models []ragflow.AddedModel) string {
 		return modelID
 	}
 	t.Skipf("live chat/agent completion drill requires an AMD radeon-external chat model " +
-		"(192.168.31.211 GPUStack models are off-limits for chat drills)")
+		"(local GPUStack pool models are off-limits for chat drills)")
 	return ""
 }
 

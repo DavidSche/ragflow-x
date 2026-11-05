@@ -29,8 +29,8 @@ import (
 //     governance fields), and completes as confirmed with bound artifacts.
 //
 // STATUS 2026-10-16: authored but not yet executed live. The RAGFlow host
-// (192.168.4.151) lost network reachability to the local model pool
-// (192.168.31.211:8080), so document parse (embedding) and the compilation
+// lost network reachability to the local model pool (vLLM serving host),
+// so document parse (embedding) and the compilation
 // chat model cannot complete; see doc/develop/202 for the outage evidence.
 // Run when connectivity is restored:
 //
