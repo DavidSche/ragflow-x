@@ -1,3 +1,6 @@
+> **本地环境红线见 `AGENTS.local.md`（本地专用、已被 .gitignore 忽略，禁止提交/推送）**。
+> 本地 agent 请在 AGENTS.md 基础上追加读取该文件；缺失时向维护者索取。
+
 # ragflow-x
 
 RAGFlow-X 是面向私有数据中心的企业知识库 AI 基础设施补齐层：Go 1.25 + Gin + GORM 提供 API 与网关，React 19 + ra-core + shadcn/ui 提供管理前端。核心边界是**不 Fork RAGFlow、不侵入其 schema**；RAGFlow 继续作为核心 RAG 执行面，RAGFlow-X 通过官方 HTTP API 操作知识引擎，本地只维护租户、组织、审批、配额、审计、用量治理、知识生命周期和对话体验所需的治理与投影数据。
