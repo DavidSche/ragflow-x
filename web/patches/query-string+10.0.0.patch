@@ -1,0 +1,14 @@
+diff --git a/node_modules/query-string/index.js b/node_modules/query-string/index.js
+index 0480a96..eb9f5fd 100644
+--- a/node_modules/query-string/index.js
++++ b/node_modules/query-string/index.js
+@@ -1,3 +1,9 @@
+ import * as queryString from './base.js';
+ 
+ export default queryString;
++
++// [patch] ra-core imports named `parse`/`stringify`; re-export them from the
++// default namespace so query-string v10 (ESM, default-only) stays drop-in for
++// react-admin while keeping audit clean (no decode-uri-component).
++export const parse = queryString.parse;
++export const stringify = queryString.stringify;
