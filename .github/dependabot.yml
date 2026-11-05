@@ -1,4 +1,8 @@
 version: 2
+# 方案 A：常规依赖版本更新一律不自动开 PR（open-pull-requests-limit: 0）。
+# 依赖升级由维护者手动执行（例如按需 npm install / go get），
+# 高危安全修复走 Dependabot Security Updates（Settings → Code security 单独开启），
+# 避免每次调度/推送在个人仓库一次性开出大量 PR 并各自点燃 CI。
 updates:
   # Go module dependencies
   - package-ecosystem: gomod
@@ -8,6 +12,7 @@ updates:
       day: monday
       time: "09:00"
       timezone: Asia/Shanghai
+    open-pull-requests-limit: 0
     commit-message:
       prefix: chore
       include: scope
@@ -29,6 +34,7 @@ updates:
       day: monday
       time: "09:00"
       timezone: Asia/Shanghai
+    open-pull-requests-limit: 0
     commit-message:
       prefix: chore
       include: scope
@@ -50,6 +56,7 @@ updates:
       day: monday
       time: "09:00"
       timezone: Asia/Shanghai
+    open-pull-requests-limit: 0
     commit-message:
       prefix: chore
       include: scope

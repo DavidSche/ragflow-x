@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload unit log (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: go-build-unit-log
           path: test-results/unit.log
@@ -161,7 +161,7 @@ jobs:
         run: make test-quality-report
 
       - name: Upload quality report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scenario-quality-report
           path: test-results/scenario-quality-report.json
@@ -169,7 +169,7 @@ jobs:
 
       - name: Upload gate logs (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: quality-gate-logs
           path: test-results/*.log
@@ -243,14 +243,14 @@ jobs:
 
       - name: Upload changed-coverage log (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: changed-coverage-log
           path: test-results/changed-coverage.log
           retention-days: 7
 
       - name: Upload Changed Lines Coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: changed-lines-coverage-report
           path: test-results/scenario-quality-report-changed.json
@@ -390,7 +390,7 @@ jobs:
 
       - name: Upload Playwright report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: web/playwright-report
