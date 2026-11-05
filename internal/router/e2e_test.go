@@ -671,11 +671,11 @@ func TestE2E_SystemCapabilities(t *testing.T) {
 	if err := json.Unmarshal(body, &verify); err != nil {
 		t.Fatal(err)
 	}
-	if verify.Data.DetectedVersion != "0.27.1" || verify.Data.RuntimeHealth != "HEALTHY" {
+	if verify.Data.DetectedVersion != "1.0.0-rc3" || verify.Data.RuntimeHealth != "HEALTHY" {
 		t.Fatalf("verification: %+v", verify.Data)
 	}
 	if verify.Data.UpgradeDecision != "READY" {
-		t.Fatalf("0.27 upgrade gate = %s, want READY", verify.Data.UpgradeDecision)
+		t.Fatalf("version gate = %s, want READY", verify.Data.UpgradeDecision)
 	}
 }
 
