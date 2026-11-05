@@ -112,3 +112,17 @@ tmp/
 /docs.zip
 /sync-*.png
 /tmp-query/
+
+# Local-only agent red lines (never commit)
+/AGENTS.local.md
+
+# Reusable local-only tooling (never commit; mirrors doc/ and AGENTS.local.md)
+/localenv/
+
+# Local drill/private config carries real credentials (drill rc3 engine on 151
+# + dedicated postgres:5433/redis:6380); never commit. Mirrors config/config.yaml.
+config/config.drill*.yaml
+
+# First-run wizard key/secrets backups (master key + encrypted secrets), never commit
+config/.master.key.*
+config/runtime.secrets.json.*
