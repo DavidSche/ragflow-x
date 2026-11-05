@@ -5,7 +5,7 @@
   "owner": "quality",
   "corpus": {
     "name": "knoweval-d1-corpus",
-    "source": "192.168.4.151:/data/david/KnowEval/tmp/d1_corpus_manifest.json",
+    "source": "<corpus-manifest-path-on-capture-host>",
     "sha256": "",
     "file_count": 39,
     "build_id": "bd-272595"

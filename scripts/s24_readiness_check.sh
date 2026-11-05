@@ -51,7 +51,7 @@ printf '\n'
 
 # 2. RAGFlow base URL reachable (scene A/D depend on the provider).
 printf '2. RAGFlow provider reachability\n'
-ragflow_base="${RGX_RAGFLOW_BASE_URL:-http://192.168.4.151}"
+ragflow_base="${RGX_RAGFLOW_BASE_URL:-}"
 if command -v curl >/dev/null 2>&1; then
   if curl -sk -o /dev/null -m 3 -w '' "$ragflow_base"; then
     curl_status="$(curl -sk -o /dev/null -m 3 -w '%{http_code}' "$ragflow_base" 2>/dev/null || echo 000)"

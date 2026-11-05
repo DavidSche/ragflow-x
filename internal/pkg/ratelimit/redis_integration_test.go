@@ -11,9 +11,9 @@ import (
 // TestRedisIntegration verifies the distributed backend against a live Redis.
 // It is skipped unless RGX_REDIS_TEST_ADDR is set, e.g.:
 //
-//	RGX_REDIS_TEST_ADDR=192.168.4.153:6389 \
+//	RGX_REDIS_TEST_ADDR=<redis-host>:6389 \
 //	RGX_REDIS_TEST_USERNAME=default \
-//	RGX_REDIS_TEST_PASSWORD=admin123456 \
+//	RGX_REDIS_TEST_PASSWORD=<test-password> \
 //	RGX_REDIS_TEST_DB=0  go test ./internal/pkg/ratelimit/ -run TestRedisIntegration -v
 func TestRedisIntegration(t *testing.T) {
 	addr := os.Getenv("RGX_REDIS_TEST_ADDR")

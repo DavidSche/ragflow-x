@@ -24,7 +24,7 @@ import (
 )
 
 // alertmanagerAlerts fetches the currently active alerts from a real
-// Alertmanager instance (RGX_ALERTMANAGER_URL, e.g. http://192.168.4.151:9093).
+// Alertmanager instance (RGX_ALERTMANAGER_URL, e.g. http://<alertmanager-host>:9093).
 func alertmanagerAlerts(t *testing.T, baseURL string) []map[string]any {
 	t.Helper()
 	resp, err := http.Get(strings.TrimSuffix(baseURL, "/") + "/api/v2/alerts?active=true&silenced=false&inhibited=false")

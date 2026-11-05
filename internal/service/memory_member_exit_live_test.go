@@ -27,7 +27,7 @@ import (
 //     provider; the outcome is pinned to exactly one of the two contract
 //     terminal paths — executed with an external message id, or governed
 //     unknown with reason memory_dispatch_provider_unconfirmed (observed
-//     live while the 192.168.31.211 model pool was unreachable from the
+//     live while the local model pool was unreachable from the
 //     RAGFlow host, which is precisely the network-loss semantics the
 //     unknown state exists for);
 //  2. a second write is accepted but left unadmitted (outbox not processed);
