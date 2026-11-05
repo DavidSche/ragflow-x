@@ -1119,6 +1119,7 @@ const zhMessages = {
     create_fail: "检索应用创建失败",
     datasets: "数据集",
     no_datasets: "当前工作区无可访问的数据集",
+    with_documents: "%{count} 篇文档",
     edit_title: "编辑检索应用",
     name: "名称",
     dataset_ids: "数据集 ID（逗号分隔）",

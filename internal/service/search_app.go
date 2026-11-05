@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,6 +13,86 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
+
+// SearchAppDatasetOption is a picker row for the Search App binding wizard
+// (doc/252 §向导数据面). linked rows come from rgx_dataset_link (X 层别名引用),
+// engine rows are raw RAGFlow datasets that are not linked yet. Both are valid
+// inputs to CreateSearchApp/UpdateSearchApp `dataset_ids` (link id, link name,
+// or raw engine id all resolve).
+//
+// The picker keeps raw engine ids out of the UI: the frontend binds by
+// link_id (or name) and only falls back to a raw engine id when Source==engine.
+type SearchAppDatasetOption struct {
+	LinkID           string `json:"link_id,omitempty"`
+	Name             string `json:"name"`
+	RAGFlowDatasetID string `json:"ragflow_dataset_id"`
+	DocumentCount    int64  `json:"document_count"`
+	Sensitivity      string `json:"sensitivity,omitempty"`
+	Source           string `json:"source"` // linked | engine
+}
+
+// SearchAppDatasetOptions returns the datasets that can be bound to a Search
+// App for the current governance scope: rgx_dataset_link rows first, raw
+// engine datasets as fallback options. Linked rows carry a stable X 层 alias
+// (link_id/name) so the wizard can avoid hands-on engine ids.
+func (s *Service) SearchAppDatasetOptions(ctx context.Context, scope TenantScope) ([]SearchAppDatasetOption, error) {
+	// Scan the full link table once: all tenants' linked engine ids build the
+	// `claimed` set so the engine fallback below never re-surfaces a library
+	// that any tenant has already linked (single shared engine account; the
+	// rgx_dataset_link tenant column is the only authoritative ownership edge).
+	allLinks, err := s.Store.ListDatasetLinksForScope(ctx, true, nil, repository.DatasetFilter{})
+	if err != nil {
+		return nil, err
+	}
+	opts := make([]SearchAppDatasetOption, 0, len(allLinks))
+	seen := map[string]bool{}
+	claimed := map[string]bool{}
+	tenantAllow := map[string]bool{}
+	for _, tid := range scope.RepositoryTenantIDs() {
+		tenantAllow[tid] = true
+	}
+	for _, l := range allLinks {
+		if l.RAGFlowDatasetID == "" {
+			continue
+		}
+		claimed[l.RAGFlowDatasetID] = true
+		if !scope.ScopeAll() && !tenantAllow[l.TenantID] {
+			continue
+		}
+		seen[l.RAGFlowDatasetID] = true
+		opts = append(opts, SearchAppDatasetOption{
+			LinkID: l.ID, Name: l.Name, RAGFlowDatasetID: l.RAGFlowDatasetID,
+			DocumentCount: l.DocumentCount, Sensitivity: l.Sensitivity, Source: "linked",
+		})
+	}
+	// Raw engine datasets complete the picker ONLY for libraries no tenant has
+	// linked yet; they stay bindable but are clearly tagged. Under a single
+	// shared engine account the ownership of a still-unlinked orphan library
+	// cannot be decided engine-side, so it is surfaced as an explicit engine
+	// fallback choice. Once per-tenant engine credentials exist, this boundary
+	// moves to the credential itself (doc/252 §隔离).
+	if s.RAGFlow.Name() == "http" {
+		engineDatasets, err := s.RAGFlow.ListDatasets(ctx)
+		if err != nil {
+			return nil, httperr.New(502, 50248, "列出租户数据集选项失败")
+		}
+		for _, d := range engineDatasets {
+			if seen[d.ID] || claimed[d.ID] {
+				continue
+			}
+			opts = append(opts, SearchAppDatasetOption{
+				Name: d.Name, RAGFlowDatasetID: d.ID, DocumentCount: d.DocumentCount, Source: "engine",
+			})
+		}
+	}
+	sort.SliceStable(opts, func(i, j int) bool {
+		if opts[i].Name != opts[j].Name {
+			return opts[i].Name < opts[j].Name
+		}
+		return opts[i].Source < opts[j].Source
+	})
+	return opts, nil
+}
 
 // ListSearchApps returns the tenant's Search Apps (or all tenants for scopeAll).
 func (s *Service) ListSearchApps(ctx context.Context, tenantID string, scopeAll bool, filter repository.SearchAppFilter, page, pageSize int) ([]model.SearchAppShadow, int64, error) {
@@ -104,7 +185,7 @@ func (s *Service) CreateSearchApp(ctx context.Context, tenantID, name string, cf
 	if resolveErr != nil {
 		return nil, resolveErr
 	}
-	if err := s.validateOwnedDatasets(ctx, kbIDs); err != nil {
+	if err := s.validateOwnedDatasets(ctx, tenantID, kbIDs); err != nil {
 		return nil, err
 	}
 	if cfg != nil {
@@ -144,7 +225,7 @@ func (s *Service) UpdateSearchApp(ctx context.Context, tenantID, searchAppID, na
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
-		if err := s.validateOwnedDatasets(ctx, kbIDs); err != nil {
+		if err := s.validateOwnedDatasets(ctx, tenantID, kbIDs); err != nil {
 			return nil, err
 		}
 		cfg.KbIDs = kbIDs
@@ -225,7 +306,12 @@ func (s *Service) SearchAppCompletion(ctx context.Context, tenantID, actorID, se
 		answer = resp.Answer
 		citations = citationCountFromMaps(resp.Reference)
 	}
-	s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, answer, citations, int64(len([]rune(question))), int64(len([]rune(answer))), time.Since(startedAt).Milliseconds()))
+	searchEvent := knowledgeEvent(tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, answer, citations, int64(len([]rune(question))), int64(len([]rune(answer))), time.Since(startedAt).Milliseconds())
+	if resp != nil {
+		s.attachAnswerabilityClaim(searchEvent, answer, resp.Reference)
+		applyReferenceMetrics(searchEvent, resp.Reference)
+	}
+	s.recordKnowledgeEvent(ctx, searchEvent)
 	if resp != nil {
 		s.recordAnswerDeliveryWithPushdown(ctx, tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, answer, citationsFromProviderReferences(resp.Reference), pushdown)
 	}
@@ -283,7 +369,10 @@ func (s *Service) StreamSearchAppCompletion(ctx context.Context, tenantID, actor
 		s.recordFailedAnswerDelivery(ctx, tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, capture.answer.String(), reason)
 		return reportedStreamFailure(httperr.New(502, 50265, "ragflow search app stream failed"))
 	}
-	s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, capture.answer.String(), int64(capture.citations), int64(len([]rune(question))), capture.tokensOut, time.Since(startedAt).Milliseconds()))
+	searchEvent := knowledgeEvent(tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, capture.answer.String(), int64(capture.citations), int64(len([]rune(question))), capture.tokensOut, time.Since(startedAt).Milliseconds())
+	s.attachAnswerabilityClaim(searchEvent, capture.answer.String(), capture.reference)
+	applyReferenceMetrics(searchEvent, capture.reference)
+	s.recordKnowledgeEvent(ctx, searchEvent)
 	s.recordAnswerDeliveryWithPushdown(ctx, tenantID, sa.OwnerID, "search", searchAppID, "", requestID, question, capture.answer.String(), citationsFromProviderReferences(capture.reference), streamPushdown)
 	s.MeterSearchCompletion(ctx, tenantID, sa.OwnerID, requestID, int64(len([]rune(question))))
 	return nil
@@ -302,7 +391,7 @@ func (s *Service) searchAppKbIDs(ctx context.Context, sa *model.SearchAppShadow)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.validateOwnedDatasets(ctx, resolved); err != nil {
+	if err := s.validateOwnedDatasets(ctx, sa.TenantID, resolved); err != nil {
 		return nil, err
 	}
 	if len(resolved) == 0 {
