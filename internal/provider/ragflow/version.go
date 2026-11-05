@@ -14,6 +14,12 @@ import (
 
 const baselineVersion = "1.0.0-rc3"
 
+// PinnedBaselineVersion exposes the engine release the contract suite is
+// pinned and verified against (doc/250 §0.1, doc/262 SOP §判定). The
+// upstream-verify command and the upgrade pipeline read it as the
+// expectation anchor next to the VersionProbe's live observation.
+func PinnedBaselineVersion() string { return baselineVersion }
+
 // VersionProbe checks the RAGFlow version at startup and compares it against
 // the pinned baseline. It reuses the HTTPClient's http.Client for connection
 // pool sharing.
