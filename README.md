@@ -33,6 +33,10 @@ unified conversation experience.
 - **Full-lifecycle knowledge system.** Dataset integration, parsing, quality, versioning, publication, consumption, feedback, evaluation, and operations.
 - **Unified conversation center.** A consistent entry point for Chat, Search, and Agent experiences with role-aware routing, citations, rich content, tools, and export.
 - **Production readiness.** Version/capability probing, contract tests, Docker Compose, structured logging, Prometheus, and audit hash-chain verification.
+- **Verified against RAGFlow v1.0.0-rc3.** All 96 gateway endpoints re-verified on the rc3 engine (T6.3); the pinned capability band was raised from 0.27.1 to rc3, and the search-app capability declares its dataset-binding contract.
+- **Citation transparency.** Citations carry ref_index/positions for precise in-document positioning; the conversation center rehydrates citations from the completion-time snapshot (rc3 sessions no longer echo them on read-back).
+- **Honesty discipline.** Every turn records a structured answerability claim (answerable / confidence / source / abstain reason) on top of the engine's own answer — annotated, never rewritten.
+- **Search-app binding foolproofing.** dataset_ids resolve across link_id / link_name / engine_id with tenant-ownership validation, near-miss library suggestions instead of engine error leaks, and contract-as-documentation error codes (40092/40093/40095).
 
 ## Quick start
 

@@ -46,6 +46,21 @@
 - 评测统计诚实增强（223 T4/T3，M-A）：scoped evaluation v4 协议新增 test-retest 双遍一致性门禁（`min_repeat_consistency_pp`，P2 双遍 <95% → EvaluationGateWait）与拒答校准三档策略 + 预算门禁（`abstention_policy` / `min_abstain_precision_pp` / `max_confident_wrong_pp`，判分侧注入 `expected_evidence_present`、报告段 `abstention_calibration`）；阈值/档位均预注册，回放调参须换协议 hash 防 p-hacking（doc/223 §8）。
 - 判分与嵌入模型规范：`glm-5.3-flash` 停用登记（doc/00 226–227）；`deepseek-v4-flash-0731` 可用的判分模型。
 
+#### Added
+
+- **逐轮诚实度声明（P0-B，doc/253 §13.2）**：每轮对话生成结构化 answerability 声明（answerable / confidence / source / abstain_reason / citation_count / distinct_docs），只注释不改写引擎答案——落实「敢回答、能定位、可证明」的 honesty 纪律，指标落到 `knowledge_ops` 事件与日志。
+- **知识运营观测 levers（P2）**：`knowledge_ops` 事件新增 `top_similarity`（最高检索相似度）；看板新增 `avg_top_similarity` 与 `abstain_rate_warn` / `citation_rate_baseline` / `top_similarity_floor` 三档运营阈值（`config.knowledge_ops` 可调，越线打标渲染）。
+- **引用抽屉定位（P2，doc/253）**：`citation_reference` 新增 ref_index/positions 定位列；会话消息引用再水合——rc3 sessions GET 不再回显 references，Conversation Center 按 question+answer 哈希从完成时刻 answer snapshot 还原 Citations（T6/S14）。
+- **搜索应用数据集绑定防呆（§13.3 P1，doc/252）**：`dataset_ids` 支持 `link_id | link_name | engine_id` 解析并校验归租户（`validateOwnedDatasets`），错误提示给出近邻库名建议而不泄漏引擎原始报错；新增错误契约 **40092 / 40093 / 40095**（契约即文档）；`GET /search-apps/dataset-options` 向导数据面 + 前端创建/编辑下拉接线（`rgx_dataset_link` 优先、失败回退 `/datasets`）。
+- **端点注册表 rc3 重验（T6.3，doc/250）**：96 条端点 `MaxVerified` 全部提升至 `v1.0.0-rc3`（151 生产面 + live contract drill 重验）；能力注册表版本带基线 `0.27.1 → 1.0.0-rc3`；`chat`/`search_app` 能力声明新增 `BindingContract`（dataset_ids 解析链）。
+- **chatdrill（cmd/chatdrill）**：基于适配器自身代码路径对真实 rc3 引擎做单轮聊天诊断（复用补齐平台栈即可执行），重验 chat/session/reference 契约；单轮/无并发/临时会话清理，解析到的 chat 模型非 radeon-external 时 fail-closed。
+
+#### Changed
+
+- **前端依赖升级（2026-11）**：react/react-dom 19.3、@radix-ui 全系、ra-core/ra-i18n 5.15.5、@tanstack/react-query 5.104 等；query-string 10.0.0 说明性变更经 **patch-package** 就地修补（`web/patches/`，postinstall 自动应用）。
+- **CI 工具链（2026-11）**：actions `upload/download-artifact` v4→v8/v7、docker set qemu / build-push 升级；dependabot `open-pull-requests-limit: 0`——常规依赖升级不再自动开 PR，高危安全修复仍走 Security Updates 通道。
+- **memory live 契约（T6.3）**：drill 客户端超时 15s→5min（AMD radeon-external 单轮 60–90s）；chat 类模型固定 radeon-external 池（绝不 fallback 到 31.211 GPUStack ~15 tok/s），嵌入/重排仍走引擎自有 GPU。
+
 #### Known Limitations
 
 - compiled-first 检索模式默认关闭、Gate WAIT 失败关闭；上游关联 issue（#21095–#21098 等）跟踪中，官方镜像升级后复验（doc/221 §7 B 项标准）。
