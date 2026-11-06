@@ -1194,6 +1194,7 @@ const enMessages = {
     llm_max_tokens: "Max tokens",
     llm_max_tokens_placeholder: "e.g. 800 (empty = default)",
     llm_max_tokens_hint: "Per-response token cap (1-100000); empty uses the engine default.",
+    llm_max_tokens_invalid: "Integer 1-100000, or leave empty",
     llm_model: "LLM model",
     llm_model_default: "Use workspace default",
     related_search: "Enable related search",

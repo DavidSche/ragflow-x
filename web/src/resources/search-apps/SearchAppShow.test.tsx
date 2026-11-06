@@ -102,7 +102,7 @@ describe("<SearchAppShow /> model parameters", () => {
     expect(payload.search_config.llm_setting).toEqual({ llm_id: "m1", temperature: 0, top_p: 0.1, max_tokens: 800 });
   });
 
-  it("leaves an unset max_tokens out of the engine payload (engine default wins)", async () => {
+  it("surfaces the deterministic default signature for knobs the engine left unset", async () => {
     vi.mocked(api.get).mockReset();
     vi.mocked(api.get).mockImplementation(async (url: string) => {
       if (url.endsWith("/config")) {
@@ -133,7 +133,9 @@ describe("<SearchAppShow /> model parameters", () => {
     await userEvent.click(screen.getByText("ra.action.save"));
     await waitFor(() => expect(api.put).toHaveBeenCalled());
     const payload = vi.mocked(api.put).mock.calls[0][1] as { search_config: { llm_setting: Record<string, unknown> } };
-    expect(payload.search_config.llm_setting).toEqual({ llm_id: "m1", temperature: 0.5 });
+    // default-first: user-set temperature is honoured, unset top_p/max_tokens become
+    // the E-proven deterministic signature (0.1 / 800) instead of engine defaults.
+    expect(payload.search_config.llm_setting).toEqual({ llm_id: "m1", temperature: 0.5, top_p: 0.1, max_tokens: 800 });
   });
 
   it("editing the sliders and max_tokens is reflected in the save payload", async () => {
@@ -152,5 +154,16 @@ describe("<SearchAppShow /> model parameters", () => {
     await waitFor(() => expect(api.put).toHaveBeenCalled());
     const payload = vi.mocked(api.put).mock.calls[0][1] as { search_config: { llm_setting: Record<string, unknown> } };
     expect(payload.search_config.llm_setting).toEqual({ llm_id: "m1", temperature: 0.25, top_p: 0.9, max_tokens: 2048 });
+  });
+
+  it("blocks saving invalid max_tokens with an error instead of a silent downgrade", async () => {
+    await setup();
+    const maxTokens = screen.getByDisplayValue("800");
+    await userEvent.clear(maxTokens);
+    await userEvent.type(maxTokens, "0");
+    // invalid input surfaces an inline error + red (aria-invalid) state and a save is refused.
+    expect(screen.getByText("searchApps.llm_max_tokens_invalid")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("ra.action.save"));
+    await waitFor(() => expect(api.put).not.toHaveBeenCalled());
   });
 });

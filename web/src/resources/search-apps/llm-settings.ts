@@ -1,8 +1,9 @@
 /* ── Search App LLM generation parameters ──────────────────────────────
  * The engine-side `llm_setting` is an opaque map that is pushed down as-is
  * (temperature / top_p / max_tokens are the knobs RAGFlow v1 search-apps
- * honour). Absent keys fall back to engine defaults, so the editor keeps
- * top_p / max_tokens optional and only includes a key once the user set it.
+ * honour). Absent keys fall back to engine defaults, so build() only injects a
+ * key the user explicitly set; parse() surfaces the E-proven DEFAULT_LLM
+ * signature for knobs the engine left unset (Default-first, doc/263 §7.2).
  * Keep this module pure & free of UI imports so it stays unit-testable.
  * -------------------------------------------------------------------- */
 
@@ -18,15 +19,27 @@ export interface SearchAppLLMFormValues {
 /** Valid upper bound the UI should accept for max_tokens. */
 export const MAX_TOKENS_LIMIT = 100_000;
 
+/**
+ * Default-first knobs (E-proven deterministic signature, see doc/263 §7.2):
+ * temperature 0 + top_p 0.1 + max_tokens 800. Any search app whose engine
+ * config omits a knob surfaces this signature instead of the engine's looser
+ * default, so an out-of-the-box app is deterministic without any tuning.
+ */
+export const DEFAULT_LLM = {
+  temperature: 0,
+  topP: 0.1,
+  maxTokens: 800,
+} as const;
+
 /** Read the live engine `llm_setting` into editor form values. */
 export function parseSearchAppLLM(
   llm: Record<string, unknown> | undefined | null,
 ): SearchAppLLMFormValues {
   const temperature = Number(
-    llm && llm.temperature !== undefined ? llm.temperature : 0.1,
+    llm && llm.temperature !== undefined ? llm.temperature : DEFAULT_LLM.temperature,
   );
-  const topP = readOptionalNumber(llm, "top_p");
-  const maxTokens = readOptionalNumber(llm, "max_tokens");
+  const topP = readNumberOrDefault(llm, "top_p", DEFAULT_LLM.topP);
+  const maxTokens = readNumberOrDefault(llm, "max_tokens", DEFAULT_LLM.maxTokens);
   return { temperature, topP, maxTokens };
 }
 
@@ -53,11 +66,12 @@ export function maxTokensFromInput(raw: string): number | undefined {
   return n;
 }
 
-function readOptionalNumber(
+function readNumberOrDefault(
   llm: Record<string, unknown> | undefined | null,
   key: string,
-): number | undefined {
-  if (!llm || llm[key] === undefined || llm[key] === null) return undefined;
+  defaultValue: number,
+): number {
+  if (!llm || llm[key] === undefined || llm[key] === null) return defaultValue;
   const n = Number(llm[key]);
-  return Number.isFinite(n) ? n : undefined;
+  return Number.isFinite(n) ? n : defaultValue;
 }
