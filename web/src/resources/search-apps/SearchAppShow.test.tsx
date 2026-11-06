@@ -166,4 +166,26 @@ describe("<SearchAppShow /> model parameters", () => {
     await userEvent.click(screen.getByText("ra.action.save"));
     await waitFor(() => expect(api.put).not.toHaveBeenCalled());
   });
+
+  it("surfaces a load-failure state with a working retry instead of an empty form", async () => {
+    vi.mocked(api.get).mockReset();
+    vi.mocked(api.get).mockRejectedValueOnce(new Error("boom"));
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url.endsWith("/config")) return liveConfig;
+      return modelOptions;
+    });
+    vi.mocked(api.put).mockResolvedValue({ data: { code: 0, data: {} } } as never);
+
+    render(<SearchAppShow />);
+    await waitFor(() =>
+      expect(screen.getByText("searchApps.config_load_failed")).toBeInTheDocument(),
+    );
+    // error state must not silently present an empty config as if it were live.
+    expect(api.put).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByText("searchApps.retry"));
+    await waitFor(() =>
+      expect(screen.getByText("searchApps.llm_parameters")).toBeInTheDocument(),
+    );
+  });
 });

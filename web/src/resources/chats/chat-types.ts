@@ -122,3 +122,36 @@ export function parseLLMSetting(raw: string): any {
     throw new Error("模型高级参数不是合法 JSON");
   }
 }
+
+/** Inputs to buildEditChatBody — the chat form's editable surface. */
+export interface EditChatFormState extends ChatConfigValues {
+  name: string;
+  selected: string[];
+}
+
+/**
+ * Build the PUT /chats/:id body from the editor form state (doc/264 5.2: the
+ * load→form→save contract lives here so a payload regression is caught by a
+ * unit test instead of silently re-shaping what the backend receives).
+ * `llmSetting` is expected to be pre-parsed by parseLLMSetting (the caller owns
+ * the parse + toast so a bad JSON string never reaches the network).
+ */
+export function buildEditChatBody(
+  form: EditChatFormState,
+  llmSetting: unknown,
+): Record<string, unknown> {
+  return {
+    name: form.name.trim(),
+    language: form.language,
+    dataset_ids: form.selected,
+    llm_id: form.llmId || undefined,
+    rerank_id: form.rerankId || undefined,
+    system: form.system || undefined,
+    prologue: form.prologue || undefined,
+    empty_response: form.emptyResponse || undefined,
+    top_n: form.topN === "" ? undefined : Number(form.topN),
+    similarity_threshold: form.similarity === "" ? undefined : Number(form.similarity),
+    vector_similarity_weight: form.vectorWeight === "" ? undefined : Number(form.vectorWeight),
+    llm_setting: llmSetting,
+  };
+}

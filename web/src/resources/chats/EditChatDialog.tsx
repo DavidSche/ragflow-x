@@ -11,7 +11,7 @@ import { FormField, useFieldValidation } from "../../components/FormField";
 import { ChatConfigEditor } from "./ChatConfigEditor";
 import { CreateChatDialog, DatasetSelector } from "./CreateChatDialog";
 import type { ChatConfigLike, ChatConfigValues, ChatLike, DatasetLike } from "./chat-types";
-import { EMPTY_CONFIG, toCfg, parseLLMSetting, datasetOptions } from "./chat-types";
+import { EMPTY_CONFIG, toCfg, parseLLMSetting, datasetOptions, buildEditChatBody } from "./chat-types";
 import { useGetList } from "ra-core";
 
 /* ── EditChatDialog ──────────────────────────────────────────────── */
@@ -77,20 +77,7 @@ export const EditChatDialog = ({
       notify(err instanceof Error ? err.message : t("chats.config_error"), { type: "error" });
       return;
     }
-    const body: Record<string, unknown> = {
-      name: nameField.value.trim(),
-      language: cfg.language,
-      dataset_ids: selected,
-      llm_id: cfg.llmId || undefined,
-      rerank_id: cfg.rerankId || undefined,
-      system: cfg.system || undefined,
-      prologue: cfg.prologue || undefined,
-      empty_response: cfg.emptyResponse || undefined,
-      top_n: cfg.topN === "" ? undefined : Number(cfg.topN),
-      similarity_threshold: cfg.similarity === "" ? undefined : Number(cfg.similarity),
-      vector_similarity_weight: cfg.vectorWeight === "" ? undefined : Number(cfg.vectorWeight),
-      llm_setting: llmSetting,
-    };
+    const body = buildEditChatBody({ ...cfg, name: nameField.value, selected }, llmSetting);
     try {
       await api.put(`/chats/${chat.id}`, body);
       notify(t("chats.config_saved"), { type: "success" });
