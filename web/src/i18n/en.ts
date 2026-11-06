@@ -1208,6 +1208,10 @@ const enMessages = {
     doc_ids: "Specific documents (optional)",
     llm_setting: "LLM settings (JSON)",
     llm_setting_invalid: "Invalid LLM settings JSON",
+    create_default_hint:
+      "A new app is pre-tuned to the E-proven signature (Temperature 0 / Top P 0.1 / Max tokens 800); tune the preset on the detail page.",
+    config_load_failed: "Failed to load configuration. Check network or permissions and retry.",
+    retry: "Retry",
     debug_stop: "Stop",
   },
   users: {

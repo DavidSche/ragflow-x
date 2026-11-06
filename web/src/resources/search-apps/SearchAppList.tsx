@@ -20,6 +20,7 @@ import {
 import { Eye, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { api, ApiError } from "../../lib/api";
+import { buildInitLLMPayload } from "./llm-settings";
 import { datasetOptions } from "../chats/chat-types";
 import { useSearchAppDatasetOptions } from "./dataset-options";
 import type { DatasetLike } from "../chats/chat-types";
@@ -31,6 +32,19 @@ interface SearchAppLike {
   dataset_ids?: string;
   owner_id?: string;
   created_at?: string;
+}
+
+/** Best-effort: pre-tune a new SA to the E-proven default signature (doc/264 1.2). */
+async function initializeDefaultSignature(saId: string, saName: string) {
+  try {
+    const cfg = await api.get(`/search-apps/${saId}/config`);
+    const payload = buildInitLLMPayload(cfg.data?.data as never, saName);
+    if (!payload) return;
+    await api.put(`/search-apps/${saId}`, payload);
+  } catch {
+    // Intentionally silent: enrichment is opportunistic; the detail page
+    // always parses missing knobs back to the E-proven signature anyway.
+  }
 }
 
 const CreateSearchAppDialog = () => {
@@ -52,7 +66,9 @@ const CreateSearchAppDialog = () => {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await api.post("/search-apps", { name: name.trim(), dataset_ids: selected });
+      const resp = await api.post("/search-apps", { name: name.trim(), dataset_ids: selected });
+      const sa = resp.data?.data as { id?: string } | undefined;
+      if (sa?.id) void initializeDefaultSignature(sa.id, name.trim());
       notify(t("searchApps.created"), { type: "success" });
       setOpen(false);
       setName("");
@@ -105,6 +121,7 @@ const CreateSearchAppDialog = () => {
                 )}
               </div>
             </div>
+            <p className="text-xs text-muted-foreground">{t("searchApps.create_default_hint")}</p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 {t("ra.action.cancel")}

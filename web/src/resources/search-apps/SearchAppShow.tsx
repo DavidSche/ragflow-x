@@ -176,6 +176,7 @@ export const SearchAppShow = () => {
   // until the user fixes it, instead of silently falling back to the engine default.
   const [maxTokensRaw, setMaxTokensRaw] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [configOpen, setConfigOpen] = useState(true);
   const [debugOpen, setDebugOpen] = useState(true);
@@ -193,6 +194,7 @@ export const SearchAppShow = () => {
   const loadConfig = async () => {
     if (!id) return;
     setLoading(true);
+    setLoadFailed(false);
     try {
       const [res, optRes] = await Promise.all([
         api.get<{ code: number; data: any }>(`/search-apps/${id}/config`),
@@ -234,6 +236,7 @@ export const SearchAppShow = () => {
         setMaxTokensRaw(llmValues.maxTokens !== undefined ? String(llmValues.maxTokens) : "");
       }
     } catch (err) {
+      setLoadFailed(true);
       notify(err instanceof ApiError ? err.displayMessage : t("searchApps.config_load_fail"), { type: "error" });
     } finally {
       setLoading(false);
@@ -374,6 +377,17 @@ export const SearchAppShow = () => {
       <div className="flex items-center justify-center gap-2 p-10 text-muted-foreground">
         <Loader2 className="size-4 animate-spin" aria-hidden="true" />
         <span>{t("searchApps.loading")}</span>
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 p-10" role="alert">
+        <p className="text-sm text-muted-foreground">{t("searchApps.config_load_failed")}</p>
+        <Button variant="outline" size="sm" onClick={() => void loadConfig()}>
+          {t("searchApps.retry")}
+        </Button>
       </div>
     );
   }

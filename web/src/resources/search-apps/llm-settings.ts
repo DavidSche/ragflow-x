@@ -51,6 +51,33 @@ export function buildSearchAppLLM(values: SearchAppLLMFormValues, llmId: string)
   return setting;
 }
 
+/** Live-config shape buildInitLLMPayload reads (subset of GET /search-apps/:id/config). */
+export interface SearchAppInitConfig {
+  search_config?: {
+    chat_id?: string;
+    llm_setting?: Record<string, unknown> | null;
+  };
+}
+
+/**
+ * Build the PUT payload that pre-tunes a brand-new search app to the E-proven
+ * deterministic signature (DEFAULT_LLM) — the “new app is deterministic out
+ * of the box” step (doc/264 1.2, Default-first). Returns null when no chat
+ * model is resolvable yet (engine still defaulting), in which case the caller
+ * skips the write and the detail page remains the fallback edit surface.
+ */
+export function buildInitLLMPayload(
+  config: SearchAppInitConfig | undefined | null,
+  name: string,
+): { name: string; search_config: { llm_setting: Record<string, unknown> } } | null {
+  const c = config?.search_config;
+  const llm = c?.llm_setting && typeof c.llm_setting === "object" ? c.llm_setting : {};
+  const chatId =
+    (c?.chat_id ?? "").trim() || ((llm.llm_id as string | undefined) ?? "").trim();
+  if (!chatId) return null;
+  return { name, search_config: { llm_setting: buildSearchAppLLM(DEFAULT_LLM, chatId) } };
+}
+
 /**
  * Validate the raw max_tokens string from a number input.
  * Returns the parsed integer, or undefined when blank, or NaN when invalid.

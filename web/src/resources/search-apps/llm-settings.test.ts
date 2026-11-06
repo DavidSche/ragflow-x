@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_TOKENS_LIMIT,
+  buildInitLLMPayload,
   buildSearchAppLLM,
   maxTokensFromInput,
   parseSearchAppLLM,
@@ -42,6 +43,36 @@ describe("buildSearchAppLLM", () => {
   it("omits blank/NaN optional knobs so the engine keeps its defaults", () => {
     const setting = buildSearchAppLLM({ temperature: 0.3, topP: undefined, maxTokens: Number.NaN }, "m1");
     expect(setting).toEqual({ llm_id: "m1", temperature: 0.3 });
+  });
+});
+
+describe("buildInitLLMPayload", () => {
+  it("builds the E-proven deterministic signature payload from the live chat model", () => {
+    const payload = buildInitLLMPayload(
+      { search_config: { chat_id: "chat-nlp-1", llm_setting: { llm_id: "chat-nlp-1", temperature: 0.7 } } },
+      "法规问答",
+    );
+    expect(payload).toEqual({
+      name: "法规问答",
+      search_config: {
+        llm_setting: { llm_id: "chat-nlp-1", temperature: 0, top_p: 0.1, max_tokens: 800 },
+      },
+    });
+  });
+
+  it("falls back to llm_setting.llm_id when chat_id is not set", () => {
+    const payload = buildInitLLMPayload(
+      { search_config: { llm_setting: { llm_id: "chat-nlp-2" } } },
+      "x",
+    );
+    expect(payload?.search_config.llm_setting.llm_id).toBe("chat-nlp-2");
+    expect(payload?.search_config.llm_setting.temperature).toBe(0);
+  });
+
+  it("returns null when no chat model is resolvable yet (skip the write)", () => {
+    expect(buildInitLLMPayload(null, "x")).toBeNull();
+    expect(buildInitLLMPayload(undefined, "x")).toBeNull();
+    expect(buildInitLLMPayload({ search_config: {} }, "x")).toBeNull();
   });
 });
 

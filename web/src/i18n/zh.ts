@@ -1171,6 +1171,10 @@ const zhMessages = {
     doc_ids: "指定文档（可选）",
     llm_setting: "LLM 设置（JSON）",
     llm_setting_invalid: "LLM 设置 JSON 无效",
+    create_default_hint:
+      "创建后将自动应用实证默认参数（Temperature 0 / Top P 0.1 / Max tokens 800），可在详情页调整热度谱。",
+    config_load_failed: "配置加载失败，请检查网络或权限后重试。",
+    retry: "重试",
     debug_stop: "停止",
   },
   users: {
