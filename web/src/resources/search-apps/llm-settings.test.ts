@@ -7,9 +7,9 @@ import {
 } from "./llm-settings";
 
 describe("parseSearchAppLLM", () => {
-  it("falls back to a safe temperature when the map is absent", () => {
-    expect(parseSearchAppLLM(undefined)).toEqual({ temperature: 0.1, topP: undefined, maxTokens: undefined });
-    expect(parseSearchAppLLM(null)).toEqual({ temperature: 0.1, topP: undefined, maxTokens: undefined });
+  it("falls back to the deterministic default signature when the map is absent", () => {
+    expect(parseSearchAppLLM(undefined)).toEqual({ temperature: 0, topP: 0.1, maxTokens: 800 });
+    expect(parseSearchAppLLM(null)).toEqual({ temperature: 0, topP: 0.1, maxTokens: 800 });
   });
 
   it("reads all three knobs from a live engine config", () => {
@@ -17,16 +17,15 @@ describe("parseSearchAppLLM", () => {
     expect(values).toEqual({ temperature: 0, topP: 0.1, maxTokens: 800 });
   });
 
-  it("keeps optional knobs undefined when the engine config omits them", () => {
+  it("fills deterministic defaults when the engine config omits optional knobs", () => {
     const values = parseSearchAppLLM({ llm_id: "m", temperature: 0.5 });
-    expect(values.topP).toBeUndefined();
-    expect(values.maxTokens).toBeUndefined();
+    expect(values.topP).toBe(0.1);
+    expect(values.maxTokens).toBe(800);
   });
 
-  it("ignores non-finite optional values instead of corrupting state", () => {
+  it("falls back to defaults for non-finite optional values instead of corrupting state", () => {
     const values = parseSearchAppLLM({ temperature: 0.5, top_p: "abc", max_tokens: null });
-    expect(values.topP).toBeUndefined();
-    expect(values.maxTokens).toBeUndefined();
+    expect(values).toEqual({ temperature: 0.5, topP: 0.1, maxTokens: 800 });
   });
 });
 

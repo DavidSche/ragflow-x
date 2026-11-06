@@ -1159,6 +1159,7 @@ const zhMessages = {
     llm_max_tokens: "最大 Token 数",
     llm_max_tokens_placeholder: "例如 800（留空使用默认）",
     llm_max_tokens_hint: "单次生成上限（1–100000）；留空使用引擎默认。",
+    llm_max_tokens_invalid: "需为 1–100000 的整数，或留空",
     llm_model: "LLM 模型",
     llm_model_default: "使用工作区默认",
     related_search: "启用相关搜索",

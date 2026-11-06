@@ -48,6 +48,8 @@ describe("prompt preset mapping", () => {
       kb_ids: ["kb-1"],
       summary: true,
       llm_temperature: 0.7,
+      llm_top_p: undefined as number | undefined,
+      llm_max_tokens: undefined as number | undefined,
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.3,
       top_k: 1024,
@@ -56,6 +58,10 @@ describe("prompt preset mapping", () => {
     expect(next.kb_ids).toEqual(["kb-1"]);
     expect(next.summary).toBe(true);
     expect(next.llm_temperature).toBe(0.1);
+    // Full LLM-knob down-push: temperature + top_p + max_tokens all map so a
+    // save sends the complete trio to the engine (absent keys would be dropped).
+    expect(next.llm_top_p).toBe(0.9);
+    expect(next.llm_max_tokens).toBe(2048);
     expect(next.similarity_threshold).toBe(0.32);
     expect(next.vector_similarity_weight).toBe(0.35);
     expect(next.top_k).toBe(6);

@@ -33,6 +33,12 @@ describe("i18n connectors namespace", () => {
   });
 });
 
+describe("search apps i18n", () => {
+  it("keeps the searchApps keys in sync between zh and en", () => {
+    expect(keys(zh.searchApps).sort()).toEqual(keys(en.searchApps).sort());
+  });
+});
+
 describe("WS7 onboarding i18n", () => {
   it.each(WS7_NAMESPACES)("keeps %s keys in sync between zh and en", (namespace) => {
     const zhKeys = keys((zh as Record<string, unknown>)[namespace]).sort();

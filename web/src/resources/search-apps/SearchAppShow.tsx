@@ -26,6 +26,7 @@ import {
   matchSearchParameterProfileId,
 } from "../workbench/search-preset-mapping";
 import {
+  DEFAULT_LLM,
   MAX_TOKENS_LIMIT,
   buildSearchAppLLM,
   maxTokensFromInput,
@@ -68,7 +69,11 @@ const emptyConfig = (): SearchAppConfig => ({
   query_mindmap: false,
   web_search: false,
   reference_metadata: { include: false, fields: [] },
-  llm_temperature: 0.1,
+  // Default-first deterministic signature (doc/263 §7.2): an out-of-the-box
+  // search app is derived from the E-proven knobs, not the engine's looser ones.
+  llm_temperature: DEFAULT_LLM.temperature,
+  llm_top_p: DEFAULT_LLM.topP,
+  llm_max_tokens: DEFAULT_LLM.maxTokens,
 });
 
 interface ModelOption {
@@ -167,6 +172,9 @@ export const SearchAppShow = () => {
   const { id } = useParams<{ id: string }>();
   const [name, setName] = useState("");
   const [cfg, setCfg] = useState<SearchAppConfig>(emptyConfig);
+  // Raw max_tokens text so invalid typed input stays visible (rounded, not cleared)
+  // until the user fixes it, instead of silently falling back to the engine default.
+  const [maxTokensRaw, setMaxTokensRaw] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [configOpen, setConfigOpen] = useState(true);
@@ -223,6 +231,7 @@ export const SearchAppShow = () => {
           llm_top_p: llmValues.topP,
           llm_max_tokens: llmValues.maxTokens,
         });
+        setMaxTokensRaw(llmValues.maxTokens !== undefined ? String(llmValues.maxTokens) : "");
       }
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("searchApps.config_load_fail"), { type: "error" });
@@ -270,6 +279,12 @@ export const SearchAppShow = () => {
 
   const save = async () => {
     if (!id) return;
+    // Block a silent downgrade: an invalid max_tokens must not be dropped out of
+    // the payload while the UI looks like it accepted the number.
+    if (Number.isNaN(cfg.llm_max_tokens)) {
+      notify(t("searchApps.llm_max_tokens_invalid"), { type: "error" });
+      return;
+    }
     // Keep UI-only fields (sliders/number inputs) off the engine payload.
     // llm_setting is rebuilt from the edited values so previously configured
     // top_p / max_tokens survive a save instead of being silently dropped.
@@ -529,14 +544,25 @@ export const SearchAppShow = () => {
                   min={1}
                   max={MAX_TOKENS_LIMIT}
                   step={1}
-                  value={Number.isNaN(cfg.llm_max_tokens) ? "" : (cfg.llm_max_tokens ?? "")}
+                  value={maxTokensRaw}
                   placeholder={t("searchApps.llm_max_tokens_placeholder")}
+                  aria-invalid={Number.isNaN(cfg.llm_max_tokens)}
+                  aria-describedby="llm-max-tokens-hint"
                   onChange={(e) => {
+                    setMaxTokensRaw(e.target.value);
                     const parsed = maxTokensFromInput(e.target.value);
                     setCfg((p) => ({ ...p, llm_max_tokens: Number.isNaN(parsed) ? Number.NaN : parsed }));
                   }}
                 />
-                <p className="text-xs text-muted-foreground">{t("searchApps.llm_max_tokens_hint")}</p>
+                {Number.isNaN(cfg.llm_max_tokens) ? (
+                  <p id="llm-max-tokens-hint" className="text-xs font-medium text-destructive">
+                    {t("searchApps.llm_max_tokens_invalid")}
+                  </p>
+                ) : (
+                  <p id="llm-max-tokens-hint" className="text-xs text-muted-foreground">
+                    {t("searchApps.llm_max_tokens_hint")}
+                  </p>
+                )}
               </div>
             </div>
 
