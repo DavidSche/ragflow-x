@@ -25,6 +25,12 @@ import {
   applyParameterProfileToSearchConfig,
   matchSearchParameterProfileId,
 } from "../workbench/search-preset-mapping";
+import {
+  MAX_TOKENS_LIMIT,
+  buildSearchAppLLM,
+  maxTokensFromInput,
+  parseSearchAppLLM,
+} from "./llm-settings";
 
 interface SearchAppConfig {
   kb_ids: string[];
@@ -42,6 +48,9 @@ interface SearchAppConfig {
   web_search: boolean;
   reference_metadata: { include: boolean; fields: string[] };
   llm_temperature: number;
+  /** Optional engine knobs; undefined = keep engine default. */
+  llm_top_p?: number;
+  llm_max_tokens?: number;
 }
 
 const emptyConfig = (): SearchAppConfig => ({
@@ -188,6 +197,7 @@ export const SearchAppShow = () => {
         setName(data.name ?? "");
         const c = data.search_config ?? {};
         const llm = (c.llm_setting && typeof c.llm_setting === "object" ? c.llm_setting : {}) as Record<string, unknown>;
+        const llmValues = parseSearchAppLLM(llm);
         const sim = Number(c.similarity_threshold);
         const weight = Number(c.vector_similarity_weight);
         const topk = Number(c.top_k);
@@ -209,7 +219,9 @@ export const SearchAppShow = () => {
             include: !!c.reference_metadata?.include,
             fields: col(c.reference_metadata?.fields),
           },
-          llm_temperature: Number(llm.temperature ?? 0.1),
+          llm_temperature: llmValues.temperature,
+          llm_top_p: llmValues.topP,
+          llm_max_tokens: llmValues.maxTokens,
         });
       }
     } catch (err) {
@@ -258,17 +270,22 @@ export const SearchAppShow = () => {
 
   const save = async () => {
     if (!id) return;
-    const { llm_temperature, ...rest } = cfg;
-    void rest;
+    // Keep UI-only fields (sliders/number inputs) off the engine payload.
+    // llm_setting is rebuilt from the edited values so previously configured
+    // top_p / max_tokens survive a save instead of being silently dropped.
+    const { llm_temperature, llm_top_p, llm_max_tokens, ...rest } = cfg;
     setSaving(true);
     try {
       await api.put(`/search-apps/${id}`, {
         name,
         search_config: {
-          ...cfg,
+          ...rest,
           rerank_id: cfg.use_rerank ? cfg.rerank_id : "",
           chat_id: cfg.chat_id,
-          llm_setting: { llm_id: cfg.chat_id, temperature: cfg.llm_temperature },
+          llm_setting: buildSearchAppLLM(
+            { temperature: llm_temperature, topP: llm_top_p, maxTokens: llm_max_tokens },
+            cfg.chat_id,
+          ),
         },
       });
       notify(t("searchApps.updated"), { type: "success" });
@@ -484,6 +501,45 @@ export const SearchAppShow = () => {
               </select>
             </div>
 
+            <div className="space-y-3 rounded border p-3">
+              <div className="space-y-0.5">
+                <Label>{t("searchApps.llm_parameters")}</Label>
+                <p className="text-xs text-muted-foreground">{t("searchApps.llm_parameters_hint")}</p>
+              </div>
+              <SliderField
+                label={t("searchApps.llm_temperature")}
+                value={cfg.llm_temperature}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(v) => setCfg((p) => ({ ...p, llm_temperature: v }))}
+              />
+              <SliderField
+                label={t("searchApps.llm_top_p")}
+                value={cfg.llm_top_p ?? 1}
+                min={0.1}
+                max={1}
+                step={0.01}
+                onChange={(v) => setCfg((p) => ({ ...p, llm_top_p: v }))}
+              />
+              <div className="space-y-1.5">
+                <Label>{t("searchApps.llm_max_tokens")}</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={MAX_TOKENS_LIMIT}
+                  step={1}
+                  value={Number.isNaN(cfg.llm_max_tokens) ? "" : (cfg.llm_max_tokens ?? "")}
+                  placeholder={t("searchApps.llm_max_tokens_placeholder")}
+                  onChange={(e) => {
+                    const parsed = maxTokensFromInput(e.target.value);
+                    setCfg((p) => ({ ...p, llm_max_tokens: Number.isNaN(parsed) ? Number.NaN : parsed }));
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">{t("searchApps.llm_max_tokens_hint")}</p>
+              </div>
+            </div>
+
             <PromptPresetPicker
               showPrompts={false}
               activeProfileId={matchSearchParameterProfileId(cfg)}
@@ -575,16 +631,6 @@ export const SearchAppShow = () => {
                 <input type="checkbox" className={switchClass} checked={cfg.summary} onChange={(e) => setCfg((p) => ({ ...p, summary: e.target.checked }))} />
                 <span>{t("searchApps.ai_summary")}</span>
               </label>
-              {cfg.summary && (
-                <SliderField
-                  label={t("searchApps.llm_temperature")}
-                  value={cfg.llm_temperature}
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  onChange={(v) => setCfg((p) => ({ ...p, llm_temperature: v }))}
-                />
-              )}
 
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" className={switchClass} checked={cfg.related_search} onChange={(e) => setCfg((p) => ({ ...p, related_search: e.target.checked }))} />
