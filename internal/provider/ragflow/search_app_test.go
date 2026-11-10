@@ -3,6 +3,7 @@ package ragflow
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -195,5 +196,158 @@ func TestMock_SearchAppLifecycle(t *testing.T) {
 	}
 	if _, err := mock.GetSearchApp(ctx, id); err == nil {
 		t.Fatal("expected search app to be deleted")
+	}
+}
+
+// TestHTTPClient_SearchAppCompletionRetriesTransient500 verifies the bounded
+// retry contract on the completion call (doc/268 §3 P0-1): a transient engine
+// 500 is retried with backoff and the follow-up success is returned; the
+// success code path replays the idempotent body via GetBody.
+func TestHTTPClient_SearchAppCompletionRetriesTransient500(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			http.Error(w, `{"code":500,"message":"transient engine glitch"}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = io.WriteString(w, "data: {\"code\":0,\"data\":{\"answer\":\"ok answer\"}}\n\n")
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "key", 5*time.Second, 2)
+	res, err := client.SearchAppCompletion(context.Background(), "s1", SearchAppCompletionRequest{Question: "q"})
+	if err != nil {
+		t.Fatalf("retry should recover: %v", err)
+	}
+	if !strings.Contains(res.Answer, "ok answer") {
+		t.Fatalf("expected recovered answer, got %+v", res)
+	}
+	if calls != 2 {
+		t.Fatalf("expected exactly 2 engine calls (1 failure + 1 retry), got %d", calls)
+	}
+}
+
+// TestHTTPClient_SearchAppCompletionRetriesRawNetworkError verifies raw
+// transport failures (before any *Error exists) are retried too.
+func TestHTTPClient_SearchAppCompletionRetriesRawNetworkError(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			// Hijack and drop the connection to simulate a network reset.
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Fatal("hijack unsupported")
+			}
+			conn, _, err := hj.Hijack()
+			if err == nil {
+				_ = conn.Close()
+			}
+			return
+		}
+		_, _ = io.WriteString(w, "data: {\"code\":0,\"data\":{\"answer\":\"recovered\"}}\n\n")
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "key", 5*time.Second, 2)
+	res, err := client.SearchAppCompletion(context.Background(), "s1", SearchAppCompletionRequest{Question: "q"})
+	if err != nil {
+		t.Fatalf("network retry should recover: %v", err)
+	}
+	if !strings.Contains(res.Answer, "recovered") {
+		t.Fatalf("expected recovered answer, got %+v", res)
+	}
+	if calls != 2 {
+		t.Fatalf("expected 2 engine calls, got %d", calls)
+	}
+}
+
+// TestHTTPClient_SearchAppCompletionGivesUpOnPersistent500 verifies the retry
+// budget is bounded: a request that keeps failing surfaces the last error
+// instead of looping forever.
+func TestHTTPClient_SearchAppCompletionGivesUpOnPersistent500(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, `{"code":500,"message":"persistent failure"}`, http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "key", 3*time.Second, 2)
+	_, err := client.SearchAppCompletion(context.Background(), "s1", SearchAppCompletionRequest{Question: "q"})
+	if err == nil {
+		t.Fatal("persistent 500 must fail after the retry budget")
+	}
+	if calls != searchCompletionMaxAttempts {
+		t.Fatalf("expected %d attempts, got %d", searchCompletionMaxAttempts, calls)
+	}
+}
+
+// TestSearchCompletionRetryBackoff verifies the backoff ladder and cap
+// (200ms → 600ms → 1800ms, then capped at 2s).
+func TestSearchCompletionRetryBackoff(t *testing.T) {
+	got := []time.Duration{
+		searchCompletionRetryBackoff(0),
+		searchCompletionRetryBackoff(1),
+		searchCompletionRetryBackoff(2),
+		searchCompletionRetryBackoff(3),
+		searchCompletionRetryBackoff(10),
+	}
+	want := []time.Duration{0, 200 * time.Millisecond, 600 * time.Millisecond, 1800 * time.Millisecond, 2 * time.Second}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("backoff[%d] = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+// TestRetryableSearchCompletionErrorNeverRetriesCancellation locks in the
+// contract that a caller cancellation is never replayed.
+func TestRetryableSearchCompletionErrorNeverRetriesCancellation(t *testing.T) {
+	if _, retry := retryableSearchCompletionError(context.Canceled); retry {
+		t.Fatal("context.Canceled must not be retried")
+	}
+	if _, retry := retryableSearchCompletionError(&Error{Type: ErrorTypeBusiness, Code: 400, HTTPStatus: 400}); retry {
+		t.Fatal("a persistent 4xx business error must not be retried")
+	}
+	if _, retry := retryableSearchCompletionError(&Error{Type: ErrorTypeTimeout}); !retry {
+		t.Fatal("a timeout must be retried")
+	}
+	if _, retry := retryableSearchCompletionError(&Error{Type: ErrorTypeTransport, HTTPStatus: 500}); !retry {
+		t.Fatal("a 5xx must be retried")
+	}
+	if _, retry := retryableSearchCompletionError(errors.New("bare transport error")); !retry {
+		t.Fatal("a bare network error must be retried")
+	}
+}
+
+// TestParseSearchAppSSESurfacesBusinessError verifies the silent-empty fix
+// (doc/268 §3 P0-3): a terminal SSE frame code!=0 with a message yields a
+// structured business error instead of an empty success result. Success code 0
+// and legacy 200 keep their current behaviour.
+func TestParseSearchAppSSESurfacesBusinessError(t *testing.T) {
+	// Legacy success 200 stays a success.
+	res, err := parseSearchAppSSE(strings.NewReader(
+		"data: {\"code\":200,\"data\":{\"content\":\"ok\"}}\n\ndata:false\n\n"))
+	if err != nil {
+		t.Fatalf("legacy 200 must stay a success: %v", err)
+	}
+	if !strings.Contains(res.Answer, "ok") {
+		t.Fatalf("legacy 200 answer lost: %+v", res)
+	}
+
+	// Engine-level no-relevant frame surfaces as a business error.
+	_, err = parseSearchAppSSE(strings.NewReader(
+		"data: {\"code\":500,\"message\":\"Sorry, no relevant information provided.\",\"reference\":[]}\n\ndata:false\n\n"))
+	if err == nil {
+		t.Fatal("a code!=0 frame with a message must surface as an error")
+	}
+	var ragErr *Error
+	if !errors.As(err, &ragErr) {
+		t.Fatalf("expected a structured *Error, got %T", err)
+	}
+	if ragErr.Type != ErrorTypeBusiness || ragErr.Code != 500 {
+		t.Fatalf("unexpected error classification: %+v", ragErr)
 	}
 }

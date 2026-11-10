@@ -12,7 +12,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 )
 
-const baselineVersion = "1.0.0-rc3"
+const baselineVersion = "1.0.0"
 
 // PinnedBaselineVersion exposes the engine release the contract suite is
 // pinned and verified against (doc/250 §0.1, doc/262 SOP §判定). The

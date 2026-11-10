@@ -9,11 +9,12 @@ import (
 )
 
 type DocumentParseConfigUpdate struct {
-	Pipeline        bool
-	BuiltinParserID string
-	PipelineID      string
-	ParserConfig    map[string]interface{}
-	MetaFields      map[string]interface{}
+	Pipeline          bool
+	BuiltinParserID   string
+	PipelineID        string
+	PipelineVersionID string
+	ParserConfig      map[string]interface{}
+	MetaFields        map[string]interface{}
 }
 
 func (c *HTTPClient) UpdateDocumentParseConfig(ctx context.Context, datasetID, documentID string, update DocumentParseConfigUpdate) error {
@@ -24,6 +25,13 @@ func (c *HTTPClient) UpdateDocumentParseConfig(ctx context.Context, datasetID, d
 		}
 		payload["parse_type"] = 2
 		payload["pipeline_id"] = update.PipelineID
+		// RAGFlow v1.0.0 validates the document's pipeline version against the
+		// canvas it belongs to: re-binding a document to another canvas without
+		// naming that canvas' published version fails with
+		// "pipeline version does not belong to canvas". Older engines ignore it.
+		if update.PipelineVersionID != "" {
+			payload["pipeline_version_id"] = update.PipelineVersionID
+		}
 	} else {
 		if update.BuiltinParserID == "" {
 			return protocolError("parser_id is required for builtin parse mode")

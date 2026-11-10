@@ -430,6 +430,11 @@ type CreateDatasetRequest struct {
 	ParseType      int    `json:"parse_type,omitempty"`
 	ParserID       string `json:"parser_id,omitempty"`
 	PipelineID     string `json:"pipeline_id,omitempty"`
+	// PipelineVersionID pins the canvas snapshot a Pipeline-mode dataset runs.
+	// RAGFlow v1.0.0 rejects Pipeline-mode creation when it is empty
+	// ("version information is missing") instead of silently binding latest;
+	// publish the canvas via PublishPipelineVersion first.
+	PipelineVersionID string `json:"pipeline_version_id,omitempty"`
 }
 
 // Document mirrors RAGFlow document fields used by RAGFlow-X.
