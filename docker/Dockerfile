@@ -7,6 +7,14 @@
 FROM node:22-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
+# `npm ci` runs the `postinstall: patch-package` hook, so web/patches must be
+# in place *before* the install. With the patches absent the hook finds nothing
+# to apply and still exits 0, leaving query-string v10 unpatched (it is
+# default-export only after the v9 ESM rewrite) — the failure then surfaces
+# three steps later as `[MISSING_EXPORT] "stringify"/"parse" is not exported by
+# node_modules/query-string/index.js`, thrown from ra-core.
+COPY web/patches ./patches
+RUN test -n "$(ls patches/*.patch 2>/dev/null)" || { echo 'web/patches is missing before npm ci: patch-package would skip the patch silently' >&2; exit 1; }
 RUN npm ci
 COPY web/ ./
 RUN npm run build
