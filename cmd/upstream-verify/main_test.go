@@ -36,14 +36,14 @@ func TestExitCodeForMapsDecisions(t *testing.T) {
 // never pass: it must collapse to block no matter what the observed text is.
 func TestNewReportFailClosed(t *testing.T) {
 	probeErr := errors.New("version probe request failed: boom")
-	r := newReport(time.Now(), "https://engine:8001", "v1.0.0-rc3", probeErr)
+	r := newReport(time.Now(), "https://engine:8001", "v1.0.0", probeErr)
 	if r.Decision != ragflow.VersionGateBlock {
 		t.Fatalf("with probe error decision = %s, want block", r.Decision)
 	}
 	if !strings.Contains(r.Reason, "boom") {
 		t.Errorf("reason does not surface the probe error: %q", r.Reason)
 	}
-	if r.ObservedVersion != "v1.0.0-rc3" {
+	if r.ObservedVersion != "v1.0.0" {
 		t.Errorf("observed must be preserved for the report, got %q", r.ObservedVersion)
 	}
 
@@ -120,7 +120,7 @@ func TestRenderTextCoversVerdict(t *testing.T) {
 // TestJSONReportRoundTrips asserts the machine report is stable and lossless
 // so the orchestrating script can archive it.
 func TestJSONReportRoundTrips(t *testing.T) {
-	r := newReport(time.Now(), "https://engine:8001", "v1.0.0-rc3", nil)
+	r := newReport(time.Now(), "https://engine:8001", "v1.0.0", nil)
 	raw, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

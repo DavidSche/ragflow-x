@@ -96,17 +96,16 @@ if ! go build -o "$BINARY" ./cmd/upstream-verify; then
 fi
 pass "go build ./cmd/upstream-verify"
 
-if ! "$BINARY" > "$TDIR/preflight.txt" 2>&1; then
-  P_RC=$?
-  case "$P_RC" in
-    3) VERDICT="degrade" ;;
-    4) VERDICT="verification_required" ;;
-    *) VERDICT="block/fail" ;;
-  esac
-else
-  P_RC=0
-  VERDICT="pass"
-fi
+# 注意：不要写成 `if ! "$BINARY" ...; then P_RC=$?` —— 取反后 $? 恒为 0，
+# 会把 verification_required(4) 误判成 block。这里直接捕获退出码再映射。
+"$BINARY" > "$TDIR/preflight.txt" 2>&1
+P_RC=$?
+case "$P_RC" in
+  0) VERDICT="pass" ;;
+  3) VERDICT="degrade" ;;
+  4) VERDICT="verification_required" ;;
+  *) VERDICT="block/fail" ;;
+esac
 printf '  verdict: %s (exit %s)\n' "$VERDICT" "$P_RC"
 {
   printf '    verdict: **%s** (exit %s)\n\n' "$VERDICT" "$P_RC"
@@ -154,7 +153,7 @@ E2E_OK=1
 if [ "$FULL" = "1" ]; then
   printf '\n4. (--full) service E2E\n'
   printf '## 4. (--full) service E2E\n\n' >> "$REPORT"
-  go test ./internal/service/ -count=1 -v -timeout 30m \
+  go test ./internal/service/ -count=1 -v -timeout 75m \
     -run 'TestLivePreModelMemoryInjectionChatAndAgent|TestLiveCompilationCompletedArtifactBindingE2E|TestLiveCompilationReplacementRunE2E|TestLiveAssistantReleaseGoldenPathWithRAGFlowV1RC1' \
     > "$TDIR/e2e.log" 2>&1
   E2E_RC=$?

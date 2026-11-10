@@ -243,7 +243,9 @@ func TestGatewayErrorContractCoversStreamFunctions(t *testing.T) {
 }
 
 // extractGoFunc returns the source body of a top-level function, including its
-// signature, by scanning until the closing brace in the first column.
+// signature, by scanning until the closing brace in the first column. A
+// trailing carriage return is tolerated so the scan also works on a Windows
+// checkout and on blobs that still carry CRLF.
 func extractGoFunc(t *testing.T, file string, lines []string, name string) string {
 	t.Helper()
 	start := -1
@@ -257,7 +259,7 @@ func extractGoFunc(t *testing.T, file string, lines []string, name string) strin
 		t.Fatalf("%s: function %s not found", file, name)
 	}
 	for i := start; i < len(lines); i++ {
-		if lines[i] == "}" {
+		if strings.TrimRight(lines[i], "\r") == "}" {
 			return strings.Join(lines[start:i+1], "\n")
 		}
 	}

@@ -650,8 +650,8 @@ func TestE2E_SystemCapabilities(t *testing.T) {
 	if err := json.Unmarshal(body, &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Data.Items) != 11 {
-		t.Fatalf("declared capabilities = %d, want 11 (v0.3 baseline + T2 document_governance)", len(list.Data.Items))
+	if len(list.Data.Items) != 12 {
+		t.Fatalf("declared capabilities = %d, want 12 (v0.5.0 baseline: v0.3 set + T2 document_governance + knowledge_compilation)", len(list.Data.Items))
 	}
 	if list.Data.UpgradeDecision != "UNKNOWN_RUNTIME" {
 		t.Fatalf("initial upgrade gate = %s, want UNKNOWN_RUNTIME", list.Data.UpgradeDecision)
@@ -671,7 +671,7 @@ func TestE2E_SystemCapabilities(t *testing.T) {
 	if err := json.Unmarshal(body, &verify); err != nil {
 		t.Fatal(err)
 	}
-	if verify.Data.DetectedVersion != "1.0.0-rc3" || verify.Data.RuntimeHealth != "HEALTHY" {
+	if verify.Data.DetectedVersion != "1.0.0" || verify.Data.RuntimeHealth != "HEALTHY" {
 		t.Fatalf("verification: %+v", verify.Data)
 	}
 	if verify.Data.UpgradeDecision != "READY" {
