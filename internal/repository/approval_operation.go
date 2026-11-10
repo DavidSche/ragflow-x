@@ -121,7 +121,11 @@ func (s *store) CompleteApprovalOperation(
 
 func (s *store) MarkStaleApprovalOperationUnknown(ctx context.Context, id string, staleBefore, now time.Time) (bool, error) {
 	result := s.WithContext(ctx).Model(&model.ApprovalOperation{}).
-		Where("id = ? AND status = ? AND updated_at < ?", id, model.ApprovalOperationRunning, staleBefore).
+		// Boundary-inclusive: the caller already gated on "still pending" using a
+		// strict < window, so an operation whose last update is exactly the cutoff
+		// is stale. Using a strict < here made the verdict depend on whether two
+		// time.Now calls landed in different clock ticks.
+		Where("id = ? AND status = ? AND updated_at <= ?", id, model.ApprovalOperationRunning, staleBefore).
 		Updates(map[string]interface{}{
 			"status":       model.ApprovalOperationUnknown,
 			"last_error":   "approval operation outcome is unknown",

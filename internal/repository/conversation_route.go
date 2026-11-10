@@ -151,8 +151,21 @@ func (s *store) ListRouteEvaluationRuns(ctx context.Context, tenantID string, pa
 		return nil, 0, err
 	}
 	offset, limit := paginate(page, pageSize)
-	err := q.Order("created_at DESC").Offset(offset).Limit(limit).Find(&runs).Error
+	err := s.latestRouteEvaluationFirst(q).Offset(offset).Limit(limit).Find(&runs).Error
 	return runs, total, err
+}
+
+// latestRouteEvaluationFirst orders evaluation runs newest-first as a total
+// order. created_at alone is not unique: two runs written in the same clock tick
+// (Go hands out the same nanosecond to consecutive time.Now calls on Windows)
+// tie, the database then returns an arbitrary row, and the auto-route gate flips
+// between `passed` and `insufficient_samples` for identical data. The physical
+// insertion order breaks the tie; these rows are append-only, so it is stable.
+func (s *store) latestRouteEvaluationFirst(q *gorm.DB) *gorm.DB {
+	if s.Dialector != nil && s.Dialector.Name() == "postgres" {
+		return q.Order("created_at DESC, ctid DESC")
+	}
+	return q.Order("created_at DESC, rowid DESC")
 }
 
 // DeleteExpiredRouteData removes expired route decisions, selections and

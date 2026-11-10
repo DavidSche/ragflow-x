@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -38,8 +39,20 @@ func migratedSQLiteTemplate() (string, error) {
 			sqliteTemplateErr = err
 			return
 		}
+		// The connection runs in WAL mode, so committed rows may still live in
+		// template.db-wal. Fold them into the main file first: the copy below
+		// takes only the .db file, and a template missing its seeds would leave
+		// tests silently running against a half-populated schema.
+		if err := gdb.Exec("PRAGMA wal_checkpoint(TRUNCATE)").Error; err != nil {
+			sqliteTemplateErr = fmt.Errorf("checkpoint migrated template: %w", err)
+			return
+		}
 		if conn, err := gdb.DB(); err == nil {
 			_ = conn.Close()
+		}
+		if info, err := os.Stat(path + "-wal"); err == nil && info.Size() > 0 {
+			sqliteTemplateErr = fmt.Errorf("template write-ahead log is not empty (%d bytes) after checkpoint", info.Size())
+			return
 		}
 		sqliteTemplatePath = path
 	})

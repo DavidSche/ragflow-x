@@ -19,6 +19,22 @@
   `success=2 conflict=0` 偶发暴露）。现在两条创建路径在插入时即持租约
   （`ragflow-sync-worker`，30min），并发闸门恢复确定性；`SC-SYNC-001` 用例改为用
   上游列举闸门固定交错点，不再依赖调度运气。
+- **sqlite 默认没有开 WAL（文档说开、代码没开）**：`db` 包注释宣称 WAL + NORMAL，
+  但默认 pragma 只有 `busy_timeout`/`synchronous`，于是每次提交都要 fsync 回滚日志——
+  Windows CI runner 上单次写约 200ms，迁移种子行就要几分钟，`go-build` 的 windows 分片
+  在 50min 超时里仍跑不完全量用例。现在默认补上 `journal_mode(WAL)`（内存库自动跳过，
+  调用方显式指定则仍以调用方为准），并加三条 db 包测试把「文档里写的」和「实际生效的」钉住。
+- **「最新一条」查询在时钟同刻时不成立**：`time.Now()` 在同一时钟刻度内会返回相同值
+  （WAL 之后写变快，连续插入落在同刻的概率大幅上升），而排序只按 `created_at DESC`：
+  路由评估运行、跨端最近会话等「取最新」的读取会随机返回并列行中的任意一条。表现为
+  P0 `SC-ROUTE` 门禁在 `passed` 与 `insufficient_samples` 之间跳变、最近会话列表顺序漂移。
+  现在评估运行排序用物理插入序做次级键（sqlite `rowid` / postgres `ctid`，这些表只追加），
+  最近会话排序补齐 `last_turn_at` + 应用类型 + 会话 ID 的完整次序；`UpsertKnowledgeOpsEvent`
+  不再用写库时刻覆盖调用方给的 `updated_at`。
+- **陈旧窗口边界判定依赖时钟刻度**：审批操作只按严格 `updated_at < cutoff` 判陈旧，
+  当两次 `time.Now()` 落在同一刻度时「恰好在窗口边界」的判定翻转为不陈旧；改为边界含等
+  （`<=`），与执行器侧「`elapsed < window` 才算仍在进行」严格互补。网关配额陈旧预留的用例
+  也不再依赖「刚写入的行一定早于下一次 `time.Now()`」这一时钟假设。
 
 下一版本（v0.6.0）已登记、尚未开工：
 
