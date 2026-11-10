@@ -231,3 +231,67 @@ func TestEvaluateCoverageTrendToleratesMeasurementNoise(t *testing.T) {
 		t.Fatalf("expected 0.04%% fluctuation to pass, got %+v", report)
 	}
 }
+
+// A frontend profile that was never produced means "not measured in this run".
+// Scoring it as 0% invented a web/src regression on every night the frontend
+// suite did not run, and the gate failed on evidence it never collected.
+func TestEvaluateCoverageTrendSkipsUncollectedFrontendProfile(t *testing.T) {
+	now := time.Date(2026, 10, 11, 3, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	goPath := filepath.Join(dir, "go.out")
+	frontendPath := filepath.Join(dir, "coverage-final.json")
+	targetsPath := filepath.Join(dir, "targets.json")
+	previousPath := filepath.Join(dir, "previous.json")
+	goContent := strings.Join([]string{
+		"mode: set",
+		"internal/service/example.go:10.0,12.0 3 3",
+	}, "\n")
+	if err := osWriteFile(goPath, []byte(goContent)); err != nil {
+		t.Fatal(err)
+	}
+	if err := osWriteFile(targetsPath, []byte(`{"version":1,"targets":[{"path":"internal/service","target":75},{"path":"web/src","target":80}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	previous := CoverageTrendHistory{
+		Version: 1,
+		Snapshots: []CoverageTrendSnapshot{{
+			GeneratedAt: now.Add(-24 * time.Hour).Format(time.RFC3339),
+			Total:       CoverageTrendScope{Path: "total", Statements: 4, CoveredStatements: 3, Coverage: 75},
+			Scopes: []CoverageTrendScope{
+				{Path: "internal/service", Statements: 4, CoveredStatements: 3, Coverage: 75, Target: 75, TargetPassed: true},
+				{Path: "web/src", Statements: 10, CoveredStatements: 7, Coverage: 70, Target: 80, TargetPassed: false},
+			},
+		}},
+	}
+	if err := osWriteFile(previousPath, mustJSON(previous)); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateCoverageTrend(CoverageTrendConfig{
+		RepositoryDir:  ".",
+		GoCoveragePath: goPath,
+		FrontendPath:   frontendPath,
+		TargetsPath:    targetsPath,
+		PreviousPath:   previousPath,
+		GeneratedAt:    now,
+	})
+	if err != nil {
+		t.Fatalf("uncollected frontend profile must not fail the trend: %v", err)
+	}
+	if !report.Passed || !report.Collected {
+		t.Fatalf("expected the go-only snapshot to be accepted: %+v", report)
+	}
+	if len(report.Skipped) != 1 || !strings.Contains(report.Skipped[0], "coverage-final.json") {
+		t.Fatalf("expected one skip reason naming the missing profile, got %+v", report.Skipped)
+	}
+	for _, scope := range report.Current.Scopes {
+		if scope.Path == "web/src" {
+			t.Fatalf("unmeasured scope must not be reported as a 0%% measurement: %+v", scope)
+		}
+	}
+	for _, delta := range report.Deltas {
+		if delta.Path == "web/src" && (delta.Regression || delta.CurrentCoverage != 0) {
+			t.Fatalf("unmeasured scope must not be compared as a regression: %+v", delta)
+		}
+	}
+}

@@ -35,6 +35,18 @@
   当两次 `time.Now()` 落在同一刻度时「恰好在窗口边界」的判定翻转为不陈旧；改为边界含等
   （`<=`），与执行器侧「`elapsed < window` 才算仍在进行」严格互补。网关配额陈旧预留的用例
   也不再依赖「刚写入的行一定早于下一次 `time.Now()`」这一时钟假设。
+- **nightly 的 100x 查询计划报告「从未被收集」**：`Makefile` 的 recipe 里写了
+  `-run '^Test...AtHundredTimesScale$'`，而 GNU make 会把字面 `$'` 当成单字符变量展开、连引号一起吞掉，
+  传给 `go test` 的正则静默失配（用例没跑、命令仍退出 0）。于是
+  `test-results/postgres-query-plan-report-100x.json` 永远缺失，`test-query-plan-trend` 报
+  `expected 1x, 10x, and 100x evidence, collected 2 of 3`。现在 4 处 recipe 的 `$` 全部写成 `$$`
+  （`test-pg-release-rollback`、`test-contract`、`test-operational-contracts`、`test-warning-contracts`）。
+- **覆盖率趋势把「没测到」记成 0%**：前端覆盖率文件缺失时，趋势报告把它当成 0% 覆盖并判定
+  `web/src` 回归，nightly 因此失败在一份从未采集的证据上。现在缺失的输入记为
+  `skipped`（含原因）并把该 scope 从本轮快照里排除，只对真正测到的数据做回归比较。
+- **RBAC 资源作用域解析缺测试**：`internal/router` 的 `resolve*Scope` 只在完整 HTTP 旅程里被间接走到，
+  「从真实行里取 project/user 作用域」的分支从未执行，nightly 覆盖率趋势记录该包从 90.69% 掉到 84.60%。
+  新增 3 组直调用例（行缺失/行存在/存储故障），包覆盖率回到 95.9%。
 
 下一版本（v0.6.0）已登记、尚未开工：
 
