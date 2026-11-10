@@ -97,6 +97,33 @@ func TestHTTPClient_AgentContract(t *testing.T) {
 		t.Fatalf("unexpected list: %+v total=%d", list, total)
 	}
 
+	// v1.0.0+ surfaces compilation template groups through the same list; they
+	// are not runnable agents and must not leak into the agent sync surface.
+	mixed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, map[string]interface{}{
+			"total": 3,
+			"canvas": []map[string]interface{}{
+				{"id": "ag1", "title": "a", "type": "agent"},
+				{"id": "grp1", "title": "g", "type": "compilation_template_group", "name": "g"},
+				{"id": "legacy", "title": "old"},
+			},
+		})
+	}))
+	defer mixed.Close()
+	mixedClient := NewHTTPClient(mixed.URL, "key", 5*time.Second, 1)
+	filtered, filteredTotal, err := mixedClient.ListAgents(ctx, ListAgentsFilter{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) != 2 || filteredTotal != 2 {
+		t.Fatalf("non-agent canvas rows must be filtered: %+v total=%d", filtered, filteredTotal)
+	}
+	for _, agent := range filtered {
+		if agent.ID == "grp1" {
+			t.Fatalf("compilation template group leaked into the agent list: %+v", filtered)
+		}
+	}
+
 	got, err := client.GetAgent(ctx, "ag1")
 	if err != nil {
 		t.Fatal(err)

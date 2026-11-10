@@ -339,6 +339,7 @@ var drillableInternalEndpoints = map[string]string{
 	"GET /agents/{agent_id}/versions":                                                "live",
 	"GET /agents/{agent_id}/versions/{version_id}":                                   "live (needs a saved version)",
 	"POST /agents/{agent_id}/sessions":                                               "opt-in RGX_RAGFLOW_LIVE_AGENT_SESSION_DRILL (deprecated, doc/121 B1)",
+	"POST /agents/{agent_id}/publish":                                                "opt-in RGX_ALLOW_COMPILATION_LIVE publish of a disposable dataflow canvas; the write is the drill's own pipeline version, doc/262 §7",
 	"POST /agents/{agent_id}/upload":                                                 "opt-in RGX_RAGFLOW_LIVE_AGENT_UPLOAD_DRILL",
 	"GET /providers":                                                                 "live",
 	"PUT /providers":                                                                 "harness (write family covered by provider contract tests)",

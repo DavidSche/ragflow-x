@@ -24,8 +24,9 @@ func TestHTTPClientDocumentParseConfigContract(t *testing.T) {
 
 	client := NewHTTPClient(server.URL, "key", 2*time.Second, 1)
 	err := client.UpdateDocumentParseConfig(context.Background(), "ds/a", "doc/a", DocumentParseConfigUpdate{
-		Pipeline: true, PipelineID: "table", ParserConfig: map[string]interface{}{"pdf:ocr": true},
-		MetaFields: map[string]interface{}{"rgx_parser_policy_id": "policy-1"},
+		Pipeline: true, PipelineID: "table", PipelineVersionID: "version-1",
+		ParserConfig: map[string]interface{}{"pdf:ocr": true},
+		MetaFields:   map[string]interface{}{"rgx_parser_policy_id": "policy-1"},
 	})
 	if err != nil {
 		t.Fatalf("update document parse config: %v", err)
@@ -34,6 +35,7 @@ func TestHTTPClientDocumentParseConfigContract(t *testing.T) {
 		t.Fatalf("unexpected request: %s %s", gotMethod, gotPath)
 	}
 	if gotPayload["parse_type"] != float64(2) || gotPayload["pipeline_id"] != "table" ||
+		gotPayload["pipeline_version_id"] != "version-1" ||
 		gotPayload["parser_config"].(map[string]interface{})["pdf:ocr"] != true ||
 		gotPayload["meta_fields"].(map[string]interface{})["rgx_parser_policy_id"] != "policy-1" {
 		t.Fatalf("unexpected payload: %+v", gotPayload)

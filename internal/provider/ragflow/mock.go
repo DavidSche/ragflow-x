@@ -28,6 +28,7 @@ type Mock struct {
 	pipelines                       map[string]PipelineTemplateDetail
 	pipelineOrder                   []string
 	lastPipelineID                  string
+	engineVersion                   string
 	chatCreateRequests              []CreateChatRequest
 	lastChatCondition               *MetadataCondition
 	lastChatMessages                []Message
@@ -325,7 +326,21 @@ func (m *Mock) ChatCreateRequests() []CreateChatRequest {
 }
 
 func (m *Mock) EngineVersion(ctx context.Context) (string, error) {
-	return "1.0.0-rc3", nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.engineVersion != "" {
+		return m.engineVersion, nil
+	}
+	return "1.0.0", nil
+}
+
+// SetEngineVersion pins the version the mock reports through EngineVersion so
+// version-band behaviour (compilation engine kind mapping, capability matrix)
+// can be exercised per band. Empty restores the default 1.0.0.
+func (m *Mock) SetEngineVersion(version string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.engineVersion = version
 }
 
 func (m *Mock) CreateDataset(ctx context.Context, req CreateDatasetRequest) (*Dataset, error) {

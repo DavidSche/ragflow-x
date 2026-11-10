@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // SearchConfig is the nested JSON configuration of a RAGFlow Search App,
@@ -201,23 +203,109 @@ func (c *HTTPClient) StreamSearchAppCompletion(ctx context.Context, searchAppID 
 
 // SearchAppCompletion consumes the SSE completion and returns the accumulated
 // answer plus references for the retrieval-debugging UI.
+//
+// Transient engine failures (network blips, read timeouts, 5xx, 429) are
+// retried with bounded backoff so a one-off upstream glitch (e.g. a slow
+// upstream LLM tripping the client read deadline once) does not silently turn
+// a healthy retrieval into a lost answer for the caller. The request is
+// idempotent (question-only body + GetBody replay), so replays are safe
+// (doc/268 §3 P0-1). The connected SSE stream is never re-driven once any
+// byte could have reached the caller; the streaming proxy leaves that to the
+// listener.
+const searchCompletionMaxAttempts = 3
+
 func (c *HTTPClient) SearchAppCompletion(ctx context.Context, searchAppID string, req SearchAppCompletionRequest) (*SearchAppCompletionResult, error) {
 	body, _ := json.Marshal(req)
-	r, err := c.buildRequest(ctx, http.MethodPost,
-		"/searches/"+url.PathEscape(searchAppID)+"/completions", bytes.NewReader(body), "application/json")
-	if err != nil {
-		return nil, err
+	path := "/searches/" + url.PathEscape(searchAppID) + "/completions"
+	var lastErr error
+	for attempt := 0; attempt < searchCompletionMaxAttempts; attempt++ {
+		if attempt > 0 {
+			if !sleepWithContext(ctx, searchCompletionRetryBackoff(attempt)) {
+				return nil, lastErr
+			}
+		}
+		r, err := c.buildRequest(ctx, http.MethodPost, path, bytes.NewReader(body), "application/json")
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.http.Do(r)
+		if err != nil {
+			if ragErr, retry := retryableSearchCompletionError(err); retry {
+				lastErr = ragErr
+				continue
+			}
+			return nil, err
+		}
+		result, perr := func() (*SearchAppCompletionResult, error) {
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode >= 300 {
+				raw, _ := io.ReadAll(resp.Body)
+				return nil, NewErrorFromResponse(resp.StatusCode, raw)
+			}
+			return parseSearchAppSSE(resp.Body)
+		}()
+		if perr != nil {
+			if ragErr, retry := retryableSearchCompletionError(perr); retry {
+				lastErr = ragErr
+				continue
+			}
+			return nil, perr
+		}
+		return result, nil
 	}
-	resp, err := c.http.Do(r)
-	if err != nil {
-		return nil, err
+	return nil, lastErr
+}
+
+// searchCompletionRetryBackoff grows 200ms → 600ms → 1400ms (capped at 2s) so
+// a transient engine contention clears without adding an unreasonable tail to
+// a caller that already waits for a full retrieve-and-answer round trip.
+func searchCompletionRetryBackoff(attempt int) time.Duration {
+	if attempt <= 0 {
+		return 0
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(resp.Body)
-		return nil, NewErrorFromResponse(resp.StatusCode, raw)
+	d := 200 * time.Millisecond
+	for i := 1; i < attempt; i++ {
+		d *= 3
 	}
-	return parseSearchAppSSE(resp.Body)
+	if d > 2*time.Second {
+		return 2 * time.Second
+	}
+	return d
+}
+
+// sleepWithContext sleeps for d or returns false as soon as ctx is done so a
+// retry wait never blocks an already-cancelled caller.
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		return true
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+// retryableSearchCompletionError reduces an arbitrary error to a retryable
+// *Error: structured provider errors defer to Error.IsRetryable(), while raw
+// transport failures that never went through transportError() (network down,
+// connection refused, …) are retryable too. Context cancellation is never
+// retried.
+func retryableSearchCompletionError(err error) (*Error, bool) {
+	if err == nil {
+		return nil, false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, false
+	}
+	var ragErr *Error
+	if errors.As(err, &ragErr) {
+		return ragErr, ragErr.IsRetryable()
+	}
+	return &Error{Type: ErrorTypeTransport, Message: err.Error(), Cause: err}, true
 }
 
 type searchSSEData struct {
@@ -243,6 +331,19 @@ func parseSearchAppSSE(r io.Reader) (*SearchAppCompletionResult, error) {
 		var evt searchSSEData
 		if err := json.Unmarshal([]byte(payload), &evt); err != nil {
 			continue
+		}
+		// A functional error frame (the i-0002 class: the engine answers HTTP 200
+		// over SSE with data:{code:500, message:"Sorry, no relevant …", reference:[]})
+		// must surface as a structured error instead of being swallowed into an
+		// empty success result — a silent empty answer was indistinguishable from
+		// real retrieval failure (doc/268 §3 P0-3). A couple of legacy engines
+		// report success as 200 instead of 0, so keep {0, 200} as success codes.
+		if code := evt.Code; code != 0 && code != 200 && strings.TrimSpace(evt.Message) != "" {
+			return nil, &Error{
+				Type: ErrorTypeBusiness, Code: code,
+				Message:    evt.Message,
+				HTTPStatus: 200, // carried over the SSE channel, not the HTTP status
+			}
 		}
 		switch v := evt.Data.(type) {
 		case bool:

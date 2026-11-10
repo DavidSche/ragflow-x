@@ -61,8 +61,11 @@ func TestCapabilityReportIncludesEndpointCoverage(t *testing.T) {
 func TestRAGFlowCapabilityVerificationSeparatesVerifiedFromRuntimeHealth(t *testing.T) {
 	svc := &Service{RAGFlow: ragflow.NewMock(), capabilities: newCapabilityRegistry()}
 	initial := svc.ListRAGFlowCapabilities()
-	if len(initial.Items) != 11 {
-		t.Fatalf("declared capabilities = %d, want 11 (v0.3 baseline + T2 document_governance)", len(initial.Items))
+	// v0.3 baseline + T2 document_governance + knowledge_compilation (doc/262 §C:
+	// the ingestion-side Compiler/artifacts capability is now declared so its
+	// version-banded engine kind mapping can be gated).
+	if len(initial.Items) != 12 {
+		t.Fatalf("declared capabilities = %d, want 12 (v0.3 baseline + T2 document_governance + knowledge_compilation)", len(initial.Items))
 	}
 	if initial.RuntimeHealth != RuntimeUnknown {
 		t.Fatalf("initial runtime health = %s", initial.RuntimeHealth)
@@ -71,14 +74,14 @@ func TestRAGFlowCapabilityVerificationSeparatesVerifiedFromRuntimeHealth(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.DetectedVersion != "1.0.0-rc3" || report.RuntimeHealth != RuntimeHealthy {
+	if report.DetectedVersion != "1.0.0" || report.RuntimeHealth != RuntimeHealthy {
 		t.Fatalf("report: %+v", report)
 	}
 	byName := map[string]RAGFlowCapability{}
 	for _, item := range report.Items {
 		byName[item.Name] = item
 	}
-	if byName["chat"].Status != CapabilityVerified || byName["chat"].VerifiedVersion != "1.0.0-rc3" {
+	if byName["chat"].Status != CapabilityVerified || byName["chat"].VerifiedVersion != "1.0.0" {
 		t.Fatalf("chat capability: %+v", byName["chat"])
 	}
 	if byName["structured_output"].Status != CapabilityUnverified {
@@ -171,7 +174,7 @@ func TestRAGFlowCapabilityMatrixClassifiesZeroPointTwentyEightAsTrial(t *testing
 }
 
 func TestCapabilityUpgradeGateVersionBandPreflightBlocksNewerEngine(t *testing.T) {
-	svc := &Service{RAGFlow: fixedVersionEngine{version: "v1.0.0"}, capabilities: newCapabilityRegistry()}
+	svc := &Service{RAGFlow: fixedVersionEngine{version: "v1.0.1"}, capabilities: newCapabilityRegistry()}
 	report, err := svc.VerifyRAGFlowCapabilities(context.Background())
 	if err != nil {
 		t.Fatal(err)

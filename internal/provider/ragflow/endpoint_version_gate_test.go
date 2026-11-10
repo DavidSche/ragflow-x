@@ -45,10 +45,10 @@ func TestCompareReleaseVersionsRejectsMalformed(t *testing.T) {
 	}
 }
 
-func TestVerifiedMaxVersionResolvesRC3AfterT63(t *testing.T) {
+func TestVerifiedMaxVersionResolvesStableAfterT63(t *testing.T) {
 	verified := VerifiedMaxVersion()
-	if verified != "v1.0.0-rc3" {
-		t.Fatalf("T6.3 re-based MaxVerified=v1.0.0-rc3 everywhere; VerifiedMaxVersion = %q", verified)
+	if verified != "v1.0.0" {
+		t.Fatalf("T6.3 re-based MaxVerified=v1.0.0 everywhere; VerifiedMaxVersion = %q", verified)
 	}
 }
 
@@ -70,11 +70,11 @@ func TestEvaluateVersionGateFailClosed(t *testing.T) {
 
 func TestEvaluateVersionGateBandSemantics(t *testing.T) {
 	// Inside the verified band -> pass.
-	if decision, _ := EvaluateVersionGate("v1.0.0-rc3", nil); decision != VersionGatePass {
+	if decision, _ := EvaluateVersionGate("v1.0.0", nil); decision != VersionGatePass {
 		t.Fatalf("verified engine must pass, got %q", decision)
 	}
 	// Newer engine -> verification required (contract re-drill gate).
-	if decision, _ := EvaluateVersionGate("v1.0.0", nil); decision != VersionGateVerificationRequired {
+	if decision, _ := EvaluateVersionGate("v1.0.1", nil); decision != VersionGateVerificationRequired {
 		t.Fatalf("newer engine must require verification, got %q", decision)
 	}
 	// Older engine with no proven floor -> degrade conservatively.
@@ -90,7 +90,7 @@ func TestRunVersionPreflightAggregatesPerCapability(t *testing.T) {
 		t.Fatalf("probe-error preflight must block at face level, got %+v", blocked.Decision)
 	}
 	// Verified band: every capability endpoint passes.
-	passing := RunVersionPreflight("v1.0.0-rc3", nil)
+	passing := RunVersionPreflight("v1.0.0", nil)
 	if passing.Decision != VersionGatePass {
 		t.Fatalf("verified engine preflight must pass, got %q", passing.Decision)
 	}
@@ -113,7 +113,7 @@ func TestRunVersionPreflightAggregatesPerCapability(t *testing.T) {
 		}
 	}
 	// Newer engine: at least one capability requires verification, overall too.
-	newer := RunVersionPreflight("v1.0.0", nil)
+	newer := RunVersionPreflight("v1.0.1", nil)
 	if newer.Decision != VersionGateVerificationRequired {
 		t.Fatalf("newer engine preflight must require verification, got %q", newer.Decision)
 	}

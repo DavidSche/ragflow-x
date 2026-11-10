@@ -8,13 +8,18 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // Agent mirrors the RAGFlow agent canvas fields used by RAGFlow-X for the agent
 // administration surface. RAGFlow remains the source of truth for the DSL.
 type Agent struct {
-	ID              string                 `json:"id"`
-	Title           string                 `json:"title"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// Type discriminates canvas rows on v1.0.0+: the /agents list also surfaces
+	// compilation template groups ("type":"compilation_template_group"), which are
+	// a different resource and must not be synced as runnable agents.
+	Type            string                 `json:"type,omitempty"`
 	Description     string                 `json:"description,omitempty"`
 	CanvasType      string                 `json:"canvas_type,omitempty"`
 	CanvasCategory  string                 `json:"canvas_category,omitempty"`
@@ -91,7 +96,23 @@ func (c *HTTPClient) ListAgents(ctx context.Context, f ListAgentsFilter) ([]Agen
 	if err := c.do(ctx, http.MethodGet, "/agents?"+q.Encode(), nil, "", &out); err != nil {
 		return nil, 0, err
 	}
-	return out.Canvas, out.Total, nil
+	agents := make([]Agent, 0, len(out.Canvas))
+	foreign := int64(0)
+	for _, agent := range out.Canvas {
+		if agent.Type != "" && !strings.EqualFold(agent.Type, "agent") {
+			foreign++
+			continue
+		}
+		agents = append(agents, agent)
+	}
+	total := out.Total
+	if foreign > 0 {
+		total -= foreign
+		if total < 0 {
+			total = 0
+		}
+	}
+	return agents, total, nil
 }
 
 // GetAgent returns a single agent canvas.
