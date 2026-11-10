@@ -329,10 +329,14 @@
   `RGX_EXPORT_PDF_FONT=/usr/share/fonts/...` 就报 `load pdf font: stat usr/share/...: no such file or directory`。
   Windows 上因为 `os.Stat` 容忍混合分隔符而「看起来正常」，这正是缺陷长期未被发现的原因。现改为先
   `os.ReadFile` 再 `AddUTF8FontFromBytes`，绝对/相对/Windows 路径统一可用，错误信息带出真正尝试的路径。
-  同一轮修掉第二层：Linux 上最常见的 CJK 字体是**集合**（`NotoSansCJK-Regular.ttc`），fpdf 的 UTF8 解析器
-  读不了集合（只打印 `get metrics Error` 并把字体丢掉，最终表现为 `undefined font: cjk`）——新增
-  `extractFirstTTCFace()` 把集合首个 face 重排为独立 sfnt（重写表目录偏移、按 4 字节对齐，表数据原样搬运），
-  并在注册字体后立即 `SetFont` 一次，使字体不可用时当场报错而不是渲染到一半才失败。
+  fpdf 还有两层字体限制，本轮一并收口：其一，Linux 上最常见的 CJK 字体是**集合**（`.ttc`），fpdf 的 UTF8
+  解析器读不了集合——只打印 `get metrics Error` 并把字体丢掉，最终表现为 `undefined font: cjk`；新增
+  `extractFirstTTCFace()` 把集合首个 face 重排为独立 sfnt（重写表目录偏移、4 字节对齐、表数据原样搬运）。
+  其二，fpdf 只能嵌入 TrueType（`glyf`）轮廓，OpenType/CFF 字体（`NotoSansCJK-Regular.ttc` 即 CFF）一律解析为空；
+  现在候选字体探测只读表目录即按 `glyf` 过滤（`usableFontFile`），显式配置的 CFF 字体会得到
+  `font has no TrueType (glyf) outlines` 而不是渲染到一半的 `undefined font`；候选表补入 `wqy-zenhei` /
+  `wqy-microhei` / `uming`，CI 同时装 `fonts-noto-cjk`（CFF，用来验证被拒绝）与 `fonts-wqy-zenhei`（真跑通）。
+  注册字体后立即 `SetFont` 一次，字体不可用时当场报错而不是渲染到一半才失败。
   测试侧把硬编码的 `C:\Windows\Fonts\Deng.ttf` 换成生产同源查找（`testPDFFont`），使 Linux CI
   （`fonts-noto-cjk`）真正覆盖绝对路径 + 集合字体这两条链路，而不是静默 skip。
 - **依赖工程内部文档的测试在发布仓为显式 skip（发版后补齐）**：`doc/develop`、`doc/runbooks` 不随仓库发布

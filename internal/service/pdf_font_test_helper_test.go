@@ -18,6 +18,6 @@ func testPDFFont(t *testing.T) string {
 	if font := pdfFontPath(); font != "" {
 		return font
 	}
-	t.Skip("valid CJK PDF font is unavailable (install fonts-noto-cjk or set RGX_EXPORT_PDF_FONT)")
+	t.Skip("valid CJK PDF font is unavailable (install fonts-wqy-zenhei (TrueType outlines) or set RGX_EXPORT_PDF_FONT)")
 	return ""
 }
