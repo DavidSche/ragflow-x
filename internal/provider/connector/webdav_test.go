@@ -8,10 +8,12 @@ import "testing"
 // 20k-directory budget.
 func TestWebDAVProviderReusesClientsWithinInstance(t *testing.T) {
 	p := &WebDAVProvider{}
-	if p.propfindClient() != p.propfindClient() {
+	propfindA, propfindB := p.propfindClient(), p.propfindClient()
+	if propfindA != propfindB {
 		t.Fatal("propfind client should be stable within a provider instance")
 	}
-	if p.downloadClient() != p.downloadClient() {
+	dlA, dlB := p.downloadClient(), p.downloadClient()
+	if dlA != dlB {
 		t.Fatal("download client should be stable within a provider instance")
 	}
 	if p.propfindClient() == p.downloadClient() {

@@ -31,12 +31,6 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 )
 
-type verdict struct {
-	ok   bool
-	name string
-	line string
-}
-
 func main() {
 	var chatID string
 	var stream bool

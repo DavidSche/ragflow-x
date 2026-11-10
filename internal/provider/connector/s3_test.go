@@ -20,7 +20,7 @@ func TestS3ProviderListPaginatesAndSkipsDirectoryPlaceholders(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/xml")
 		if r.URL.Query().Get("continuation-token") == "" {
-			fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
+			_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult>
   <IsTruncated>true</IsTruncated>
   <NextContinuationToken>tok-2</NextContinuationToken>
@@ -33,7 +33,7 @@ func TestS3ProviderListPaginatesAndSkipsDirectoryPlaceholders(t *testing.T) {
 		if r.URL.Query().Get("continuation-token") != "tok-2" {
 			t.Fatalf("unexpected continuation token: %s", r.URL.RawQuery)
 		}
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
+		_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult>
   <IsTruncated>false</IsTruncated>
   <Contents><Key>docs/c.md</Key><LastModified>2026-10-25T07:08:09.000Z</LastModified><ETag>"etag-c"</ETag><Size>56</Size></Contents>
@@ -100,10 +100,12 @@ func TestEncodeCanonicalQuerySortsByKeyThenValue(t *testing.T) {
 // keep-alive connections survive across pages and objects.
 func TestS3ProviderReusesClientsWithinInstance(t *testing.T) {
 	p := &S3Provider{}
-	if p.listClient() != p.listClient() {
+	listA, listB := p.listClient(), p.listClient()
+	if listA != listB {
 		t.Fatal("list client should be stable within a provider instance")
 	}
-	if p.downloadClient() != p.downloadClient() {
+	dlA, dlB := p.downloadClient(), p.downloadClient()
+	if dlA != dlB {
 		t.Fatal("download client should be stable within a provider instance")
 	}
 	if p.listClient() == p.downloadClient() {

@@ -59,18 +59,18 @@ func TestSyncConnectorOnceS3TenThousandUnchangedObjects(t *testing.T) {
 			end = total
 		}
 		w.Header().Set("Content-Type", "application/xml")
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult>`)
+		_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult>`)
 		if end < total {
-			fmt.Fprintf(w, "<IsTruncated>true</IsTruncated><NextContinuationToken>%d</NextContinuationToken>", end)
+			_, _ = fmt.Fprintf(w, "<IsTruncated>true</IsTruncated><NextContinuationToken>%d</NextContinuationToken>", end)
 		} else {
-			fmt.Fprint(w, "<IsTruncated>false</IsTruncated>")
+			_, _ = fmt.Fprint(w, "<IsTruncated>false</IsTruncated>")
 		}
 		for i := offset; i < end; i++ {
-			fmt.Fprintf(w,
+			_, _ = fmt.Fprintf(w,
 				"<Contents><Key>docs/f%05d.txt</Key><LastModified>2026-10-25T01:02:03.000Z</LastModified><ETag>\"etag-%d\"</ETag><Size>10</Size></Contents>",
 				i, i)
 		}
-		fmt.Fprint(w, `</ListBucketResult>`)
+		_, _ = fmt.Fprint(w, `</ListBucketResult>`)
 	}))
 	defer srv.Close()
 
@@ -137,7 +137,7 @@ func TestSyncConnectorOnceTombstonesOnlyAfterCompleteScan(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		if r.URL.Query().Get("continuation-token") == "" {
-			fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>next</NextContinuationToken><Contents><Key>docs/only.txt</Key><LastModified>2026-10-25T01:02:03.000Z</LastModified><ETag>"e1"</ETag><Size>10</Size></Contents></ListBucketResult>`)
+			_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>next</NextContinuationToken><Contents><Key>docs/only.txt</Key><LastModified>2026-10-25T01:02:03.000Z</LastModified><ETag>"e1"</ETag><Size>10</Size></Contents></ListBucketResult>`)
 			return
 		}
 		once.Do(func() { close(secondPageStarted) })
