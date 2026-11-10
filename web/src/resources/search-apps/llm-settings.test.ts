@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_ANSWER_DISCIPLINE_PRESET,
   MAX_TOKENS_LIMIT,
+  SEARCH_APP_SYSTEM_PROMPT_PRESETS,
   buildInitLLMPayload,
   buildSearchAppLLM,
   maxTokensFromInput,
@@ -93,5 +95,36 @@ describe("maxTokensFromInput", () => {
     expect(maxTokensFromInput("12.5")).toBeNaN();
     expect(maxTokensFromInput("abc")).toBeNaN();
     expect(maxTokensFromInput("Infinity")).toBeNaN();
+  });
+});
+
+describe("answer-discipline presets", () => {
+  it("exposes the strict preset as the recommended default", () => {
+    expect(DEFAULT_ANSWER_DISCIPLINE_PRESET.key).toBe("strict-zh");
+  });
+
+  it("every preset system prompt carries the {knowledge} placeholder and stays engine-safe", () => {
+    for (const preset of SEARCH_APP_SYSTEM_PROMPT_PRESETS) {
+      expect(preset.system).toContain("{knowledge}");
+      // The engine injects retrieved chunks via {knowledge}; {question} travels
+      // through the user message, so the system prompt must not depend on it.
+      expect(preset.system).not.toContain("{question}");
+      expect(preset.quote).toContain("{knowledge}");
+      expect(preset.emptyResponse.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("strict preset hard-bans fabrication and extrapolation in its wording", () => {
+    const zh = SEARCH_APP_SYSTEM_PROMPT_PRESETS[0].system;
+    expect(zh).toContain("不得补充");
+    expect(zh).toContain("不得换算");
+    expect(zh).toContain("不得写出");
+    expect(zh).toContain("禁止编造细节凑成答案");
+  });
+
+  it("preset ids are unique and stable in order", () => {
+    const keys = SEARCH_APP_SYSTEM_PROMPT_PRESETS.map((p) => p.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toEqual(["strict-zh", "light-en"]);
   });
 });

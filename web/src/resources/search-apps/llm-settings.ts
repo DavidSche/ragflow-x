@@ -102,3 +102,81 @@ function readNumberOrDefault(
   const n = Number(llm[key]);
   return Number.isFinite(n) ? n : defaultValue;
 }
+
+/* ── Answer-discipline presets (copy-paste templates) ───────────────────
+ * The RAGFlow engine composes a search-app answer from ITS OWN system
+ * prompt (`prompt_config.system`; `{knowledge}` receives the retrieved
+ * chunks). ragflow-x has no prompt slot on SearchConfig (doc/268 §3.2), so
+ * the "answer only from {knowledge}" discipline must live engine-side.
+ * These presets give an out-of-the-box app the same contract DEFAULT_LLM
+ * already enforces for sampling determinism. Archived identically as
+ * doc/268 §3.2 and localenv/templates/search-app-answer-discipline/ — keep
+ * all three in sync. Pure data, no UI imports, unit-testable.
+ * ---------------------------------------------------------------------- */
+
+/** One copy-paste system-prompt preset for the RAGFlow search-app. */
+export interface SearchAppSystemPromptPreset {
+  /** Stable id (strict-zh / light-en). */
+  key: string;
+  /** Human label shown next to the copy button. */
+  label: string;
+  /** Prompt language. */
+  language: "zh" | "en";
+  /** The system prompt body; MUST contain the {knowledge} placeholder. */
+  system: string;
+  /** Suggested citation-confirmation sentence. */
+  quote: string;
+  /** Suggested empty-response sentence (engine `empty_response`). */
+  emptyResponse: string;
+}
+
+/**
+ * Answer-discipline presets. The strict one targets the i-0002 class
+ * (out-of-scope extrapolation) and i-0005 (threshold/calibre drift) from the
+ * tri-matrix audit (doc/268 §1.1): every factual claim must trace to
+ * {knowledge}, thresholds are quoted verbatim, and unsupported points are
+ * declared instead of fabricated.
+ */
+export const SEARCH_APP_SYSTEM_PROMPT_PRESETS: readonly SearchAppSystemPromptPreset[] = [
+  {
+    key: "strict-zh",
+    label: "答案纪律 · 严格（推荐）",
+    language: "zh",
+    system:
+      "你是一名严谨的安全生产领域检索问答助手。你的唯一事实来源是下面提供的知识库文本，请基于它详细回答问题。\n\n" +
+      "【检索命中纪律（硬性，优先级最高）】\n" +
+      "1. 只依据 {knowledge} 中出现的内容作答：凡知识库未出现的条件、限额、口径、案例、数值，一律不得补充。\n" +
+      "2. 知识库已给出判定标准/限额时，逐字照抄其口径，不得换算、不得自行设定上限或默认值、不得用常识/教材/题库外内容补全。\n" +
+      "3. 答案中每一个事实性断言的依据都必须能在 {knowledge} 中找到对应原文；无依据的断言不得写出。\n" +
+      "4. 当知识库内容不足以完整回答时：先答出有依据的部分，再明确说明「以下内容未在知识库中找到依据」并列明缺失项；禁止编造细节凑成答案。\n" +
+      "5. 知识库检索结果为空时，只输出：The answer you are looking for is not found in the knowledge base!\n\n" +
+      "【作答格式】\n" +
+      "- 命中充分：给出确定性结论（含具体数值/条件，如「超一类企业按…判定，其中…」），可分段详答。\n" +
+      "- 涉及多类：逐类罗列，每类结论后标注其依据出自知识库哪一部分。\n" +
+      "- 回答结束，结合给定的引用内容规范引用。\n\n" +
+      "知识库文本如下：\n{knowledge}\n以上为知识库文本，请按上述纪律作答。",
+    quote: "请只引用 {knowledge} 中与结论直接相关的原文片段；每个结论至少一条引用，禁止无源引用。",
+    emptyResponse: "Sorry! No relevant content was found in the knowledge base!",
+  },
+  {
+    key: "light-en",
+    label: "Answer discipline · light (keeps upstream style)",
+    language: "en",
+    system:
+      "You are an intelligent assistant. Please summarize the content of the dataset to answer the question.\n" +
+      "Please list the data in the dataset and answer in detail. When all dataset content is irrelevant to the question,\n" +
+      "your answer must include the sentence \"The answer you are looking for is not found in the knowledge base!\"\n" +
+      "Answers need to consider chat history.\n\n" +
+      "Strict discipline (higher priority than the above):\n" +
+      "- Answer ONLY from {knowledge}. Never add conditions, thresholds, cases, or values not present in it.\n" +
+      "- Quote thresholds/rules verbatim from {knowledge}; do not convert, estimate, or substitute standards.\n" +
+      "- State explicitly when a requested point has no support in {knowledge}; never fabricate.\n\n" +
+      "Here is the knowledge base:\n{knowledge}\nThe above is the knowledge base.",
+    quote:
+      "Cite only the exact {knowledge} passages that back each conclusion; every conclusion needs at least one citation, and unsupported citations are forbidden.",
+    emptyResponse: "Sorry! No relevant content was found in the knowledge base!",
+  },
+];
+
+/** Shortcut to the recommended strict preset for docs/tooltips. */
+export const DEFAULT_ANSWER_DISCIPLINE_PRESET = SEARCH_APP_SYSTEM_PROMPT_PRESETS[0];
