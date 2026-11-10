@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +25,7 @@ func TestExportJobRetryRequiresFailedOwnedJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	answer := finalizeTestAnswer(t, svc, ctx, tenant.ID, admin.ID, "request-export-retry")
-	t.Setenv("RGX_EXPORT_PDF_FONT", filepath.Join(t.TempDir(), "missing-font.ttf"))
+	t.Setenv("RGX_EXPORT_PDF_FONT", testSQLiteDSN(t, "missing-font.ttf"))
 	_, _ = svc.CreateExportForAnswer(ctx, admin.ID, tenant.ID, ExportRequest{
 		AnswerSnapshotID: answer.Snapshot.ID, Format: model.ExportFormatPDF,
 		IdempotencyKey: "export-retry-key", TraceID: "trace-export-retry",
@@ -99,7 +98,7 @@ func TestQueuedExportFailureCreatesOwnedAlert(t *testing.T) {
 		hub.Shutdown()
 		notify.Set(nil)
 	})
-	t.Setenv("RGX_EXPORT_PDF_FONT", filepath.Join(t.TempDir(), "missing-font.ttf"))
+	t.Setenv("RGX_EXPORT_PDF_FONT", testSQLiteDSN(t, "missing-font.ttf"))
 	result, err := svc.CreateExportForAnswer(ctx, admin.ID, tenant.ID, ExportRequest{
 		AnswerSnapshotID: answer.Snapshot.ID, Format: model.ExportFormatPDF,
 		IdempotencyKey: "queued-failure-key", TraceID: "trace-queued-failure",

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"io"
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -31,7 +30,7 @@ func (c *attachmentAgentClient) StreamAgentChatCompletion(ctx context.Context, r
 
 func TestAgentCompletionResolvesAttachmentTickets(t *testing.T) {
 	ctx := context.Background()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "a.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "a.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

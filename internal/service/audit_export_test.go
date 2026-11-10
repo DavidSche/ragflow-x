@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,7 @@ import (
 
 // ScenarioID: SC-AUDIT-001
 func TestP0_AUDIT_001_AuditExportRejectsOverLimitResults(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "audit-export.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "audit-export.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

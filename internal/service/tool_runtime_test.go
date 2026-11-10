@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -226,7 +225,7 @@ func newSQLQueryFixture(t *testing.T, maxRows int) *sqlQueryFixture {
 	}); err != nil {
 		t.Fatalf("create fixture admin user: %v", err)
 	}
-	targetDSN := filepath.Join(t.TempDir(), "target.db")
+	targetDSN := testSQLiteDSN(t, "target.db")
 	targetDB, err := sql.Open("sqlite", targetDSN)
 	if err != nil {
 		t.Fatalf("open target database: %v", err)

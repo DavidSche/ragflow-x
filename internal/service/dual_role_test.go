@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -16,7 +15,7 @@ import (
 // marker) and rgx_user_role (the authoritative source) never diverge across
 // user creation and role reassignment.
 func TestRoleSingleSourceConsistent(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "r.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "r.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,7 +15,7 @@ import (
 )
 
 func TestUsageReportAndExport(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "usage.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "usage.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

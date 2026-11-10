@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -79,7 +78,7 @@ func (c *thinkingAgentClient) AgentChatCompletion(context.Context, ragflow.Compl
 
 func TestAgentCompletionSuppressesThinkingInResponseAndSnapshot(t *testing.T) {
 	ctx := context.Background()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "thinking.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "thinking.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +118,7 @@ func TestAgentCompletionSuppressesThinkingInResponseAndSnapshot(t *testing.T) {
 
 func TestChatCompletionSuppressesThinkingInResponseAndSnapshot(t *testing.T) {
 	ctx := context.Background()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "thinking-chat.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "thinking-chat.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +170,7 @@ func TestChatCompletionSuppressesThinkingInResponseAndSnapshot(t *testing.T) {
 
 func TestSearchCompletionSuppressesThinkingInResponseAndSnapshot(t *testing.T) {
 	ctx := context.Background()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "thinking-search.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "thinking-search.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

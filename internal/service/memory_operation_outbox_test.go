@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -968,7 +967,7 @@ func TestMemoryDispatchAdmissionUsesCurrentPolicyAndActivePrincipal(t *testing.T
 }
 
 func TestMemoryOperationOutboxCreationIsAtomic(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "outbox-atomic.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "outbox-atomic.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

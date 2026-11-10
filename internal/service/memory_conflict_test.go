@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -210,7 +209,7 @@ func TestEvaluateMemoryConflictsNilDecisionSafeForLegacyCallers(t *testing.T) {
 	if summary == nil || summary.ContextPolicyVersion != memoryConflictPolicyVersion {
 		t.Fatalf("empty evaluation must stay non-nil with policy version: %+v", summary)
 	}
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "conflict-legacy.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "conflict-legacy.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

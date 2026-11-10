@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +19,7 @@ import (
 // in tests (serialized writes instead of immediate lock errors).
 func newRetentionSvc(t *testing.T) *Service {
 	t.Helper()
-	dsn := filepath.Join(t.TempDir(), "retention.db") + "?_pragma=busy_timeout(10000)"
+	dsn := testSQLiteDSN(t, "retention.db") + "?_pragma=busy_timeout(10000)"
 	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dsn})
 	if err != nil {
 		t.Fatal(err)

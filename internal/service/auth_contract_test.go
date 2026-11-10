@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -340,7 +339,7 @@ func TestP0_AUTH_001_BootstrapAdminFailureContract(t *testing.T) {
 
 func loginForRefreshContract(t *testing.T) (*Service, string) {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "refresh-contract.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "refresh-contract.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +371,7 @@ func loginForRefreshContract(t *testing.T) (*Service, string) {
 
 func newBootstrapSvc(t *testing.T) *Service {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "bootstrap-contract.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "bootstrap-contract.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

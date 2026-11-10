@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -15,7 +14,7 @@ import (
 
 func newQueryTemplateService(t *testing.T) *Service {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "query-template.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "query-template.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

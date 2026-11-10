@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,7 @@ import (
 
 func newDBConnectionService(t *testing.T) *Service {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "db-connection.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "db-connection.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +192,7 @@ func TestDBConnectionTestHealthyRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create db connection: %v", err)
 	}
-	dsn := filepath.Join(t.TempDir(), "risk.db")
+	dsn := testSQLiteDSN(t, "risk.db")
 	svc.SecretResolver = DBConnectionSecretResolverFunc(func(context.Context, *model.DBConnection) (string, error) {
 		return dsn, nil
 	})
@@ -229,7 +228,7 @@ func TestDBConnectionTestHealthyRoute(t *testing.T) {
 
 func TestVerifyDBConnectionReadOnlySQLite(t *testing.T) {
 	ctx := context.Background()
-	dsn := filepath.Join(t.TempDir(), "read-only.db")
+	dsn := testSQLiteDSN(t, "read-only.db")
 	if err := verifyDBConnectionReadOnly(ctx, model.DBDriverSQLite, dsn); err != nil {
 		t.Fatalf("sqlite session read-only verification: %v", err)
 	}

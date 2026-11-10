@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -14,7 +13,7 @@ import (
 
 func newScenarioSeedService(t *testing.T) *Service {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "seed.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "seed.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

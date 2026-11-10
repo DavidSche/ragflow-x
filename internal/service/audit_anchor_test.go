@@ -182,7 +182,7 @@ func TestAuditAnchorExportRequiresExistingDirectory(t *testing.T) {
 	if err := svc.RecordAudit(ctx, &model.AuditLog{TenantID: tenant.ID, Action: "missing-export", Resource: "test", ResourceID: "1"}); err != nil {
 		t.Fatal(err)
 	}
-	missing := filepath.Join(t.TempDir(), "not-created")
+	missing := testSQLiteDSN(t, "not-created")
 	svc.SetAuditAnchorPolicy(config.AuditAnchor{Enabled: true, IntervalSec: 3600, ExportDir: missing})
 	if _, err := svc.RunAuditAnchoring(ctx); err == nil {
 		t.Fatal("expected missing export directory to fail")
@@ -191,7 +191,7 @@ func TestAuditAnchorExportRequiresExistingDirectory(t *testing.T) {
 
 // ScenarioID: SC-AUDIT-001
 func TestP0_AUDIT_001_AuditAnchorMigrationIsImmutable(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "anchor.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "anchor.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
