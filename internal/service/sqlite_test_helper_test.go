@@ -1,12 +1,53 @@
 package service
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+
+	"github.com/ragflow-x/ragflow-x/internal/config"
+	"github.com/ragflow-x/ragflow-x/internal/db"
 )
 
-// testSQLiteDSN returns a sqlite DSN inside a per-test directory.
+// sqliteTemplate builds the migrated schema once per test binary, so the ~900
+// tests in this package do not each replay the 162-step migration. Goals: keep
+// the per-test database real (a copied sqlite file, not a mock) while removing
+// the setup cost that pushed the suite past its CI timeout.
+var (
+	sqliteTemplateOnce sync.Once
+	sqliteTemplatePath string
+	sqliteTemplateErr  error
+)
+
+func migratedSQLiteTemplate() (string, error) {
+	sqliteTemplateOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "rgx-svc-template-")
+		if err != nil {
+			sqliteTemplateErr = err
+			return
+		}
+		path := filepath.Join(dir, "template.db")
+		gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: path})
+		if err != nil {
+			sqliteTemplateErr = err
+			return
+		}
+		if err := db.Migrate(gdb); err != nil {
+			sqliteTemplateErr = err
+			return
+		}
+		if conn, err := gdb.DB(); err == nil {
+			_ = conn.Close()
+		}
+		sqliteTemplatePath = path
+	})
+	return sqliteTemplatePath, sqliteTemplateErr
+}
+
+// testSQLiteDSN returns a sqlite DSN inside a per-test directory holding a copy
+// of the migrated template schema.
 //
 // t.TempDir() asserts that its directory can be removed and fails the test when
 // it cannot. Several service flows persist evidence from background goroutines
@@ -26,5 +67,32 @@ func testSQLiteDSN(t *testing.T, name string) string {
 			t.Logf("test temp dir %s: %v (a background write outlived the store, residue left behind)", dir, err)
 		}
 	})
-	return filepath.Join(dir, name)
+	dsn := filepath.Join(dir, name)
+	template, err := migratedSQLiteTemplate()
+	if err != nil {
+		// Fall back to an empty file: the test opens it and migrates itself.
+		t.Logf("migrated sqlite template unavailable, tests migrate from scratch: %v", err)
+		return dsn
+	}
+	if err := copyFile(template, dsn); err != nil {
+		t.Logf("sqlite template copy failed, tests migrate from scratch: %v", err)
+	}
+	return dsn
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
