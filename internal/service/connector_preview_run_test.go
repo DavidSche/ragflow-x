@@ -52,15 +52,15 @@ func TestPreviewConnectorClassifiesAgainstCursorWithoutWritingIt(t *testing.T) {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/xml")
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>false</IsTruncated>`)
+		_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>false</IsTruncated>`)
 		for _, e := range []struct{ key, etag string }{
 			{"docs/a.txt", "e1"},
 			{"docs/b.txt", "e2"},
 			{"docs/c.txt", "e3"},
 		} {
-			fmt.Fprintf(w, `<Contents><Key>%s</Key><LastModified>2026-10-25T01:02:03.000Z</LastModified><ETag>"%s"</ETag><Size>10</Size></Contents>`, e.key, e.etag)
+			_, _ = fmt.Fprintf(w, `<Contents><Key>%s</Key><LastModified>2026-10-25T01:02:03.000Z</LastModified><ETag>"%s"</ETag><Size>10</Size></Contents>`, e.key, e.etag)
 		}
-		fmt.Fprint(w, `</ListBucketResult>`)
+		_, _ = fmt.Fprint(w, `</ListBucketResult>`)
 	}))
 	defer srv.Close()
 
@@ -106,11 +106,11 @@ func TestPreviewConnectorClassifiesAgainstCursorWithoutWritingIt(t *testing.T) {
 func TestPreviewConnectorHonorsAndCapsLimit(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
-		fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>false</IsTruncated>`)
+		_, _ = fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>false</IsTruncated>`)
 		for i := 0; i < 60; i++ {
-			fmt.Fprintf(w, `<Contents><Key>docs/f%02d.txt</Key><LastModified>2026-10-25T01:02:03.000Z</LastModified><ETag>"e%d"</ETag><Size>10</Size></Contents>`, i, i)
+			_, _ = fmt.Fprintf(w, `<Contents><Key>docs/f%02d.txt</Key><LastModified>2026-10-25T01:02:03.000Z</LastModified><ETag>"e%d"</ETag><Size>10</Size></Contents>`, i, i)
 		}
-		fmt.Fprint(w, `</ListBucketResult>`)
+		_, _ = fmt.Fprint(w, `</ListBucketResult>`)
 	}))
 	defer srv.Close()
 

@@ -629,23 +629,6 @@ func floatFromAny(value interface{}) float64 {
 	return 0
 }
 
-func intFromAny(value interface{}) int {
-	switch v := value.(type) {
-	case int:
-		return v
-	case int64:
-		return int(v)
-	case float64:
-		return int(v)
-	case float32:
-		return int(v)
-	case json.Number:
-		i, _ := v.Int64()
-		return int(i)
-	}
-	return 0
-}
-
 func shapeTrialEvidence(chunks []map[string]interface{}) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(chunks))
 	for _, chunk := range chunks {
