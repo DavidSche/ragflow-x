@@ -310,6 +310,20 @@
 - **v1.0.0 画布列表导致的 `103 permission to access the agent`**：见「上游引擎兼容 D4」。
 - **replacement drill 初次解析必失败**：见「ingest 与编译解耦」。
 
+- **v0.5.0 发布流水线的 docker 环节失败（发版后补齐）**：`docker/Dockerfile` 的 web 阶段在 `npm ci`
+  之前没有复制 `web/patches`，而 `npm ci` 会触发 `postinstall: patch-package`——补丁目录缺失时该钩子
+  「无补丁可应用」仍以 0 退出，于是 `query-string@10.0.0`（v9 起改为仅默认导出）保持未打补丁，
+  三步之后才以 `[MISSING_EXPORT] "parse"/"stringify" is not exported by node_modules/query-string/index.js`
+  （由 `ra-core` 抛出）的形式炸在 `vite build`。现改为先 `COPY web/patches` 再 `npm ci`，并加
+  `patches/*.patch` 存在性断言，缺补丁时立即失败而不是延后报编译错；同一轮把 `release.yml` 的镜像
+  标签在非预发布版本上补 `:latest`（预发布永不上位），Release 步骤改为幂等（已存在则刷新说明 + `--clobber`
+  覆盖资产），使 `workflow_dispatch` 重跑可以补齐发布页与镜像而不报 `release already exists`。
+- **P0 质量门禁 `TestP0_QUALITY_000_ScenarioCatalogueIntegrity` 在 CI 红（发版后补齐）**：场景目录有 27 条
+  `contractSource` 指向工程内部文档（`doc/develop/*`），而 `doc/` 除 `doc/user` 外不随仓库发布，本地有、
+  CI 检出后 stat 失败。现改为随仓库发布的锚点（`doc/user/**` 用户文档，或实现该不变量的代码路径），
+  并新增 fail-closed 守卫 `contractSourceShipped()`：`contractSource` 指向 `doc/` 下非 `doc/user/**` 时直接
+  拒绝，配套单测钉死该边界，避免「本地绿、CI 红」的同类漂移再次发生。
+
 ### Migration Notes
 
 - **迁移上新至 162**：`150`（治理字典 seed）、`151`（多维配额桶，bucket 维度

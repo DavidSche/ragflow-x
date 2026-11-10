@@ -214,7 +214,11 @@ jobs:
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
           VERSION="${{ needs.build.outputs.tag }}"
           TAGS="${IMAGE}:${VERSION}"
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          # `latest` follows the newest stable release. Pre-releases (vX.Y.Z-rc1,
+          # -drill, ...) never claim it, so a rehearsal cannot repoint the default
+          # pull. This also covers workflow_dispatch re-runs, which is how a failed
+          # docker leg gets retried after the release is already published.
+          if [[ "$VERSION" != *-* ]]; then
             TAGS="${TAGS}
           ${IMAGE}:latest"
           fi
@@ -349,9 +353,25 @@ jobs:
           TAG="${{ needs.build.outputs.tag }}"
           echo "Creating release: $TAG"
           ls -lh artifacts/dist/*.tar.gz artifacts/dist/*.zip artifacts/dist/SHA256SUMS
-          gh release create "$TAG" \
-            artifacts/dist/*.tar.gz \
-            artifacts/dist/*.zip \
-            artifacts/dist/SHA256SUMS \
-            --notes-file release-notes.md \
-            --title "ragflow-x $TAG"
+          # Idempotent by design: a re-run (workflow_dispatch after a failed docker
+          # leg, or a re-pushed tag) must not die on "release already exists" - it
+          # refreshes notes/title and clobbers the assets, so the published page
+          # always matches the current CHANGELOG extraction.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refreshing notes and assets."
+            gh release edit "$TAG" \
+              --notes-file release-notes.md \
+              --title "ragflow-x $TAG"
+            gh release upload "$TAG" \
+              artifacts/dist/*.tar.gz \
+              artifacts/dist/*.zip \
+              artifacts/dist/SHA256SUMS \
+              --clobber
+          else
+            gh release create "$TAG" \
+              artifacts/dist/*.tar.gz \
+              artifacts/dist/*.zip \
+              artifacts/dist/SHA256SUMS \
+              --notes-file release-notes.md \
+              --title "ragflow-x $TAG"
+          fi
