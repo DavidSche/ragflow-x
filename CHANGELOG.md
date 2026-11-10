@@ -336,7 +336,9 @@
   现在候选字体探测只读表目录即按 `glyf` 过滤（`usableFontFile`），显式配置的 CFF 字体会得到
   `font has no TrueType (glyf) outlines` 而不是渲染到一半的 `undefined font`；候选表补入 `wqy-zenhei` /
   `wqy-microhei` / `uming`，CI 同时装 `fonts-noto-cjk`（CFF，用来验证被拒绝）与 `fonts-wqy-zenhei`（真跑通）。
-  注册字体后立即 `SetFont` 一次，字体不可用时当场报错而不是渲染到一半才失败。
+  注册字体后立即 `SetFont` 一次，字体不可用时当场报错而不是渲染到一半才失败；
+  `scripts/s24_readiness_check.sh` 的候选表同步改为只认 TrueType 轮廓字体，只有 Noto CFF 时报 FAIL 并给出装
+  `fonts-wqy-zenhei` 的处置，不再把不可嵌入的字体报成 PASS。
   测试侧把硬编码的 `C:\Windows\Fonts\Deng.ttf` 换成生产同源查找（`testPDFFont`），使 Linux CI
   （`fonts-noto-cjk`）真正覆盖绝对路径 + 集合字体这两条链路，而不是静默 skip。
 - **依赖工程内部文档的测试在发布仓为显式 skip（发版后补齐）**：`doc/develop`、`doc/runbooks` 不随仓库发布

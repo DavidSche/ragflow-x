@@ -178,7 +178,9 @@ func usableFontFile(path string) bool {
 	}
 	defer func() { _ = file.Close() }()
 
-	head := make([]byte, ttcHeaderSize)
+	// A collection header is 12 bytes plus the table of face offsets; read the
+	// first face offset as well so both layouts are covered by one read.
+	head := make([]byte, ttcHeaderSize+4)
 	if _, err := io.ReadFull(file, head); err != nil {
 		return false
 	}
@@ -194,10 +196,7 @@ func usableFontFile(path string) bool {
 		}
 		return hasTrueTypeOutlines(directory)
 	}
-	if len(head) < ttcHeaderSize {
-		return false
-	}
-	faceOffset := int64(binary.BigEndian.Uint32(head[12:16]))
+	faceOffset := int64(binary.BigEndian.Uint32(head[ttcHeaderSize : ttcHeaderSize+4]))
 	if faceOffset <= 0 {
 		return false
 	}

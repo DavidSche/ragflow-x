@@ -28,23 +28,41 @@ if [ -n "${RGX_EXPORT_PDF_FONT:-}" ]; then
     hint "Point RGX_EXPORT_PDF_FONT at an existing CJK TTF/TTC font."
   fi
 else
+  # Candidates mirror pdfFontCandidates(). Only TrueType-outline fonts are
+  # listed: the renderer (fpdf) cannot embed CFF/OTTO faces, so a Noto CJK
+  # collection passing this check would be a false positive.
   font_found=""
   for candidate in \
     "/c/Windows/Fonts/Deng.ttf" \
     "/c/Windows/Fonts/msyh.ttc" \
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc" \
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+    "/c/Windows/Fonts/simhei.ttf" \
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc" \
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc" \
+    "/usr/share/fonts/truetype/arphic/uming.ttc"
   do
     if [ -f "$candidate" ]; then
       font_found="$candidate"
       break
     fi
   done
+  cff_only=""
+  for candidate in \
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc" \
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"
+  do
+    if [ -f "$candidate" ]; then
+      cff_only="$candidate"
+      break
+    fi
+  done
   if [ -n "$font_found" ]; then
     pass "Candidate CJK font found: $font_found"
+  elif [ -n "$cff_only" ]; then
+    fail "Only CFF fonts found ($cff_only); the PDF renderer needs TrueType outlines"
+    hint "Install fonts-wqy-zenhei or fonts-wqy-microhei, or set RGX_EXPORT_PDF_FONT to a .ttf/.ttc with glyf outlines."
   else
     fail "No CJK font found in pdfFontPath candidates"
-    hint "Set RGX_EXPORT_PDF_FONT to a CJK TTF/TTC font (PDF export returns 40132 without it)."
+    hint "Set RGX_EXPORT_PDF_FONT to a TrueType CJK font (PDF export returns 40132 without it)."
   fi
 fi
 printf '\n'
