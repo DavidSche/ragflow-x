@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
@@ -128,6 +129,72 @@ func TestP0_SYNC_001_ConcurrentImportClaimsSyncRunExactlyOnce(t *testing.T) {
 }
 
 // ScenarioID: SC-SYNC-001
+// A run that is visible in scanning/running must carry a lease. Stale recovery
+// treats rows without one as leftovers from before leases existed, so an
+// unleased scan claim gets reaped by the very next scan and two scans run
+// against the same source at once.
+func TestP0_SYNC_001_ScanRunClaimsLeaseThatStaleRecoveryRespects(t *testing.T) {
+	svc := newAuthzSvc(t)
+	ctx := context.Background()
+	tenant, err := svc.CreateTenant(ctx, "Sync Scan Lease")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RAGFlow.CreateDataset(ctx, ragflow.CreateDatasetRequest{Name: "scan-lease"}); err != nil {
+		t.Fatal(err)
+	}
+	enableResourceSyncForTest(t, svc, tenant.ID)
+
+	mock, ok := svc.RAGFlow.(*ragflow.Mock)
+	if !ok {
+		t.Fatalf("expected the mock provider, got %T", svc.RAGFlow)
+	}
+	gate := &ragflow.ListDatasetsGate{Entered: make(chan struct{}, 1), Release: make(chan struct{})}
+	previousGate := mock.ConfigureListDatasetsGate(gate)
+	t.Cleanup(func() { mock.ConfigureListDatasetsGate(previousGate) })
+
+	scanDone := make(chan error, 1)
+	go func() {
+		_, err := svc.ScanResourceSync(ctx, "admin", []string{model.SyncItemTypeDataset})
+		scanDone <- err
+	}()
+	select {
+	case <-gate.Entered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("scan never reached the upstream listing gate")
+	}
+
+	runs, total, err := svc.Store.ListSyncRuns(ctx, 1, 10, ResourceSyncSourceID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(runs) != 1 {
+		t.Fatalf("expected one scan run while scanning, got total=%d", total)
+	}
+	if runs[0].Status != model.SyncRunScanning {
+		t.Fatalf("expected the scan run to be scanning, got %s", runs[0].Status)
+	}
+	if runs[0].LeaseExpiresAt == nil {
+		t.Fatal("a scanning run must own a lease, otherwise stale recovery fails it while it is still running")
+	}
+	if err := svc.recoverStaleSyncRuns(ctx); err != nil {
+		t.Fatalf("stale recovery must not error on a leased run: %v", err)
+	}
+	after, err := svc.Store.GetSyncRun(ctx, runs[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Status != model.SyncRunScanning {
+		t.Fatalf("stale recovery reaped a live scan claim: status=%s error=%s", after.Status, after.Error)
+	}
+
+	close(gate.Release)
+	if err := <-scanDone; err != nil {
+		t.Fatalf("first scan must succeed once the gate is released: %v", err)
+	}
+}
+
+// ScenarioID: SC-SYNC-001
 func TestP0_SYNC_001_ConcurrentScansCreateOnlyOneSourceRun(t *testing.T) {
 	svc := newAuthzSvc(t)
 	ctx := context.Background()
@@ -140,39 +207,46 @@ func TestP0_SYNC_001_ConcurrentScansCreateOnlyOneSourceRun(t *testing.T) {
 	}
 	enableResourceSyncForTest(t, svc, tenant.ID)
 
+	// Park the running scan inside the upstream listing so the competing scan is
+	// guaranteed to arrive while the first run is still active. Without the gate
+	// this test only asserts a scheduling outcome: when the first scan finishes
+	// before the second one starts, the second scan is legitimately accepted and
+	// the expected 409 never materialises.
+	mock, ok := svc.RAGFlow.(*ragflow.Mock)
+	if !ok {
+		t.Fatalf("expected the mock provider, got %T", svc.RAGFlow)
+	}
+	gate := &ragflow.ListDatasetsGate{Entered: make(chan struct{}, 1), Release: make(chan struct{})}
+	previousGate := mock.ConfigureListDatasetsGate(gate)
+	t.Cleanup(func() { mock.ConfigureListDatasetsGate(previousGate) })
+
 	type result struct {
 		run *model.SyncRun
 		err error
 	}
-	results := make(chan result, 2)
-	var wg sync.WaitGroup
-	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			scanned, err := svc.ScanResourceSync(ctx, "admin", []string{model.SyncItemTypeDataset})
-			results <- result{run: scanned, err: err}
-		}()
-	}
-	wg.Wait()
-	close(results)
+	firstDone := make(chan result, 1)
+	go func() {
+		scanned, err := svc.ScanResourceSync(ctx, "admin", []string{model.SyncItemTypeDataset})
+		firstDone <- result{run: scanned, err: err}
+	}()
 
-	created := 0
-	conflicted := 0
-	for outcome := range results {
-		if outcome.err == nil {
-			created++
-			continue
-		}
-		var businessErr *httperr.Error
-		if errors.As(outcome.err, &businessErr) && businessErr.Status == 409 {
-			conflicted++
-			continue
-		}
-		t.Fatalf("unexpected scan error: %v", outcome.err)
+	select {
+	case <-gate.Entered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("first scan never reached the upstream listing gate")
 	}
-	if created != 1 || conflicted != 1 {
-		t.Fatalf("expected one scan success and one 409 conflict, got success=%d conflict=%d", created, conflicted)
+
+	// The first run is active, so the competing scan must be rejected.
+	_, competingErr := svc.ScanResourceSync(ctx, "admin", []string{model.SyncItemTypeDataset})
+	close(gate.Release)
+
+	first := <-firstDone
+	if first.err != nil {
+		t.Fatalf("first scan must succeed once the gate is released: %v", first.err)
+	}
+	var businessErr *httperr.Error
+	if !errors.As(competingErr, &businessErr) || businessErr.Status != 409 {
+		t.Fatalf("expected the competing scan to be rejected with 409 while a run is active, got %v", competingErr)
 	}
 	runs, total, err := svc.Store.ListSyncRuns(ctx, 1, 10, ResourceSyncSourceID, "")
 	if err != nil {

@@ -1355,6 +1355,11 @@ func (s *Service) ScanResourceSync(ctx context.Context, createdBy string, reques
 		ScopeJSON:         `{"scope_type":"ALL_AUTHORIZED","tenant_ids":[]}`,
 		ScanStartedAt:     &now, ScanConsistency: model.SyncConsistencyIncomplete,
 		CreatedBy: createdBy, CreatedAt: now, UpdatedAt: now,
+		// A run that is visible in scanning/running must own a lease: recovering
+		// treats rows without one as leftovers from before leases existed. Without
+		// this, the next scan reaps the run it is supposed to be excluded by and
+		// two scans run concurrently against the same source.
+		LeaseOwner: "ragflow-sync-worker", LeaseExpiresAt: ptrTime(now.Add(staleSyncRunTimeout)),
 	}
 	created, err := s.Store.CreateSyncRunIfSourceIdle(ctx, run)
 	if err != nil {
@@ -1499,6 +1504,9 @@ func (s *Service) ReconcileResourceSync(ctx context.Context, userID, triggerType
 		ScopeJSON:         `{"scope_type":"ALL_AUTHORIZED","tenant_ids":[]}`,
 		ScanStartedAt:     &now, ScanConsistency: model.SyncConsistencyIncomplete,
 		StartedAt: &now, CreatedBy: userID, CreatedAt: now, UpdatedAt: now,
+		// Same lease requirement as the manual scan above: this run is running from
+		// the moment it is inserted, so it must be protected from stale recovery.
+		LeaseOwner: "ragflow-sync-worker", LeaseExpiresAt: ptrTime(now.Add(staleSyncRunTimeout)),
 	}
 	if err := s.Store.CreateSyncRun(ctx, run); err != nil {
 		return nil, err

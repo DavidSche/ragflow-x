@@ -76,9 +76,18 @@ jobs:
     needs: [go-lint]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            test_timeout: 30m
+          - os: windows-latest
+            # The Windows runner spends roughly twice the Linux time on the same
+            # suite (slower file I/O for the SQLite fixtures); at 30m the package
+            # timeout fired mid-suite and the log showed an unrelated running test.
+            test_timeout: 50m
+          - os: macos-latest
+            test_timeout: 30m
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
 
@@ -115,9 +124,10 @@ jobs:
           # TestPermissionMatrixDocSync read doc/user, which was untracked; that
           # document now ships with the repository, so the package is covered.
           pkgs=$(go list ./... | grep -v -e '/internal/db')
-          # internal/service 包头重：本地 ~13min，2 vCPU runner 上 ~20min+；
-          # 默认单包超时 10m 会误杀。这里放宽到 30m，job 上限同步到 60m。
-          go test -v -count=1 -shuffle=on -timeout 30m $pkgs 2>&1 | tee test-results/unit.log || {
+          # internal/service 包头重：本地 ~7min，2 vCPU runner 上 ~12min（Windows ~2x）；
+          # 默认单包超时 10m 会误杀。超时按 OS 分开给（见 matrix.test_timeout），
+          # job 上限同步到 75m。
+          go test -v -count=1 -shuffle=on -timeout "${{ matrix.test_timeout }}" $pkgs 2>&1 | tee test-results/unit.log || {
             echo "## go-build unit tests failed" >> "$GITHUB_STEP_SUMMARY"
             grep -E '^--- FAIL' test-results/unit.log | head -120 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
             grep -A 80 -E '^--- FAIL' test-results/unit.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true
