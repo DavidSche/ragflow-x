@@ -26,6 +26,7 @@ func TestLivePageIndexSearchDatasetPairedABE2E(t *testing.T) {
 	client := ragflow.NewHTTPClient(baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 30*time.Second, 4)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
+	requireLegacyPageIndexBand(t, ctx, client, "page_index paired AB")
 
 	groups, _, err := client.ListCompilationTemplateGroups(ctx, ragflow.CompilationTemplateGroupFilter{
 		Page: 1, PageSize: 100,
@@ -288,6 +289,7 @@ func runLivePageIndexSearchDatasetPairedABProtocolE2E(t *testing.T, protocolVers
 	client := ragflow.NewHTTPClient(baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 30*time.Second, 4)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+	requireLegacyPageIndexBand(t, ctx, client, "page_index paired AB protocol")
 
 	groups, _, err := client.ListCompilationTemplateGroups(ctx, ragflow.CompilationTemplateGroupFilter{
 		Page: 1, PageSize: 100,

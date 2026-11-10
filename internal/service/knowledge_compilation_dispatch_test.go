@@ -17,6 +17,12 @@ func createCompilationFixture(t *testing.T) (*Service, *ragflow.Mock, string, st
 	t.Helper()
 	svc := newAuthzSvc(t)
 	mock := svc.RAGFlow.(*ragflow.Mock)
+	// These fixtures exercise the legacy kind contract (page_index has its own
+	// artifact surface). The 1.0+ band reclassifies page_index as a structure
+	// variant and rejects the run at trigger time, so the band is pinned here;
+	// band-aware behaviour is covered by
+	// knowledge_compilation_engine_kind_test.go.
+	mock.SetEngineVersion("0.27.0")
 	ctx := context.Background()
 	tenant, _, project := id.New(), id.New(), id.New()
 	datasetID := id.New()

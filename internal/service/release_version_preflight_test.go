@@ -25,7 +25,7 @@ func (v versionProbeClient) EngineVersion(ctx context.Context) (string, error) {
 
 // createPassingProductionRelease builds the full governance chain, takes a
 // PASS decision and creates the production release under the default mock
-// engine (1.0.0-rc3, the pinned verified band) — the happy path that must records
+// engine (1.0.0, the pinned verified band) — the happy path that must records
 // degrade evidence rather than blocking.
 func createPassingProductionRelease(t *testing.T) (*Service, context.Context, model.Tenant, *model.User, *model.Release) {
 	t.Helper()
@@ -67,13 +67,13 @@ func releaseGateProxy(t *testing.T, env, version string) (*Service, context.Cont
 }
 
 // TestReleaseCreateProductionRecordsVersionPreflight pins the T6.3 wiring: the
-// mock engine (1.0.0-rc3) is the re-based verified band (T6.3), so production
+// mock engine (1.0.0) is the re-based verified band (T6.3), so production
 // release passes preflight and the observed/decision/reason evidence lands on
 // the release row.
 func TestReleaseCreateProductionRecordsVersionPreflight(t *testing.T) {
 	svc, ctx, tenant, _, release := createPassingProductionRelease(t)
-	if release.VersionPreflightObserved != "1.0.0-rc3" {
-		t.Fatalf("preflight observed = %q, want 1.0.0-rc3", release.VersionPreflightObserved)
+	if release.VersionPreflightObserved != "1.0.0" {
+		t.Fatalf("preflight observed = %q, want 1.0.0", release.VersionPreflightObserved)
 	}
 	if release.VersionPreflightDecision != string(ragflow.VersionGatePass) {
 		t.Fatalf("preflight decision = %q, want pass", release.VersionPreflightDecision)
@@ -86,17 +86,18 @@ func TestReleaseCreateProductionRecordsVersionPreflight(t *testing.T) {
 	if err != nil || got == nil {
 		t.Fatalf("get release: %+v err=%v", got, err)
 	}
-	if got.VersionPreflightObserved != "1.0.0-rc3" || got.VersionPreflightDecision != string(ragflow.VersionGatePass) {
+	if got.VersionPreflightObserved != "1.0.0" || got.VersionPreflightDecision != string(ragflow.VersionGatePass) {
 		t.Fatalf("reloaded preflight evidence lost: %+v", got)
 	}
 }
 
 // TestReleaseCreateProductionBlocksNewerThanVerifiedBand pins the fail-closed
-// behaviour: an engine version exceeding the verified ceiling (v1.0.0-rc4 over
-// the re-based v1.0.0-rc3) blocks production release until a live contract
-// re-drill has closed the band.
+// behaviour: an engine version exceeding the verified ceiling (v1.0.1 over the
+// pinned v1.0.0) blocks production release until a live contract re-drill has
+// closed the band. Note the fixture must sort ABOVE the verified version: a
+// pre-release such as v1.0.0-rc4 sorts below v1.0.0 and is in-band.
 func TestReleaseCreateProductionBlocksNewerThanVerifiedBand(t *testing.T) {
-	svc, ctx, tenant, user, candidate, gate, bundle := releaseGateProxy(t, "production", "v1.0.0-rc4")
+	svc, ctx, tenant, user, candidate, gate, bundle := releaseGateProxy(t, "production", "v1.0.1")
 	_, err := svc.CreateRelease(ctx, tenant.ID, user.ID, ReleaseInput{
 		ReleaseCandidateID: candidate.CandidateID, CandidateVersion: candidate.CandidateVersion,
 		SnapshotID: bundle.SnapshotID, GateDecisionID: gate.ID, Environment: "production",
@@ -134,7 +135,7 @@ func TestReleaseCreateProductionBlocksUnparseableVersion(t *testing.T) {
 // engine is recorded for a development release but does not block it — the
 // band fail-closed applies to production only.
 func TestReleaseCreateDevelopmentRecordsButDoesNotBlock(t *testing.T) {
-	svc, ctx, tenant, user, candidate, gate, bundle := releaseGateProxy(t, "development", "v1.0.0-rc4")
+	svc, ctx, tenant, user, candidate, gate, bundle := releaseGateProxy(t, "development", "v1.0.1")
 	release, err := svc.CreateRelease(ctx, tenant.ID, user.ID, ReleaseInput{
 		ReleaseCandidateID: candidate.CandidateID, CandidateVersion: candidate.CandidateVersion,
 		SnapshotID: bundle.SnapshotID, GateDecisionID: gate.ID, Environment: "development",

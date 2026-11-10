@@ -17,6 +17,9 @@ func createCompilationRecoveryFixture(t *testing.T) (*Service, *ragflow.Mock, st
 	ctx := context.Background()
 	svc := newAuthzSvc(t)
 	mock := svc.RAGFlow.(*ragflow.Mock)
+	// Legacy band: this fixture exercises page_index recovery mechanics, which
+	// the 1.0+ band rejects at trigger time (see engine kind mapping).
+	mock.SetEngineVersion("0.27.0")
 	tenant, err := svc.CreateTenant(ctx, "Compilation Recovery")
 	if err != nil {
 		t.Fatalf("create tenant: %v", err)

@@ -249,6 +249,10 @@ func (s *Service) TriggerCompilationRun(
 	if input.Kind == "" {
 		input.Kind = model.CompilationKindWiki
 	}
+	engineKind := resolveCompilationEngineKind(input.Kind, s.compilationEngineVersion(ctx))
+	if !engineKind.Bindable() {
+		return nil, httperr.New(422, 42261, engineKindRejectionMessage(engineKind))
+	}
 	if err := s.validateCompilationStrategyBinding(ctx, tenantID, datasetID, input.StrategyID, documentIDs); err != nil {
 		return nil, err
 	}
@@ -305,6 +309,7 @@ func (s *Service) TriggerCompilationRun(
 		RequestedBy:       userID,
 		Detail: compilationRunDetail(input.Kind, "accepted", map[string]interface{}{
 			"dispatch_policy": "explicit_document_parse", "document_count": len(selected),
+			"engine_kind_resolution": engineKind,
 		}),
 		CreatedAt: now, UpdatedAt: now,
 	}

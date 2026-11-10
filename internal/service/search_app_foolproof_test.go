@@ -317,3 +317,35 @@ func TestValidateOwnedDatasetsCrossTenantBoundary(t *testing.T) {
 		t.Fatalf("tenant A's own unlinked orphan library must still bind: %v", err)
 	}
 }
+
+func TestValidateSearchConfigSelfConsistency(t *testing.T) {
+	trueVal, falseVal := true, false
+
+	cases := []struct {
+		name string
+		cfg  *ragflow.SearchConfig
+		want bool // want == true means "expect an error"
+	}{
+		{"nil config is fine", nil, false},
+		{"empty config is fine", &ragflow.SearchConfig{}, false},
+		{"typical valid config", &ragflow.SearchConfig{TopK: 10, SimilarityThreshold: 0.2, VectorSimilarityWeight: 0.5, RerankID: "r1", UseRerank: &trueVal}, false},
+		{"legacy engine top_k 1024 is fine", &ragflow.SearchConfig{TopK: 1024}, false},
+		{"top_k cap enforced", &ragflow.SearchConfig{TopK: 2049}, true},
+		{"negative top_k rejected", &ragflow.SearchConfig{TopK: -1}, true},
+		{"threshold below 0 rejected", &ragflow.SearchConfig{SimilarityThreshold: -0.1}, true},
+		{"threshold above 1 rejected", &ragflow.SearchConfig{SimilarityThreshold: 1.2}, true},
+		{"weight above 1 rejected", &ragflow.SearchConfig{VectorSimilarityWeight: 1.5}, true},
+		{"rerank on without id rejected", &ragflow.SearchConfig{UseRerank: &trueVal}, true},
+		{"rerank off may omit id", &ragflow.SearchConfig{UseRerank: &falseVal, RerankID: ""}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateSearchConfigSelfConsistency(tc.cfg)
+			gotErr := err != nil
+			if gotErr != tc.want {
+				t.Fatalf("err=%v, want error=%v", err, tc.want)
+			}
+		})
+	}
+}

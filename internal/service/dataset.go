@@ -44,6 +44,7 @@ func (s *Service) CreateDataset(ctx context.Context, tenantID, name string) (*Da
 	}
 	ds, err := s.RAGFlow.CreateDataset(ctx, ragflow.CreateDatasetRequest{
 		Name: name, ParseType: 1, ParserID: "naive",
+		EmbeddingModel: s.defaultEmbeddingModel(ctx),
 	})
 	if err != nil {
 		return nil, httperr.New(502, 50200, "ragflow create dataset failed")
@@ -66,6 +67,54 @@ func (s *Service) CreateDataset(ctx context.Context, tenantID, name string) (*Da
 		ID: link.ID, TenantID: tenantID, Name: name,
 		RAGFlowDatasetID: ds.ID,
 	}, nil
+}
+
+// defaultEmbeddingModelTTL bounds how long a resolved engine default embedding
+// model is reused before re-resolving, so a tenant that switches its default
+// model mid-run is picked up without a service restart.
+const defaultEmbeddingModelTTL = 5 * time.Minute
+
+// defaultEmbeddingModel resolves the engine embedding model new datasets should
+// bind. RAGFlow v1.0.0 rejects dataset creation without an explicit
+// embedding_model ("model configuration unavailable: model \"0\" has no saved
+// model row"), whereas 0.27.x defaulted it engine-side, so the platform must
+// supply one. Resolution is best-effort: when the model list is unavailable (or
+// the engine is too old to expose it) the field stays empty and the engine keeps
+// its own default.
+func (s *Service) defaultEmbeddingModel(ctx context.Context) string {
+	s.embeddingMu.Lock()
+	defer s.embeddingMu.Unlock()
+	if s.embeddingModel != "" && time.Since(s.embeddingResolvedAt) < defaultEmbeddingModelTTL {
+		return s.embeddingModel
+	}
+	if s.RAGFlow == nil {
+		return ""
+	}
+	resolved := ""
+	if defaults, err := s.RAGFlow.ListDefaultModels(ctx); err == nil {
+		for _, candidate := range defaults {
+			if candidate.Type == "embedding" && strings.TrimSpace(candidate.ModelID) != "" {
+				resolved = candidate.ModelID
+				break
+			}
+		}
+	}
+	if resolved == "" {
+		if models, err := s.RAGFlow.ListModels(ctx, "embedding"); err == nil {
+			for _, candidate := range models {
+				if strings.TrimSpace(candidate.ModelID) != "" {
+					resolved = candidate.ModelID
+					break
+				}
+			}
+		}
+	}
+	if resolved == "" {
+		return ""
+	}
+	s.embeddingModel = resolved
+	s.embeddingResolvedAt = time.Now()
+	return resolved
 }
 
 // ListDatasets returns all datasets bound to a tenant, joined with live
