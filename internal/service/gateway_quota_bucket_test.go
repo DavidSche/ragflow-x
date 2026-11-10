@@ -160,10 +160,13 @@ func TestReapStaleBucketReservation(t *testing.T) {
 	if _, err := svc.PreauthorizeTenantBucketQuota(ctx, key, "req-stale", 500, true, false); err != nil {
 		t.Fatal(err)
 	}
-	// Sweep with a now cutoff — the reservation was just created so it is
-	// strictly older than now, exercising the same release path as the aged
-	// case without needing a created_at backdate helper.
-	released, err := svc.Store.ReapStaleQuotaBucketReservations(ctx, key.TenantID, model.QuotaBucketDimensionTenant, key.TenantID, quotaPeriodStart(), time.Now())
+	// Sweep with a cutoff a minute in the future: the reservation was just
+	// created, and "just created" is not reliably older than a second time.Now()
+	// call — with a fast store both land in the same clock tick and a strict
+	// created_at < cutoff comparison misses the row. The sweep contract is
+	// "everything created before the cutoff", which a future cutoff states
+	// explicitly instead of relying on tick alignment.
+	released, err := svc.Store.ReapStaleQuotaBucketReservations(ctx, key.TenantID, model.QuotaBucketDimensionTenant, key.TenantID, quotaPeriodStart(), time.Now().Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}

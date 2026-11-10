@@ -57,7 +57,12 @@ func (s *store) UpsertKnowledgeOpsEvent(ctx context.Context, event *model.Knowle
 	if event.ReviewStatus == "" {
 		event.ReviewStatus = model.KnowledgeOpsReviewOpen
 	}
-	event.UpdatedAt = time.Now().UTC()
+	// Honour a caller-supplied timestamp: the ops event carries when the turn
+	// happened, and stamping it with wall clock on write silently rewrites that
+	// ordering input (it made every event seeded in one tick look simultaneous).
+	if event.UpdatedAt.IsZero() {
+		event.UpdatedAt = time.Now().UTC()
+	}
 	return s.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "request_id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{

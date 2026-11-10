@@ -167,8 +167,20 @@ func (s *Service) ListRecentCrossAppSessions(ctx context.Context, actorID, query
 	for _, item := range itemsByID {
 		sessions = append(sessions, *item)
 	}
+	// Total order: two sessions touched in the same clock tick compare equal on
+	// LastActivity, and the slice comes from a map, so without the extra keys the
+	// list order (and which session the UI shows first) changed between runs.
 	sort.SliceStable(sessions, func(left, right int) bool {
-		return sessions[left].LastActivity.After(sessions[right].LastActivity)
+		if !sessions[left].LastActivity.Equal(sessions[right].LastActivity) {
+			return sessions[left].LastActivity.After(sessions[right].LastActivity)
+		}
+		if !sessions[left].LastTurnAt.Equal(sessions[right].LastTurnAt) {
+			return sessions[left].LastTurnAt.After(sessions[right].LastTurnAt)
+		}
+		if sessions[left].AppType != sessions[right].AppType {
+			return sessions[left].AppType < sessions[right].AppType
+		}
+		return sessions[left].ContextID < sessions[right].ContextID
 	})
 	if len(sessions) > limit {
 		sessions = sessions[:limit]

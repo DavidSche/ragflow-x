@@ -30,7 +30,15 @@ func withSQLitePragmas(dsn string) (string, error) {
 		// Not a parseable query string; open the DSN as-is.
 		return dsn, nil
 	}
+	// journal_mode(WAL) is the first half of the pair the comment above
+	// describes and was missing: without it every commit fsyncs the rollback
+	// journal, which costs ~200ms per write on the Windows CI runner (the
+	// migration seed inserts alone then take minutes per test database).
 	defaults := []string{"busy_timeout(5000)", "synchronous(NORMAL)"}
+	if !sqliteMemoryDSN(base, values) {
+		// An in-memory database has no journal file, so sqlite rejects WAL there.
+		defaults = append(defaults, "journal_mode(WAL)")
+	}
 	for _, def := range defaults {
 		name := def[:strings.IndexByte(def, '(')]
 		direct := values["_"+name]
@@ -46,6 +54,15 @@ func withSQLitePragmas(dsn string) (string, error) {
 		}
 	}
 	return base + "?" + values.Encode(), nil
+}
+
+// sqliteMemoryDSN reports whether the DSN names a private or shared in-memory
+// database, where journal_mode(WAL) does not apply.
+func sqliteMemoryDSN(base string, values url.Values) bool {
+	if strings.Contains(base, ":memory:") || strings.Contains(base, "mode=memory") {
+		return true
+	}
+	return strings.EqualFold(values.Get("mode"), "memory")
 }
 
 // Open creates a GORM connection based on configuration. Supported drivers:
