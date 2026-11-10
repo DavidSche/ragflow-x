@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ragflow-x/ragflow-x/internal/engdocs"
 )
 
 type prometheusRuleFile struct {
@@ -44,6 +46,10 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 	}
 
 	rules := make(map[string]prometheusAlertRule, len(file.Groups[0].Rules))
+	engineeringDocs := engdocs.PresentFromWorkingDirectory()
+	if !engineeringDocs {
+		t.Logf("runbook existence not verified: %s", engdocs.SkipReason)
+	}
 	for _, rule := range file.Groups[0].Rules {
 		if rule.Alert == "" || strings.TrimSpace(rule.Expr) == "" {
 			t.Fatalf("incomplete Prometheus rule: %+v", rule)
@@ -61,8 +67,14 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 		if runbook == "" || strings.Contains(runbook, "..") {
 			t.Fatalf("alert %q has unexpected runbook %q", rule.Alert, rule.Annotations["runbook"])
 		}
-		if _, err := os.Stat(filepath.Join("..", "..", runbook)); err != nil {
-			t.Fatalf("alert %q runbook %q is missing: %v", rule.Alert, runbook, err)
+		// The runbook targets are engineering docs (doc/develop, doc/runbooks),
+		// which are intentionally not shipped: only doc/user/** is published. The
+		// path shape above is still enforced everywhere; existence is only
+		// verifiable in a checkout that has the engineering doc tree.
+		if engineeringDocs {
+			if _, err := os.Stat(filepath.Join("..", "..", runbook)); err != nil {
+				t.Fatalf("alert %q runbook %q is missing: %v", rule.Alert, runbook, err)
+			}
 		}
 		rules[rule.Alert] = rule
 	}

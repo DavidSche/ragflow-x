@@ -19,15 +19,17 @@ import (
 )
 
 // RepoRoot locates the ragflow-x repository root from the working directory by
-// walking up until go.mod and the plan document are both present.
+// walking up until go.mod is present. The plan document is deliberately not part
+// of the probe: doc/develop is engineering documentation and does not ship with
+// the published repository (only doc/user/** does), so requiring it would make
+// this package fail to locate its own module root on a CI checkout.
 func RepoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	for {
-		if fileExists(filepath.Join(dir, "go.mod")) &&
-			fileExists(filepath.Join(dir, "doc", "develop", "137_知识编译与Memory无声落地实施方案.md")) {
+		if fileExists(filepath.Join(dir, "go.mod")) {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
@@ -41,6 +43,14 @@ func RepoRoot() (string, error) {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// EngineeringDocsPresent reports whether the internal engineering doc tree (the
+// plan and status docs this audit reads) exists at root. Gates that audit those
+// documents must skip explicitly when it is absent instead of failing.
+func EngineeringDocsPresent(root string) bool {
+	plan, _ := docPaths(root)
+	return fileExists(plan)
 }
 
 // docPath resolves the plan and status document paths.

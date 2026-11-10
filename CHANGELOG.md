@@ -323,6 +323,27 @@
   CI 检出后 stat 失败。现改为随仓库发布的锚点（`doc/user/**` 用户文档，或实现该不变量的代码路径），
   并新增 fail-closed 守卫 `contractSourceShipped()`：`contractSource` 指向 `doc/` 下非 `doc/user/**` 时直接
   拒绝，配套单测钉死该边界，避免「本地绿、CI 红」的同类漂移再次发生。
+- **PDF 导出在 Linux 上必然失败（业务导出能力实际不可用）**：`renderPDF` 把字体路径交给
+  `fpdf.AddUTF8Font`，而该函数内部执行 `path.Join(fontpath, fileStr)`，默认 `fontpath` 为 `"."`——绝对路径
+  的前导分隔符被吃掉（`/usr/share/...` 变成 `usr/share/...`），于是任何 Linux 部署只要配置了
+  `RGX_EXPORT_PDF_FONT=/usr/share/fonts/...` 就报 `load pdf font: stat usr/share/...: no such file or directory`。
+  Windows 上因为 `os.Stat` 容忍混合分隔符而「看起来正常」，这正是缺陷长期未被发现的原因。现改为先
+  `os.ReadFile` 再 `AddUTF8FontFromBytes`，绝对/相对/Windows 路径统一可用，错误信息带出真正尝试的路径；
+  同时把测试里硬编码的 `C:\Windows\Fonts\Deng.ttf` 换成生产同源查找（`testPDFFont`），使 Linux CI
+  （`fonts-noto-cjk`）真正覆盖该路径，而不是静默 skip。
+- **依赖工程内部文档的测试在发布仓为显式 skip（发版后补齐）**：`doc/develop`、`doc/runbooks` 不随仓库发布
+  （只有 `doc/user/**` 发布），但 `TestREL3ExternalReviewGate`、`TestCompilationRecoveryRunbookLocksTenantSafetyGates`
+  与 Prometheus 告警 runbook 存在性检查会去 stat 这些文件，导致检出发布仓后必红。现新增 `internal/engdocs`
+  （模块根探测 + 工程文档树探测 + 统一的 skip 原因文案）：`relcheck` 的根目录探测改为只认 `go.mod`，三个门禁
+  在工程文档树缺失时输出**带原因的 SKIP**（告警规则仍校验 runbook 路径形状与其他全部规则），不再把「未发布」
+  误报成「不达标」。
+- **`go-build` 的 `internal/service` 包在 CI 上撞 20m 包级超时**：该包在 2 vCPU runner 上约 20min+
+  （本地约 13min），旧超时导致整轮被 `panic: test timed out after 20m0s` 收尾、另外两个平台被取消。
+  单元测试与 `make test-coverage` 的包级超时统一放宽到 30m，`go-build` job 上限提到 60m。
+- **`ghcr.io` 镜像推送被拒（`denied: permission_denied: write_package`）**：镜像包 `ragflow-x` 在 Actions
+  接入前就已由手工推送创建（现存 `v0.2.0`/`v0.2.1`/`latest`），它没有把写权限授予本仓库的 `GITHUB_TOKEN`。
+  流水线改为优先使用可选的 `GHCR_TOKEN`（`write:packages` 的 classic PAT），并把原始拒绝翻译成两条可执行
+  处置（包设置里 "Manage Actions access" 加本仓库 Write，或配置 `GHCR_TOKEN`）；镜像构建本身已验证通过。
 
 ### Migration Notes
 
