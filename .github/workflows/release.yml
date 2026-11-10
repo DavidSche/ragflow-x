@@ -127,6 +127,10 @@ jobs:
           cp ../config/config.example.yaml bundle/config/
           cp ../docker/docker-compose.yml ../docker/.env.example ../docker/ragflow-x.yaml bundle/docker/
           cp ../README.md bundle/
+          # CHANGELOG ships with the archive so the supported engine band and the
+          # known-upstream-issue ledger travel with the binaries, not just the
+          # release page.
+          cp ../CHANGELOG.md bundle/
 
           # Package each binary with the shared layout
           for f in ragflow-x-*; do
@@ -268,6 +272,20 @@ jobs:
           TAG="${{ needs.build.outputs.tag }}"
           PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          # Pull the engine-support and upstream-issue blocks straight out of
+          # CHANGELOG.md so the release page can never drift from the shipped
+          # ledger. Each extractor prints the body of one `### <heading>` block,
+          # stopping at the next `### ` heading.
+          changelog_block() {
+            awk -v heading="### $1" '
+              $0 == heading {inside = 1; next}
+              inside && /^### / {exit}
+              inside {print}
+            ' CHANGELOG.md | sed -e '/./,$!d'
+          }
+          SUPPORTED_BLOCK="$(changelog_block 'Supported engine versions')"
+          UPSTREAM_BLOCK="$(changelog_block 'Known upstream issues (RAGFlow v1.0.0)')"
+
           {
             echo "## ragflow-x ${TAG}"
             echo
@@ -277,6 +295,28 @@ jobs:
               git log --no-merges --format='- %s' "${PREV}..${TAG}"
             else
               echo "🎉 首次发版"
+            fi
+            echo
+            echo "---"
+            echo
+            if [ -n "$SUPPORTED_BLOCK" ]; then
+              echo "### 支持的 RAGFlow 引擎版本"
+              echo
+              echo "$SUPPORTED_BLOCK"
+            else
+              echo "### 支持的 RAGFlow 引擎版本"
+              echo
+              echo "已验证带见 CHANGELOG.md 与 README 的引擎兼容矩阵。"
+            fi
+            echo
+            if [ -n "$UPSTREAM_BLOCK" ]; then
+              echo "### 仍在的上游缺陷（RAGFlow v1.0.0）"
+              echo
+              echo "$UPSTREAM_BLOCK"
+            else
+              echo "### 仍在的上游缺陷"
+              echo
+              echo "台账见 CHANGELOG.md「Known upstream issues」与运维 Runbook「已知上游缺陷台账」。"
             fi
             echo
             echo "---"
