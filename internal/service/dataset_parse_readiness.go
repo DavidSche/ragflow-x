@@ -46,10 +46,33 @@ func resolveDatasetEmbeddingReference(models []ragflow.AddedModel, reference str
 			matches = append(matches, candidate)
 		}
 	}
-	if len(matches) != 1 {
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+	// RAGFlow v1.0.0 stores and echoes composite references
+	// ("<name>@<instance>@<provider>") and the same model name is commonly
+	// registered on several instances, so the remaining segments must narrow an
+	// otherwise ambiguous name match instead of failing closed.
+	segments := strings.Split(reference, "@")
+	if len(segments) < 3 || len(matches) == 0 {
 		return ragflow.AddedModel{}, false
 	}
-	return matches[0], true
+	instance := strings.TrimSpace(segments[1])
+	provider := strings.TrimSpace(segments[2])
+	narrowed := make([]ragflow.AddedModel, 0, 1)
+	for _, candidate := range matches {
+		if instance != "" && !strings.EqualFold(candidate.Instance, instance) {
+			continue
+		}
+		if provider != "" && !strings.EqualFold(candidate.Provider, provider) {
+			continue
+		}
+		narrowed = append(narrowed, candidate)
+	}
+	if len(narrowed) != 1 {
+		return ragflow.AddedModel{}, false
+	}
+	return narrowed[0], true
 }
 
 // prepareDatasetParseReadiness validates and repairs the embedding reference

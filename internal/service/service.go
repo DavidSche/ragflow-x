@@ -57,6 +57,11 @@ type Service struct {
 	// quotaReapMu/quotaLastReap throttle stale-reservation sweeps per key/period.
 	quotaReapMu   sync.Mutex
 	quotaLastReap map[string]time.Time
+	// embeddingMu guards the memoized engine default embedding model used when
+	// creating datasets (RAGFlow v1.0.0 requires an explicit embedding_model).
+	embeddingMu         sync.Mutex
+	embeddingModel      string
+	embeddingResolvedAt time.Time
 	// Runner is the in-process async worker (doc/33 A2); nil until SetupWorker.
 	Runner       *Runner
 	RoutePolicy  config.ConversationRouting

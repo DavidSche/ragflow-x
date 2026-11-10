@@ -271,8 +271,13 @@ func (c *liveIngestDroppingClient) IngestDocuments(ctx context.Context, document
 
 // prepareLiveCompilationDataset creates a disposable live dataset with one
 // parsed document bound to the compiler pipeline (shared recovery/budget prep).
+//
+// When parsePipelineID is given, the initial parse runs through that (compiler-
+// less) canvas and the document is re-bound to pipelineID afterwards: the engine
+// compiles products on every ingest, so a drill that needs an empty downstream
+// surface must not parse through the compiler canvas.
 func prepareLiveCompilationDataset(
-	t *testing.T, ctx context.Context, client *ragflow.HTTPClient, pipelineID string,
+	t *testing.T, ctx context.Context, client *ragflow.HTTPClient, pipelineID string, parsePipelineID ...string,
 ) (datasetID, documentID string) {
 	t.Helper()
 	datasetName := fmt.Sprintf("rgx-alert-recovery-%s", id.New()[:8])
@@ -293,9 +298,15 @@ func prepareLiveCompilationDataset(
 			t.Fatal("live compilation drills require qwen3-embedding-0.6b on gpustack-local/OpenAI-API-Compatible")
 		}
 	}
+	// RAGFlow v1.0.0 requires Pipeline-mode datasets to pin a published canvas
+	// version (empty pipeline_version_id -> "version information is missing").
+	pipelineVersion, versionErr := client.PublishPipelineVersion(ctx, pipelineID, datasetName+"-v1", nil)
+	if versionErr != nil {
+		t.Fatalf("publish live drill pipeline version: %v", versionErr)
+	}
 	upstream, err := client.CreateDataset(ctx, ragflow.CreateDatasetRequest{
 		Name: datasetName, EmbeddingModel: embeddingModel,
-		ParseType: 2, PipelineID: pipelineID,
+		ParseType: 2, PipelineID: pipelineID, PipelineVersionID: pipelineVersion.ID,
 	})
 	if err != nil {
 		t.Fatalf("create live drill dataset: %v", err)
@@ -314,8 +325,18 @@ func prepareLiveCompilationDataset(
 	if err != nil {
 		t.Fatalf("create live drill document: %v", err)
 	}
+	bindPipelineID := pipelineID
+	bindVersionID := pipelineVersion.ID
+	if len(parsePipelineID) > 0 && strings.TrimSpace(parsePipelineID[0]) != "" {
+		bindPipelineID = strings.TrimSpace(parsePipelineID[0])
+		parseVersion, parseVersionErr := client.PublishPipelineVersion(ctx, bindPipelineID, datasetName+"-parse-v1", nil)
+		if parseVersionErr != nil {
+			t.Fatalf("publish live drill parse-only pipeline version: %v", parseVersionErr)
+		}
+		bindVersionID = parseVersion.ID
+	}
 	if err := client.UpdateDocumentParseConfig(ctx, upstream.ID, document.ID, ragflow.DocumentParseConfigUpdate{
-		Pipeline: true, PipelineID: pipelineID,
+		Pipeline: true, PipelineID: bindPipelineID, PipelineVersionID: bindVersionID,
 	}); err != nil {
 		t.Fatalf("bind live drill pipeline: %v", err)
 	}
@@ -324,6 +345,13 @@ func prepareLiveCompilationDataset(
 	}
 	if err := waitLiveCompilationDocument(t, ctx, client, upstream.ID, document.ID, 8*time.Minute); err != nil {
 		t.Fatalf("wait for live drill document parse: %v", err)
+	}
+	if bindPipelineID != pipelineID {
+		if err := client.UpdateDocumentParseConfig(ctx, upstream.ID, document.ID, ragflow.DocumentParseConfigUpdate{
+			Pipeline: true, PipelineID: pipelineID, PipelineVersionID: pipelineVersion.ID,
+		}); err != nil {
+			t.Fatalf("re-bind live drill compiler pipeline: %v", err)
+		}
 	}
 	return upstream.ID, document.ID
 }
@@ -374,6 +402,7 @@ func TestLiveCompilationUnknownRecoveryE2E(t *testing.T) {
 	client := ragflow.NewHTTPClient(baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 30*time.Second, 4)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
+	requireLegacyPageIndexBand(t, ctx, client, "unknown recovery")
 	svc, _, tenant, user := newGovernanceFixture(t)
 	svc.RAGFlow = client
 	svc.SetupWorker(fastWorkerConfig())
@@ -543,6 +572,7 @@ func TestLiveCompilationBudgetExhaustedE2E(t *testing.T) {
 	client := ragflow.NewHTTPClient(baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 30*time.Second, 4)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
+	requireLegacyPageIndexBand(t, ctx, client, "budget exhaustion")
 	svc, _, tenant, user := newGovernanceFixture(t)
 	svc.RAGFlow = client
 	svc.SetupWorker(fastWorkerConfig())

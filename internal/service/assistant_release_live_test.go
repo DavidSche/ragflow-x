@@ -205,7 +205,16 @@ func configureLiveDefaultEmbedding(
 			}
 		}
 	}
-	return errors.New("registered default embedding model not found")
+	// RAGFlow v1.0.0 tenants no longer carry a default embedding model (only a
+	// chat default), so fall back to the first registered embedding model and
+	// pin it explicitly instead of failing the drill.
+	if len(models) > 0 {
+		canonical := models[0].ModelID
+		return client.UpdateDatasetConfig(ctx, datasetID, ragflow.DatasetConfigUpdate{
+			EmbeddingModel: &canonical,
+		})
+	}
+	return errors.New("registered embedding model not found")
 }
 
 func liveAssistantReleaseDocumentContent(suffix string) string {

@@ -91,6 +91,84 @@ func (client *liveIngestCountingClient) IngestDocuments(ctx context.Context, doc
 	return client.Client.IngestDocuments(ctx, documentIDs)
 }
 
+// liveCompilationEngineKind resolves a requested RGX compilation kind onto the
+// live engine band without requiring a template group.
+func liveCompilationEngineKind(
+	t *testing.T, ctx context.Context, client ragflow.Client, requested string,
+) CompilationEngineKind {
+	t.Helper()
+	version, err := client.EngineVersion(ctx)
+	if err != nil {
+		t.Fatalf("probe live engine version: %v", err)
+	}
+	return resolveCompilationEngineKind(requested, version)
+}
+
+// liveCompilationEngineTarget resolves a requested RGX compilation kind onto the
+// live engine band (doc/262 §C) and picks a template group whose template config
+// is real (an empty config compiles to zero entities and cannot bind artifacts).
+//
+// On the 1.0+ band page_index is a structure variant: its products are
+// entity/relation rows that neither the artifacts API nor retrieval expose, so
+// the resolution declares wiki as the alternative and the drill asserts that
+// alternative instead of a capability the engine no longer offers.
+func liveCompilationEngineTarget(
+	t *testing.T, ctx context.Context, client ragflow.Client, requested string,
+) (CompilationEngineKind, *ragflow.CompilationTemplateGroup) {
+	t.Helper()
+	resolution := liveCompilationEngineKind(t, ctx, client, requested)
+	t.Logf("live compilation target kind=%s engine_kind=%s band=%s", requested, resolution.EngineKind, resolution.EngineBand)
+	return resolution, liveCompilationTemplateGroupForKind(t, ctx, client, resolution.EngineKind)
+}
+
+// liveCompilationTemplateGroupForKind picks a template group whose template kind
+// matches, preferring a group with a real template config: an empty config
+// compiles to zero entities and cannot bind artifacts.
+func liveCompilationTemplateGroupForKind(
+	t *testing.T, ctx context.Context, client ragflow.Client, kind string,
+) *ragflow.CompilationTemplateGroup {
+	t.Helper()
+	groups, _, err := client.ListCompilationTemplateGroups(ctx, ragflow.CompilationTemplateGroupFilter{
+		Page: 1, PageSize: 100,
+	})
+	if err != nil {
+		t.Fatalf("list live compilation template groups: %v", err)
+	}
+	var emptyConfig *ragflow.CompilationTemplateGroup
+	for index := range groups {
+		for _, template := range groups[index].Templates {
+			if !strings.EqualFold(template.Kind, kind) {
+				continue
+			}
+			candidate := groups[index]
+			if len(template.Config) > 2 {
+				t.Logf("live compilation group kind=%s group=%s config_keys=%d", kind, candidate.ID, len(template.Config))
+				return &candidate
+			}
+			if emptyConfig == nil {
+				emptyConfig = &candidate
+			}
+		}
+	}
+	if emptyConfig != nil {
+		t.Logf("live compilation group kind=%s falls back to %s with an empty template config; extraction will be empty", kind, emptyConfig.ID)
+		return emptyConfig
+	}
+	t.Skipf("live drill requires a compilation template group with kind %q", kind)
+	return nil
+}
+
+// requireLegacyPageIndexBand skips drills that assert the legacy page_index
+// artifact/evidence semantics when the engine band no longer offers them.
+func requireLegacyPageIndexBand(t *testing.T, ctx context.Context, client ragflow.Client, drill string) {
+	t.Helper()
+	resolution := liveCompilationEngineKind(t, ctx, client, model.CompilationKindPageIndex)
+	if resolution.Status == CompilationEngineKindUnsupported {
+		t.Skipf("%s drill asserts legacy page_index semantics that engine %s no longer offers (%s)",
+			drill, resolution.EngineVersion, resolution.Reason)
+	}
+}
+
 func TestLiveCompilationDispatchRaceE2E(t *testing.T) {
 	baseURL := strings.TrimSpace(os.Getenv("RGX_RAGFLOW_LIVE_BASE_URL"))
 	if baseURL == "" {
@@ -105,28 +183,9 @@ func TestLiveCompilationDispatchRaceE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
 
-	groups, _, err := client.ListCompilationTemplateGroups(ctx, ragflow.CompilationTemplateGroupFilter{
-		Page: 1, PageSize: 100,
-	})
-	if err != nil {
-		t.Fatalf("list live compilation template groups: %v", err)
-	}
-	var group *ragflow.CompilationTemplateGroup
-	for index := range groups {
-		for _, template := range groups[index].Templates {
-			if strings.EqualFold(template.Kind, model.CompilationKindPageIndex) {
-				selected := groups[index]
-				group = &selected
-				break
-			}
-		}
-		if group != nil {
-			break
-		}
-	}
-	if group == nil {
-		t.Skip("live dispatch race drill requires a page_index compilation template group")
-	}
+	requireLegacyPageIndexBand(t, ctx, client, "dispatch race")
+	group := liveCompilationTemplateGroupForKind(t, ctx, client, model.CompilationKindPageIndex)
+	runKind := model.CompilationKindPageIndex
 
 	embeddingModel := strings.TrimSpace(os.Getenv("RGX_RAGFLOW_LIVE_EMBEDDING_MODEL"))
 	if embeddingModel == "" {
@@ -235,7 +294,7 @@ func TestLiveCompilationDispatchRaceE2E(t *testing.T) {
 		t.Fatalf("create live dispatch race dataset link: %v", err)
 	}
 	run, err := svc.TriggerCompilationRun(ctx, tenant.ID, user.ID, dataset.ID, CompilationRunTriggerInput{
-		IdempotencyKey: id.New(), Kind: model.CompilationKindPageIndex, DocumentIDs: []string{document.ID},
+		IdempotencyKey: id.New(), Kind: runKind, DocumentIDs: []string{document.ID},
 	})
 	if err != nil {
 		t.Fatalf("trigger live dispatch race run: %v", err)
@@ -358,6 +417,9 @@ func TestLiveCompilationDispatchE2E(t *testing.T) {
 	client := ragflow.NewHTTPClient(baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 30*time.Second, 4)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
+	requireLegacyPageIndexBand(t, ctx, client, "dispatch")
+	runKind := model.CompilationKindPageIndex
+
 	svc, _, tenant, user := newGovernanceFixture(t)
 	svc.RAGFlow = client
 	svc.SetupWorker(fastWorkerConfig())
@@ -422,7 +484,7 @@ func TestLiveCompilationDispatchE2E(t *testing.T) {
 		t.Fatalf("create dataset link: %v", err)
 	}
 	run, err := svc.TriggerCompilationRun(ctx, tenant.ID, user.ID, dataset.ID, CompilationRunTriggerInput{
-		IdempotencyKey: id.New(), Kind: model.CompilationKindPageIndex,
+		IdempotencyKey: id.New(), Kind: runKind,
 		DocumentIDs: []string{document.ID},
 	})
 	if err != nil {
@@ -498,31 +560,14 @@ func TestLiveCompilationCompletedArtifactBindingE2E(t *testing.T) {
 	}
 
 	client := ragflow.NewHTTPClient(baseURL, os.Getenv("RGX_RAGFLOW_LIVE_API_KEY"), 30*time.Second, 4)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	// The compilation runs on a shared live model endpoint: one wiki map/reduce
+	// call is ~40s and queueing can stretch the whole compile well past 20m, so
+	// the drill budget must outlast the upstream compile instead of racing it.
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
 
-	groups, _, err := client.ListCompilationTemplateGroups(ctx, ragflow.CompilationTemplateGroupFilter{
-		Page: 1, PageSize: 100,
-	})
-	if err != nil {
-		t.Fatalf("list live compilation template groups: %v", err)
-	}
-	var group *ragflow.CompilationTemplateGroup
-	for index := range groups {
-		for _, template := range groups[index].Templates {
-			if strings.EqualFold(template.Kind, model.CompilationKindPageIndex) {
-				selected := groups[index]
-				group = &selected
-				break
-			}
-		}
-		if group != nil {
-			break
-		}
-	}
-	if group == nil {
-		t.Skip("live artifact binding drill requires a page_index compilation template group")
-	}
+	engineTarget, group := liveCompilationEngineTarget(t, ctx, client, model.CompilationKindPageIndex)
+	runKind := engineTarget.EngineKind
 
 	embeddingModel := strings.TrimSpace(os.Getenv("RGX_RAGFLOW_LIVE_EMBEDDING_MODEL"))
 	if embeddingModel == "" {
@@ -587,9 +632,16 @@ func TestLiveCompilationCompletedArtifactBindingE2E(t *testing.T) {
 	}
 
 	datasetName := "rgx-artifact-binding-" + suffix
+	// RAGFlow v1.0.0 rejects Pipeline-mode dataset creation without an explicit
+	// pipeline_version_id ("version information is missing"): the canvas must be
+	// published so the dataset pins an immutable snapshot.
+	pipelineVersion, versionErr := client.PublishPipelineVersion(ctx, pipeline.ID, pipelineName, nil)
+	if versionErr != nil {
+		t.Fatalf("publish live artifact binding pipeline: %v", versionErr)
+	}
 	upstream, err := client.CreateDataset(ctx, ragflow.CreateDatasetRequest{
 		Name: datasetName, EmbeddingModel: embeddingModel,
-		ParseType: 2, PipelineID: pipeline.ID,
+		ParseType: 2, PipelineID: pipeline.ID, PipelineVersionID: pipelineVersion.ID,
 	})
 	if err != nil {
 		t.Fatalf("create live artifact binding dataset: %v", err)
@@ -616,7 +668,7 @@ func TestLiveCompilationCompletedArtifactBindingE2E(t *testing.T) {
 	if err := client.IngestDocuments(ctx, []string{document.ID}); err != nil {
 		t.Fatalf("ingest live artifact binding document: %v", err)
 	}
-	if err := waitLiveCompilationDocument(t, ctx, client, upstream.ID, document.ID, 8*time.Minute); err != nil {
+	if err := waitLiveCompilationDocument(t, ctx, client, upstream.ID, document.ID, 25*time.Minute); err != nil {
 		t.Fatalf("wait for live artifact binding document: %v", err)
 	}
 
@@ -631,7 +683,7 @@ func TestLiveCompilationCompletedArtifactBindingE2E(t *testing.T) {
 		t.Fatalf("create live artifact binding dataset link: %v", err)
 	}
 	run, err := svc.TriggerCompilationRun(ctx, tenant.ID, user.ID, dataset.ID, CompilationRunTriggerInput{
-		IdempotencyKey: id.New(), Kind: model.CompilationKindPageIndex, DocumentIDs: []string{document.ID},
+		IdempotencyKey: id.New(), Kind: runKind, DocumentIDs: []string{document.ID},
 	})
 	if err != nil {
 		t.Fatalf("trigger live artifact binding run: %v", err)
@@ -640,7 +692,7 @@ func TestLiveCompilationCompletedArtifactBindingE2E(t *testing.T) {
 		t.Fatalf("dispatch live artifact binding run: %v", err)
 	}
 
-	deadline := time.Now().Add(15 * time.Minute)
+	deadline := time.Now().Add(25 * time.Minute)
 	var confirmed *model.CompilationRun
 	for time.Now().Before(deadline) {
 		if err := svc.ProcessCompilationRuns(ctx, tenant.ID, dataset.ID, ""); err != nil {
@@ -698,29 +750,95 @@ func TestLiveCompilationCompletedArtifactBindingE2E(t *testing.T) {
 		upstream.ID, pipeline.ID, confirmed.ID, len(artifacts), confirmed.State)
 }
 
+// liveParseOnlyPipelineDSL builds the same ingestion graph as the compilation
+// drill canvas minus the Compiler node. Drills use it for the *initial* parse:
+// v1.0.0 compiles wiki products on every ingest, so parsing through the compiler
+// canvas would leave the downstream surface non-empty before the drilled
+// dispatch and turn a genuine "downstream absent" probe into a false confirm.
+// TestLiveParseOnlyPipelineDSLShape keeps the parse-only drill canvas honest
+// without a live host: it must be a valid ingestion graph with no compiler node,
+// otherwise the "empty downstream" precondition of the replacement drill is a lie.
+func TestLiveParseOnlyPipelineDSLShape(t *testing.T) {
+	dsl := liveParseOnlyPipelineDSL("qwen3-embedding-0.6b@gpustack-local@OpenAI-API-Compatible")
+	contract, parsed := inspectCompilationPipelineDSL(dsl)
+	if !parsed {
+		t.Fatalf("parse-only drill canvas is not a valid graph: %+v", contract)
+	}
+	if contractBool(contract, "has_compiler") {
+		t.Fatalf("parse-only drill canvas must not carry a compiler node: %+v", contract)
+	}
+	if !contractBool(contract, "has_parser") || !contractBool(contract, "has_chunker") ||
+		!contractBool(contract, "has_indexer") {
+		t.Fatalf("parse-only drill canvas lost an ingestion stage: %+v", contract)
+	}
+	components, _ := dsl["components"].(map[string]interface{})
+	graph, _ := dsl["graph"].(map[string]interface{})
+	nodes, _ := graph["nodes"].([]interface{})
+	if len(components) != len(nodes) {
+		t.Fatalf("component/graph mismatch: components=%d nodes=%d", len(components), len(nodes))
+	}
+}
+
+func liveParseOnlyPipelineDSL(embeddingModel string) map[string]interface{} {
+	dsl := liveDispatchRacePipelineDSL("%%PARSE_ONLY%%", embeddingModel, "")
+	suffix := ""
+	components, _ := dsl["components"].(map[string]interface{})
+	for key := range components {
+		if strings.HasPrefix(key, "Compiler:") {
+			suffix = strings.TrimPrefix(key, "Compiler:")
+		}
+	}
+	if suffix == "" {
+		return dsl
+	}
+	delete(components, "Compiler:"+suffix)
+	chunker, _ := components["TokenChunker:"+suffix].(map[string]interface{})
+	chunker["downstream"] = []interface{}{"Tokenizer:" + suffix}
+	tokenizer, _ := components["Tokenizer:"+suffix].(map[string]interface{})
+	tokenizer["upstream"] = []interface{}{"TokenChunker:" + suffix}
+	graph, _ := dsl["graph"].(map[string]interface{})
+	nodes, _ := graph["nodes"].([]interface{})
+	filteredNodes := make([]interface{}, 0, len(nodes))
+	for _, node := range nodes {
+		entry, _ := node.(map[string]interface{})
+		if entry["type"] == "compilationNode" || entry["id"] == "Compiler:"+suffix {
+			continue
+		}
+		filteredNodes = append(filteredNodes, node)
+	}
+	graph["nodes"] = filteredNodes
+	edges, _ := graph["edges"].([]interface{})
+	filteredEdges := make([]interface{}, 0, len(edges))
+	for _, edge := range edges {
+		entry, _ := edge.(map[string]interface{})
+		if entry["target"] == "Compiler:"+suffix || entry["source"] == "Compiler:"+suffix {
+			continue
+		}
+		filteredEdges = append(filteredEdges, edge)
+	}
+	filteredEdges = append(filteredEdges, map[string]interface{}{
+		"source": "TokenChunker:" + suffix, "target": "Tokenizer:" + suffix,
+	})
+	graph["edges"] = filteredEdges
+	return dsl
+}
+
 func liveArtifactBindingDocumentContent() string {
+	// Keep the fixture deliberately small: every wiki map/reduce call is a live
+	// LLM round trip on the shared AMD endpoint (~40s each), and the drill only
+	// needs a compiled product that binds to this document. A large fixture makes
+	// the document parse outrun the drill budget instead of testing binding.
 	sections := []string{
 		"Run binding establishes the execution boundary for a knowledge compilation product.",
-		"Every projection must trace to the accepted dispatch manifest before confirmation.",
 		"Content hash binding proves that the stored payload is reproducible from its snapshot.",
-		"The gateway treats unverified evidence as diagnostic only and keeps it out of default retrieval.",
 		"Reconciliation must preserve the source document identity across retries and replicas.",
 		"A stable manifest prevents a completed result from being attached to a newer document set.",
-		"Artifact metadata records the run, kind, source documents, and verification state.",
-		"Failure paths remain explicit so unknown states require human recovery rather than silent resend.",
-		"Post-run validation compares the selected source manifest against the dispatch manifest.",
-		"The completed upstream status is accepted only after the artifact list contains bound rows.",
 		"Chunk-level provenance and rendered output both participate in the payload fingerprint.",
-		"Disposable live drills must clean their pipelines, datasets, and documents after execution.",
-		"The recovery queue exposes unknown age, evidence, and approval state to operators.",
-		"Avoid automatic re-dispatch because an upstream deletion can otherwise become invisible.",
-		"Confirmed runs are downstream evidence, not permission to enable default model routing.",
-		"Tenant boundaries apply to metrics, alerts, queue reads, and recovery probes.",
 	}
 	var builder strings.Builder
 	builder.WriteString("# Artifact Binding Fixture\n\n")
 	for index, section := range sections {
-		builder.WriteString(fmt.Sprintf("## Verification Rule %d\n\n%s The system repeats the rule with source-safe wording so the parser emits multiple grounded chunks. Rule %d is intentionally explicit and deterministic for the live drill.\n\n", index+1, section, index+1))
+		builder.WriteString(fmt.Sprintf("## Verification Rule %d\n\n%s\n\n", index+1, section))
 	}
 	return builder.String()
 }

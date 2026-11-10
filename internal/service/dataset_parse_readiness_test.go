@@ -121,6 +121,27 @@ func TestResolveDatasetEmbeddingReference(t *testing.T) {
 	}
 }
 
+// TestResolveDatasetEmbeddingReferenceCompositeInstance guards the v1.0.0 wire
+// change: datasets echo "<name>@<instance>@<provider>", and the same model name
+// is registered on several instances, so instance/provider must disambiguate
+// instead of the resolver failing closed on a duplicate name.
+func TestResolveDatasetEmbeddingReferenceCompositeInstance(t *testing.T) {
+	models := []ragflow.AddedModel{
+		{ModelID: "embedding-dummy", Name: "qwen3-embedding-0.6b", Instance: "dummy-embedding-local", Provider: "OpenAI-API-Compatible"},
+		{ModelID: "embedding-gpustack", Name: "qwen3-embedding-0.6b", Instance: "gpustack-local", Provider: "OpenAI-API-Compatible"},
+	}
+	resolved, ok := resolveDatasetEmbeddingReference(models, "qwen3-embedding-0.6b@gpustack-local@OpenAI-API-Compatible")
+	if !ok || resolved.ModelID != "embedding-gpustack" {
+		t.Fatalf("composite reference must resolve by instance: %+v ok=%v", resolved, ok)
+	}
+	if _, ok := resolveDatasetEmbeddingReference(models, "qwen3-embedding-0.6b@unknown-instance@OpenAI-API-Compatible"); ok {
+		t.Fatal("composite reference with an unknown instance must not resolve")
+	}
+	if _, ok := resolveDatasetEmbeddingReference(models, "qwen3-embedding-0.6b@gpustack-local@Other-Provider"); ok {
+		t.Fatal("composite reference with a mismatched provider must not resolve")
+	}
+}
+
 func TestUpdateDatasetConfigCanonicalizesEmbeddingModel(t *testing.T) {
 	ctx := context.Background()
 	svc := newAuthzSvc(t)

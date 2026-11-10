@@ -51,28 +51,8 @@ func TestLiveCompilationReplacementRunE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
 
-	groups, _, err := rawClient.ListCompilationTemplateGroups(ctx, ragflow.CompilationTemplateGroupFilter{
-		Page: 1, PageSize: 100,
-	})
-	if err != nil {
-		t.Fatalf("list live compilation template groups: %v", err)
-	}
-	var group *ragflow.CompilationTemplateGroup
-	for index := range groups {
-		for _, template := range groups[index].Templates {
-			if strings.EqualFold(template.Kind, model.CompilationKindPageIndex) {
-				selected := groups[index]
-				group = &selected
-				break
-			}
-		}
-		if group != nil {
-			break
-		}
-	}
-	if group == nil {
-		t.Skip("live replacement run drill requires a page_index compilation template group")
-	}
+	engineTarget, group := liveCompilationEngineTarget(t, ctx, rawClient, model.CompilationKindPageIndex)
+	runKind := engineTarget.EngineKind
 
 	embeddingModel := strings.TrimSpace(os.Getenv("RGX_RAGFLOW_LIVE_EMBEDDING_MODEL"))
 	if embeddingModel == "" {
@@ -136,7 +116,27 @@ func TestLiveCompilationReplacementRunE2E(t *testing.T) {
 		t.Fatalf("live replacement run pipeline is not compilation ready: %+v", contract)
 	}
 
-	upstreamID, documentID := prepareLiveCompilationDataset(t, ctx, rawClient, pipeline.ID)
+	// The source run must observe an EMPTY downstream: v1.0.0 compiles wiki
+	// products on every ingest, so the initial parse deliberately goes through a
+	// compiler-less canvas and the document is re-bound to the compiler pipeline
+	// afterwards (prepareLiveCompilationDataset does the re-bind).
+	parsePipeline, parseErr := rawClient.CreateAgent(ctx, ragflow.CreateAgentRequest{
+		Title: "rgx-replacement-parse-" + suffix, Description: "Disposable parse-only canvas (empty downstream for the no-match probes)",
+		CanvasCategory: "dataflow_canvas",
+		Dsl:            liveParseOnlyPipelineDSL(embeddingModel),
+	})
+	if parseErr != nil {
+		t.Fatalf("create live replacement parse-only pipeline: %v", parseErr)
+	}
+	defer func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		if err := rawClient.DeleteAgent(cleanupCtx, parsePipeline.ID); err != nil {
+			t.Logf("cleanup live replacement parse-only pipeline %s: %v", parsePipeline.ID, err)
+		}
+	}()
+
+	upstreamID, documentID := prepareLiveCompilationDataset(t, ctx, rawClient, pipeline.ID, parsePipeline.ID)
 
 	svc, _, tenant, user := newGovernanceFixture(t)
 	svc.RAGFlow = dropping
@@ -172,7 +172,7 @@ func TestLiveCompilationReplacementRunE2E(t *testing.T) {
 
 	// Phase 1: dropped dispatch -> governed unknown.
 	run, err := svc.TriggerCompilationRun(ctx, tenant.ID, user.ID, dataset.ID, CompilationRunTriggerInput{
-		IdempotencyKey: "live-replacement-" + id.New()[:8], Kind: model.CompilationKindPageIndex,
+		IdempotencyKey: "live-replacement-" + id.New()[:8], Kind: runKind,
 		DocumentIDs: []string{documentID},
 	})
 	if err != nil {

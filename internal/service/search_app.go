@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sort"
 	"strings"
@@ -181,6 +182,9 @@ func (s *Service) CreateSearchApp(ctx context.Context, tenantID, name string, cf
 	if strings.TrimSpace(name) == "" {
 		return nil, httperr.BadRequest(40093, "search app name is required")
 	}
+	if err := validateSearchConfigSelfConsistency(cfg); err != nil {
+		return nil, err
+	}
 	kbIDs, resolveErr := s.resolveSearchKBs(ctx, tenantID, cfg)
 	if resolveErr != nil {
 		return nil, resolveErr
@@ -219,6 +223,9 @@ func (s *Service) UpdateSearchApp(ctx context.Context, tenantID, searchAppID, na
 	}
 	if sa == nil {
 		return nil, httperr.NotFound("search app not found")
+	}
+	if err := validateSearchConfigSelfConsistency(cfg); err != nil {
+		return nil, err
 	}
 	if cfg != nil {
 		kbIDs, resolveErr := s.resolveSearchKBs(ctx, tenantID, cfg)
@@ -418,6 +425,35 @@ func searchConfigEmpty(cfg *ragflow.SearchConfig) bool {
 	return len(cfg.KbIDs) == 0 && len(cfg.DocIDs) == 0 && cfg.SimilarityThreshold == 0 &&
 		cfg.VectorSimilarityWeight == 0 && !cfg.UseKG && cfg.RerankID == "" && cfg.TopK == 0 &&
 		!cfg.Summary && cfg.ChatID == "" && len(cfg.LLMSetting) == 0
+}
+
+// validateSearchConfigSelfConsistency rejects search-config combinations that
+// the engine would silently mis-handle, before they reach RAGFlow (doc/268 §3
+// P2). Pure value-domain checks — no engine round-trip — so failure is
+// deterministic and testable. Ranges mirror RAGFlow search-app semantics
+// (top_k 1..2048, similarity [0,1], weight [0,1]; rerank enabled requires a
+// concrete rerank_id).
+func validateSearchConfigSelfConsistency(cfg *ragflow.SearchConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	const maxTopK = 2048
+	if cfg.TopK > maxTopK {
+		return httperr.BadRequest(40099, fmt.Sprintf("top_k %d exceeds the %d cap", cfg.TopK, maxTopK))
+	}
+	if cfg.TopK < 0 {
+		return httperr.BadRequest(40099, "top_k must not be negative")
+	}
+	if cfg.SimilarityThreshold < 0 || cfg.SimilarityThreshold > 1 {
+		return httperr.BadRequest(40099, "similarity_threshold must be within [0,1]")
+	}
+	if cfg.VectorSimilarityWeight < 0 || cfg.VectorSimilarityWeight > 1 {
+		return httperr.BadRequest(40099, "vector_similarity_weight must be within [0,1]")
+	}
+	if cfg.UseRerank != nil && *cfg.UseRerank && strings.TrimSpace(cfg.RerankID) == "" {
+		return httperr.BadRequest(40099, "rerank requires a rerank_id")
+	}
+	return nil
 }
 
 // MeterSearchCompletion records a real Search App retrieval so the operator
