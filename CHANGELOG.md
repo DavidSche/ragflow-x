@@ -328,9 +328,13 @@
   的前导分隔符被吃掉（`/usr/share/...` 变成 `usr/share/...`），于是任何 Linux 部署只要配置了
   `RGX_EXPORT_PDF_FONT=/usr/share/fonts/...` 就报 `load pdf font: stat usr/share/...: no such file or directory`。
   Windows 上因为 `os.Stat` 容忍混合分隔符而「看起来正常」，这正是缺陷长期未被发现的原因。现改为先
-  `os.ReadFile` 再 `AddUTF8FontFromBytes`，绝对/相对/Windows 路径统一可用，错误信息带出真正尝试的路径；
-  同时把测试里硬编码的 `C:\Windows\Fonts\Deng.ttf` 换成生产同源查找（`testPDFFont`），使 Linux CI
-  （`fonts-noto-cjk`）真正覆盖该路径，而不是静默 skip。
+  `os.ReadFile` 再 `AddUTF8FontFromBytes`，绝对/相对/Windows 路径统一可用，错误信息带出真正尝试的路径。
+  同一轮修掉第二层：Linux 上最常见的 CJK 字体是**集合**（`NotoSansCJK-Regular.ttc`），fpdf 的 UTF8 解析器
+  读不了集合（只打印 `get metrics Error` 并把字体丢掉，最终表现为 `undefined font: cjk`）——新增
+  `extractFirstTTCFace()` 把集合首个 face 重排为独立 sfnt（重写表目录偏移、按 4 字节对齐，表数据原样搬运），
+  并在注册字体后立即 `SetFont` 一次，使字体不可用时当场报错而不是渲染到一半才失败。
+  测试侧把硬编码的 `C:\Windows\Fonts\Deng.ttf` 换成生产同源查找（`testPDFFont`），使 Linux CI
+  （`fonts-noto-cjk`）真正覆盖绝对路径 + 集合字体这两条链路，而不是静默 skip。
 - **依赖工程内部文档的测试在发布仓为显式 skip（发版后补齐）**：`doc/develop`、`doc/runbooks` 不随仓库发布
   （只有 `doc/user/**` 发布），但 `TestREL3ExternalReviewGate`、`TestCompilationRecoveryRunbookLocksTenantSafetyGates`
   与 Prometheus 告警 runbook 存在性检查会去 stat 这些文件，导致检出发布仓后必红。现新增 `internal/engdocs`

@@ -713,14 +713,23 @@ func (s *Service) renderPDF(ctx context.Context, snapshot *model.AnswerSnapshot,
 	// and every Linux deployment fails with "load pdf font: stat usr/share/...".
 	// Reading the file ourselves keeps absolute, relative and Windows paths
 	// working and produces an error that names the path we actually tried.
+	// Collections (.ttc, the common Noto CJK packaging) are unwrapped to their
+	// first face first: fpdf cannot parse a collection.
 	fontBytes, err := os.ReadFile(fontPath)
 	if err != nil {
+		return nil, fmt.Errorf("load pdf font %s: %w", fontPath, err)
+	}
+	if fontBytes, err = sfntFontBytes(fontBytes); err != nil {
 		return nil, fmt.Errorf("load pdf font %s: %w", fontPath, err)
 	}
 	executionSteps := parseExecutionSteps(snapshot.ExecutionJSON)
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 18)
 	pdf.AddUTF8FontFromBytes("cjk", "", fontBytes)
+	// fpdf drops unparsable fonts without setting its error (it only prints), so
+	// select the family once here: a font it refused turns into a clear
+	// "undefined font: cjk" error instead of a mid-render surprise.
+	pdf.SetFont("cjk", "", 10)
 	if err := pdf.Error(); err != nil {
 		return nil, fmt.Errorf("load pdf font %s: %w", fontPath, err)
 	}
