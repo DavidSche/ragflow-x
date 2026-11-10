@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-pdf/fpdf"
@@ -89,15 +90,35 @@ func TestExtractFirstTTCFaceRebuildsStandaloneSfnt(t *testing.T) {
 	}
 }
 
-func TestSfntFontBytesPassesThroughPlainFonts(t *testing.T) {
-	plain := []byte("\x00\x01\x00\x00not-a-collection")
-	out, err := sfntFontBytes(plain)
+func TestSfntFontBytesRequiresTrueTypeOutlines(t *testing.T) {
+	glyfFont := syntheticSfnt(t, "glyf")
+	out, err := sfntFontBytes(glyfFont)
 	if err != nil {
-		t.Fatalf("sfntFontBytes() error = %v", err)
+		t.Fatalf("sfntFontBytes(glyf font) error = %v", err)
 	}
-	if !bytes.Equal(out, plain) {
+	if !bytes.Equal(out, glyfFont) {
 		t.Fatal("plain sfnt font must pass through unchanged")
 	}
+
+	// OpenType/CFF faces (Noto Sans CJK) parse to nothing in fpdf; they must be
+	// rejected up front with an actionable error instead of "undefined font: cjk".
+	cffFont := syntheticSfnt(t, "CFF ")
+	if _, err := sfntFontBytes(cffFont); err == nil {
+		t.Fatal("sfntFontBytes(CFF font) = nil error, want unsupported-outlines rejection")
+	}
+}
+
+// syntheticSfnt builds a minimal single-face sfnt with one table named tag.
+func syntheticSfnt(t *testing.T, tag string) []byte {
+	t.Helper()
+	face := make([]byte, 28+4)
+	copy(face[0:4], []byte("OTTO"))
+	binary.BigEndian.PutUint16(face[4:6], 1)
+	copy(face[12:16], []byte(tag))
+	binary.BigEndian.PutUint32(face[20:24], 28) // record.offset
+	binary.BigEndian.PutUint32(face[24:28], 4)  // record.length
+	copy(face[28:], []byte("data"))
+	return face
 }
 
 func TestExtractFirstTTCFaceRejectsBadInput(t *testing.T) {
@@ -185,5 +206,32 @@ func TestTrueTypeCollectionUnwrapsIntoUsablePDFFont(t *testing.T) {
 	pdf.CellFormat(0, 8, "安全导出 PDF 回退字体", "0", 1, "L", false, 0, "")
 	if err := pdf.Output(&bytes.Buffer{}); err != nil {
 		t.Fatalf("render with unwrapped face: %v", err)
+	}
+}
+
+func TestUsableFontFileFiltersByOutlines(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, data []byte) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		return path
+	}
+	glyf := write("glyf.ttf", syntheticSfnt(t, "glyf"))
+	cff := write("cff.ttf", syntheticSfnt(t, "CFF "))
+	short := write("short.ttf", []byte("xx"))
+
+	if !usableFontFile(glyf) {
+		t.Fatal("font with glyf outlines must be selectable")
+	}
+	if usableFontFile(cff) {
+		t.Fatal("CFF font must be filtered out of the candidate list")
+	}
+	if usableFontFile(short) {
+		t.Fatal("truncated font must be filtered out")
+	}
+	if usableFontFile(filepath.Join(dir, "absent.ttf")) {
+		t.Fatal("missing font must be filtered out")
 	}
 }

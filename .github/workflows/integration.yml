@@ -68,7 +68,12 @@ jobs:
           done
 
       - name: Install CJK fonts (PDF export)
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+        run: |
+          # wqy-zenhei carries TrueType (glyf) outlines, which is what the PDF
+          # renderer can embed. fonts-noto-cjk is CFF/OTTO only and is kept so the
+          # font probe is exercised on a real collection it has to reject.
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk fonts-wqy-zenhei
 
       - name: Run all tests (with PostgreSQL)
         env:

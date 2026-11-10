@@ -677,24 +677,6 @@ func renderDocx(snapshot *model.AnswerSnapshot, projection *model.AuthorizationP
 	return buf.Bytes(), nil
 }
 
-func pdfFontPath() string {
-	if path := strings.TrimSpace(os.Getenv("RGX_EXPORT_PDF_FONT")); path != "" {
-		return path
-	}
-	candidates := []string{
-		`C:\Windows\Fonts\Deng.ttf`,
-		`C:\Windows\Fonts\msyh.ttc`,
-		"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-	}
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	return ""
-}
-
 func (s *Service) renderPDF(ctx context.Context, snapshot *model.AnswerSnapshot, projection *model.AuthorizationProjection, job *model.ExportJob, exportSnapshotID string) ([]byte, error) {
 	if err := ensureAnswerSchemaSupported(snapshot.AnswerSchemaVersion); err != nil {
 		return nil, err
