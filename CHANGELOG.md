@@ -10,6 +10,16 @@
 
 ## [Unreleased]
 
+### 修复
+
+- **并发扫描会互相踩掉对方的运行租约**：手动扫描与手动重建在插入
+  `scanning`/`running` 状态的 run 时没有写 `lease_expires_at`，而下一次扫描开头的
+  陈旧恢复把「无租约」视为历史遗留行直接判失败，于是第二个扫描既拿到了自己的 run，
+  又没能被「同一数据源同时只有一个 run」的闸门拦住（P0 `SC-SYNC-001` 在 CI 上以
+  `success=2 conflict=0` 偶发暴露）。现在两条创建路径在插入时即持租约
+  （`ragflow-sync-worker`，30min），并发闸门恢复确定性；`SC-SYNC-001` 用例改为用
+  上游列举闸门固定交错点，不再依赖调度运气。
+
 下一版本（v0.6.0）已登记、尚未开工：
 
 - **RBAC `contract` 半步（R-27）**：把 `tenant.audit.read` / `tenant.usage.read` /

@@ -62,6 +62,7 @@ type Mock struct {
 	memoryListMessagesFilteredCalls int
 	memoryListMessagesError         error
 	suppressNextMemoryMessages      bool
+	listDatasetsGate                *ListDatasetsGate
 	streamFault                     StreamFault
 	streamFaultCalls                int
 }
@@ -86,6 +87,31 @@ type StreamFault struct {
 	// TransportError makes the mock fail the write path instead of writing an
 	// error frame, modelling a dropped upstream connection.
 	TransportError string
+}
+
+// ListDatasetsGate parks the next ListDatasets call between its data read and
+// its return, so a caller (a resource scan, in practice) can be held open at a
+// point where its side effects are committed but its run is still active.
+//
+// Concurrency contracts such as "a second scan must be rejected while one is
+// running" would otherwise depend on goroutine scheduling: on a fast machine the
+// first scan finishes before the second one starts, and the second scan is then
+// legitimately accepted. Entered and Release make the interleaving explicit.
+type ListDatasetsGate struct {
+	// Entered receives one value when ListDatasets reaches the gate.
+	Entered chan struct{}
+	// Release unblocks ListDatasets once the test has observed the interleaving.
+	Release chan struct{}
+}
+
+// ConfigureListDatasetsGate installs the gate for the next ListDatasets call and
+// returns the previous one so tests can restore it.
+func (m *Mock) ConfigureListDatasetsGate(gate *ListDatasetsGate) *ListDatasetsGate {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	previous := m.listDatasetsGate
+	m.listDatasetsGate = gate
+	return previous
 }
 
 // ConfigureStreamFault installs the fault the next streaming calls reproduce
@@ -353,10 +379,24 @@ func (m *Mock) CreateDataset(ctx context.Context, req CreateDatasetRequest) (*Da
 
 func (m *Mock) ListDatasets(ctx context.Context) ([]Dataset, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	gate := m.listDatasetsGate
+	m.listDatasetsGate = nil
 	out := make([]Dataset, 0, len(m.datasets))
 	for _, ds := range m.datasets {
 		out = append(out, Dataset{ID: ds.id, Name: ds.name, DocumentCount: int64(len(ds.docs))})
+	}
+	m.mu.Unlock()
+	if gate != nil {
+		if gate.Entered != nil {
+			gate.Entered <- struct{}{}
+		}
+		if gate.Release != nil {
+			select {
+			case <-gate.Release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 	}
 	return out, nil
 }
