@@ -170,10 +170,11 @@ func TestTrueTypeCollectionUnwrapsIntoUsablePDFFont(t *testing.T) {
 		"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
 	}
 	var raw []byte
+	var source string
 	for _, path := range candidates {
 		data, err := os.ReadFile(path)
 		if err == nil {
-			raw = data
+			raw, source = data, path
 			t.Logf("collection under test: %s", path)
 			break
 		}
@@ -183,6 +184,9 @@ func TestTrueTypeCollectionUnwrapsIntoUsablePDFFont(t *testing.T) {
 	}
 	if !isTTC(raw) {
 		t.Skip("candidate font is not a collection")
+	}
+	if !usableFontFile(source) {
+		t.Fatalf("usableFontFile(%s) = false for a real, embeddable collection", source)
 	}
 
 	dropped := fpdf.New("P", "mm", "A4", "")
@@ -233,5 +237,51 @@ func TestUsableFontFileFiltersByOutlines(t *testing.T) {
 	}
 	if usableFontFile(filepath.Join(dir, "absent.ttf")) {
 		t.Fatal("missing font must be filtered out")
+	}
+}
+
+// TestUsableFontFileHandlesCollections pins the collection branch of the probe:
+// reading only the 12-byte collection header used to slice past the buffer
+// (slice bounds out of range [:16] with capacity 12) as soon as a .ttc was the
+// first discovered candidate.
+func TestUsableFontFileHandlesCollections(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, data []byte) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		return path
+	}
+	build := func(tableTag string) []byte {
+		face := syntheticSfnt(t, tableTag)
+		offset := ttcHeaderSize + 4
+		out := make([]byte, offset+len(face))
+		copy(out[0:4], []byte(ttcTag))
+		binary.BigEndian.PutUint32(out[4:8], 0x00010000)
+		binary.BigEndian.PutUint32(out[8:12], 1)
+		binary.BigEndian.PutUint32(out[12:16], uint32(offset))
+		copy(out[offset:], face)
+		// The face's single table lives 28 bytes into the face.
+		binary.BigEndian.PutUint32(out[offset+20:offset+24], uint32(offset+28))
+		return out
+	}
+	glyfCollection := write("glyf.ttc", build("glyf"))
+	cffCollection := write("cff.ttc", build("CFF "))
+	headerOnly := write("header-only.ttc", func() []byte {
+		out := make([]byte, ttcHeaderSize)
+		copy(out[0:4], []byte(ttcTag))
+		binary.BigEndian.PutUint32(out[8:12], 1)
+		return out
+	}())
+
+	if !usableFontFile(glyfCollection) {
+		t.Fatal("collection with glyf face must be selectable")
+	}
+	if usableFontFile(cffCollection) {
+		t.Fatal("collection with CFF face must be filtered out")
+	}
+	if usableFontFile(headerOnly) {
+		t.Fatal("truncated collection header must be filtered out, not panic")
 	}
 }
