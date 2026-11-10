@@ -5,7 +5,7 @@
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.2.0-green.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-v0.5.0-green.svg)](./CHANGELOG.md)
 [![Discord](https://img.shields.io/badge/Discord-community-blueviolet?logo=discord&logoColor=white)](https://discord.gg/fnc8Ds9nj)
 ![backend](https://img.shields.io/badge/backend-Go%20%2B%20Gin-informational.svg)
 ![frontend](https://img.shields.io/badge/frontend-React%20%2B%20shadcn--admin--kit-blueviolet.svg)
@@ -33,10 +33,73 @@ unified conversation experience.
 - **Full-lifecycle knowledge system.** Dataset integration, parsing, quality, versioning, publication, consumption, feedback, evaluation, and operations.
 - **Unified conversation center.** A consistent entry point for Chat, Search, and Agent experiences with role-aware routing, citations, rich content, tools, and export.
 - **Production readiness.** Version/capability probing, contract tests, Docker Compose, structured logging, Prometheus, and audit hash-chain verification.
-- **Verified against RAGFlow v1.0.0-rc3.** All 96 gateway endpoints re-verified on the rc3 engine (T6.3); the pinned capability band was raised from 0.27.1 to rc3, and the search-app capability declares its dataset-binding contract.
-- **Citation transparency.** Citations carry ref_index/positions for precise in-document positioning; the conversation center rehydrates citations from the completion-time snapshot (rc3 sessions no longer echo them on read-back).
+- **Verified against RAGFlow v1.0.0 (stable).** All 97 upstream endpoints in the capability registry are pinned to the v1.0.0 engine
+  (re-verified on a live v1.0.0 deployment), and the five real behaviour drifts found on v1.0.0 (dataset-create schema,
+  chat completion route, artifact surface, canvas list, document parse binding) are all fixed and guarded by
+  a declarative *version band → artifact kind* map with fail-closed rejection instead of silent degradation.
+- **Citation transparency.** Citations carry ref_index/positions for precise in-document positioning; the conversation center rehydrates citations from the completion-time snapshot (v1.0.0 sessions no longer echo them on read-back).
 - **Honesty discipline.** Every turn records a structured answerability claim (answerable / confidence / source / abstain reason) on top of the engine's own answer — annotated, never rewritten.
 - **Search-app binding foolproofing.** dataset_ids resolve across link_id / link_name / engine_id with tenant-ownership validation, near-miss library suggestions instead of engine error leaks, and contract-as-documentation error codes (40092/40093/40095).
+
+## What's new in v0.5.0
+
+First release since v0.2.0 — it packages three version lines (v0.3.0 knowledge compilation + enterprise
+memory + governance/UX, v0.4.0 template single-source-of-truth + trial runs, v0.5.0 RBAC hardening +
+upstream RAGFlow v1.0.0 compatibility). See [CHANGELOG.md](./CHANGELOG.md) for the full list.
+
+- **RAGFlow v1.0.0 compatible.** Endpoint pins lifted to `v1.0.0`, five upstream drifts fixed
+  (dataset-create schema, `/chat/completions` route, artifact surface, `compilation_template_group`
+  rows in `/agents`, mandatory `pipeline_version_id` on document re-binding), and a declarative
+  band→artifact-kind map with `422/42261` fail-closed (`page_index` is a structure variant upstream).
+- **Knowledge compilation & enterprise memory** shipped end to end (profile → readiness → run →
+  dispatch → artifact binding → compiled-first retrieval → improvement gate → recovery).
+- **Security hardening.** Custom-role privilege escalation closed, "write implies read" enforced at
+  evaluation, `viewer` reduced to the read-only slice of `business_user` (read inversion 19 → 0),
+  and the previously inert platform fine-grained actions are now real gates.
+- **Governance & evidence.** Release Gate (11 gates), document-level governance projection, precise
+  citation locators, multi-dimensional quota buckets, unified notification event stream, gateway v1
+  contract, and a frozen D1 regression judge that forbids leaking trial runs into release evidence.
+- **Single source of truth for templates**, with trial runs as their own permission resource
+  (`trial-run`) that can never become release evidence.
+- **Evidence on v1.0.0:** `scripts/upstream-verify.sh --full` → 5 passed / 0 failed / 0 skipped.
+
+## Engine compatibility
+
+| RAGFlow engine | Status | Notes |
+|---|---|---|
+| `0.27.x` | Verified band | Legacy baseline; `page_index` compilation artifacts supported |
+| `1.0.0` | **Verified** (2026-11-10) | Pins and live drills re-run; wiki-only compilation artifacts |
+| `> 1.0.0` | `verification_required` | Fail-closed: release creation and capability use require a fresh live contract drill |
+| unparseable / unreachable | `blocked` | Fail-closed on release creation; runtime degrades to the last verified band |
+
+Re-verification procedure: `./scripts/upstream-verify.sh --full` (P1 provider-seam
+contract tests plus the serial `service` E2E suite, opt-in via `RGX_ALLOW_*` flags),
+then archive the evidence. The operator-facing upgrade checklist — including the five
+verified upstream behaviours (dataset `embedding_model`, the moved chat endpoint,
+wiki-only artifacts, `compilation_template_group` rows, `pipeline_version_id` binding) —
+lives in the
+[operations runbook](./doc/user/en/operations-runbook-and-failure-drill-sop.md).
+
+### Known upstream issues on v1.0.0
+
+Defects and unannounced contract changes that are **still open upstream** on the
+verified `1.0.0` band, as observed while running the v0.5.0 verification round
+(2026-11-10). Nothing here is silently degraded: each row is either absorbed by
+an explicit platform behaviour or rejected fail-closed. The machine-readable,
+per-capability view is served at runtime by `GET /api/v1/system/capabilities`
+(`version_issues` + `version_issues_summary`).
+
+| Upstream issue | Effect without a workaround | RAGFlow-X handling |
+|---|---|---|
+| Structured compilation artifacts have no read surface: `GET /datasets/{id}/artifacts` serves only `type_kwd=wiki_page`, and retrieval returns only `compile_kwd=wiki`, although the Compiler still writes `page_index` / `timeline` / `knowledge_graph` rows | Runs succeed but their products can never be listed, bound, or cited | Declarative `engine version → artifact kind` map; non-`wiki` kinds are rejected at trigger time (`422` / `42261`, “use kind `wiki` instead”) instead of producing unreachable artifacts |
+| `POST /auth/login` in the shipped web bundle sends `RSA(base64(password))` while the backend decrypts `RSA(plaintext)` → **code `109` for every browser login** | Engine-admin browser login is unusable | RAGFlow-X never proxies that page: operators authenticate against RAGFlow-X, and engine access uses API keys; the upstream bundle needs a local dist patch if its own UI must be used |
+| Dataset creation requires an explicit `embedding_model`; without it the engine resolves the literal `"0"` and parsing fails with `500 model configuration unavailable` | First parse of a new dataset fails | The platform resolves the tenant's default embedding model (`ListDefaultModels` → `ListModels`, 5-minute TTL) and always sends it |
+| `GET /agents` mixes `type=compilation_template_group` rows into `data.canvas` **and counts them in `total`** | Shadow sync imports template groups as runnable agents; `GET /agents/{id}/versions` on them returns `103 permission to access the agent` | `ListAgents` filters by `type`, keeps rows with no `type` (older engines), and decrements `total` by the filtered count |
+| Re-binding a document to a different canvas fails with `102 pipeline version does not exist / does not belong to canvas X` unless the canvas' published version is named | Pipeline-dataset re-binding and parse-only drills break | `pipeline_version_id` is published (`POST /agents/{id}/publish`) and sent with the binding; older engines ignore the field |
+| [`#21095`](https://github.com/infiniflow/ragflow/issues/21095) — the retrieval `_source` projection drops `source_doc_ids` (community fix PR [#21106](https://github.com/infiniflow/ragflow/pull/21106) still unreviewed) | Citation → chunk mapping is lost on read-back | `ref_index` / `positions` are persisted with the answer and citations are rehydrated from the completion-time snapshot, so positioning survives the dropped field |
+| [`#21097`](https://github.com/infiniflow/ragflow/issues/21097) — `ResponseHeaderTimeout` (20 min) and the stream timeout (60 s) are hardcoded; merged on `main` via [#21434](https://github.com/infiniflow/ragflow/pull/21434) but **not yet in any release tag** | Long compilations and slow LLMs hit upstream timeouts with no knob | Long-running work is driven by the RAGFlow-X scheduler with explicit deadlines and per-run recovery, never by trusting the engine's header timeout |
+| [`#21096`](https://github.com/infiniflow/ragflow/issues/21096) — Windows build breakage in the agent sandbox (`statusFromExitCode`); community fix PR [#21099](https://github.com/infiniflow/ragflow/pull/21099) unreviewed | The upstream sandbox cannot be built on Windows | Not patched: the sandbox runs on Linux only and is governed, never re-implemented, by RAGFlow-X |
+| Graph retrieval, the Memory `team-me` permission model, and the agent `sandbox`/`skills` surface differ from the documented form across 1.0.x builds | Behaviour can drift between patch releases | Tracked as `untested` in the version-issue registry: exercised only in dry runs, never promoted to a release gate on an unverified band |
 
 ## Quick start
 
@@ -68,13 +131,13 @@ docker compose up -d --build
 To use a prebuilt image:
 
 ```bash
-docker pull ghcr.io/davidsche/ragflow-x:v0.2.0
+docker pull ghcr.io/davidsche/ragflow-x:v0.5.0
 ```
 
 Replace the `build:` section in `docker-compose.yml` with:
 
 ```yaml
-image: ghcr.io/davidsche/ragflow-x:v0.2.0
+image: ghcr.io/davidsche/ragflow-x:v0.5.0
 ```
 
 ## User documentation
