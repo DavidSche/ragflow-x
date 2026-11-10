@@ -248,6 +248,9 @@ func (c *ScenarioCatalogue) validateFiles(scenario *Scenario) error {
 		}
 	}
 	if strings.TrimSpace(scenario.ContractSource) != "" {
+		if err := contractSourceShipped(scenario.ContractSource); err != nil {
+			return fmt.Errorf("%s: contract source %q: %w", scenario.ID, scenario.ContractSource, err)
+		}
 		if err := c.ensureRepositoryFile(scenario.ContractSource); err != nil {
 			return fmt.Errorf("%s: contract source %q does not exist: %w", scenario.ID, scenario.ContractSource, err)
 		}
@@ -366,6 +369,22 @@ func (c ScenarioCatalogue) ScenarioIDsByFile() map[string]map[string]struct{} {
 		}
 	}
 	return ids
+}
+
+// contractSourceShipped rejects contract sources that live in the engineering
+// doc tree. Only doc/user/** ships with the repository: a source under
+// doc/develop or a numbered doc/<NNN>-*.md resolves on a developer machine and
+// vanishes in CI, which is exactly how the P0 catalogue gate first went red
+// (scenario catalogue integrity: "contract source ... does not exist"). Keep
+// the check fail-closed instead of skipping the stat when the tree is absent.
+func contractSourceShipped(relativePath string) error {
+	cleanPath := filepath.ToSlash(filepath.Clean(strings.TrimSpace(relativePath)))
+	if cleanPath == "doc" || strings.HasPrefix(cleanPath, "doc/") {
+		if !strings.HasPrefix(cleanPath, "doc/user/") {
+			return fmt.Errorf("engineering docs under doc/ are not shipped with the repository; point contractSource at doc/user/** or at a code path")
+		}
+	}
+	return nil
 }
 
 func (c *ScenarioCatalogue) ensureRepositoryFile(relativePath string) error {
