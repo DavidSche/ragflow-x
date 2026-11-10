@@ -91,20 +91,20 @@ test-pg-contract-keep: ## Same as test-pg-contract but keeps the disposable data
 	go run ./cmd/testcontract-pg -keep
 
 test-pg-release-rollback: ## Run pg_dump/pg_restore release rollback contract (set RGX_TEST_POSTGRES_DSN)
-	go run ./cmd/testcontract-pg -run '^TestPostgresReleaseRollbackContract$' -timeout 10m
+	go run ./cmd/testcontract-pg -run '^TestPostgresReleaseRollbackContract$$' -timeout 10m
 
 test-p0: ## Run P0 scenario regressions selected by TestP0_ naming
 	go test -v -timeout 20m -count=1 -shuffle=on -run '^TestP0_' ./...
 
 test-contract: ## Run API, provider, repository, and streaming contract tests
-	go test -v -timeout 20m -count=1 -shuffle=on -run '^Test.*\(Contract\)$|^TestContract|^TestP0_' ./internal/handler/... ./internal/provider/... ./internal/repository/... ./internal/service/... ./internal/testquality/...
+	go test -v -timeout 20m -count=1 -shuffle=on -run '^Test.*\(Contract\)$$|^TestContract|^TestP0_' ./internal/handler/... ./internal/provider/... ./internal/repository/... ./internal/service/... ./internal/testquality/...
 
 test-operational-contracts: ## Validate alert rules and PostgreSQL operational query plans
-	go test -count=1 -run '^TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds$' ./internal/obs
-	go test -count=1 -run '^TestP0_PG_014_PostgresOperationalQueriesUsePartialIndexes$|^TestP0_PG_015_PostgresOperationalQueriesRemainIndexedAtTenTimesScale$' ./internal/repository
+	go test -count=1 -run '^TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds$$' ./internal/obs
+	go test -count=1 -run '^TestP0_PG_014_PostgresOperationalQueriesUsePartialIndexes$$|^TestP0_PG_015_PostgresOperationalQueriesRemainIndexedAtTenTimesScale$$' ./internal/repository
 
 test-warning-contracts: ## Run opt-in capacity probes that report regressions without blocking merge
-	RGX_QUERY_PLAN_100X_ENABLED=true go test -count=1 -run '^TestP1_PG_016_PostgresOperationalIndexSelectionAtHundredTimesScale$' ./internal/repository
+	RGX_QUERY_PLAN_100X_ENABLED=true go test -count=1 -run '^TestP1_PG_016_PostgresOperationalIndexSelectionAtHundredTimesScale$$' ./internal/repository
 
 test-race: ## Run the full backend suite with race detection
 	CGO_ENABLED=1 go test -race -count=1 -shuffle=on ./...
