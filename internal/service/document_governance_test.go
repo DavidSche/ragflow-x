@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,7 +19,7 @@ import (
 // Returns svc, tenantID, governorID, memberID, datasetLinkID.
 func newGovernanceService(t *testing.T) (*Service, string, string, string, string) {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "gov-svc.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "gov-svc.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -158,7 +157,7 @@ func TestGetResourceSyncArtifactRejectsExpiredLifecycle(t *testing.T) {
 }
 
 func TestGetResourceSyncArtifactFailsClosedWithoutLifecycle(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "lifecycle.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "lifecycle.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

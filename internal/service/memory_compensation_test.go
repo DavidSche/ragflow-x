@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +22,7 @@ func newMemoryCompensationFixture(
 ) (*Service, *gorm.DB, *ragflow.Mock, *model.User, *model.MemoryPolicy, string) {
 	t.Helper()
 	gdb, err := db.Open(config.Database{
-		Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "memory-compensation.db"),
+		Driver: "sqlite", DSN: testSQLiteDSN(t, "memory-compensation.db"),
 	})
 	if err != nil {
 		t.Fatal(err)

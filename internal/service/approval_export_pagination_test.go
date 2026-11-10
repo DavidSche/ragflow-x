@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"path/filepath"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
@@ -58,7 +57,7 @@ func (store *stableExportStore) ListApprovalsByIDs(
 }
 
 func TestP0_APPROVAL_001_ExportUsesStableIDSnapshotPages(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "approval-export.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "approval-export.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

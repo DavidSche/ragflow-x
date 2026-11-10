@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -282,7 +281,7 @@ func TestMemoryRetrievalToolUsesGovernedRuntimeAndRedactsAudit(t *testing.T) {
 
 func newMemoryPolicySvc(t *testing.T) (*Service, *model.Tenant, *model.User) {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "memory-policy.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "memory-policy.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

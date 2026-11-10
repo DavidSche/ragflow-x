@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -185,7 +184,7 @@ func newLiveProjectSharedMemoryFixture(
 		t.Skip("RGX_ALLOW_MEMORY_FIXTURE=1, RGX_ALLOW_MEMORY_DISPATCH_FIXTURE=1 and RGX_ALLOW_MEMORY_E2E_FIXTURE=1 are required")
 	}
 	gdb, err := db.Open(config.Database{
-		Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "memory-member-exit.db"),
+		Driver: "sqlite", DSN: testSQLiteDSN(t, "memory-member-exit.db"),
 	})
 	if err != nil {
 		t.Fatal(err)

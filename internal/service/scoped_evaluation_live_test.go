@@ -74,7 +74,7 @@ func validateScopedEvaluationLiveSamples(samples []scopedEvaluationLiveSample) e
 }
 
 func TestParseScopedEvaluationLiveSamples(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "samples.json")
+	path := testSQLiteDSN(t, "samples.json")
 	samples := make([]scopedEvaluationLiveSample, 0, 20)
 	for index := range 20 {
 		samples = append(samples, scopedEvaluationLiveSample{

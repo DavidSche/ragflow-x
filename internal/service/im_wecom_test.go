@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -178,7 +177,7 @@ func TestExecuteWeComQuestionUsesGatewayAndSendsCitationSummary(t *testing.T) {
 	defer apiServer.Close()
 
 	ctx := context.Background()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "wecom.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "wecom.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

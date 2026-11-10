@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,7 +16,7 @@ import (
 
 // ScenarioID: SC-TENANT-001
 func TestP0_TENANT_001_DatasetExportRejectsOverLimitResults(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "dataset-export.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "dataset-export.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -14,7 +13,7 @@ import (
 
 func newChatTestService(t *testing.T) (*Service, repository.Store, *ragflow.Mock) {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "chat.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "chat.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

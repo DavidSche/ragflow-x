@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -16,7 +15,7 @@ import (
 
 func newAuthzSvc(t *testing.T) *Service {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "a.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "a.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -19,7 +18,7 @@ import (
 // real mock provider, mirroring the agent_attachment_test setup.
 func newPushdownTestService(t *testing.T) (*Service, *model.Tenant) {
 	t.Helper()
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "pushdown.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "pushdown.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

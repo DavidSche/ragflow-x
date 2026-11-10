@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -293,7 +292,7 @@ func TestP0_NETPOLICY_001_GatewayRedirectsFollowProviderNetworkPolicy(t *testing
 
 // ScenarioID: SC-AUTH-001
 func TestP0_AUTH_001_RefreshTokenRotationIsAtomicUnderConcurrency(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "refresh.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: testSQLiteDSN(t, "refresh.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
