@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -47,14 +46,11 @@ func TestExportJobRetryRequiresFailedOwnedJob(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	pdfFont := filepath.Join(`C:\Windows\Fonts`, "Deng.ttf")
-	if _, err := os.Stat(pdfFont); err != nil {
-		t.Skip("valid CJK PDF font is unavailable")
-	}
+	pdfFont := testPDFFont(t)
 	t.Setenv("RGX_EXPORT_PDF_FONT", pdfFont)
 	retried, err := svc.RetryExportJob(ctx, admin.ID, tenant.ID, created.ID, "trace-export-retry-2")
-	if err != nil || retried.Job.Status != model.ExportJobSucceeded || retried.Artifact == nil {
-		t.Fatalf("retry export: job=%+v artifact=%+v err=%v", retried.Job, retried.Artifact, err)
+	if err != nil || retried == nil || retried.Job.Status != model.ExportJobSucceeded || retried.Artifact == nil {
+		t.Fatalf("retry export: retried=%+v err=%v", retried, err)
 	}
 	if retried.Job.TraceID != "trace-export-retry-2" || retried.Job.ErrorCode != "" {
 		t.Fatalf("retry did not refresh lifecycle evidence: %+v", retried.Job)

@@ -4,9 +4,14 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/ragflow-x/ragflow-x/internal/engdocs"
 )
 
 func TestCompilationRecoveryRunbookLocksTenantSafetyGates(t *testing.T) {
+	if !engdocs.PresentFromWorkingDirectory() {
+		t.Skipf("compilation recovery runbook lives in the engineering doc tree: %s", engdocs.SkipReason)
+	}
 	raw, err := os.ReadFile("../../doc/runbooks/CompilationUpstreamRecoveryRunbook.md")
 	if err != nil {
 		t.Fatalf("read compilation recovery runbook: %v", err)

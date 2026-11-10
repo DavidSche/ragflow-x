@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -207,6 +206,10 @@ func TestConversationExportRendersAllAuthorizedAnswers(t *testing.T) {
 			t.Fatalf("conversation export missing %q: %s", expected, exported)
 		}
 	}
+	// The conversation export covers both PDF and DOCX; the PDF leg is what
+	// proves the renderer accepts an absolute font path on Linux, so it must run
+	// with a real font instead of being skipped on every non-Windows runner.
+	t.Setenv("RGX_EXPORT_PDF_FONT", testPDFFont(t))
 	for _, format := range []string{model.ExportFormatDOCX, model.ExportFormatPDF} {
 		document, err := svc.CreateExportForAnswer(ctx, admin.ID, tenant.ID, ExportRequest{
 			AnswerSnapshotID: second.Snapshot.ID, Format: format,
@@ -328,20 +331,17 @@ func TestAnswerExportSnapshotJobAndDownloadAudit(t *testing.T) {
 	if !strings.Contains(documentXML, "RAGFlow-X Business Answer") || !strings.Contains(documentXML, answer.Snapshot.ID) {
 		t.Fatalf("docx content missing canonical answer: %s", documentXML)
 	}
-	pdfFont := filepath.Join(`C:\Windows\Fonts`, "Deng.ttf")
-	if _, err := os.Stat(pdfFont); err == nil {
-		t.Setenv("RGX_EXPORT_PDF_FONT", pdfFont)
-		pdf, err := svc.CreateExportForAnswer(ctx, admin.ID, tenant.ID, ExportRequest{
-			AnswerSnapshotID: answer.Snapshot.ID, Format: model.ExportFormatPDF,
-			IdempotencyKey: "export-key-pdf", TraceID: "trace-pdf",
-		})
-		if err != nil || pdf.Job.Status != model.ExportJobSucceeded {
-			t.Fatalf("create pdf export: %v", err)
-		}
-		pdfContent, err := os.ReadFile(pdf.Artifact.FileRef)
-		if err != nil || !strings.HasPrefix(string(pdfContent), "%PDF-") {
-			t.Fatalf("invalid pdf artifact: %v", err)
-		}
+	t.Setenv("RGX_EXPORT_PDF_FONT", testPDFFont(t))
+	pdf, err := svc.CreateExportForAnswer(ctx, admin.ID, tenant.ID, ExportRequest{
+		AnswerSnapshotID: answer.Snapshot.ID, Format: model.ExportFormatPDF,
+		IdempotencyKey: "export-key-pdf", TraceID: "trace-pdf",
+	})
+	if err != nil || pdf.Job.Status != model.ExportJobSucceeded {
+		t.Fatalf("create pdf export: %v", err)
+	}
+	pdfContent, err := os.ReadFile(pdf.Artifact.FileRef)
+	if err != nil || !strings.HasPrefix(string(pdfContent), "%PDF-") {
+		t.Fatalf("invalid pdf artifact: %v", err)
 	}
 	download, err := svc.OpenExportArtifact(ctx, admin.ID, tenant.ID, first.Artifact.ID, "trace-download")
 	if err != nil || download.Path != first.Artifact.FileRef {

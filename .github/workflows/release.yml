@@ -206,7 +206,13 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ github.token }}
+          # The `ragflow-x` container package predates this repository's Actions
+          # (v0.2.x images were pushed by hand), so it does not grant the repo's
+          # GITHUB_TOKEN write access and the push is refused with
+          # `denied: permission_denied: write_package`. Setting a GHCR_TOKEN
+          # secret (classic PAT with write:packages) works around the one-time
+          # "Manage Actions access" step in the package settings.
+          password: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || github.token }}
 
       - name: Compute image tags (ghcr requires lowercase)
         id: tags
@@ -229,6 +235,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
+        id: buildpush
+        continue-on-error: true
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -240,6 +248,29 @@ jobs:
             VERSION=${{ needs.build.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # A raw `denied: permission_denied: write_package` gives an operator
+      # nothing to act on, and this job is the last leg of a release that has
+      # already published its artifacts. Turn it into the two real remedies.
+      - name: Explain container registry refusal
+        if: steps.buildpush.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          PACKAGE="${GITHUB_REPOSITORY#*/}"
+          cat >&2 <<MSG
+          ::error title=ghcr push denied::The image was built but ghcr.io refused the push.
+          The container package '${PACKAGE}' already exists under a namespace that does not
+          grant this repository's GITHUB_TOKEN write access, which surfaces as
+          'denied: permission_denied: write_package'.
+
+          Fix it once, either way:
+            1. https://github.com/users/${GITHUB_REPOSITORY_OWNER}/packages/container/${PACKAGE}/settings
+               -> "Manage Actions access" -> add repository ${GITHUB_REPOSITORY} with role Write;
+            2. or add a GHCR_TOKEN repository secret holding a classic PAT with write:packages.
+
+          Then re-run this workflow: Actions -> Release -> Run workflow (version=${GITHUB_REF_NAME:-see tag}).
+          MSG
+          exit 1
 
   release:
     needs: build

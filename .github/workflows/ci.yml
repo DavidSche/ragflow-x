@@ -78,7 +78,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
@@ -110,8 +110,9 @@ jobs:
           # TestPermissionMatrixDocSync read doc/user, which was untracked; that
           # document now ships with the repository, so the package is covered.
           pkgs=$(go list ./... | grep -v -e '/internal/db')
-          # internal/service 包头重 ~13min；默认单包超时 10m 会误杀，显式放宽
-          go test -v -count=1 -shuffle=on -timeout 20m $pkgs 2>&1 | tee test-results/unit.log || {
+          # internal/service 包头重：本地 ~13min，2 vCPU runner 上 ~20min+；
+          # 默认单包超时 10m 会误杀。这里放宽到 30m，job 上限同步到 60m。
+          go test -v -count=1 -shuffle=on -timeout 30m $pkgs 2>&1 | tee test-results/unit.log || {
             echo "## go-build unit tests failed" >> "$GITHUB_STEP_SUMMARY"
             grep -E '^--- FAIL' test-results/unit.log | head -120 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
             grep -A 80 -E '^--- FAIL' test-results/unit.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true

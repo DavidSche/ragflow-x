@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/ragflow-x/ragflow-x/internal/engdocs"
 )
 
 // Report is the REL-003 validation report written next to the evidence.
@@ -150,6 +152,11 @@ func TestREL3ExternalReviewGate(t *testing.T) {
 	root, err := RepoRoot()
 	if err != nil {
 		t.Fatalf("repo root: %v", err)
+	}
+	if !EngineeringDocsPresent(root) {
+		plan, _ := docPaths(root)
+		t.Skipf("engineering plan/status docs are not shipped (%s missing); %s",
+			strings.TrimPrefix(plan, root+string(filepath.Separator)), engdocs.SkipReason)
 	}
 	symbols := collectTestSymbols(t, root)
 

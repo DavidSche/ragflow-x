@@ -707,12 +707,22 @@ func (s *Service) renderPDF(ctx context.Context, snapshot *model.AnswerSnapshot,
 	if fontPath == "" {
 		return nil, httperr.New(400, 40132, "pdf renderer requires RGX_EXPORT_PDF_FONT")
 	}
+	// Load the font bytes here instead of handing the path to fpdf: fpdf joins
+	// the file name with its font directory (default "."), so an absolute font
+	// path loses its leading separator (`/usr/share/...` becomes `usr/share/...`)
+	// and every Linux deployment fails with "load pdf font: stat usr/share/...".
+	// Reading the file ourselves keeps absolute, relative and Windows paths
+	// working and produces an error that names the path we actually tried.
+	fontBytes, err := os.ReadFile(fontPath)
+	if err != nil {
+		return nil, fmt.Errorf("load pdf font %s: %w", fontPath, err)
+	}
 	executionSteps := parseExecutionSteps(snapshot.ExecutionJSON)
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetAutoPageBreak(true, 18)
-	pdf.AddUTF8Font("cjk", "", fontPath)
+	pdf.AddUTF8FontFromBytes("cjk", "", fontBytes)
 	if err := pdf.Error(); err != nil {
-		return nil, fmt.Errorf("load pdf font: %w", err)
+		return nil, fmt.Errorf("load pdf font %s: %w", fontPath, err)
 	}
 	pdf.SetHeaderFunc(func() {
 		pdf.SetFont("cjk", "", 8)

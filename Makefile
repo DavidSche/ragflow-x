@@ -112,7 +112,7 @@ test-race: ## Run the full backend suite with race detection
 test-coverage: ## Generate Go coverage profile
 	@mkdir -p test-results
 	set -o pipefail; \
-	go test -timeout 20m -json -count=1 -shuffle=on -coverpkg=./... -coverprofile=test-results/go-coverage.out -covermode=atomic ./... | tee test-results/go-test.json
+	go test -timeout 30m -json -count=1 -shuffle=on -coverpkg=./... -coverprofile=test-results/go-coverage.out -covermode=atomic ./... | tee test-results/go-test.json
 	go tool cover -html=test-results/go-coverage.out -o test-results/go-coverage.html
 
 test-frontend-coverage: ## Generate frontend coverage report

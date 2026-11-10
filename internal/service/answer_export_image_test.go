@@ -6,8 +6,6 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -90,11 +88,7 @@ func pdfImageAnswer(t *testing.T, svc *Service, ctx context.Context, name, conte
 
 func pdfImageRender(t *testing.T, svc *Service, ctx context.Context, answer *AnswerDeliveryResult) []byte {
 	t.Helper()
-	pdfFont := filepath.Join(`C:\Windows\Fonts`, "Deng.ttf")
-	if _, err := os.Stat(pdfFont); err != nil {
-		t.Skip("valid CJK PDF font is unavailable")
-	}
-	t.Setenv("RGX_EXPORT_PDF_FONT", pdfFont)
+	t.Setenv("RGX_EXPORT_PDF_FONT", testPDFFont(t))
 	job := &model.ExportJob{
 		TenantID: answer.Snapshot.TenantID, Format: model.ExportFormatPDF,
 		TemplateVersion: 1, PolicyVersion: "test-policy",
