@@ -161,11 +161,14 @@ func TestExtractFirstTTCFaceRejectsBadInput(t *testing.T) {
 
 // TestTrueTypeCollectionUnwrapsIntoUsablePDFFont proves the whole point of the
 // extractor: fpdf rejects a collection but accepts the face we rebuild. It runs
-// wherever a real collection exists (Linux CI: Noto CJK; Windows: Microsoft
-// YaHei) and skips otherwise.
+// wherever a real collection with TrueType outlines exists (Windows: Microsoft
+// YaHei, Linux: WenQuanYi) and skips otherwise. A CFF collection (Noto Sans CJK)
+// is asserted to be rejected by the probe, since fpdf cannot embed CFF at all.
 func TestTrueTypeCollectionUnwrapsIntoUsablePDFFont(t *testing.T) {
 	candidates := []string{
 		`C:\Windows\Fonts\msyh.ttc`,
+		"/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+		"/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
 		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 		"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
 	}
@@ -185,6 +188,17 @@ func TestTrueTypeCollectionUnwrapsIntoUsablePDFFont(t *testing.T) {
 	if !isTTC(raw) {
 		t.Skip("candidate font is not a collection")
 	}
+
+	face, err := extractFirstTTCFace(raw)
+	if err != nil {
+		t.Fatalf("extractFirstTTCFace() error = %v", err)
+	}
+	if !hasTrueTypeOutlines(face) {
+		if usableFontFile(source) {
+			t.Fatalf("usableFontFile(%s) = true for a CFF-only face fpdf cannot embed", source)
+		}
+		t.Skipf("%s is a CFF/OTTO collection; the probe must (and does) reject it", source)
+	}
 	if !usableFontFile(source) {
 		t.Fatalf("usableFontFile(%s) = false for a real, embeddable collection", source)
 	}
@@ -196,10 +210,6 @@ func TestTrueTypeCollectionUnwrapsIntoUsablePDFFont(t *testing.T) {
 		t.Log("fpdf accepted the raw collection; the unwrap is then a no-op for this font")
 	}
 
-	face, err := extractFirstTTCFace(raw)
-	if err != nil {
-		t.Fatalf("extractFirstTTCFace() error = %v", err)
-	}
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes("cjk", "", face)
 	pdf.SetFont("cjk", "", 10)
