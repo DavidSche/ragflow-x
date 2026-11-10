@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-09T00:00:00Z",
-  "nextReviewAt": "2026-10-09T00:00:00Z",
+  "generatedAt": "2026-11-11T00:00:00Z",
+  "nextReviewAt": "2026-12-11T00:00:00Z",
   "records": [
     {
       "scenarioId": "SC-TENANT-001",
@@ -13,7 +13,7 @@
       "expectedFailure": "cross-tenant governance request succeeds",
       "actualResult": "the registered P0 regression fails the mutant by denying the request",
       "mutationSurvived": false,
-      "reviewedAt": "2026-09-09T00:00:00Z"
+      "reviewedAt": "2026-11-11T00:00:00Z"
     },
     {
       "scenarioId": "SC-AUTHZ-001",
@@ -23,9 +23,9 @@
       "target": "permission",
       "mutation": "bypass authorization before resolving the governance target",
       "expectedFailure": "unauthorized actor can access another tenant",
-      "actualResult": "the registered P0 regression fails the mutant with authorization denial",
+      "actualResult": "disabling the cross-tenant gate fails the workspace-actor deny subtest with 200 instead of 403 (2026-11-11 review: the allow-path case previously sent no JSON content type, so the gate was never entered)",
       "mutationSurvived": false,
-      "reviewedAt": "2026-09-09T00:00:00Z"
+      "reviewedAt": "2026-11-11T00:00:00Z"
     },
     {
       "scenarioId": "SC-APPROVAL-001",
@@ -37,7 +37,7 @@
       "expectedFailure": "self approval transition succeeds",
       "actualResult": "the registered P0 regression fails the mutant by rejecting self approval",
       "mutationSurvived": false,
-      "reviewedAt": "2026-09-09T00:00:00Z"
+      "reviewedAt": "2026-11-11T00:00:00Z"
     },
     {
       "scenarioId": "SC-AUDIT-001",
@@ -49,7 +49,7 @@
       "expectedFailure": "tenant audit tail is missing or mutable",
       "actualResult": "the registered P0 regression fails the mutant on audit integrity assertions",
       "mutationSurvived": false,
-      "reviewedAt": "2026-09-09T00:00:00Z"
+      "reviewedAt": "2026-11-11T00:00:00Z"
     },
     {
       "scenarioId": "SC-QUOTA-001",
@@ -61,7 +61,7 @@
       "expectedFailure": "concurrent requests overshoot quota",
       "actualResult": "the registered P0 regression fails the mutant on concurrent no-overshoot assertions",
       "mutationSurvived": false,
-      "reviewedAt": "2026-09-09T00:00:00Z"
+      "reviewedAt": "2026-11-11T00:00:00Z"
     },
     {
       "scenarioId": "SC-IDEM-001",
@@ -73,7 +73,7 @@
       "expectedFailure": "provider side effect executes twice",
       "actualResult": "the registered P0 regression fails the mutant on provider call count",
       "mutationSurvived": false,
-      "reviewedAt": "2026-09-09T00:00:00Z"
+      "reviewedAt": "2026-11-11T00:00:00Z"
     },
     {
       "scenarioId": "SC-NETPOLICY-001",
@@ -85,7 +85,7 @@
       "expectedFailure": "SSRF-shaped provider URL is accepted",
       "actualResult": "the registered P0 regression fails the mutant with URL validation denial",
       "mutationSurvived": false,
-      "reviewedAt": "2026-09-09T00:00:00Z"
+      "reviewedAt": "2026-11-11T00:00:00Z"
     },
     {
       "scenarioId": "SC-SSE-001",
@@ -97,7 +97,7 @@
       "expectedFailure": "cancelled stream continues consuming the provider response",
       "actualResult": "the registered P0 regression fails the mutant on cancellation assertions",
       "mutationSurvived": false,
-      "reviewedAt": "2026-09-09T00:00:00Z"
+      "reviewedAt": "2026-11-11T00:00:00Z"
     }
   ]
 }

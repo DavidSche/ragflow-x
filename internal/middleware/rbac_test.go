@@ -13,6 +13,7 @@ import (
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 	"github.com/ragflow-x/ragflow-x/internal/service"
@@ -81,7 +82,15 @@ func TestP0_AUTHZ_001_RBACEnforcesGovernanceApprovalContract(t *testing.T) {
 }
 
 // ScenarioID: SC-AUTHZ-001
+// Both directions live under one recorded test name: the mutation sample runs
+// -run '^TestP0_AUTHZ_001_RBACRejectsCrossTenantGovernanceTarget$', so a deny case
+// filed under a different name would never be exercised by the mutation review.
 func TestP0_AUTHZ_001_RBACRejectsCrossTenantGovernanceTarget(t *testing.T) {
+	t.Run("platform_admin_reaches_approval_protocol", testAuthzCrossTenantPlatformAdminPath)
+	t.Run("workspace_actor_is_denied", testAuthzCrossTenantWorkspaceActorDenied)
+}
+
+func testAuthzCrossTenantPlatformAdminPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := newRBACService(t)
 	svc.SetApprovalConfig(config.Approval{Enabled: true})
@@ -107,13 +116,64 @@ func TestP0_AUTHZ_001_RBACRejectsCrossTenantGovernanceTarget(t *testing.T) {
 	r.POST("/api/v1/datasets", func(c *gin.Context) { c.Header("X-Test-Handler", "1"); c.Status(http.StatusOK) })
 
 	body, _ := json.Marshal(map[string]string{"target_tenant_id": workspace.ID})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets", bytes.NewReader(body))
+	// Without the JSON content type governanceTargetTenant never parses the body,
+	// so the cross-tenant gate is skipped and this case asserted nothing.
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/datasets", bytes.NewReader(body)))
+	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("authorized platform cross-tenant route gate should pass to approval protocol, got %d: %s", w.Code, w.Body.String())
 	}
 	if got := w.Header().Get("X-Test-Handler"); got == "" {
 		t.Fatal("handler should receive request after cross-tenant route gate")
+	}
+}
+
+// The allow path only proves a platform admin reaches the approval protocol.
+// Nothing asserted the deny path, so removing the cross-tenant gate entirely kept
+// every P0 test green (found while re-running the mutation sample).
+func testAuthzCrossTenantWorkspaceActorDenied(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := newRBACService(t)
+	svc.SetApprovalConfig(config.Approval{Enabled: true})
+	home, err := svc.CreateTenant(t.Context(), "Home Workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := svc.CreateTenant(t.Context(), "Other Workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor, err := svc.CreateUser(t.Context(), home.ID, "", service.CreateUserRequest{
+		Username: "workspace-admin", Password: "secret123", Role: model.RoleTenantAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := []Rule{
+		{Method: "POST", Path: "/api/v1/datasets", Action: "manage", Resource: "dataset",
+			RequiresApproval: true, ActingContextRequired: true, SupportsCrossTenantWrite: true},
+	}
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Set(ContextUserID, actor.ID)
+		c.Set(ContextTenantID, actor.TenantID)
+		c.Next()
+	})
+	r.Use(RBAC(svc, rules))
+	r.POST("/api/v1/datasets", func(c *gin.Context) { c.Header("X-Test-Handler", "1"); c.Status(http.StatusOK) })
+
+	body, _ := json.Marshal(map[string]string{"target_tenant_id": other.ID})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("workspace actor must not reach another workspace's governed write, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("X-Test-Handler"); got != "" {
+		t.Fatal("handler must not run for a denied cross-tenant write")
 	}
 }
 

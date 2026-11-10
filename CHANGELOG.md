@@ -44,6 +44,12 @@
 - **覆盖率趋势把「没测到」记成 0%**：前端覆盖率文件缺失时，趋势报告把它当成 0% 覆盖并判定
   `web/src` 回归，nightly 因此失败在一份从未采集的证据上。现在缺失的输入记为
   `skipped`（含原因）并把该 scope 从本轮快照里排除，只对真正测到的数据做回归比较。
+- **`SC-AUTHZ-001` 的跨租户门禁从来没被真正进入过**：用例把目标工作区放在 JSON body 里，
+  却没设 `Content-Type: application/json`，`governanceTargetTenant` 直接按「无目标」返回，
+  门禁整段被跳过——把跨租户门禁整个删掉，全部 P0 仍然绿。2026-11-11 复核变异样本时发现，
+  现在补上 content type 并新增「工作区管理员不得跨租户」的拒绝路径（与放行路径同名、子用例区分，
+  否则 `-run '^TestP0_AUTHZ_001_RBACRejectsCrossTenantGovernanceTarget$'` 的变异复核永远走不到它），
+  8 条变异样本重跑后全部被杀死，样本复核期顺延到 2026-12-11。
 - **RBAC 资源作用域解析缺测试**：`internal/router` 的 `resolve*Scope` 只在完整 HTTP 旅程里被间接走到，
   「从真实行里取 project/user 作用域」的分支从未执行，nightly 覆盖率趋势记录该包从 90.69% 掉到 84.60%。
   新增 3 组直调用例（行缺失/行存在/存储故障），包覆盖率回到 95.9%。
