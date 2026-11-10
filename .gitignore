@@ -84,8 +84,15 @@ tmp/
 # Development docs and local test data: intentionally untracked until each
 # file is reviewed for release (see doc/126 pre-release review report).
 # Do NOT add these back in bulk; whitelist individual files after review.
-/doc/
+/doc/*
 /test/
+# Exception (v0.5.0): the user-facing documentation set under doc/user/ is part
+# of the release (README links into it) and is tracked. Everything else under
+# doc/ (develop/, blog/, performance/, VIDEOS) stays local-only.
+!/doc/user/
+# Demo videos are large binaries hosted as release assets, not repository
+# content; the markdown guides reference ./images/ only.
+/doc/user/videos/
 
 # Local build artifacts that keep landing in the repo root
 /ragflow-x
