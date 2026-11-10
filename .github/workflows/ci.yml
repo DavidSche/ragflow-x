@@ -104,6 +104,11 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p test-results
+          # /internal/db is excluded from the cross-platform matrix here (SQLite
+          # temp-file behaviour differs on Windows/macOS) and runs once on Linux
+          # in the next step. It used to be excluded everywhere because
+          # TestPermissionMatrixDocSync read doc/user, which was untracked; that
+          # document now ships with the repository, so the package is covered.
           pkgs=$(go list ./... | grep -v -e '/internal/db')
           # internal/service 包头重 ~13min；默认单包超时 10m 会误杀，显式放宽
           go test -v -count=1 -shuffle=on -timeout 20m $pkgs 2>&1 | tee test-results/unit.log || {
@@ -114,6 +119,19 @@ jobs:
             grep -E '^[[:space:]]+/?[^ ]+_test\.go:[0-9]+:' test-results/unit.log | head -150 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
             grep -E '^(panic:|FAIL|ok .*FAIL)' test-results/unit.log | head -60 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
             tail -40 test-results/unit.log | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            exit 1
+          }
+
+      - name: Run database, migration and docs-sync tests (Linux only)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          go test -v -count=1 -timeout 15m ./internal/db 2>&1 | tee test-results/db.log || {
+            echo "## database / migration tests failed" >> "$GITHUB_STEP_SUMMARY"
+            grep -E '^--- FAIL' test-results/db.log | head -60 | awk '{print "::error title=F" NR "::" $0}' || true
+            tail -40 test-results/db.log | awk '{print "::error title=D" NR "::" $0}' || true
             exit 1
           }
 
