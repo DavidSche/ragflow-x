@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestMigrationV123KnowledgeStrategy(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "knowledge-strategy.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "knowledge-strategy.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +32,7 @@ func TestMigrationV123KnowledgeStrategy(t *testing.T) {
 }
 
 func TestMigrationV124KnowledgeCapabilityProbe(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "knowledge-probe.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "knowledge-probe.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

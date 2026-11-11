@@ -1,12 +1,12 @@
 package router
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/handler"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/jwt"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/ratelimit"
@@ -17,7 +17,7 @@ import (
 
 // ScenarioID: SC-APPROVAL-001
 func TestP0_APPROVAL_001_ApprovalRoutesMatchAccessRules(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "approval-routes.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "approval-routes.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/handler"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/jwt"
@@ -48,7 +49,7 @@ func newTestApp(t *testing.T) *testApp {
 		App:    config.App{JWTSecret: "test-secret", JWTExpireHours: 24},
 		Database: config.Database{
 			Driver: "sqlite",
-			DSN:    filepath.Join(t.TempDir(), "test.db"),
+			DSN:    dbtest.SQLiteDSN(t, "test.db"),
 		},
 		RAGFlow: config.RAGFlow{Provider: "mock"},
 	}

@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
 	"gorm.io/gorm"
@@ -219,7 +218,7 @@ func TestMigrationV161IsReentrant(t *testing.T) {
 
 func openMigratedRBACDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "rbac-intent.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "rbac-intent.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

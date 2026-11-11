@@ -2,7 +2,6 @@ package db
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 )
 
 func TestEnterpriseConnectionReferenceContractSQLite(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "enterprise-contracts.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "enterprise-contracts.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

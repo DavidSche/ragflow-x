@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -19,7 +18,7 @@ func TestDocumentGovernanceMigrationCreatesTables(t *testing.T) {
 	if LatestMigrationVersion() < 150 {
 		t.Fatalf("latest migration = %d, want at least 150 for dictionary/schema", LatestMigrationVersion())
 	}
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "gov-migrate.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "gov-migrate.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

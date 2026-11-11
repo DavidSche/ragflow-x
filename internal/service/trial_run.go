@@ -252,7 +252,14 @@ func (s *Service) CreateTrialRun(ctx context.Context, tenantID, actorID string, 
 		return nil, err
 	}
 	s.recordTrialAudit(ctx, run, "trial_run.create", "SUCCESS")
-	go s.executeTrialRun(run, evalSet.ID, cases)
+	// The executor owns its own copy of the row: it transitions the run to
+	// running and back from a background goroutine, while the request path below
+	// renders the queued view from the same struct. Sharing the pointer made the
+	// status/started_at writes race the view read (nightly -race, 2026-11-11). The
+	// copy starts from the just-created queued state and never mutates the
+	// caller's value, which is exactly the state the caller renders.
+	worker := *run
+	go s.executeTrialRun(&worker, evalSet.ID, cases)
 	return s.trialRunView(ctx, run, false)
 }
 

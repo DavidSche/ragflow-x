@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ func int64Ptr(value int64) *int64 { return &value }
 func stringPtr(value string) *string { return &value }
 
 func TestMigrationV49GovernanceGuards(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "guards.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "guards.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +116,7 @@ func TestMigrationV49GovernanceGuards(t *testing.T) {
 }
 
 func TestMigrationV55TenantTypeAndPlatformGuard(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "tenant-guards.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "tenant-guards.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +163,7 @@ func TestMigrationV55TenantTypeAndPlatformGuard(t *testing.T) {
 }
 
 func TestMigrationV70WorkspaceRoleTerms(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "role-terms.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "role-terms.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +185,7 @@ func TestMigrationV70WorkspaceRoleTerms(t *testing.T) {
 }
 
 func TestMigrationV87OperatorRoleTerms(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "operator-role-terms.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "operator-role-terms.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +207,7 @@ func TestMigrationV87OperatorRoleTerms(t *testing.T) {
 }
 
 func TestMigrationV88BusinessUserRole(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "business-user-role.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "business-user-role.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +277,7 @@ func TestMigrationV88BusinessUserRole(t *testing.T) {
 }
 
 func TestMigrationV134TeamAdminContextDecisionRead(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "team-admin-context-decision.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "team-admin-context-decision.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +312,7 @@ func TestMigrationV134TeamAdminContextDecisionRead(t *testing.T) {
 }
 
 func TestMigrationV146EvaluationProtocolRegistration(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "protocol.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "protocol.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

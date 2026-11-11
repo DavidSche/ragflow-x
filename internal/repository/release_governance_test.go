@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"gorm.io/driver/postgres"
@@ -21,7 +21,7 @@ func int64Ptr(value int64) *int64 { return &value }
 func stringPtr(value string) *string { return &value }
 
 func TestListReleaseCandidatesUsesIndependentCountAndListQueries(t *testing.T) {
-	dsn := filepath.Join(t.TempDir(), "release.db")
+	dsn := dbtest.SQLiteDSN(t, "release.db")
 	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dsn})
 	if err != nil {
 		t.Fatal(err)

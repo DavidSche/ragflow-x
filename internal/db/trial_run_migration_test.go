@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 // (doc/228 §3.1 T7.3′): exactly one new migration, guarded DDL, re-runnable,
 // with the two uniqueness constraints that make runs replay-safe.
 func TestMigrationV157TrialRunIsIdempotent(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "trial-run.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "trial-run.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
