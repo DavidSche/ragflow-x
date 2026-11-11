@@ -67,6 +67,23 @@ v0.2.0 之后的第一个正式发布，合并三条版本线（v0.3.0 知识编
 
 ## 快速开始
 
+### 直接运行发布包（自带前端）
+
+每个发布二进制都把前端构建产物嵌进去了，API 与界面同一个文件：
+
+```bash
+# 解压 ragflow-x-<版本>-<系统>-<架构>.tar.gz / .zip 之后
+cp config/config.example.yaml config/config.yaml   # Windows: copy
+./ragflow-x                 # Windows: ragflow-x.exe
+```
+
+浏览器打开 `http://localhost:9191/`。服务会**自动读取**二进制旁边
+`config/config.yaml`（或 `config.yaml`），不需要任何参数；要换文件用 `-config <路径>`。
+
+配置里的数据库暂时连不通也不会白屏：服务会进入首跑配置向导，同一个地址既是界面也是向导，
+向导提交到 `/api/v1/system/setup/{preflight,apply}`，成功后原地换成完整路由。
+纯 API 仍在 `/api/v1/...`（`GET /api/v1/health`），`/metrics` 不会回落到界面。
+
 ### 本地开发
 
 ```bash

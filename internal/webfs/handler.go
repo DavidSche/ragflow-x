@@ -34,12 +34,19 @@ func Handler() gin.HandlerFunc {
 		if _, err := fs.Stat(assets(), path.Clean(name)); err == nil {
 			if name != "index.html" {
 				c.Header("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				c.Header("Cache-Control", "no-cache")
 			}
 			fileServer.ServeHTTP(c.Writer, c.Request)
 			return
 		}
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Content-Type", "text/html; charset=utf-8")
+		// Gin pre-sets 404 on the NoRoute path before this handler runs, so the
+		// SPA fallback must claim 200 explicitly — otherwise every deep link
+		// (e.g. /setup or /datasets/123) renders the app but answers 404, and
+		// curl -f / uptime checks / proxies treat a working page as an error.
+		c.Status(http.StatusOK)
 		data, err := fs.ReadFile(assets(), "index.html")
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "frontend assets unavailable"})

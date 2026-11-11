@@ -9,6 +9,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/obs"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/ratelimit"
+	"github.com/ragflow-x/ragflow-x/internal/webfs"
 )
 
 type envelope struct {
@@ -27,6 +28,12 @@ func fail(c *gin.Context, status, code int, message string) {
 
 // bootstrapRouter builds the minimal, unauthenticated first-run router. It only
 // exposes the setup endpoints; the whole engine is swapped out on Apply.
+//
+// The embedded frontend is served here too: the SPA renders the setup wizard
+// from /api/v1/system/setup/*, so a freshly unpacked release binary that cannot
+// reach a database must still answer GET / with the UI. Without this fallback
+// the first run looked broken — the browser got a bare "404 page not found"
+// even though web/dist was embedded in the binary.
 func (m *Manager) bootstrapRouter() http.Handler {
 	if m.cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
@@ -47,6 +54,8 @@ func (m *Manager) bootstrapRouter() http.Handler {
 	}
 	grp.POST("/preflight", middleware.RateLimit(limiter, middleware.ClientIPKey, limit, time.Minute), m.httpPreflight)
 	grp.POST("/apply", middleware.RateLimit(limiter, middleware.ClientIPKey, limit, time.Minute), m.httpApply)
+	// Registered last so the setup endpoints above win; /api/* still 404s as JSON.
+	r.NoRoute(webfs.Handler())
 	return r
 }
 
