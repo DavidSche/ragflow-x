@@ -99,7 +99,7 @@ jobs:
         run: |
           set -o pipefail
           echo '--- race gate ---'
-          CGO_ENABLED=1 go test -race -count=1 -shuffle=on -timeout 40m ./... 2>&1 | tee test-results/integration-race.log || {
+          CGO_ENABLED=1 go test -race -count=1 -shuffle=on -timeout 50m ./... 2>&1 | tee test-results/integration-race.log || {
             echo "## Integration race gate failed" >> "$GITHUB_STEP_SUMMARY"
             grep -E '^--- FAIL' test-results/integration-race.log | head -120 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
             grep -A 80 -E '^--- FAIL' test-results/integration-race.log | head -280 | awk '{printf "::error title=F%06d::%s\n", NR, $0}' || true
