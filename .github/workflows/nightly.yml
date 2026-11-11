@@ -117,7 +117,14 @@ jobs:
 
       - name: Run frontend E2E smoke
         run: |
-          npx playwright install --with-deps chromium
+          for attempt in 1 2 3; do
+            if npx playwright install --with-deps chromium; then
+              break
+            fi
+            echo "::warning::playwright install attempt ${attempt} failed (mirror/DNS); retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+            [ "$attempt" = 3 ] && { echo "::error::could not install Playwright browsers"; exit 1; }
+          done
           npm run test:e2e
         working-directory: web
 
