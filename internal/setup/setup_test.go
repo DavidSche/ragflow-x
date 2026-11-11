@@ -3,8 +3,10 @@ package setup
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -138,5 +140,64 @@ func TestValidateConnectionConfig(t *testing.T) {
 	}
 	if err := validateConnectionConfig(config.Database{Driver: "sqlite"}, validRAGFlow); err == nil {
 		t.Fatal("expected sqlite without dsn to be rejected")
+	}
+}
+
+// TestBootstrapRouterServesEmbeddedFrontend pins the first-run UX: a release
+// binary that has no usable database boots the setup wizard, and the wizard is
+// a page in the embedded SPA. Without the webfs fallback GET / answered a bare
+// "404 page not found" (text/plain), which reads as "the build has no UI" even
+// though web/dist is embedded.
+func TestBootstrapRouterServesEmbeddedFrontend(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		App:       config.App{Name: "ragflow-x", JWTSecret: strongTestJWTSecret, JWTExpireHours: 24, EncryptionKey: "test-encryption-key", DataDir: dir},
+		Database:  config.Database{Driver: "postgres", Host: "127.0.0.1", Port: 1, Name: "nope"},
+		RAGFlow:   config.RAGFlow{Provider: "mock"},
+		FactGuard: config.FactGuard{Mode: "strict"},
+		Setup: config.Setup{
+			Enabled:     true,
+			SecretsFile: filepath.Join(dir, "secrets.json"),
+			RSAKeyPath:  filepath.Join(dir, "rsa.pem"),
+		},
+	}
+	m, err := New(cfg, func(http.Handler) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+
+	router := m.bootstrapRouter()
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / must serve the embedded UI, got %d (%s)", rec.Code, strings.TrimSpace(rec.Body.String()))
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("GET / must be html, got %q", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "RAGFlow-X") {
+		t.Fatalf("GET / body is not the bundled index.html: %q", rec.Body.String())
+	}
+
+	// Deep links in the wizard survive a refresh via the SPA fallback.
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/setup", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "RAGFlow-X") {
+		t.Fatalf("GET /setup must fall back to index.html, got %d", rec.Code)
+	}
+
+	// API 404 must stay JSON, never the UI shell.
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/nope", nil))
+	if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "<html") {
+		t.Fatalf("unknown API path must be a JSON 404, got %d %q", rec.Code, rec.Body.String())
+	}
+
+	// The setup endpoints themselves still answer.
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/system/setup/status", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("setup status endpoint broke, got %d", rec.Code)
 	}
 }

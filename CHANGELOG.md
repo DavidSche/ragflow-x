@@ -111,6 +111,21 @@
   `requeueLoop` 传入本 runner 的在飞集合：崩溃对端仍是 at-least-once 恢复，但活着的 runner
   不会再抢自己的活。仓库层与 runner 层各加一条确定性用例（显式 gate 固定心跳缺口，不靠调度运气）。
 
+- **发布包「解压就能用」这件事是假的**：v0.5.0 的二进制确实把 `web/dist` 嵌进去了，
+  但三个问题叠在一起，用户下载后看到的是一个**没有界面**的服务：
+  ①`-config` 默认空，`config/config.yaml` 摆在二进制旁边也不会被读，进程悄悄落在内置默认值
+  （PostgreSQL `localhost`）；②数据库接不通时进入首跑向导模式，而那条最小路由只注册了
+  `/api/v1/system/setup/*`，没有 SPA 兜底，`GET /` 返回朴素的 `404 page not found`（text/plain）；
+  ③即便走到完整路由，SPA 兜底也只是写了 `index.html` 的字节流，没有改状态码——gin 在 NoRoute
+  上已经把状态设成 404，于是 `/setup`、`/datasets/123` 这类深链「页面能渲染、HTTP 说 404」。
+  现在：`-config` 缺省时按 `config/config.yaml` → `config.yaml` 探测（显式路径仍然照原样报错）；
+  首跑路由也挂 `webfs.Handler()` 兜底，向导页面由同一份内嵌产物提供；SPA 兜底显式声明 200，
+  `index.html` 标 `no-cache`、指纹资源仍是 immutable。三条各自的用例：`cmd/server` 的路径探测、
+  `internal/setup` 的「首跑路由必须给出 HTML」、`internal/webfs` 的「深链 200 / API 仍 JSON 404 /
+  index 不缓存」。实测发布形态（`-tags=webfs_embed`）在「无参数 + 数据库不可达」下
+  `GET /` 返回 200 与 `<title>RAGFlow-X Console</title>`，`/api/v1/system/setup/status` 正常应答；
+  README 中英文各补一节「直接运行发布包」。
+
 下一版本（v0.6.0）已登记、尚未开工：
 
 - **RBAC `contract` 半步（R-27）**：把 `tenant.audit.read` / `tenant.usage.read` /

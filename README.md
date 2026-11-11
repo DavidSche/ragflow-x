@@ -103,6 +103,27 @@ per-capability view is served at runtime by `GET /api/v1/system/capabilities`
 
 ## Quick start
 
+### Run a release archive (UI included)
+
+Every release binary embeds the frontend build, so API and UI come out of one
+file:
+
+```bash
+# unpack ragflow-x-<version>-<os>-<arch>.tar.gz / .zip, then
+cp config/config.example.yaml config/config.yaml   # Windows: copy
+./ragflow-x                 # Windows: ragflow-x.exe
+```
+
+Open `http://localhost:9191/`. The server reads `config/config.yaml` (or
+`config.yaml`) next to the binary without any flag; pass `-config <path>` to use
+another file.
+
+If the database in your config is not reachable yet, the server boots the
+first-run setup wizard instead of failing: the same URL serves the UI, the
+wizard posts to `/api/v1/system/setup/{preflight,apply}` and the router is
+swapped in place once it succeeds. The API alone stays at `/api/v1/...`
+(`GET /api/v1/health`), and `/metrics` never falls back to the UI.
+
 ### Local development
 
 ```bash
