@@ -72,27 +72,26 @@ jobs:
           # wqy-zenhei carries TrueType (glyf) outlines, which is what the PDF
           # renderer can embed. fonts-noto-cjk is CFF/OTTO only and is kept so the
           # font probe is exercised on a real collection it has to reject.
+          set -u
           # The hosted image points apt at the Azure mirror
-          # (mirror+file:/etc/apt/apt-mirrors.txt). When that host's DNS breaks the
-          # whole install dies even though archive.ubuntu.com is healthy, which is
-          # what reddened the v0.5.1 tag, so pin the mirror we know resolves.
+          # (mirror+file:/etc/apt/apt-mirrors.txt). When that host's DNS breaks,
+          # resolution hangs rather than failing fast: on the v0.5.1 tag one blip
+          # reddened three pipelines, and an unbounded retry then sat in this step
+          # for 30 minutes. Pin the archive and bound every call with a wall clock.
           if [ -f /etc/apt/apt-mirrors.txt ]; then
             sudo sed -i 's|.*|http://archive.ubuntu.com/ubuntu/|' /etc/apt/apt-mirrors.txt
           fi
-          # A GitHub-hosted runner occasionally loses DNS to the ubuntu mirrors
-          # ("Temporary failure resolving 'azure.archive.ubuntu.com'"). On the
-          # v0.5.1 tag that single blip reddened three pipelines at once and
-          # looked like a code defect, so retry the apt transaction instead of
-          # failing on the first resolver hiccup.
-          for attempt in 1 2 3 4 5; do
-            if sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update &&
-               sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Acquire::Retries=5 -o Acquire::http::Timeout=30 install fonts-noto-cjk fonts-wqy-zenhei; then
+          APT_OPTS="-o Acquire::http::Timeout=20 -o Acquire::Retries=2 -o Acquire::ForceIPv4=true"
+          for attempt in 1 2 3; do
+            if sudo timeout 180 apt-get $APT_OPTS update &&
+               sudo DEBIAN_FRONTEND=noninteractive timeout 240 apt-get -y $APT_OPTS install fonts-noto-cjk fonts-wqy-zenhei; then
+              sudo fc-cache -f >/dev/null 2>&1 || true
               exit 0
             fi
-            echo "::warning::font install attempt ${attempt} failed (mirror/DNS); retrying in $((attempt * 10))s"
-            sleep $((attempt * 10))
+            echo "::warning::CJK font install attempt ${attempt} failed (mirror/DNS); retrying in 10s"
+            sleep 10
           done
-          echo "::error::could not install CJK fonts after 5 attempts"
+          echo "::error::CJK fonts could not be installed after 3 bounded attempts; the ubuntu mirror was unreachable. Re-run this job once the network recovers."
           exit 1
 
       - name: Run all tests (with PostgreSQL)
