@@ -72,6 +72,13 @@ jobs:
           # wqy-zenhei carries TrueType (glyf) outlines, which is what the PDF
           # renderer can embed. fonts-noto-cjk is CFF/OTTO only and is kept so the
           # font probe is exercised on a real collection it has to reject.
+          # The hosted image points apt at the Azure mirror
+          # (mirror+file:/etc/apt/apt-mirrors.txt). When that host's DNS breaks the
+          # whole install dies even though archive.ubuntu.com is healthy, which is
+          # what reddened the v0.5.1 tag, so pin the mirror we know resolves.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's|.*|http://archive.ubuntu.com/ubuntu/|' /etc/apt/apt-mirrors.txt
+          fi
           # A GitHub-hosted runner occasionally loses DNS to the ubuntu mirrors
           # ("Temporary failure resolving 'azure.archive.ubuntu.com'"). On the
           # v0.5.1 tag that single blip reddened three pipelines at once and
