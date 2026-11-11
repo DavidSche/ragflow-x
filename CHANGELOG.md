@@ -10,6 +10,23 @@
 
 ## [Unreleased]
 
+下一版本（v0.6.0）已登记、尚未开工：
+
+- **RBAC `contract` 半步（R-27）**：把 `tenant.audit.read` / `tenant.usage.read` /
+  `tenant.resource.manage` / `tenant.resource.delete` 从「与 `governance.*` 并行的宽权闸门」收窄为唯一闸门，
+  需先发 deprecation 通知 + 自定义角色预检（`doc/248` §8）。
+- **知识编译 `structure` 产物独立建模（B′）**：v1.0.0 把 `page_index` 重分类为结构变体，若要支持
+  tree/graph/mindmap/timeline 产物，应另立 artifact kind（`doc/262` §7.1 D3 边界）。
+- **数据源连接器**（注册/授权/定时同步调度）仍是数据管道闭环的主要缺口（`doc/41` §20.1）；
+  知识图谱 / MCP 全功能写路径为登记先行（运行期显式 501）。
+
+## [0.5.1] - 2026-11-11
+
+> **补丁版本：把「解压即跑」补成真的。** v0.5.0 的发布包确实内嵌了前端，但缺三件事，
+> 叠起来让用户下载后第一次运行看到的是「没有界面」的服务；本版连同 v0.5.0 之后 CI / Nightly
+> 收口的一串稳定性修复一起发布。**无 schema 变更**（迁移仍为 162）、**无端点或权限契约变更**，
+> 直接替换二进制即可升级。
+
 ### 修复
 
 - **并发扫描会互相踩掉对方的运行租约**：手动扫描与手动重建在插入
@@ -124,17 +141,16 @@
   `internal/setup` 的「首跑路由必须给出 HTML」、`internal/webfs` 的「深链 200 / API 仍 JSON 404 /
   index 不缓存」。实测发布形态（`-tags=webfs_embed`）在「无参数 + 数据库不可达」下
   `GET /` 返回 200 与 `<title>RAGFlow-X Console</title>`，`/api/v1/system/setup/status` 正常应答；
-  README 中英文各补一节「直接运行发布包」。
+  另加一条 HTTP 级首跑链路用例（`status` → `public-key` → `preflight` → `apply` → 路由原地切换），
+  证明向导这条路本身是通的，而不只是「页面能打开」；README 中英文各补一节「直接运行发布包」。
 
-下一版本（v0.6.0）已登记、尚未开工：
+### 升级
 
-- **RBAC `contract` 半步（R-27）**：把 `tenant.audit.read` / `tenant.usage.read` /
-  `tenant.resource.manage` / `tenant.resource.delete` 从「与 `governance.*` 并行的宽权闸门」收窄为唯一闸门，
-  需先发 deprecation 通知 + 自定义角色预检（`doc/248` §8）。
-- **知识编译 `structure` 产物独立建模（B′）**：v1.0.0 把 `page_index` 重分类为结构变体，若要支持
-  tree/graph/mindmap/timeline 产物，应另立 artifact kind（`doc/262` §7.1 D3 边界）。
-- **数据源连接器**（注册/授权/定时同步调度）仍是数据管道闭环的主要缺口（`doc/41` §20.1）；
-  知识图谱 / MCP 全功能写路径为登记先行（运行期显式 501）。
+- 解压新包、覆盖二进制即可；`config/config.yaml`（或 `config.yaml`）现在会被自动读取，
+  显式 `-config <path>` 行为不变。
+- 首次运行（没有可用数据库）：浏览器打开 `http://localhost:9191/` 会直接进入配置向导，
+  向导提交成功后原地切换为完整路由，**不需要重启**；向导结束前 `/api/v1/...` 之外的面
+  仍然回落到内嵌前端，`/metrics` 与未知 API 保持 JSON 404。
 
 ## [0.5.0] - 2026-11-10
 
@@ -642,7 +658,8 @@ Gateway）：不 Fork RAGFlow，通过官方 HTTP API 集成，在其之上补�
 - Agent 画布中"编译算子模板"能力开发中，创建入口已禁用。
 - K8s / Helm 编排为后续演进方向，当前推荐 Docker Compose 部署。
 
-[Unreleased]: https://github.com/DavidSche/ragflow-x/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/DavidSche/ragflow-x/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/DavidSche/ragflow-x/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/DavidSche/ragflow-x/compare/v0.2.0...v0.5.0
 [0.2.0]: https://github.com/DavidSche/ragflow-x/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/DavidSche/ragflow-x/releases/tag/v0.1.0

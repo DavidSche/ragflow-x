@@ -24,7 +24,8 @@ import (
 var version = "dev"
 
 func main() {
-	cfg, err := config.Load(flagConfigPath())
+	cfgPath := flagConfigPath()
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load config failed: %v\n", err)
 		os.Exit(1)
@@ -36,6 +37,16 @@ func main() {
 
 	setupLogger(cfg)
 	defer logger.Close()
+
+	// Say out loud which config the process actually read. A release archive
+	// dropped next to an ignored config file used to start on the built-in
+	// defaults without a word, which is indistinguishable from "config broken".
+	if cfgPath == "" {
+		logger.Info("no config file found, using built-in defaults",
+			"hint", "pass -config <path> or create config/config.yaml next to the binary")
+	} else {
+		logger.Info("config loaded", "path", cfgPath)
+	}
 
 	var server *http.Server
 	mgr, err := setup.New(cfg, func(h http.Handler) error {
@@ -95,6 +106,9 @@ func main() {
 	runningService := mgr.Service()
 	if runningService == nil {
 		logger.Info("setup wizard enabled", "mode", cfg.Server.Mode)
+		// The wizard is a page, not an API, so a console operator needs the URL
+		// spelled out on stdout (the structured log goes to a rotating file).
+		fmt.Printf("\n  RAGFlow-X first-run setup\n  open http://localhost:%d/ in a browser to finish configuration\n\n", cfg.Server.Port)
 	} else {
 		effectiveCfg, err := runningService.EffectiveSystemSettingsConfig(context.Background(), *cfg)
 		if err != nil {
