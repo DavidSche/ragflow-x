@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestMigrationV120DBConnection(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "db-connection.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "db-connection.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

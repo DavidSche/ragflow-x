@@ -2,12 +2,12 @@ package repository
 
 import (
 	"context"
-	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
@@ -15,7 +15,7 @@ import (
 // writers via busy_timeout, so tests exercise chain logic, not driver limits.
 func newAuditStore(t *testing.T) Store {
 	t.Helper()
-	dsn := filepath.Join(t.TempDir(), "audit.db") + "?_pragma=busy_timeout(10000)"
+	dsn := dbtest.SQLiteDSN(t, "audit.db") + "?_pragma=busy_timeout(10000)"
 	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dsn})
 	if err != nil {
 		t.Fatal(err)

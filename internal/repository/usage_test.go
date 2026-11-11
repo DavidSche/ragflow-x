@@ -3,17 +3,17 @@ package repository
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
 func TestRecordUsageIdempotent(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "u.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "u.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestRecordUsageIdempotent(t *testing.T) {
 }
 
 func TestRecordUsageRejectsMissingRequestID(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "u2.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "u2.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestRecordUsageRejectsMissingRequestID(t *testing.T) {
 // database upsert: concurrent requests for different request_ids must not lose
 // counts to a read-modify-write race.
 func TestRecordUsageConcurrentNoLoss(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "u3.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "u3.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -69,6 +69,21 @@
 - **RBAC 资源作用域解析缺测试**：`internal/router` 的 `resolve*Scope` 只在完整 HTTP 旅程里被间接走到，
   「从真实行里取 project/user 作用域」的分支从未执行，nightly 覆盖率趋势记录该包从 90.69% 掉到 84.60%。
   新增 3 组直调用例（行缺失/行存在/存储故障），包覆盖率回到 95.9%。
+- **试跑执行的 goroutine 与请求路径共享同一行指针（真竞态）**：`CreateTrialRun` 把刚插入的
+  `*model.TrialRun` 交给后台执行器，执行器随即写 `status`/`started_at`，而请求路径正用同一个
+  结构体渲染响应，nightly 的 `-race` 在 `trial_run.go:282/283`（写）对 `trial_run.go:554/557`（读）
+  上报四次并连带 4 个用例判失败。现在执行器持有该行的一份副本，请求路径渲染的仍是创建时的
+  `QUEUED` 视图，两侧不再共享可变内存。
+- **`-race` 下每个用例重放 162 步迁移，把整包拖到 26~40 分钟**：纯 Go sqlite 在竞态检测器下约慢
+  50 倍，nightly 的 race 门禁里 `internal/db` 用了 1556s、`internal/router` 1893s，
+  `internal/handler` 与 `internal/repository` 直接撞 40min 包级超时（超时信息里被点名的用例只跑了
+  几秒到两分钟）。现在迁移在一次测试二进制内只做一遍，每个用例拿一份 checkpoint 之后的真实 sqlite
+  文件副本（`internal/db/dbtest`；`internal/db` 自身因导入环用包内同类助手，`internal/service`
+  原有私有实现改为委托），仍是真实文件、不 mock，复制前 `PRAGMA wal_checkpoint(TRUNCATE)` 并断言
+  `-wal` 为空。三类「必须从迁移前状态开始」的用例保持新建库：需要靠后续步骤回填的预置行、会被
+  后续约束拒绝的预置行、以及 `MigrateTo` 目标低于最新版本——它们被模板化时会立刻响亮失败，
+  本次就是这样定位到的。本地无 gcc 跑不了 `-race`，包级耗时（非 race）为 db 14.6s、handler 19.9s、
+  repository 4.8s、router 16.5s、service 86.9s。
 
 下一版本（v0.6.0）已登记、尚未开工：
 

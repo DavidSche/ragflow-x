@@ -13,6 +13,7 @@ import (
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/jwt"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/rsaseal"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
@@ -21,7 +22,7 @@ import (
 )
 
 func TestSetupAdminDecryptsEncryptedPassword(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "h.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "h.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

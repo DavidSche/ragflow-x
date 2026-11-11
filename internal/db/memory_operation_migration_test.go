@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 )
 
 func TestP0_DBMIG_131_MemoryOperationOutboxIndexes(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "memory-outbox-contract.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "memory-outbox-contract.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +91,7 @@ func TestP0_DBMIG_131_MemoryOperationOutboxIndexes(t *testing.T) {
 }
 
 func TestP0_DBMIG_133_MemoryPolicyRuntimeBinding(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "memory-policy-runtime.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "memory-policy-runtime.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +140,7 @@ func TestP0_DBMIG_133_MemoryPolicyRuntimeBinding(t *testing.T) {
 }
 
 func TestP0_DBMIG_135_MemoryCompensationFingerprint(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "memory-compensation-fingerprint.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "memory-compensation-fingerprint.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/jwt"
@@ -28,7 +28,7 @@ import (
 func newScopeResolverFixture(t *testing.T) (*service.Service, *gorm.DB, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "resolver.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "resolver.db")})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

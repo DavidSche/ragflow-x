@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 )
 
 func TestParserPolicyActiveScopeUniqueIndex(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "parser-policy-index.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "parser-policy-index.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

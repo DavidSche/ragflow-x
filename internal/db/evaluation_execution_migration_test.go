@@ -1,14 +1,13 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 )
 
 func TestMigrationV138PairedEvaluationColumnsAndIndexes(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "evaluation-execution.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "evaluation-execution.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

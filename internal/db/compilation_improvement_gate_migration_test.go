@@ -1,14 +1,13 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 )
 
 func TestMigrationV143CompilationImprovementGateReadiness(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "compilation-improvement-gate.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "compilation-improvement-gate.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

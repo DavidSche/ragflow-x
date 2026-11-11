@@ -2,7 +2,6 @@ package db
 
 import (
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"gorm.io/gorm"
@@ -21,7 +20,7 @@ func (migrationRollbackProbe) TableName() string { return "migration_rollback_pr
 func TestMigrationFailureRollsBackSchemaAndVersion(t *testing.T) {
 	gdb, err := Open(config.Database{
 		Driver: "sqlite",
-		DSN:    filepath.Join(t.TempDir(), "migration-rollback.db"),
+		DSN:    migratedTestDSN(t, "migration-rollback.db"),
 	})
 	if err != nil {
 		t.Fatal(err)

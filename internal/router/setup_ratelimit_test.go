@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/handler"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/jwt"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/ratelimit"
@@ -26,7 +26,7 @@ import (
 func TestSetupAdminRateLimited(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "rl.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "rl.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

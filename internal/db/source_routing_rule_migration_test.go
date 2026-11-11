@@ -1,7 +1,6 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestMigrationV119SourceRoutingRule(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "source-routing-rule.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "source-routing-rule.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

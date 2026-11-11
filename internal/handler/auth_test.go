@@ -4,13 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/jwt"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
@@ -18,7 +18,7 @@ import (
 )
 
 func TestLogoutAcceptsEmptyBodyAndRevokesCookieToken(t *testing.T) {
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "auth.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "auth.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,14 +1,13 @@
 package db
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 )
 
 func TestMigrationV144MemoryPrivacyConsentGovernance(t *testing.T) {
-	gdb, err := Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "memory-privacy-consent.db")})
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: migratedTestDSN(t, "memory-privacy-consent.db")})
 	if err != nil {
 		t.Fatal(err)
 	}

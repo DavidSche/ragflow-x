@@ -2,12 +2,12 @@ package repository
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
@@ -191,5 +191,5 @@ func TestRepositoryGovernanceDictionary_MigratePathOnly(t *testing.T) {
 
 func configDatabaseSQLite(t *testing.T) config.Database {
 	t.Helper()
-	return config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "rgx-test.db")}
+	return config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "rgx-test.db")}
 }

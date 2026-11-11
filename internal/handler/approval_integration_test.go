@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
@@ -145,7 +145,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: filepath.Join(t.TempDir(), "approval_test.db")})
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "approval_test.db")})
 	if err != nil {
 		t.Fatal(err)
 	}
