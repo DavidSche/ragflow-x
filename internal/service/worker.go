@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -227,7 +228,7 @@ func (r *Runner) requeueLoop(ctx context.Context, stopCh chan struct{}) {
 		case <-ticker.C:
 			now := time.Now().UTC()
 			cutoff := now.Add(-r.cfg.HeartbeatTimeout)
-			n, err := r.store.RequeueStaleJobs(ctx, cutoff, now)
+			n, err := r.store.RequeueStaleJobs(ctx, cutoff, now, r.inflightJobIDs())
 			if err != nil {
 				logger.Warn("worker requeue stale failed", "error", err)
 				continue
@@ -238,6 +239,23 @@ func (r *Runner) requeueLoop(ctx context.Context, stopCh chan struct{}) {
 			r.refreshQueueMetrics(ctx)
 		}
 	}
+}
+
+// inflightJobIDs snapshots the jobs this runner is still executing so stale
+// recovery can exclude them: a claim whose heartbeat goroutine got starved must
+// not be requeued and executed a second time.
+func (r *Runner) inflightJobIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.running) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(r.running))
+	for id := range r.running {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 func (r *Runner) pollOnce(ctx context.Context) {

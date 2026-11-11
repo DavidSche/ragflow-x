@@ -19,12 +19,30 @@ type fakeWorker struct {
 	alwaysFail     bool
 	remainingFails int32 // fail this many times, then succeed
 	Runs           int32
+
+	// started/release hold a run open at an explicit gate so tests can force a
+	// heartbeat gap instead of hoping for a lucky scheduler stall.
+	started chan struct{}
+	release chan struct{}
 }
 
 func (w *fakeWorker) Kind() string { return w.kind }
 
 func (w *fakeWorker) Run(ctx context.Context, job *model.Job) error {
 	atomic.AddInt32(&w.Runs, 1)
+	if w.started != nil {
+		select {
+		case w.started <- struct{}{}:
+		default: // a duplicate run must not stall the gate
+		}
+	}
+	if w.release != nil {
+		select {
+		case <-w.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	if w.alwaysFail {
 		return errFakeWorker
 	}
@@ -150,6 +168,59 @@ func TestRunnerFailsAfterMaxRetries(t *testing.T) {
 	}
 	if atomic.LoadInt32(&w.Runs) != 2 {
 		t.Fatalf("expected 2 runs total, got %d", w.Runs)
+	}
+}
+
+// TestRunnerDoesNotRequeueItsOwnInflightJob pins the recovery invariant that a
+// starved heartbeat must never hand a live claim back to the queue.
+//
+// CI runs `-coverpkg=./...` on 4 cores; the heartbeat goroutine can be scheduled
+// later than HeartbeatTimeout and RequeueStaleJobs then re-queued the job that
+// was still executing, so it ran a third time
+// (`expected 2 runs total, got 3`). HeartbeatInterval is 0 here to make the gap
+// deterministic instead of load-dependent.
+func TestRunnerDoesNotRequeueItsOwnInflightJob(t *testing.T) {
+	svc := newRunnerSvc(t)
+	tenantID := newRunnerTenant(t, svc)
+	w := &fakeWorker{
+		kind:    "test-held",
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	cfg := fastWorkerConfig()
+	cfg.HeartbeatInterval = 0 // no lease refresh while the job runs
+	cfg.HeartbeatTimeout = 20 * time.Millisecond
+	cfg.RequeueInterval = 5 * time.Millisecond
+	runner := NewRunner(svc.Store, cfg)
+	runner.Register(w)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner.Start(ctx)
+	defer func() { _ = runner.Stop(context.Background()) }()
+
+	if _, err := runner.Enqueue(ctx, "test-held", "k-held", tenantID, "", time.Time{}, 3); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-w.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker never started")
+	}
+	// Stay inside Run well past HeartbeatTimeout so several requeue passes run.
+	time.Sleep(150 * time.Millisecond)
+	close(w.release)
+
+	job := waitJobStatus(t, svc.Store, tenantID, "test-held", model.JobStatusSucceeded, 3*time.Second)
+	if job.Attempts != 1 {
+		t.Fatalf("held job must be attempted once, got %d", job.Attempts)
+	}
+	// Give any late requeue/claim pass a chance to duplicate the work.
+	time.Sleep(60 * time.Millisecond)
+	if got := atomic.LoadInt32(&w.Runs); got != 1 {
+		t.Fatalf("in-flight job must not be requeued and re-run, got %d runs", got)
+	}
+	if again := waitJobStatus(t, svc.Store, tenantID, "test-held", model.JobStatusSucceeded, time.Second); again.Attempts != 1 {
+		t.Fatalf("late claim re-ran the job: attempts=%d", again.Attempts)
 	}
 }
 

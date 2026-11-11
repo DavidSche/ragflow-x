@@ -102,6 +102,15 @@
   现在空桶记 `passed`（无证据≠0% 覆盖），治理门禁也改用同一个判据，不再出现
   「报告说通过、治理说失败」的自相矛盾。
 
+- **陈旧恢复会把「自己正在执行的任务」抢回队列再跑一遍**：`RequeueStaleJobs` 只按
+  `last_heartbeat < now-HeartbeatTimeout` 判陈旧，不认识「这个 runner 正在跑它」——心跳 goroutine
+  一旦被饿到超过超时（CI 的 `changed-coverage-gate` 在 4 核上带 `-coverpkg=./...` 跑全量，
+  50ms 超时极易被越过），任务被改回 `queued` 后又被自己认领一次，同一任务的副作用执行两遍：
+  `TestRunnerFailsAfterMaxRetries` 报 `expected 2 runs total, got 3`（新增用例在关闭心跳的确定性
+  条件下实测 7 次）。现在 `RequeueStaleJobs` 接受调用方「仍在执行」的 job ID 并排除，
+  `requeueLoop` 传入本 runner 的在飞集合：崩溃对端仍是 at-least-once 恢复，但活着的 runner
+  不会再抢自己的活。仓库层与 runner 层各加一条确定性用例（显式 gate 固定心跳缺口，不靠调度运气）。
+
 下一版本（v0.6.0）已登记、尚未开工：
 
 - **RBAC `contract` 半步（R-27）**：把 `tenant.audit.read` / `tenant.usage.read` /
