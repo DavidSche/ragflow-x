@@ -98,7 +98,13 @@ jobs:
       - name: Run 100x query plan warning probe
         run: make test-warning-contracts
 
+      # The PG query-plan tests also run here; a race-detector build inflates their
+      # runtimes and would re-stamp generatedAt after the 100x probe already ran.
+      # Point them at a scratch directory so the race gate never rewrites the
+      # evidence the query plan trend step consumes.
       - name: Run backend race gate
+        env:
+          RGX_QUERY_PLAN_REPORT_DIR: ${{ runner.temp }}/query-plan-race-scratch
         run: go test -race -timeout 40m -count=1 -shuffle=on ./...
 
       - name: Run frontend typecheck, unit and coverage tests

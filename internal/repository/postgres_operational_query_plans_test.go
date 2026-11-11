@@ -317,6 +317,16 @@ func writePostgresQueryPlanReport(t *testing.T, plans map[string]string, scale i
 	if strings.TrimSpace(reportDir) == "" {
 		return ""
 	}
+	// Trend evidence has to come from one pass of a plain build. The nightly race
+	// gate also runs these tests with the same evidence directory exported, and a
+	// race-detector build inflates every runtime and re-stamps generatedAt long
+	// after the 100x probe ran (nightly 2026-11-11: 1x/10x re-written 6m/11m after
+	// the 100x report). Collect into a scratch directory instead of overwriting
+	// evidence this step did not produce.
+	if queryPlanEvidenceUnderRaceDetector {
+		t.Logf("race detector build: collecting %dx query plan evidence into a scratch directory", scale)
+		reportDir = t.TempDir()
+	}
 	if err := os.MkdirAll(reportDir, 0o750); err != nil {
 		t.Fatalf("create query plan report directory: %v", err)
 	}

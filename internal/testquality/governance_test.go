@@ -78,6 +78,66 @@ func TestEvaluateGovernancePassesConsolidatedEvidence(t *testing.T) {
 	}
 }
 
+// Nightly runs on main have an empty diff against origin/main, so the changed-line
+// gate has nothing to measure. An empty bucket must read as "no evidence", not as
+// "0% coverage": the 2026-11-11 nightly failed governance only because P0/P1 were
+// reported at 0% against thresholds 85/75 while zero lines had changed.
+func TestEvaluateGovernancePassesChangedCoverageWhenNothingChanged(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	flake := FlakeReport{
+		GeneratedAt: now.Format(time.RFC3339),
+		Passed:      true,
+		Tests: []FlakeTestReport{
+			{Source: flakeSourceGo, Package: "internal/service", TestName: "TestP0_Fast", Risk: coverageRiskP0, Status: flakeStatusPass, Attempts: []FlakeAttempt{{DurationMS: 20}}},
+		},
+	}
+	// Shape produced by the nightly: summarizeChangedCoverage over an empty diff.
+	var changed ChangedCoverageReport
+	changed.ByRisk = map[string]ChangedCoverageRisk{}
+	summarizeChangedCoverage(&changed, ChangedCoverageConfig{P0ThresholdPercent: 85, P1ThresholdPercent: 75})
+	if changed.Total.ChangedLines != 0 {
+		t.Fatalf("fixture must have no changed lines, got %+v", changed.Total)
+	}
+	for _, risk := range []string{coverageRiskP0, coverageRiskP1} {
+		if bucket := changed.ByRisk[risk]; !bucket.Passed {
+			t.Fatalf("%s bucket with zero changed lines must be vacuously passed, got %+v", risk, bucket)
+		}
+	}
+	flakePath := filepath.Join(dir, "flake.json")
+	changedPath := filepath.Join(dir, "changed.json")
+	trendPath := filepath.Join(dir, "trend.json")
+	queryPlanTrendPath := filepath.Join(dir, "query-plan-trend.json")
+	mutationPath := filepath.Join(dir, "mutation.json")
+	for path, payload := range map[string]any{
+		flakePath: flake, changedPath: changed, trendPath: passingCoverageTrend(now, 90),
+		queryPlanTrendPath: passingQueryPlanTrend(now), mutationPath: mutationTestManifest(now),
+	} {
+		if err := writeJSON(path, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	report, err := EvaluateGovernance(GovernanceConfig{
+		CataloguePath:             "testdata/scenario_catalogue.json",
+		FlakeReportPath:           flakePath,
+		ChangedCoverageReportPath: changedPath,
+		CoverageTrendPath:         trendPath,
+		QueryPlanTrendPath:        queryPlanTrendPath,
+		MutationEvidencePath:      mutationPath,
+		Now:                       now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Gate.CoveragePassed {
+		t.Fatalf("expected changed-line gate to pass on an empty diff, got %+v", report.Gate)
+	}
+	if !report.Gate.Passed {
+		t.Fatalf("expected governance gate to pass: %+v", report.Gate)
+	}
+}
+
 func TestEvaluateGovernanceFailsClosedOnFlakeEvidence(t *testing.T) {
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	dir := t.TempDir()

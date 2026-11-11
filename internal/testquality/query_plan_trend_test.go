@@ -2,6 +2,7 @@ package testquality
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -168,21 +169,57 @@ func TestEvaluateQueryPlanTrendFailsInvalidOrMissingEvidence(t *testing.T) {
 	}
 }
 
-func TestEvaluateQueryPlanTrendRejectsMixedSourceBatches(t *testing.T) {
+// The 1x/10x reports come out of the long backend step and the 100x report from
+// its own step, so one pipeline pass legitimately spans more than ten minutes
+// (nightly 2026-11-11: 11m15s). Spreading the reports is not, by itself, a defect.
+func TestEvaluateQueryPlanTrendAcceptsSourcesSpreadAcrossOnePipelinePass(t *testing.T) {
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 	dir := t.TempDir()
 	firstPath := filepath.Join(dir, "1x.json")
 	tenPath := filepath.Join(dir, "10x.json")
 	hundredPath := filepath.Join(dir, "100x.json")
-	queryPlanTrendFixture(t, firstPath, now.Add(-10*time.Minute).Format(time.RFC3339), "SC-PG-001", 1, 1, true)
-	queryPlanTrendFixture(t, tenPath, now.Add(-10*time.Minute).Format(time.RFC3339), "SC-PG-001", 10, 1, true)
+	queryPlanTrendFixture(t, firstPath, now.Add(-11*time.Minute-15*time.Second).Format(time.RFC3339), "SC-PG-001", 1, 1, true)
+	queryPlanTrendFixture(t, tenPath, now.Add(-11*time.Minute).Format(time.RFC3339), "SC-PG-001", 10, 1, true)
 	queryPlanTrendFixture(t, hundredPath, now.Format(time.RFC3339), "SC-PG-002", 100, 1, true)
 
 	report, err := EvaluateQueryPlanTrend(QueryPlanTrendConfig{
 		Report1xPath: firstPath, Report10xPath: tenPath, Report100xPath: hundredPath,
 	})
+	if err != nil || !report.Passed || len(report.Errors) != 0 {
+		t.Fatalf("a single pipeline pass must be accepted, got report=%+v err=%v", report, err)
+	}
+	if report.Current.GeneratedAt != now.Format(time.RFC3339) {
+		t.Fatalf("snapshot must be stamped with the newest source, got %q", report.Current.GeneratedAt)
+	}
+}
+
+// A source report that is not newer than the last recorded snapshot is a reused
+// artifact, not this run's evidence. That is the staleness rule the gate needs;
+// a fixed spread between the three files is not.
+func TestEvaluateQueryPlanTrendRejectsStaleSourceReports(t *testing.T) {
+	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	firstPath := filepath.Join(dir, "1x.json")
+	tenPath := filepath.Join(dir, "10x.json")
+	hundredPath := filepath.Join(dir, "100x.json")
+	historyPath := filepath.Join(dir, "history.json")
+	queryPlanTrendFixture(t, firstPath, now.Add(-20*time.Minute).Format(time.RFC3339), "SC-PG-001", 1, 1, true)
+	queryPlanTrendFixture(t, tenPath, now.Format(time.RFC3339), "SC-PG-001", 10, 1, true)
+	queryPlanTrendFixture(t, hundredPath, now.Add(time.Minute).Format(time.RFC3339), "SC-PG-002", 100, 1, true)
+	history := queryPlanTrendHistoryFixture(now.Add(-time.Minute).Format(time.RFC3339), map[int]float64{1: 1, 10: 1, 100: 1})
+	if err := osWriteFile(historyPath, mustJSON(history)); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := EvaluateQueryPlanTrend(QueryPlanTrendConfig{
+		Report1xPath: firstPath, Report10xPath: tenPath, Report100xPath: hundredPath,
+		PreviousPath: historyPath,
+	})
 	if err == nil || report.Passed || len(report.Errors) != 1 {
-		t.Fatalf("expected mixed source batch rejection, got report=%+v err=%v", report, err)
+		t.Fatalf("expected stale 1x evidence to fail, got report=%+v err=%v", report, err)
+	}
+	if !strings.Contains(report.Errors[0], firstPath) {
+		t.Fatalf("error must name the stale report, got %q", report.Errors[0])
 	}
 }
 
