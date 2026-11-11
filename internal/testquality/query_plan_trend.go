@@ -27,7 +27,6 @@ const (
 	queryPlanTrendStatusNone        = "NONE"
 	queryPlanTrendWarningRegression = "RUNTIME_REGRESSION"
 	queryPlanTrendWarningThreshold  = "RUNTIME_THRESHOLD"
-	queryPlanTrendMaxSourceSkew     = 5 * time.Minute
 )
 
 // QueryPlanTrendQuery records one analyzed SQL plan and its runtime decision.
@@ -140,7 +139,13 @@ func EvaluateQueryPlanTrend(config QueryPlanTrendConfig) (QueryPlanTrendReport, 
 		GeneratedAt: config.GeneratedAt.UTC().Format(time.RFC3339),
 		Commit:      config.Commit,
 	}
-	sourceGeneratedAts := make([]time.Time, 0, 3)
+	// Staleness is judged against recorded history, not against a fixed spread
+	// between the reports: the 1x/10x reports are written during the long backend
+	// run and the 100x report in its own step, so a single pipeline pass routinely
+	// spans more than ten minutes (2026-11-11: 11m15s). What actually matters is
+	// that no source predates the last recorded snapshot — that would mean an
+	// artifact from an earlier run was reused as this run's evidence.
+	sources := make([]queryPlanSourceStamp, 0, 3)
 	inputs := []struct {
 		path          string
 		expectedScale int
@@ -168,25 +173,21 @@ func EvaluateQueryPlanTrend(config QueryPlanTrendConfig) (QueryPlanTrendReport, 
 			report.Errors = append(report.Errors, fmt.Sprintf("query plan report %s has invalid generatedAt: %v", input.path, parseErr))
 			continue
 		}
-		sourceGeneratedAts = append(sourceGeneratedAts, sourceGeneratedAt)
+		sources = append(sources, queryPlanSourceStamp{path: input.path, generatedAt: sourceGeneratedAt})
 		snapshot.Measurements = append(snapshot.Measurements, newQueryPlanTrendMeasurement(source, input.path))
 	}
 	slices.SortFunc(snapshot.Measurements, func(a, b QueryPlanTrendMeasurement) int {
 		return a.Scale - b.Scale
 	})
-	if len(sourceGeneratedAts) > 0 {
-		slices.SortFunc(sourceGeneratedAts, func(a, b time.Time) int {
+	if len(sources) > 0 {
+		stamps := make([]time.Time, 0, len(sources))
+		for _, source := range sources {
+			stamps = append(stamps, source.generatedAt)
+		}
+		slices.SortFunc(stamps, func(a, b time.Time) int {
 			return a.Compare(b)
 		})
-		oldest := sourceGeneratedAts[0]
-		newest := sourceGeneratedAts[len(sourceGeneratedAts)-1]
-		if newest.Sub(oldest) > queryPlanTrendMaxSourceSkew {
-			report.Errors = append(report.Errors, fmt.Sprintf(
-				"query plan source reports span %s; maximum allowed skew is %s",
-				newest.Sub(oldest), queryPlanTrendMaxSourceSkew,
-			))
-		}
-		snapshot.GeneratedAt = newest.UTC().Format(time.RFC3339)
+		snapshot.GeneratedAt = stamps[len(stamps)-1].UTC().Format(time.RFC3339)
 	}
 	snapshot.Measurements = validateQueryPlanMeasurements(snapshot.Measurements, &report)
 	report.Current = snapshot
@@ -196,6 +197,7 @@ func EvaluateQueryPlanTrend(config QueryPlanTrendConfig) (QueryPlanTrendReport, 
 		history, err := LoadQueryPlanTrendHistory(config.PreviousPath)
 		if err == nil {
 			report.HistorySize = len(history.Snapshots)
+			reportStaleQueryPlanSources(history, sources, &report)
 			if previous, exists := latestQueryPlanSnapshotBefore(history.Snapshots, snapshot.GeneratedAt); exists {
 				report.Previous = &previous
 				compareQueryPlanTrendSnapshots(previous, &snapshot, &report)
@@ -223,6 +225,41 @@ func EvaluateQueryPlanTrend(config QueryPlanTrendConfig) (QueryPlanTrendReport, 
 		return report, fmt.Errorf("%s", strings.Join(failures, "; "))
 	}
 	return report, nil
+}
+
+// queryPlanSourceStamp records when one scale's report was generated.
+type queryPlanSourceStamp struct {
+	path        string
+	generatedAt time.Time
+}
+
+// reportStaleQueryPlanSources fails the gate when a source report predates the
+// newest snapshot already in history: the pipeline collects three separate files,
+// so a file that is not newer than the last recorded run is a reused artifact
+// rather than this run's evidence.
+func reportStaleQueryPlanSources(history QueryPlanTrendHistory, sources []queryPlanSourceStamp, report *QueryPlanTrendReport) {
+	var newestRecorded time.Time
+	for _, snapshot := range history.Snapshots {
+		recorded, err := time.Parse(time.RFC3339, snapshot.GeneratedAt)
+		if err != nil {
+			continue
+		}
+		if recorded.After(newestRecorded) {
+			newestRecorded = recorded
+		}
+	}
+	if newestRecorded.IsZero() {
+		return
+	}
+	for _, source := range sources {
+		if source.generatedAt.After(newestRecorded) {
+			continue
+		}
+		report.Errors = append(report.Errors, fmt.Sprintf(
+			"query plan report %s was generated at %s, not after the latest recorded snapshot at %s: it is a leftover artifact, not this run's evidence",
+			source.path, source.generatedAt.UTC().Format(time.RFC3339), newestRecorded.UTC().Format(time.RFC3339),
+		))
+	}
 }
 
 // LoadQueryPlanTrendHistory reads a bounded cross-run history.

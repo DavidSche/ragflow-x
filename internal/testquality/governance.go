@@ -267,7 +267,9 @@ func governanceNextActions(catalogue ScenarioCatalogue, catalogueReport Catalogu
 
 func buildGovernanceGate(report GovernanceReport) GovernanceGate {
 	gate := GovernanceGate{
-		CoveragePassed:               report.ChangedCoverage.ByRisk[coverageRiskP0].Passed && report.ChangedCoverage.ByRisk[coverageRiskP1].Passed && len(report.ChangedCoverage.Errors) == 0,
+		// Judge the gate through the same rule the changed-coverage report command
+		// uses, so governance cannot contradict the report it consumes.
+		CoveragePassed:               len(report.ChangedCoverage.Errors) == 0 && len(ChangedCoverageFailures(report.ChangedCoverage)) == 0,
 		TrendPassed:                  report.CoverageTrend.Passed,
 		FlakePassed:                  report.Flake.Passed,
 		MutationPassed:               report.Mutation.Passed,

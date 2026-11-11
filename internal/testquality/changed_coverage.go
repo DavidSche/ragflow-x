@@ -473,7 +473,11 @@ func summarizeChangedCoverage(report *ChangedCoverageReport, config ChangedCover
 	}
 	for risk, bucket := range riskBuckets {
 		bucket.Coverage = ratioPercent(bucket.CoveredLines, bucket.ChangedLines)
-		bucket.Passed = bucket.Coverage >= fileThreshold(config, risk)
+		// A bucket with no changed lines carries no evidence either way, so it
+		// must not be reported as "0% coverage below threshold". Nightly runs on
+		// main have an empty diff against origin/main, and a 0% reading there
+		// (nightly 2026-11-11) is an artifact of the empty bucket, not a defect.
+		bucket.Passed = bucket.ChangedLines == 0 || bucket.Coverage >= fileThreshold(config, risk)
 		bucket.PassFiles = slices.Clone(passed[risk])
 		bucket.UncoveredFiles = slices.Clone(uncovered[risk])
 		report.ByRisk[risk] = bucket
