@@ -73,13 +73,26 @@ jobs:
           # renderer can embed. fonts-noto-cjk is CFF/OTTO only and is kept so the
           # font probe is exercised on a real collection it has to reject.
           set -u
-          # The hosted image points apt at the Azure mirror
-          # (mirror+file:/etc/apt/apt-mirrors.txt). When that host's DNS breaks,
-          # resolution hangs rather than failing fast: on the v0.5.1 tag one blip
-          # reddened three pipelines, and an unbounded retry then sat in this step
-          # for 30 minutes. Pin the archive and bound every call with a wall clock.
+          # The hosted image points apt at an Azure mirror
+          # (mirror+file:/etc/apt/apt-mirrors.txt). On 2026-11-11 that name stopped
+          # resolving on the hosted runners while github.com and npm still worked,
+          # which reddened three pipelines at once; resolution then hung rather than
+          # failing fast, which is why every apt call below runs under `timeout`.
+          # Pick the first mirror host this runner can actually resolve.
+          MIRROR=""
+          for host in archive.ubuntu.com mirrors.kernel.org mirrors.edge.kernel.org; do
+            if getent hosts "$host" >/dev/null 2>&1; then
+              MIRROR="$host"
+              break
+            fi
+          done
+          if [ -z "$MIRROR" ]; then
+            echo "::error::no ubuntu mirror host resolves from this runner (DNS on the hosted runner is broken, not the code)"
+            exit 1
+          fi
+          echo "::notice::apt mirror host -> $MIRROR"
           if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i 's|.*|http://archive.ubuntu.com/ubuntu/|' /etc/apt/apt-mirrors.txt
+            sudo sed -i "s|.*|http://$MIRROR/ubuntu/|" /etc/apt/apt-mirrors.txt
           fi
           APT_OPTS="-o Acquire::http::Timeout=20 -o Acquire::Retries=2 -o Acquire::ForceIPv4=true"
           for attempt in 1 2 3; do
