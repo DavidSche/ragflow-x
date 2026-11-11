@@ -109,11 +109,12 @@ type CoverageTrendReport struct {
 	Passed      bool                   `json:"passed"`
 }
 
-// coverageTrendInputMissing reports an input that was never collected. A missing
-// profile means "not measured in this run", which is different from "0% covered":
-// scoring it as zero invented a frontend regression every time the frontend suite
-// did not run, and the trend gate then failed on a measurement it never took.
-func coverageTrendInputMissing(path string) (string, bool) {
+// evidenceInputMissing reports an evidence input that was never collected. A
+// missing profile or result file means "not measured in this run", which is
+// different from "0% covered" or "no flakes": scoring it as zero invented a
+// frontend regression every time the frontend suite did not run, and the flake
+// gate then failed on evidence it never took.
+func evidenceInputMissing(path string) (string, bool) {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Sprintf("%s not collected: file does not exist", path), true
 	}
@@ -160,7 +161,7 @@ func EvaluateCoverageTrend(config CoverageTrendConfig) (CoverageTrendReport, err
 	}
 	files := make([]CoverageTrendFile, 0)
 	if config.GoCoveragePath != "" {
-		if reason, missing := coverageTrendInputMissing(config.GoCoveragePath); missing {
+		if reason, missing := evidenceInputMissing(config.GoCoveragePath); missing {
 			report.Skipped = append(report.Skipped, reason)
 		} else if goFiles, err := parseGoCoverageStatements(config.GoCoveragePath, config.RepositoryDir); err != nil {
 			report.Errors = append(report.Errors, err.Error())
@@ -169,7 +170,7 @@ func EvaluateCoverageTrend(config CoverageTrendConfig) (CoverageTrendReport, err
 		}
 	}
 	if config.FrontendPath != "" {
-		if reason, missing := coverageTrendInputMissing(config.FrontendPath); missing {
+		if reason, missing := evidenceInputMissing(config.FrontendPath); missing {
 			report.Skipped = append(report.Skipped, reason)
 		} else if viteFiles, err := parseViteCoverageStatements(config.FrontendPath, config.RepositoryDir); err != nil {
 			report.Errors = append(report.Errors, err.Error())

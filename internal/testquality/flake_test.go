@@ -173,6 +173,38 @@ func TestEvaluateFlakesErrorsDoNotSilentlyPass(t *testing.T) {
 	}
 }
 
+// A skipped upstream step must not look like "zero flakes" nor like a parse
+// failure: the night the frontend suite does not run, the flake report has to say
+// the vitest input was never collected and still pass on the evidence it has.
+func TestEvaluateFlakesSkipsUncollectedInput(t *testing.T) {
+	dir := t.TempDir()
+	goInput := filepath.Join(dir, "go-test.json")
+	if err := os.WriteFile(goInput, []byte(`{"Action":"pass","Package":"internal/db","Test":"TestMigrate","Elapsed":0.5}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "frontend-vitest.json")
+	report, err := EvaluateFlakes(FlakeConfig{
+		CataloguePath: "testdata/scenario_catalogue.json",
+		Inputs:        []string{goInput, missing},
+		FailOnActive:  true,
+	})
+	if err != nil {
+		t.Fatalf("a not-collected input must not fail evaluation: %v", err)
+	}
+	if !report.Passed || report.Failed {
+		t.Fatalf("expected pass with skipped evidence, got passed=%t failed=%t errors=%v", report.Passed, report.Failed, report.Errors)
+	}
+	if len(report.Errors) != 0 {
+		t.Fatalf("missing input must not be recorded as an error: %v", report.Errors)
+	}
+	if len(report.Skipped) != 1 || !strings.Contains(report.Skipped[0], "frontend-vitest.json") {
+		t.Fatalf("expected the missing input to be skipped with its path, got %v", report.Skipped)
+	}
+	if report.TotalTests != 1 {
+		t.Fatalf("collected evidence must still be parsed, got %d tests", report.TotalTests)
+	}
+}
+
 func TestFlakeReportMarshalsMachineReadableSchema(t *testing.T) {
 	data, err := json.Marshal(FlakeReport{Summary: FlakeSummary{}})
 	if err != nil {

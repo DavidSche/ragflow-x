@@ -78,6 +78,7 @@ type FlakeReport struct {
 	CountsByStatus map[string]int    `json:"countsByStatus"`
 	Summary        FlakeSummary      `json:"summary"`
 	Tests          []FlakeTestReport `json:"tests"`
+	Skipped        []string          `json:"skipped,omitempty"`
 	Errors         []string          `json:"errors,omitempty"`
 	Passed         bool              `json:"passed"`
 	Failed         bool              `json:"failed"`
@@ -107,6 +108,10 @@ func EvaluateFlakes(config FlakeConfig) (FlakeReport, error) {
 	}
 	attempts := make([]FlakeAttempt, 0)
 	for _, input := range config.Inputs {
+		if reason, missing := evidenceInputMissing(input); missing {
+			report.Skipped = append(report.Skipped, reason)
+			continue
+		}
 		inputAttempts, err := parseFlakeInput(config.RepositoryDir, input)
 		if err != nil {
 			report.Errors = append(report.Errors, err.Error())

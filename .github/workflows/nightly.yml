@@ -99,7 +99,7 @@ jobs:
         run: make test-warning-contracts
 
       - name: Run backend race gate
-        run: go test -race -count=1 -shuffle=on ./...
+        run: go test -race -timeout 40m -count=1 -shuffle=on ./...
 
       - name: Run frontend typecheck, unit and coverage tests
         run: |

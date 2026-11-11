@@ -180,6 +180,31 @@ func TestRunnerStopStopsClaiming(t *testing.T) {
 	}
 }
 
+// Start/Stop must be repeatable: each run waits for its own loops. The loops
+// close the channels they were started with instead of the Runner fields, so a
+// dying loop cannot release a Stop that belongs to a newer run.
+func TestRunnerRestartWaitsForItsOwnLoops(t *testing.T) {
+	svc := newRunnerSvc(t)
+	runner := NewRunner(svc.Store, fastWorkerConfig())
+	ctx := context.Background()
+
+	for round := 0; round < 3; round++ {
+		runner.Start(ctx)
+		stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if err := runner.Stop(stopCtx); err != nil {
+			cancel()
+			t.Fatalf("round %d: stop: %v", round, err)
+		}
+		cancel()
+		runner.mu.Lock()
+		started := runner.started
+		runner.mu.Unlock()
+		if started {
+			t.Fatalf("round %d: stop must clear the started flag", round)
+		}
+	}
+}
+
 func TestRunnerUnknownKindFails(t *testing.T) {
 	svc := newRunnerSvc(t)
 	tenantID := newRunnerTenant(t, svc)
