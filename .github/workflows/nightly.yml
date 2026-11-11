@@ -105,7 +105,7 @@ jobs:
       - name: Run backend race gate
         env:
           RGX_QUERY_PLAN_REPORT_DIR: ${{ runner.temp }}/query-plan-race-scratch
-        run: go test -race -timeout 40m -count=1 -shuffle=on ./...
+        run: go test -race -timeout 50m -count=1 -shuffle=on ./...
 
       - name: Run frontend typecheck, unit and coverage tests
         run: |

@@ -52,7 +52,8 @@
 - **nightly 的 race 门禁用的是 `go test` 默认 10min 包级超时**：`-race` 下 `internal/db`、
   `internal/service`、`internal/repository`、`internal/router` 在 4 核 runner 上互相争用，
   超时信息里被点名的用例只跑了 5~22s（是包被拖垮，不是某个用例卡死）。现在 race 门禁
-  与 `make test-race` 都显式 `-timeout 40m`（`integration.yml` 的 race 门禁同样从 30m 抬到 40m）。
+  与 `make test-race` 都显式 `-timeout 40m`（`integration.yml` 的 race 门禁同样从 30m 抬到 40m）；
+  迁移模板化之后实测 29m17s / 36m06s（两个 run 相差 24%），40m 只剩 4 分钟余量，三处再统一抬到 50m。
 - **P0 SSE 用例自己制造了数据竞态**：`SC-SSE-001` 在 goroutine 里 `io.Copy` 写 `bytes.Buffer`，
   主 goroutine 同时轮询 `Len()`/读 `Bytes()`，`-race` 报 `chat.go:218` 写 vs 用例读。
   生产侧写入的是 `http.ResponseWriter`（本就有自己的串行化），问题只在用例：换成带锁缓冲。

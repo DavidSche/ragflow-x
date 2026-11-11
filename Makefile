@@ -107,7 +107,7 @@ test-warning-contracts: ## Run opt-in capacity probes that report regressions wi
 	RGX_QUERY_PLAN_100X_ENABLED=true go test -count=1 -run '^TestP1_PG_016_PostgresOperationalIndexSelectionAtHundredTimesScale$$' ./internal/repository
 
 test-race: ## Run the full backend suite with race detection
-	CGO_ENABLED=1 go test -race -timeout 40m -count=1 -shuffle=on ./...
+	CGO_ENABLED=1 go test -race -timeout 50m -count=1 -shuffle=on ./...
 
 test-coverage: ## Generate Go coverage profile
 	@mkdir -p test-results
