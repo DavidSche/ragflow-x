@@ -20,6 +20,17 @@
 - **数据源连接器**（注册/授权/定时同步调度）仍是数据管道闭环的主要缺口（`doc/41` §20.1）；
   知识图谱 / MCP 全功能写路径为登记先行（运行期显式 501）。
 
+### 修复（工程 / CI）
+
+- **CI 与 Nightly 的 apt、Playwright 安装不再被镜像 DNS 拖红**：2026-11-11
+  `archive.ubuntu.com` 与 `azure.archive.ubuntu.com` 在 GitHub 托管 runner 上无法解析
+  （同期 `github.com`、Go 代理、npm registry 均正常），一次抖动让 CI / Integration /
+  Nightly 三条流水线同时红，重跑仍红，且无界重试把 `Install CJK fonts` 卡在步骤里
+  30 分钟。现在先按解析结果挑镜像宿主（`archive.ubuntu.com` → `mirrors.kernel.org`
+  → `mirrors.edge.kernel.org`），每次 `apt-get` 调用都在 `timeout` 下运行并按短
+  超时重试，一个宿主都解析不出来时立即以「runner DNS 故障、不是代码缺陷」报错；
+  Playwright 的 `--with-deps` 走同一前置探测。
+
 ## [0.5.1] - 2026-11-11
 
 > **补丁版本：把「解压即跑」补成真的。** v0.5.0 的发布包确实内嵌了前端，但缺三件事，
