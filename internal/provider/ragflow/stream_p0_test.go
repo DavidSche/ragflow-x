@@ -6,9 +6,42 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
+
+// lockedBuffer is a bytes.Buffer that tolerates the streaming goroutine writing
+// while the test goroutine polls Len()/Bytes(). The production writer is an
+// http.ResponseWriter, which has its own serialization; only the test shares it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *lockedBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]byte(nil), b.buf.Bytes()...)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 // ScenarioID: SC-SSE-001
 func TestP0_SSE_001_StreamChatCompletionPreservesUTF8BoundaryAndCancels(t *testing.T) {
@@ -45,7 +78,7 @@ func TestP0_SSE_001_StreamChatCompletionPreservesUTF8BoundaryAndCancels(t *testi
 	defer server.Close()
 
 	client := NewHTTPClientWithMiddleware(server.URL, "test-key", 5*time.Second, 1)
-	var output bytes.Buffer
+	var output lockedBuffer
 	done := make(chan error, 1)
 	go func() {
 		done <- client.StreamChatCompletion(ctx, "chat-1", CompletionRequest{Messages: nil}, &output)

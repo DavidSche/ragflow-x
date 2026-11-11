@@ -147,12 +147,17 @@ func (r *Runner) Start(ctx context.Context) {
 		return
 	}
 	r.started = true
-	r.stopCh = make(chan struct{})
-	r.stopped = make(chan struct{})
+	stopCh := make(chan struct{})
+	stopped := make(chan struct{})
+	r.stopCh = stopCh
+	r.stopped = stopped
 	r.mu.Unlock()
 
-	go r.pollLoop(ctx)
-	go r.requeueLoop(ctx)
+	// The loops close the channels they were started with, never the fields:
+	// a restart replaces the fields and the previous loop must not be able to
+	// signal the new run.
+	go r.pollLoop(ctx, stopCh, stopped)
+	go r.requeueLoop(ctx, stopCh)
 	logger.Info("async worker started", "poll_interval", r.cfg.PollInterval.String())
 }
 
@@ -167,11 +172,15 @@ func (r *Runner) Stop(ctx context.Context) error {
 		return nil
 	}
 	r.started = false
+	stopped := r.stopped
 	close(r.stopCh)
 	r.mu.Unlock()
 
+	if stopped == nil {
+		return nil
+	}
 	select {
-	case <-r.stopped:
+	case <-stopped:
 	case <-ctx.Done():
 		return nil
 	}
@@ -190,16 +199,15 @@ func (r *Runner) Stop(ctx context.Context) error {
 	}
 }
 
-func (r *Runner) pollLoop(ctx context.Context) {
+func (r *Runner) pollLoop(ctx context.Context, stopCh, stopped chan struct{}) {
 	ticker := time.NewTicker(r.cfg.PollInterval)
 	defer ticker.Stop()
+	defer close(stopped)
 	for {
 		select {
-		case <-r.stopCh:
-			r.closeStopped()
+		case <-stopCh:
 			return
 		case <-ctx.Done():
-			r.closeStopped()
 			return
 		case <-ticker.C:
 			r.pollOnce(ctx)
@@ -207,12 +215,12 @@ func (r *Runner) pollLoop(ctx context.Context) {
 	}
 }
 
-func (r *Runner) requeueLoop(ctx context.Context) {
+func (r *Runner) requeueLoop(ctx context.Context, stopCh chan struct{}) {
 	ticker := time.NewTicker(r.cfg.RequeueInterval)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-r.stopCh:
+		case <-stopCh:
 			return
 		case <-ctx.Done():
 			return
@@ -229,16 +237,6 @@ func (r *Runner) requeueLoop(ctx context.Context) {
 			}
 			r.refreshQueueMetrics(ctx)
 		}
-	}
-}
-
-// closeStopped signals Stop that both loops have exited.
-func (r *Runner) closeStopped() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.stopped != nil {
-		close(r.stopped)
-		r.stopped = nil
 	}
 }
 

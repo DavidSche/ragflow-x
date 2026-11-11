@@ -44,6 +44,22 @@
 - **覆盖率趋势把「没测到」记成 0%**：前端覆盖率文件缺失时，趋势报告把它当成 0% 覆盖并判定
   `web/src` 回归，nightly 因此失败在一份从未采集的证据上。现在缺失的输入记为
   `skipped`（含原因）并把该 scope 从本轮快照里排除，只对真正测到的数据做回归比较。
+- **异步 worker 的 `Start`/`Stop` 有真竞态**：`pollLoop` 退出时在 `closeStopped()` 里
+  `close(r.stopped); r.stopped = nil`，而 `Stop` 在锁外读同一个字段等信号——nightly 的
+  `-race` 一晚上报了二十多次同一处（`worker.go:241` 写 / `worker.go:174` 读）。重启时更糟：
+  将死的 loop 会去关新一轮的 `stopped`，让新的 `Stop` 提前返回。现在 loop 只关启动时
+  发给它的信道，字段不再被回写，`Stop` 在锁内取一次信道引用。
+- **nightly 的 race 门禁用的是 `go test` 默认 10min 包级超时**：`-race` 下 `internal/db`、
+  `internal/service`、`internal/repository`、`internal/router` 在 4 核 runner 上互相争用，
+  超时信息里被点名的用例只跑了 5~22s（是包被拖垮，不是某个用例卡死）。现在 race 门禁
+  与 `make test-race` 都显式 `-timeout 40m`。
+- **P0 SSE 用例自己制造了数据竞态**：`SC-SSE-001` 在 goroutine 里 `io.Copy` 写 `bytes.Buffer`，
+  主 goroutine 同时轮询 `Len()`/读 `Bytes()`，`-race` 报 `chat.go:218` 写 vs 用例读。
+  生产侧写入的是 `http.ResponseWriter`（本就有自己的串行化），问题只在用例：换成带锁缓冲。
+- **flake 报告把「未采集」当成错误**：前端 suite 被跳过时 `test-results/frontend-vitest.json`
+  不存在，`make test-flake-report` 直接失败并让治理报告连环失败——这与「覆盖率趋势把没测到
+  记成 0%」是同一类假红。现在不存在的输入记入 `skipped`（带路径原因），只对真正解析失败的
+  输入记 `errors`。
 - **`SC-AUTHZ-001` 的跨租户门禁从来没被真正进入过**：用例把目标工作区放在 JSON body 里，
   却没设 `Content-Type: application/json`，`governanceTargetTenant` 直接按「无目标」返回，
   门禁整段被跳过——把跨租户门禁整个删掉，全部 P0 仍然绿。2026-11-11 复核变异样本时发现，
