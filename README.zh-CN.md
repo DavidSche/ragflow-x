@@ -5,7 +5,7 @@
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.5.0-green.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-v0.5.1-green.svg)](./CHANGELOG.md)
 [![Discord](https://img.shields.io/badge/Discord-社区讨论-blueviolet?logo=discord&logoColor=white)](https://discord.gg/fnc8Ds9nj)
 ![backend](https://img.shields.io/badge/backend-Go%20%2B%20Gin-informational.svg)
 ![frontend](https://img.shields.io/badge/frontend-React%20%2B%20shadcn--admin--kit-blueviolet.svg)
@@ -112,13 +112,13 @@ docker compose up -d --build
 使用预构建镜像：
 
 ```bash
-docker pull ghcr.io/davidsche/ragflow-x:v0.5.0
+docker pull ghcr.io/davidsche/ragflow-x:v0.5.1
 ```
 
 把 `docker-compose.yml` 中的 `build:` 段替换为：
 
 ```yaml
-image: ghcr.io/davidsche/ragflow-x:v0.5.0
+image: ghcr.io/davidsche/ragflow-x:v0.5.1
 ```
 
 ## 用户文档

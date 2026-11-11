@@ -363,6 +363,10 @@ jobs:
             echo "tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz"
             echo "cp config/config.example.yaml config/config.yaml && ./ragflow-x"
             echo
+            echo "# Windows (amd64) — 解压后直接双击，或"
+            echo "ragflow-x.exe"
+            echo "# 打开 http://localhost:9191/ ：无可用数据库时进入配置向导，向导完成后原地切换"
+            echo
             echo "# Docker"
             echo "docker pull ${IMAGE}:${TAG}"
             echo '```'

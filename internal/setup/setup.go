@@ -404,6 +404,9 @@ func (m *Manager) ApplyRaw(ctx context.Context, raw []byte) error {
 // never degrade a configured server into wizard mode, where the setup API
 // would be exposed on an already-operational deployment.
 func (m *Manager) Startup() (http.Handler, error) {
+	// lastErr keeps the reason the full engine could not start, so the wizard
+	// fallback can explain itself instead of looking like a silent crash.
+	var lastErr error
 	if m.secrets != nil {
 		if err := m.ensureJWTSecret(m.secrets); err != nil {
 			return nil, err
@@ -413,6 +416,7 @@ func (m *Manager) Startup() (http.Handler, error) {
 			m.closer = closer
 			return engine, nil
 		}
+		lastErr = err
 	}
 	databaseConfigured := m.cfg.Database.Driver == "sqlite" ||
 		m.cfg.Database.Password != "" || m.cfg.Database.DSN != ""
@@ -426,6 +430,16 @@ func (m *Manager) Startup() (http.Handler, error) {
 			m.closer = closer
 			return engine, nil
 		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		// A fresh install with no reachable database is a supported state, not a
+		// failure: the driver's raw error is reported one level below this, so
+		// state the consequence and the next step here instead of leaving a
+		// first-run operator with a red "failed to connect" and no closure.
+		logger.Warn("database not reachable, starting the first-run setup wizard",
+			"err", lastErr,
+			"next", "open the UI and complete the setup form, the engine swaps in place")
 	}
 	return m.bootstrapRouter(), nil
 }
