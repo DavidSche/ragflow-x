@@ -117,6 +117,18 @@ jobs:
 
       - name: Run frontend E2E smoke
         run: |
+          # Pick a mirror host this runner can resolve before apt/--with-deps
+          # runs (see the font step for why); the hosted Azure mirror name has
+          # been unresolvable while github.com/npm still worked.
+          for host in archive.ubuntu.com mirrors.kernel.org mirrors.edge.kernel.org; do
+            if getent hosts "$host" >/dev/null 2>&1; then
+              if [ -f /etc/apt/apt-mirrors.txt ]; then
+                sudo sed -i "s|.*|http://$host/ubuntu/|" /etc/apt/apt-mirrors.txt
+              fi
+              echo "::notice::apt mirror host -> $host"
+              break
+            fi
+          done
           for attempt in 1 2 3; do
             if npx playwright install --with-deps chromium; then
               break
