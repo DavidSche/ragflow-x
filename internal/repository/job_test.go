@@ -181,7 +181,7 @@ func TestRequeueStaleRunningJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n, err := s.RequeueStaleJobs(ctx, now.Add(-time.Hour), now)
+	n, err := s.RequeueStaleJobs(ctx, now.Add(-time.Hour), now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +195,42 @@ func TestRequeueStaleRunningJobs(t *testing.T) {
 	fresh := findJob(t, s, "t1", "fresh")
 	if fresh.Status != model.JobStatusRunning {
 		t.Fatalf("fresh job must stay running, got %s", fresh.Status)
+	}
+}
+
+// TestRequeueStaleJobsSkipsExcludedClaims pins the exclusion contract: recovery
+// must leave the caller's own in-flight claim alone even when its heartbeat is
+// older than the cutoff.
+func TestRequeueStaleJobsSkipsExcludedClaims(t *testing.T) {
+	s := newJobStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	mustEnqueue(t, s, "held", now, 3)
+	mustEnqueue(t, s, "orphan", now, 3)
+
+	claimed, err := s.ClaimJobs(ctx, 10, now)
+	if err != nil || len(claimed) != 2 {
+		t.Fatalf("claim: %v %d", err, len(claimed))
+	}
+	// Both look stale: the held one only differs by being excluded.
+	if err := s.WithContext(ctx).Model(&model.Job{}).Where("1 = 1").
+		Update("last_heartbeat", now.Add(-2*time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	held := findJob(t, s, "t1", "held")
+
+	n, err := s.RequeueStaleJobs(ctx, now.Add(-time.Hour), now, []string{held.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected only the unexcluded stale job requeued, got %d", n)
+	}
+	if got := findJob(t, s, "t1", "held"); got.Status != model.JobStatusRunning {
+		t.Fatalf("excluded in-flight claim must stay running, got %s", got.Status)
+	}
+	if got := findJob(t, s, "t1", "orphan"); got.Status != model.JobStatusQueued {
+		t.Fatalf("orphaned claim must be requeued, got %s", got.Status)
 	}
 }
 

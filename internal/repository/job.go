@@ -39,8 +39,9 @@ type JobRepo interface {
 	// FailJob marks a claimed job failed after max retries.
 	FailJob(ctx context.Context, id string, attempts int, lastError string) error
 	// RequeueStaleJobs re-queues running jobs whose heartbeat expired (crash
-	// recovery), returning how many jobs were recovered.
-	RequeueStaleJobs(ctx context.Context, before, now time.Time) (int64, error)
+	// recovery), returning how many jobs were recovered. Callers pass the IDs
+	// they are still executing so recovery can never steal a live claim.
+	RequeueStaleJobs(ctx context.Context, before, now time.Time, excludeIDs []string) (int64, error)
 	// CountActiveJobs counts queued/running jobs of a kind (optionally scoped
 	// to a tenant; empty tenantID counts across tenants). Used to avoid piling
 	// up repeats of a recurring job.
@@ -195,15 +196,24 @@ func (s *store) FailJob(ctx context.Context, id string, attempts int, lastError 
 }
 
 // RequeueStaleJobs recovers running jobs orphaned by a crash.
-func (s *store) RequeueStaleJobs(ctx context.Context, before, now time.Time) (int64, error) {
-	res := s.WithContext(ctx).Model(&model.Job{}).
-		Where("status = ? AND last_heartbeat < ?", model.JobStatusRunning, before).
-		Updates(map[string]interface{}{
-			"status":     model.JobStatusQueued,
-			"run_after":  now,
-			"last_error": "requeued: runner heartbeat expired",
-			"updated_at": now,
-		})
+//
+// excludeIDs are jobs the calling runner still owns. Recovery is at-least-once
+// for a crashed peer, but a runner must never reclaim what it is executing right
+// now: a heartbeat goroutine starved for longer than HeartbeatTimeout (CI runs
+// `-coverpkg=./...` on 4 cores) would otherwise duplicate the job's side effects
+// — observed as `expected 2 runs total, got 3` in TestRunnerFailsAfterMaxRetries.
+func (s *store) RequeueStaleJobs(ctx context.Context, before, now time.Time, excludeIDs []string) (int64, error) {
+	query := s.WithContext(ctx).Model(&model.Job{}).
+		Where("status = ? AND last_heartbeat < ?", model.JobStatusRunning, before)
+	if len(excludeIDs) > 0 {
+		query = query.Where("id NOT IN ?", excludeIDs)
+	}
+	res := query.Updates(map[string]interface{}{
+		"status":     model.JobStatusQueued,
+		"run_after":  now,
+		"last_error": "requeued: runner heartbeat expired",
+		"updated_at": now,
+	})
 	return res.RowsAffected, res.Error
 }
 
