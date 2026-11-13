@@ -85,6 +85,26 @@ function isAuthSessionEndpoint(config: InternalAxiosRequestConfig): boolean {
 
 let refreshRequest: Promise<string> | null = null;
 
+/**
+ * Send the user to the login screen through the hash router used by
+ * react-admin v5 (createHashRouter), never via a full-page navigation to the
+ * real "/login" path.
+ *
+ * The SPA is served exclusively from "/" and all routes live after the hash
+ * (e.g. "/#/login"). Setting window.location.href to the literal path
+ * "/login" triggers a server request for a path that only the webfs SPA
+ * fallback can answer - deployments built before the 200-status fallback fix
+ * return 404, which shows up in the console as "GET /login 404". Navigating in
+ * the hash keeps the redirect purely client-side: no round trip, no reload.
+ */
+export function redirectToLogin(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.hash === "#/login" || window.location.hash.startsWith("#/login?")) {
+    return;
+  }
+  window.location.hash = "#/login";
+}
+
 function refreshSession(): Promise<string> {
   if (!refreshRequest) {
     refreshRequest = axios
@@ -167,17 +187,13 @@ api.interceptors.response.use(
           })
           .catch(() => {
             void clearSession();
-            if (window.location.pathname !== "/login") {
-              window.location.href = "/login";
-            }
+            redirectToLogin();
             return Promise.reject(apiErr);
           });
       }
       if (!isAuthSession) {
         void clearSession();
-        if (window.location.pathname !== "/login") {
-          window.location.href = "/login";
-        }
+        redirectToLogin();
       }
     }
 
@@ -209,4 +225,76 @@ export async function unwrap<T>(promise: Promise<AxiosResponse<ApiEnvelope<T>>>)
     );
   }
   return res.data.data;
+}
+
+// ------------------------------------------------------------------
+// Default model management (platform-scoped, doc/269 §4.3/§4.4)
+// ------------------------------------------------------------------
+
+/** Per-type default model state returned by GET /model-providers/defaults. */
+export interface ModelDefaultState {
+  model_type: string;
+  model_id?: string;
+  model_name?: string;
+  provider_name?: string;
+  instance_name?: string;
+  status: "ok" | "invalid" | "verify_failed" | "unset";
+  /** Capability gate: whether this build supports setting this type. */
+  supported: boolean;
+  error?: string;
+}
+
+/** One selectable candidate model for a default type (GET defaults/options). */
+export interface ModelDefaultOption {
+  model_id: string;
+  name: string;
+  provider_name?: string;
+  instance_name?: string;
+}
+
+/** PATCH /model-providers/defaults write result (audit attribution). */
+export interface ModelDefaultWriteResult {
+  operation_ref: string;
+  model_type: string;
+  previous_model_id?: string | null;
+  observed_model_id?: string | null;
+  status: "succeeded" | "failed" | "unknown";
+  message?: string;
+}
+
+/**
+ * Current default state per canonical type. The default value is read with a
+ * cache-busting query param and is never cached client-side (doc/269 P1-6):
+ * external RAGFlow changes must be visible immediately.
+ */
+export function getModelDefaults(): Promise<ModelDefaultState[]> {
+  return unwrap<ModelDefaultState[]>(
+    api.get("/model-providers/defaults", { params: { _: Date.now() } }),
+  );
+}
+
+/**
+ * Candidate model tree per canonical type (doc/269 §4.4 data source). Also
+ * cache-busted: the candidates mirror the live RAGFlow inventory, and the
+ * server additionally answers with Cache-Control: no-store.
+ */
+export function getModelDefaultOptions(): Promise<Record<string, ModelDefaultOption[]>> {
+  return unwrap<Record<string, ModelDefaultOption[]>>(
+    api.get("/model-providers/defaults/options", { params: { _: Date.now() } }),
+  );
+}
+
+/**
+ * Set or clear a platform default model. CAS is MANDATORY on the safe-write
+ * path: expected_model_id must be the current default (null when unset) that
+ * the UI read first. The service refuses a missing declaration (40036).
+ */
+export function patchModelDefault(body: {
+  model_type: string;
+  model_id: string;
+  expected_model_id: string | null;
+}): Promise<ModelDefaultWriteResult> {
+  return unwrap<ModelDefaultWriteResult>(
+    api.patch("/model-providers/defaults", body),
+  );
 }
