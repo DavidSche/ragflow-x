@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { ConversationCenter } from "./ConversationCenter";
 import type { ConversationEvent } from "./types";
@@ -47,8 +47,15 @@ let assistantDirectoryTargets = [
   { id: "agent-1", kind: "agent", name: "Approval Workflow" },
 ];
 
+// Permission checks resolve asynchronously; `pendingAccess` lets a test freeze
+// the checks in their "unknown" state (canAccess undefined, isPending true).
+const accessState = vi.hoisted(() => ({ pending: false }));
+
 vi.mock("ra-core", () => ({
-  useCanAccess: () => ({ canAccess: true }),
+  useCanAccess: () =>
+    accessState.pending
+      ? { canAccess: undefined, isPending: true }
+      : { canAccess: true, isPending: false },
   useGetIdentity: () => ({ data: identity, isLoading: false }),
   useNotify: () => notify,
   useTranslate: () => translate,
@@ -126,6 +133,42 @@ describe("ConversationCenter URL restore", () => {
     fireEvent.click(screen.getByRole("button", { name: "conversationCenter.new_context" }));
 
     expect(input).toHaveFocus();
+  });
+});
+
+describe("ConversationCenter deep-link retention", () => {
+  function LocationProbe() {
+    const location = useLocation();
+    return <output data-testid="location">{location.search}</output>;
+  }
+
+  it("keeps targetId while permission checks are still pending", async () => {
+    accessState.pending = true;
+    adapter.getTarget.mockClear();
+    try {
+      render(
+        <MemoryRouter initialEntries={["/conversation-center?kind=chat&targetId=chat-1"]}>
+          <Routes>
+            <Route
+              path="/conversation-center"
+              element={
+                <>
+                  <ConversationCenter />
+                  <LocationProbe />
+                </>
+              }
+            />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      const location = await screen.findByTestId("location");
+      await waitFor(() => expect(adapter.getTarget).not.toHaveBeenCalled());
+      expect(location.textContent).toContain("targetId=chat-1");
+      expect(location.textContent).toContain("kind=chat");
+    } finally {
+      accessState.pending = false;
+    }
   });
 });
 
