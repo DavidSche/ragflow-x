@@ -1,11 +1,11 @@
 # RAGFlow-X
 
-> 面向私有数据中心的企业知识库 AI 基础设施补齐层（Control Plane + Gateway）。RAGFlow 仍是核心 RAG 执行面与数据面——仅通过官方 HTTP API 集成，不 Fork、不旁路。RAGFlow-X 是唯一的业务操作入口：企业全部业务操作（知识库、解析、chunk 治理、检索调优、对话、Agent、审批、审计）均在 RAGFlow-X 界面完成；RAGFlow 原生界面仅保留给引擎管理员做底层运维。
+> 面向私有数据中心的企业知识库 AI 基础设施补齐层（Control Plane + Gateway）。RAGFlow 仍是核心 RAG 执行面与数据面——仅通过官方 HTTP API 集成，不 Fork、不旁路。RAGFlow-X 是唯一的业务操作入口：企业全部业务操作（知识库、解析、chunk 治理、检索调优、对话、Agent、审批、审计）均在 RAGFlow-X 界面完成；RAGFlow 原生界面仅保留给引擎管理员做底层运维（维护 ragflow-x 所连 RAGFlow 服务的账户/API Key、以及 HTTP API 未覆盖的引擎级服务调整）；RAGFlow 中可由 API 表达的业务与运维操作（含默认模型等共享资源的设置）一律在 RAGFlow-X 完成，不要求也不允许产品用户混用两个管理工具。
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.5.1-green.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-v0.5.2-green.svg)](./CHANGELOG.md)
 [![Discord](https://img.shields.io/badge/Discord-社区讨论-blueviolet?logo=discord&logoColor=white)](https://discord.gg/fnc8Ds9nj)
 ![backend](https://img.shields.io/badge/backend-Go%20%2B%20Gin-informational.svg)
 ![frontend](https://img.shields.io/badge/frontend-React%20%2B%20shadcn--admin--kit-blueviolet.svg)
@@ -15,16 +15,38 @@ RAGFlow-X 面向私有数据中心和企业真实生产环境。「不 Fork」�
 ## 核心能力
 
 - **不 Fork、API 优先**：RAGFlow 操作走官方 `/api/v1` HTTP API，运营数据保存在独立的 `rgx_*` PostgreSQL/SQLite 数据库中。
-- **单一业务操作入口**：全部业务操作在 RAGFlow-X 界面完成——包括 RAGFlow 自有业务功能的等效操作（数据集、解析、chunk、检索测试、对话、Agent）；RAGFlow 原生界面仅限引擎管理员使用。
+- **单一业务操作入口**：全部业务操作在 RAGFlow-X 界面完成——包括 RAGFlow 自有业务功能的等效操作（数据集、解析、chunk、检索测试、对话、Agent）；RAGFlow 原生界面仅限引擎管理员使用（维护服务账户/API Key 与 API 未覆盖的引擎级调整）；默认模型等跨用户共享资源的设置由 RAGFlow-X 平台级管理。
 - **安全与治理**：租户治理、RBAC/ABAC、审批、审计、可观测、计量、数据保留和企业网关。
 - **网关**：`POST /v1/chat/completions`，内置认证、RBAC、限流、配额预扣、计量、审计、429 处理与降级。
 - **全生命周期知识体系**：覆盖接入、解析、质量、版本、发布、消费、反馈、评测和运营。
 - **统一对话中心**：以一致体验承接 Chat、Search 和 Agent，包括角色感知路由、引用、富内容、工具摘要和导出。
-- **生产就绪**：版本与能力探测、契约测试、Docker Compose、结构化日志、Prometheus 和审计哈希链校验。
+- **生产就绪**：版本与能力探测、契约测试、自带前端的 release 二进制包、源码构建的 Docker Compose、结构化日志、Prometheus 和审计哈希链校验。
 - **基于 RAGFlow v1.0.0 正式版复验**：能力注册表 97 条端点全部在 v1.0.0 上重验并抬钉至 stable；上游真实漂移 5 类（建库 schema、会话端点、产物面、画布列表面、文档级解析绑定）全部修复，并以「版本带 → 产物 kind」声明式映射 + 入口 fail-closed 取代静默降级。
 - **引用透明**：引用携带 ref_index/positions 精确定位到文档坐标；会话中心按完成时刻快照再水合引用（v1.0.0 sessions 读回不再回显 references）。
 - **诚实度纪律**：每轮对话在引擎答案之上记录结构化 answerability 声明（是否可答/置信度/依据来源/拒答理由）——只注释、不改写引擎答案。
 - **搜索应用绑定防呆**：dataset_ids 支持 link_id | link_name | engine_id 解析并校验归租户，给近邻库建议而非泄漏引擎报错，错误契约即文档（40092/40093/40095）。
+
+## v0.5.2 更新要点
+
+两条功能主线瞄准的是同一个失效模式：能力在引擎里，但用户在平台里够不到。完整清单见
+[CHANGELOG.md](./CHANGELOG.md)。
+
+- **平台级默认模型管理**：`GET/PATCH /api/v1/model-providers/defaults` 与
+  `GET .../defaults/options` 把「默认 LLM / 默认 embedding」从「必须去引擎后台点」变成平台内一次受治理的写。
+  每次写都是一致性操作：CAS 期望值（`409/40912`）、分布式写锁（`409/40913`）、写后读回校验、
+  带前后值的审计，以及基于独立 claim 表的恢复补偿——**审计行从不 UPDATE**，哈希链保持不变。
+  新增权限资源 `model-default`（平台管理员读+管、工作区管理员读）。
+- **场景模板 2.0**：平台基线 → 工作区 fork → 不可变发布，血缘记录在模板自身；目录严格等于
+  「平台基线 ∪ 工作区已发布」；知识契约声明模板真正需要的能力，`capability-check` 按数据集给出
+  `satisfied / repairable / probe_limited / blocked` 与可执行修复项；解析档修复走显式路径
+  （`409/40915` 先于 `409/40917`，绝不静默重解析）；一个实例化端点编排 chat/search/agent，
+  幂等键只认 `Idempotency-Key` 头并有唯一索引兜底，**失败的实例可用同一键续跑**而不是永远回答「进行中」；
+  引擎骨架只读镜像 + 草稿导入（评测门 + 签名校验）；Scenario Pack v3 把引擎无关核心与
+  `runtimeExtension.ragflow` 运行时块分开。
+- **错误诚实**：上游业务拒绝（HTTP 200 + `code≠0`）不再被报成 `502`，而是 `400/40085` 并携带引擎原文；
+  `502` 只用于传输失败与 5xx。
+- **迁移 162 → 166**：四条加法式迁移（权限回填、恢复 claim 表、基线血缘列、实例溯源 + 幂等索引），
+  无表重建、无列删除。
 
 ## v0.5.0 更新要点
 
@@ -67,9 +89,10 @@ v0.2.0 之后的第一个正式发布，合并三条版本线（v0.3.0 知识编
 
 ## 快速开始
 
-### 直接运行发布包（自带前端）
+### 直接运行发布包（推荐，自带前端）
 
-每个发布二进制都把前端构建产物嵌进去了，API 与界面同一个文件：
+**v0.5.2 只提供 release 二进制包，暂不提供容器镜像。** 每个发布二进制都把前端构建产物嵌进去了，
+API 与界面同一个文件：
 
 ```bash
 # 解压 ragflow-x-<版本>-<系统>-<架构>.tar.gz / .zip 之后
@@ -101,7 +124,9 @@ make stop
 2. 配置 `ragflow.base_url`、`api_key`、PostgreSQL 和 Redis；敏感信息使用 `RGX_*` 环境变量注入。
 3. 使用 `make start` 启动服务。
 
-### Docker Compose
+### Docker（可选：自行构建镜像）
+
+本版本**不发布预构建镜像**。`docker/` 目录仍可从源码构建可用的镜像与 Compose 栈：
 
 ```bash
 cd docker
@@ -109,17 +134,9 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-使用预构建镜像：
-
-```bash
-docker pull ghcr.io/davidsche/ragflow-x:v0.5.1
-```
-
-把 `docker-compose.yml` 中的 `build:` 段替换为：
-
-```yaml
-image: ghcr.io/davidsche/ragflow-x:v0.5.1
-```
+镜像仓库打通后，只需要把仓库变量 `PUSH_IMAGE` 设为 `true`，发版流水线就会重新推送多架构镜像
+（`release.yml` 的 docker 任务是显式 opt-in 的，正是为了这个过渡期）。在镜像可用之前，
+**上面的 release 二进制包才是受支持的安装方式**。
 
 ## 用户文档
 

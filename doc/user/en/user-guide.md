@@ -1,11 +1,29 @@
 # RAGFlow-X User Guide
 
-> Applies to: RAGFlow-X v0.5.0 (schema migration v161 and later) | Updated: 2026-11-10 | Screenshots: local development environment (sample data)
+> Applies to: RAGFlow-X v0.5.2 (schema migration v166 and later) | Updated: 2026-11-13 | Screenshots: local development environment (sample data)
 
 This guide covers administrator and business-user workflows in RAGFlow-X. The
 product closes the gap between enterprise production requirements and RAGFlow's
 core RAG engine through governed security, a full-lifecycle knowledge system,
 and a unified conversation experience.
+
+## Install (v0.5.2)
+
+This release ships as **binary archives only — no container image is published
+yet**. Download `ragflow-x-<version>-<os>-<arch>.tar.gz` (`.zip` on Windows),
+unpack it, and run the binary: the frontend is embedded, so no separate static
+server is needed.
+
+```bash
+cp config/config.example.yaml config/config.yaml
+./ragflow-x                       # Windows: ragflow-x.exe
+```
+
+Open `http://<host>:9191/`. If the configured database is not reachable yet, the
+server serves the first-run setup wizard instead of a blank page and swaps in the
+full router once it succeeds. Use `-config <path>` for another config file. To
+run a container, build the image from source (`cd docker && docker compose up -d
+--build`); image publishing resumes once a registry is available again.
 
 ## Sign in
 
@@ -130,7 +148,75 @@ titles, summaries, durations, and statuses without exposing raw tool arguments.
 
 Approval holds are expected behavior, not errors.
 
+## Scenario templates (2.0)
+
+Platform baselines → workspace forks → immutable publishes:
+
+- **Platform baseline**: one baseline per template key, maintained by platform
+  administrators. Workspaces cannot edit it.
+- **Fork**: editing a template inside a workspace forks the baseline; the copy
+  and the baseline evolve independently.
+- **Publish**: publishing appends an immutable version. Re-publishing identical
+  content does not bump the version, and a published payload is never rewritten.
+- **Catalog**: `GET /api/v1/scenario-template-catalog` returns exactly "platform
+  baselines ∪ templates published in this workspace"; drafts stay private.
+
+**Knowledge contract and capability check.** A template declares the knowledge
+capabilities it needs (vector, metadata filter, citation locator, graph, RAPTOR,
+vision, compilation, parse profile) and a minimum level.
+`POST /api/v1/scenario-template-assets/{id}/capability-check` answers per dataset:
+
+| Verdict | Meaning | Next step |
+|---|---|---|
+| `satisfied` | every required capability is met | instantiate |
+| `repairable` | a concrete repair action exists | apply the offered repairs, then re-check |
+| `probe_limited` | only partly probeable (engine does not expose the metric) | proceed only if partial evidence is acceptable |
+| `blocked` | a required capability is missing and cannot be repaired | change dataset or template |
+
+Repairs are explicit and never silently mutate your knowledge base: document
+metadata via `PUT /api/v1/datasets/{id}/documents/{docId}/metadata`, the metadata
+pushdown policy via `PUT /api/v1/datasets/{id}` with `pushdown_enabled` (a
+platform-side execution policy that is never pushed upstream), and parse profiles
+via `POST /api/v1/datasets/{id}/parse-profile` — an already-parsed dataset
+answers `409/40915` first and requires an explicit `rewrite_existing: true`.
+Shared datasets without acknowledgement answer `409/40917`.
+
+**Instantiation.** `POST /api/v1/scenario-template-assets/{id}/instantiate`
+orchestrates chat, search, and agent creation. The request must carry an
+`Idempotency-Key` header (`422/42231` when missing); the same key replays the same
+run instead of creating a second application. A key that is still executing
+answers `409/40916`; a key whose run **failed** resumes on the same key instead of
+answering "in progress" forever. `project_id` is required.
+
+**Skeleton import and health.** `GET /api/v1/scenario-template-skeletons` mirrors
+the engine's pipeline / agent / compilation / wiki skeletons read-only;
+`POST /api/v1/scenario-template-skeletons/{id}/import` always creates a **draft**
+that must clear the eval gate (`409/40918`) and signature checks (`400/40116`).
+The template health view reports first-run completion, 7-day activity, eval
+feedback, and repair completion; metrics without an evidence source show as
+unavailable with a reason rather than as zero.
+
 ## Models and API keys
+
+### Default models (platform-scoped)
+
+Default LLM and default embedding models are managed in **Models → Model
+providers → Default models**; you never need the engine's own admin UI.
+
+1. Pick a type (chat, embedding, rerank, ASR, vision, …). The panel shows the
+   current default, its status, and any failure reason.
+2. Choose a candidate from the tree (candidates come from models registered on
+   the engine; with no embedding model registered the list is empty).
+3. Save. Saving is a consistency operation: expectation check, write lock,
+   read-back verification, and one audit entry carrying the before/after values
+   and the operator.
+
+The permission resource is `model-default` (platform administrators read+manage,
+workspace administrators read). `409/40913` means another administrator holds the
+write lock; `409/40912` means the expected value changed under you — refresh and
+retry. **With no default embedding model, dataset creation is rejected locally**
+(`400/40085 no embedding model is registered in the engine…`), so set the default
+first.
 
 Administrators manage model providers, instances, routes, and API keys. API
 keys are tenant-scoped and support expiry, rate limits, and quotas. Credentials
@@ -201,6 +287,26 @@ be enabled. Only one active run is allowed per source at a time.
   missing entry point means `trial-run:read` is absent or the assistant is out
   of scope. A failed trial run stays `retrieval_failed`; fix the cause and
   re-run rather than expecting an empty fallback answer.
+- **Dataset creation rejected with `no embedding model is registered`:** the
+  platform has no usable default embedding model, so the request is blocked
+  locally (not an engine fault). Set one under **Model providers → Default
+  models**, then retry.
+- **Default model save returns 409 or 502:** `409/40912` — the expected value
+  changed, refresh first. `409/40913` — another administrator is writing, wait a
+  few seconds. `502/50256` — the engine refused or failed the write (the
+  upstream reason is passed through); fix the cause (deleted model, unavailable
+  instance) and retry. `502/50257` — the outcome is unknown because read-back
+  disagreed with the expectation (the response carries `operation_ref` and
+  `status:unknown`); read the current default back and hand `operation_ref` to
+  operations instead of retrying in a loop.
+- **Capability check stays `repairable`:** that is not a failure; apply the
+  offered repairs and re-check. Parse-profile repair answers `409/40915` while
+  parsed content exists (send `rewrite_existing: true` to re-parse) and
+  `409/40917` while a shared dataset is unacknowledged.
+- **Instantiation returns `409/40916`:** the same idempotency key is still
+  executing — wait and retry the same key. A previously failed instance resumes
+  on that key; check `instantiation_state` via
+  `GET /api/v1/template-instances/{id}`.
 - **Slow retrieval:** separate gateway latency from engine latency with the
   `ragflow_provider_roundtrip` and `qa_ragflow_chat` baselines. Do not judge
   trial runs or release gates on a slow environment.
