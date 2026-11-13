@@ -1,6 +1,6 @@
 # Audit-Chain Backup and Repair SOP
 
-> Applies to: RAGFlow-X v0.5.2 (schema migration v166 and later) | Updated: 2026-11-13
+> Applies to: RAGFlow-X v0.5.3 (schema migration v166 and later) | Updated: 2026-11-13
 
 ## Scope
 

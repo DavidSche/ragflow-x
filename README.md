@@ -5,7 +5,7 @@
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.5.2-green.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-v0.5.3-green.svg)](./CHANGELOG.md)
 [![Discord](https://img.shields.io/badge/Discord-community-blueviolet?logo=discord&logoColor=white)](https://discord.gg/fnc8Ds9nj)
 ![backend](https://img.shields.io/badge/backend-Go%20%2B%20Gin-informational.svg)
 ![frontend](https://img.shields.io/badge/frontend-React%20%2B%20shadcn--admin--kit-blueviolet.svg)
@@ -41,7 +41,14 @@ unified conversation experience.
 - **Honesty discipline.** Every turn records a structured answerability claim (answerable / confidence / source / abstain reason) on top of the engine's own answer — annotated, never rewritten.
 - **Search-app binding foolproofing.** dataset_ids resolve across link_id / link_name / engine_id with tenant-ownership validation, near-miss library suggestions instead of engine error leaks, and contract-as-documentation error codes (40092/40093/40095).
 
-## What's new in v0.5.2
+## What's new in v0.5.3
+
+A patch release on top of the v0.5.2 feature set: no schema, API-contract or permission-matrix
+change (migrations stay at v166). It fixes a `#/workbench?chat=<id>` hand-off that lost the target
+before the conversation centre could open it, and clears the `golangci-lint` findings that kept CI
+red on the v0.5.2 tag. Functionality is unchanged otherwise.
+
+## v0.5.2 feature highlights
 
 Two feature lines, both aimed at the same failure mode: the capability exists in the engine but a
 user cannot reach it from the product. See [CHANGELOG.md](./CHANGELOG.md) for the full list.
@@ -133,7 +140,7 @@ per-capability view is served at runtime by `GET /api/v1/system/capabilities`
 
 ### Run a release archive (recommended, UI included)
 
-**v0.5.2 ships as release archives only — no container image is published yet.** Every release
+**v0.5.3 ships as release archives only — no container image is published yet.** Every release
 binary embeds the frontend build, so API and UI come out of one file:
 
 ```bash

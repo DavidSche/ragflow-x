@@ -1,6 +1,6 @@
 # Operations Runbook and Failure Drill SOP
 
-> Updated: 2026-11-13 | Applies to: RAGFlow-X v0.5.2 (schema migration v166 and later)
+> Updated: 2026-11-13 | Applies to: RAGFlow-X v0.5.3 (schema migration v166 and later)
 > Note: `doc/NNN` identifiers refer to engineering-internal design records that are not part of
 > this repository; this document itself ships with the release.
 
@@ -37,12 +37,12 @@ Do not bypass approvals to modify production data.
 
 1. Announce the maintenance window.
 2. Back up the database and audit table.
-3. Obtain the release artifact: v0.5.2 ships as a **binary archive** (frontend embedded); no
+3. Obtain the release artifact: v0.5.3 ships as a **binary archive** (frontend embedded); no
    container image is published for this version. To run a container in staging, build it from
    source with `docker compose up -d --build` in `docker/`.
 4. Call `POST /api/v1/system/capabilities/verify` and confirm the engine
    version band and capability state before touching storage.
-5. Apply migrations with the migration account. v0.5.2 brings the schema to
+5. Apply migrations with the migration account. v0.5.3 brings the schema to
    **166**; every step is forward-only and re-runnable.
 6. Start the new version with the runtime account.
 7. Verify health, audit verification, task workers, gateway, and UI login.

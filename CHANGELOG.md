@@ -8,6 +8,22 @@
 > 引用约定：文中 `doc/NNN`、`doc/<目录>` 为工程内部设计/性能记录编号，**不随本仓库发布**，仅用于追证；
 > 随仓库发布的用户文档在 [`doc/user`](./doc/user/README.md)（用户手册、权限矩阵、运维 Runbook、审计链 SOP）。
 
+## [0.5.3] - 2026-11-13
+
+> **补丁版本：深链保留 + lint 门禁。** 无 schema 变更（仍为迁移 v166）、无 API 契约变更、
+> 无权限矩阵变更；升级方式与 v0.5.2 完全相同：替换二进制后启动即自动迁移。
+
+### 修复
+
+- **`#/workbench?chat=<id>` / `#/workbench?chatId=<id>` 深链不再被清空**：会话中心在
+  `useCanAccess` 权限检查尚未返回时把「未知」当成「无权限」，用只剩 `kind` 的查询串覆盖 URL，
+  用户经过工作台兼容跳转后会落到空白会话页。现在权限未决（`isPending`）时等待结论，不再提前清理 URL。
+  影响面仅前端路由，后端无改动。新增单测固定该场景（去掉守卫即失败）。
+- **`golangci-lint` 全绿**：清理 5 个文件里未使用的字段/函数与多余的类型字面量转换
+  （`internal/repository/scenario_health.go`、`internal/service/model_capability.go`、
+  `internal/service/scenario_eval_gate.go`、`internal/service/scenario_template_lifecycle.go`、
+  `internal/service/scenario_template_knowledge.go`），纯清理，无行为变化。
+
 ## [0.5.2] - 2026-11-13
 
 > **功能版本：默认模型管理与场景模板 2.0。** 两条主线都解决「能力在引擎里、但用户拿不到」的问题：

@@ -1,6 +1,6 @@
 # RAGFlow-X User Documentation
 
-> Applies to RAGFlow-X v0.5.2 | Updated: 2026-11-13 | These documents ship with the repository.
+> Applies to RAGFlow-X v0.5.3 | Updated: 2026-11-13 | These documents ship with the repository.
 
 This directory contains administrator and business-user documentation. Chinese
 documents are under [`zh-CN`](./zh-CN); English equivalents are under
@@ -20,7 +20,7 @@ private data centers.
 | Operations and failure drill SOP | [zh-CN/operations-runbook-and-failure-drill-sop.md](./zh-CN/operations-runbook-and-failure-drill-sop.md) | [en/operations-runbook-and-failure-drill-sop.md](./en/operations-runbook-and-failure-drill-sop.md) |
 | Audit-chain backup and repair SOP | [zh-CN/audit-chain-backup-and-repair-sop.md](./zh-CN/audit-chain-backup-and-repair-sop.md) | [en/audit-chain-backup-and-repair-sop.md](./en/audit-chain-backup-and-repair-sop.md) |
 
-**Install path for v0.5.2:** release binary archives only (the frontend is
+**Install path for v0.5.3:** release binary archives only (the frontend is
 embedded). No container image is published for this version — `docker/` still
 builds one from source. See the user guide's install section and the repository
 README.
@@ -34,9 +34,9 @@ videos are distributed as release assets, not as repository content.
 
 本目录面向管理员和业务用户。中文文档位于 [`zh-CN`](./zh-CN)，英文文档位于
 [`en`](./en)，共用截图位于 [`images`](./images)。以上文档随仓库发布，适用于
-RAGFlow-X v0.5.2（迁移 v166 起）。
+RAGFlow-X v0.5.3（迁移 v166 起）。
 
-**v0.5.2 安装方式**：只提供 release 二进制包（前端已内嵌），本版本不发布容器镜像；`docker/` 目录仍可从源码构建镜像与 Compose 栈。
+**v0.5.3 安装方式**：只提供 release 二进制包（前端已内嵌），本版本不发布容器镜像；`docker/` 目录仍可从源码构建镜像与 Compose 栈。
 
 发版操作手册与工程内部设计记录（`doc/NNN` 编号）由工程团队单独维护，**不随本仓库发布**；演示视频以 release 资产分发，不作为仓库内容。
 

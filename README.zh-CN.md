@@ -5,7 +5,7 @@
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.5.2-green.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-v0.5.3-green.svg)](./CHANGELOG.md)
 [![Discord](https://img.shields.io/badge/Discord-社区讨论-blueviolet?logo=discord&logoColor=white)](https://discord.gg/fnc8Ds9nj)
 ![backend](https://img.shields.io/badge/backend-Go%20%2B%20Gin-informational.svg)
 ![frontend](https://img.shields.io/badge/frontend-React%20%2B%20shadcn--admin--kit-blueviolet.svg)
@@ -26,7 +26,13 @@ RAGFlow-X 面向私有数据中心和企业真实生产环境。「不 Fork」�
 - **诚实度纪律**：每轮对话在引擎答案之上记录结构化 answerability 声明（是否可答/置信度/依据来源/拒答理由）——只注释、不改写引擎答案。
 - **搜索应用绑定防呆**：dataset_ids 支持 link_id | link_name | engine_id 解析并校验归租户，给近邻库建议而非泄漏引擎报错，错误契约即文档（40092/40093/40095）。
 
-## v0.5.2 更新要点
+## v0.5.3 更新要点
+
+在 v0.5.2 功能面之上的补丁版本：无 schema 变更（迁移仍为 v166）、无 API 契约变更、无权限矩阵变更。
+修复 `#/workbench?chat=<id>` 兼容跳转在会话中心打开前丢掉目标的问题，并清掉让 v0.5.2 tag 上 CI 变红的
+`golangci-lint` 告警；其余功能不变。
+
+## v0.5.2 功能要点
 
 两条功能主线瞄准的是同一个失效模式：能力在引擎里，但用户在平台里够不到。完整清单见
 [CHANGELOG.md](./CHANGELOG.md)。
@@ -91,7 +97,7 @@ v0.2.0 之后的第一个正式发布，合并三条版本线（v0.3.0 知识编
 
 ### 直接运行发布包（推荐，自带前端）
 
-**v0.5.2 只提供 release 二进制包，暂不提供容器镜像。** 每个发布二进制都把前端构建产物嵌进去了，
+**v0.5.3 只提供 release 二进制包，暂不提供容器镜像。** 每个发布二进制都把前端构建产物嵌进去了，
 API 与界面同一个文件：
 
 ```bash
