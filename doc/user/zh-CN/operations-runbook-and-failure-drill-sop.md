@@ -1,7 +1,7 @@
 # 运维 Runbook 与故障演练 SOP
 
-> 日期：2026-11-10\
-> 适用版本：RAGFlow-X v0.5.0（迁移 v161 起；v0.2.0 起的升级路径见第 16 节）
+> 日期：2026-11-13\
+> 适用版本：RAGFlow-X v0.5.2（迁移 v166 起；v0.2.0 起的升级路径见第 16 节）
 > 状态：SOP 已发布；真实环境演练记录仍为空，必须按第 13 节证据模板归档后才可宣布运维验收完成。
 > 说明：文中 `doc/NNN` 为工程内部设计记录编号，不随本仓库发布；本文件自身随仓库发布。
 
@@ -91,16 +91,19 @@
 
 ### 升级中
 
-1. 先在 staging 完成镜像、迁移、Gateway smoke、Release Gate smoke。
+1. 先在 staging 完成安装包、迁移、Gateway smoke、Release Gate smoke。v0.5.2 的安装包是 release 二进制归档
+   （前端已内嵌，**本版本不提供容器镜像**；需要镜像时在 staging 用 `docker compose up -d --build` 从源码构建）。
 2. 生产滚动升级时先切一个副本，观察错误率、P95、SSE 首包和配额释放。
 3. 使用固定环境变量部署，禁止依赖实例本地随机密钥。
 
 ### 升级后
 
-1. 确认迁移版本与预期一致。
+1. 确认迁移版本与预期一致：v0.5.2 应为 **166**（163 权限回填 / 164 恢复 claim 表 / 165 基线血缘列 / 166 实例幂等索引）。
 2. 执行第 3 节健康检查。
 3. 用真实 API Key 分别 smoke Chat、Search App、Agent 的授权、拒绝和配额路径。
 4. 恢复资源同步，先 scan/import，不直接 reconcile。
+5. **默认模型**：`GET /api/v1/model-providers/defaults` 确认 `chat` / `embedding` 均为 `ok`；若为 `unset`，建库会被本地拦截（`400/40085`），先补默认 embedding 再开放业务。
+6. **场景模板**：确认目录（`GET /api/v1/scenario-template-catalog`）里平台基线与本工作区已发布模板都在，已发布版本的 `payload_schema` / `lineage_state` 与升级前一致；能力检查仍能在示例数据集上给出结论。
 
 ## 6. 回滚 SOP
 
@@ -363,9 +366,9 @@ Runbook 使用：演练证据模板（§13）中的 `trace_id` 可直接粘贴�
 | 试跑幂等 | 同上，`idempotency_key` | 409/40941 = 同 key 换了助手；409/40942 = 助手未绑定该模板 |
 | 流式失败审计 | `gateway.stream_error` 审计动作；错误码 `502/50231`（chat）、`502/50265`（search）、`502/50289`（agent） | 失败投放为 `SYSTEM_FAILED` 且**不计费**；同一流只有一条终态错误（`doc/235` §4） |
 
-### 16.2 升级与回滚（迁移 150–162）
+### 16.2 升级与回滚（迁移 150–166）
 
-v0.5.0 的迁移上新至 **162**，全部为前向迁移（不写 down 脚本），重复执行安全：
+v0.5.2 的迁移上新至 **166**，全部为前向迁移（不写 down 脚本），重复执行安全：
 
 | 迁移 | 内容 | 回滚影响 |
 | --- | --- | --- |
@@ -376,6 +379,10 @@ v0.5.0 的迁移上新至 **162**，全部为前向迁移（不写 down 脚本�
 | 157 | `rgx_trial_run`、`rgx_trial_case_result`、`rgx_chat` 两列 + 两个唯一索引 | 旧版本不读试跑表；**禁止**手工 `DROP TABLE`（已产生的试跑证据会丢） |
 | 158–161 | RBAC 数据同步：`business_user` 读意图、`team_admin` 成员面、`trial-run` 独立资源、`viewer` 读权收敛 | 纯数据、幂等；回滚后重启会按旧版内置矩阵重新 reconcile |
 | 162 | 引用定位列（`ref_index`/`positions`）+ 每轮 top 检索相似度 | 加列型，旧版本忽略新列 |
+| 163 | 默认模型资源 `model-default` 权限回填（**纯数据**，幂等） | 旧版本不认该资源；回滚后相关端点 403，回滚前先确认无自动化依赖 |
+| 164 | `rgx_model_default_recovery_claim`（默认模型写失败补偿的幂等 claim 表） | 旧版本不读；**禁止**手工删表（进行中的补偿会失去协调点） |
+| 165 | 模板基线血缘三列（`baseline_key`/`baseline_version`/`lineage_state`）+ 历史行打标 | 加列型 + 幂等 UPDATE；回滚后旧版本忽略新列，payload 未改写 |
+| 166 | 模板实例 `idempotency_key`/`assistant_kind`/`instantiation_state`/`upstream_refs` + 试跑/搜索/智能体影子表溯源列 + `uidx_rgx_template_instance_idempotency` 部分唯一索引 | 加列 + 唯一索引；旧版本不读，回滚后同键重复实例化可能重现 |
 
 
 1. **升级前**：按 §6 备份；确认 `RGX_TEST_POSTGRES_DSN` 指向**非生产库**先跑一次重入契约
@@ -420,7 +427,7 @@ v0.5.0 的迁移上新至 **162**，全部为前向迁移（不写 down 脚本�
 
 #### 已知上游缺陷台账（2026-11-10 实测，上游未修）
 
-U1–U5 已被本产品行为吸收，U6–U8 是公开 issue 跟踪项，U9–U11 为未验证面，U12 上游已修。
+U1–U5、U13–U15 已被本产品行为吸收，U6–U8 是公开 issue 跟踪项，U9–U11 为未验证面，U12 上游已修。
 现场排查前先用 `GET /api/v1/system/capabilities` 的 `version_issues` 对一遍台账（与本节同源，机器可读）。
 
 | 编号 | 上游缺陷 | 现场表现 | 处置 / 注意 |
@@ -435,6 +442,9 @@ U1–U5 已被本产品行为吸收，U6–U8 是公开 issue 跟踪项，U9–U
 | U8 | #21096 Windows 构建破损（`statusFromExitCode`，PR #21099 无人评审） | Windows 上构建上游 sandbox 失败 | 上游 sandbox 只在 Linux 运行；本产品不重写执行器，只在平台侧治理审计 |
 | U9–U11 | 图检索评分形式 / Memory `team-me` 权限模型 / agent `sandbox`·`skills` 面跨版本漂移 | 版本间行为不一致（`untested`） | 只在 dry run 触达，**不得**在未验证带上当发版门禁；升级后先小流量验证再放量 |
 | U12 | search app 单数 `/completion` 回归 `50265` | 旧路径报错 | 上游已修复；本侧固定复数 `/searches/{id}/completions`，改路径前先看契约测试 |
+| U13 | 数据集配置读写形态不一致：写入拒 `chunk_method`（`101 extra inputs are not permitted`）、读取只回 `parser_id`、无改动 `PUT` 回 `102 no properties were modified` | 改解析档像被静默忽略，或报 101/102 | 读写统一走 `ParseMethod()` / `{parse_type:1, parser_id:…}`；消息 102 按幂等成功处理（`doc/276` §8.6） |
+| U14 | `GET /agents/templates/{id}` 对列表里存在的模板回 404；`components` 序列化为按节点 id 的 map 而非数组 | 单模板详情像“不存在”，画布校验因形态不符失败 | 单行读 404 回退目录；canvas 白名单同时接受数组与 map 两种形态 |
+| U15 | 未注册任何 embedding 模型时 `POST /datasets` 回 **HTTP 200 + `code:500 model configuration unavailable`**（U3 的运行期表现） | 建库失败但只有引擎原文，看不出是模型没配 | 入口本地拦截 `400/40085` 并给可行动提示；上游业务拒绝统一映射 400 + 原文（`502` 只留传输/5xx） |
 
 ### 16.6 发版前五条复核命令
 
@@ -443,7 +453,45 @@ go build ./... && go vet ./...
 go test ./internal/service -count=1 -timeout 30m     # 默认 10m 会 panic，必须显式放宽
 go test ./internal/db ./internal/router ./internal/gateway/contract -count=1
 RGX_TEST_POSTGRES_DSN=... go test ./internal/db -run 'TestMigrationV157' -count=1 -v
-cd web && npx tsc --noEmit && npx vitest run
+cd web && npx tsc -p tsconfig.app.json --noEmit && npx vitest run   # 仓库 tsconfig.json 只有 references，直接 --noEmit 会“零报错空跑”
 ```
 
-已知执行约束（非代码缺陷）：`go build` 范围用 `./cmd/... ./internal/...`（仓库内若留有上游解包目录，`./...` 会编译失败）；`go test ./internal/service` 全包耗时约 15 分钟，需显式放宽 `-timeout`；live 套件一律单轮串行、无并发，按 `RGX_ALLOW_*` 显式开启；前端静态检查以 `tsc --noEmit` 为准。
+已知执行约束（非代码缺陷）：`go build` 范围用 `./cmd/... ./internal/...`（仓库内若留有上游解包目录，`./...` 会编译失败）；`go test ./internal/service` 全包耗时约 15 分钟，需显式放宽 `-timeout`；live 套件一律单轮串行、无并发，按 `RGX_ALLOW_*` 显式开启；前端静态检查以 `npx tsc -p tsconfig.app.json --noEmit` 为准（不带 `-p` 会空跑零报错）。
+
+## 17. v0.5.2 增量处置（2026-11-13）
+
+本节只写 v0.5.2 新增的两个面：平台级默认模型、场景模板 2.0。发版形态同时变化：**只发 release 二进制归档，
+不发容器镜像**（`release.yml` 的 docker 任务是 opt-in，仓库变量 `PUSH_IMAGE=true` 才推送）。
+
+### 17.1 默认模型写失败怎么处置
+
+| 现象 | 含义 | 处置 |
+| --- | --- | --- |
+| `409/40912` | 期望值已变（别人刚改过） | 刷新面板，看清当前值再改；不要盲重试 |
+| `409/40913` | 写锁被另一个请求持有 | 等锁 TTL 过期后重试；**禁止**并发刷写 |
+| `502/50256` | 引擎侧设置默认模型失败（带上游原文） | 按原文修上游（模型被删、实例不可用等）后重试 |
+| `502/50257` | 结果未知：写后回读与期望不一致（`operation_ref` + `status:unknown`） | 先读回当前默认；记 `operation_ref` 交研发，重复重试只会放大不一致 |
+| 面板 `status=unset` | 该类型没有默认值 | 建库会被本地拦截（`400/40085 no embedding model is registered in the engine…`），先补默认 embedding |
+
+恢复补偿 worker 只依赖 `rgx_model_default_recovery_claim` 做幂等协调，**从不 UPDATE 审计行**；
+审计链校验（第 11 节）如果报断链，不要用这条链路去“修”，按审计 SOP 处理。
+
+### 17.2 场景模板 2.0 现场口径
+
+- **能力检查四态**：`satisfied` / `repairable` / `probe_limited` / `blocked`，优先级 `blocked > probe_limited > repairable > satisfied`。
+  `repairable` 不是故障，按返回的 `repairs[]` 动作处理后重查即可。
+- **解析档修复顺序固定**：`403` → `409/40915`（已有解析内容，需 `rewrite_existing:true`）→ `409/40917`（共享未确认，需
+  `acknowledge_shared_impact:true`）→ 审批挂起 → 写入。任何一步都不能靠“再点一次”绕过。
+- **元数据下推**是平台侧执行策略（`pushdown_enabled`），只落在产品库，**永不上推引擎**；不要用引擎侧变更去“对齐”。
+- **实例化幂等**：只认 Header `Idempotency-Key`（缺失 `422/42231`）；同键执行中 `409/40916`；实例 `failed` 后同键会**续跑**，
+  需要判断状态看 `GET /api/v1/template-instances/{id}` 的 `instantiation_state`。
+- **导入永远是草稿**：评测门未过 `409/40918`、签名不符 `400/40116`、未知方言 `400/40047`、「声称 v3 但无 pack」`400/40062`。
+- **健康板缺证据源**的指标显示为不可用并带原因（例如 `repair_completion_rate`），不要按 0 汇报。
+
+### 17.3 发版与回滚
+
+1. 发布资产：`ragflow-x-<version>-<os>-<arch>.tar.gz|.zip` + `SHA256SUMS` + `CHANGELOG.md`（引擎带与上游台账随包发布）。
+2. 回滚按第 6 节：应用可回滚，**表与列保留**；回滚到旧版本后 `model-default` 端点会 403，
+   基线血缘列与实例幂等列被旧版本忽略，不会破坏已有数据。
+3. 回滚后必须复核：默认模型读回、场景模板目录与已发布版本、审计链校验。
+

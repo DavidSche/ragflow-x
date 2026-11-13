@@ -1,11 +1,11 @@
 # RAGFlow-X
 
-> An enterprise knowledge-infrastructure layer for RAGFlow in private data centers (Control Plane + Gateway). RAGFlow remains the core RAG execution and data plane — integrated strictly through its official HTTP APIs, never forked or bypassed. RAGFlow-X is the single business operations surface: all enterprise workflows (knowledge bases, parsing, chunk governance, retrieval tuning, conversations, agents, approvals, audit) are performed in the RAGFlow-X UI; RAGFlow's native web UI is reserved for engine-level administration only.
+> An enterprise knowledge-infrastructure layer for RAGFlow in private data centers (Control Plane + Gateway). RAGFlow remains the core RAG execution and data plane — integrated strictly through its official HTTP APIs, never forked or bypassed. RAGFlow-X is the single business operations surface: all enterprise workflows (knowledge bases, parsing, chunk governance, retrieval tuning, conversations, agents, approvals, audit) are performed in the RAGFlow-X UI; RAGFlow's native web UI is reserved for engine-level administration only (maintaining the service account / API key behind the RAGFlow instance RAGFlow-X uses, and engine-level service adjustments that the HTTP API does not expose); every business and ops action the API can express — including shared-resource settings such as tenant default models — happens inside RAGFlow-X, so product users should never juggle both admin tools.
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](./LICENSE)
-[![version](https://img.shields.io/badge/version-v0.5.1-green.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-v0.5.2-green.svg)](./CHANGELOG.md)
 [![Discord](https://img.shields.io/badge/Discord-community-blueviolet?logo=discord&logoColor=white)](https://discord.gg/fnc8Ds9nj)
 ![backend](https://img.shields.io/badge/backend-Go%20%2B%20Gin-informational.svg)
 ![frontend](https://img.shields.io/badge/frontend-React%20%2B%20shadcn--admin--kit-blueviolet.svg)
@@ -27,12 +27,12 @@ unified conversation experience.
 ## Highlights
 
 - **No fork, API-first.** RAGFlow operations use the official `/api/v1` HTTP API; operational data lives in an independent `rgx_*` PostgreSQL/SQLite database.
-- **Single operations surface.** All business workflows happen in the RAGFlow-X UI — including equivalents of RAGFlow's own business features (datasets, parsing, chunks, retrieval testing, chat, agents); RAGFlow's native web UI is engine-admin-only.
+- **Single operations surface.** All business workflows happen in the RAGFlow-X UI — including equivalents of RAGFlow's own business features (datasets, parsing, chunks, retrieval testing, chat, agents); RAGFlow's native web UI is engine-admin-only (service account / API key maintenance and engine-level adjustments beyond the API); shared, cross-user resource settings such as default models are managed at platform level in RAGFlow-X.
 - **Security and governance.** Tenant governance, RBAC/ABAC, approvals, audit, observability, metering, retention, and a governed enterprise gateway.
 - **Gateway.** `POST /v1/chat/completions` with authentication, RBAC, rate limiting, atomic quota reservation, metering, audit, 429 handling, and degradation.
 - **Full-lifecycle knowledge system.** Dataset integration, parsing, quality, versioning, publication, consumption, feedback, evaluation, and operations.
 - **Unified conversation center.** A consistent entry point for Chat, Search, and Agent experiences with role-aware routing, citations, rich content, tools, and export.
-- **Production readiness.** Version/capability probing, contract tests, Docker Compose, structured logging, Prometheus, and audit hash-chain verification.
+- **Production readiness.** Version/capability probing, contract tests, release archives with the UI embedded, Docker Compose from source, structured logging, Prometheus, and audit hash-chain verification.
 - **Verified against RAGFlow v1.0.0 (stable).** All 97 upstream endpoints in the capability registry are pinned to the v1.0.0 engine
   (re-verified on a live v1.0.0 deployment), and the five real behaviour drifts found on v1.0.0 (dataset-create schema,
   chat completion route, artifact surface, canvas list, document parse binding) are all fixed and guarded by
@@ -40,6 +40,34 @@ unified conversation experience.
 - **Citation transparency.** Citations carry ref_index/positions for precise in-document positioning; the conversation center rehydrates citations from the completion-time snapshot (v1.0.0 sessions no longer echo them on read-back).
 - **Honesty discipline.** Every turn records a structured answerability claim (answerable / confidence / source / abstain reason) on top of the engine's own answer — annotated, never rewritten.
 - **Search-app binding foolproofing.** dataset_ids resolve across link_id / link_name / engine_id with tenant-ownership validation, near-miss library suggestions instead of engine error leaks, and contract-as-documentation error codes (40092/40093/40095).
+
+## What's new in v0.5.2
+
+Two feature lines, both aimed at the same failure mode: the capability exists in the engine but a
+user cannot reach it from the product. See [CHANGELOG.md](./CHANGELOG.md) for the full list.
+
+- **Default model management, platform-scoped.** `GET/PATCH /api/v1/model-providers/defaults` plus
+  `GET .../defaults/options` turn the default LLM and default embedding model into a governed write
+  instead of a manual trip into the engine's own admin UI. Each write is a consistency operation:
+  compare-and-set (`409/40912`), a distributed write lock (`409/40913`), read-back verification, an
+  audit entry carrying the before/after values, and a recovery compensator backed by its own claim
+  table — audit rows are never updated, so the hash chain stays intact. New permission resource
+  `model-default` (platform admin read+manage, workspace admin read).
+- **Scenario Template 2.0.** Platform baseline → workspace fork → immutable publish, with lineage
+  recorded on the template itself and a catalog that is exactly "platform baselines ∪ workspace
+  published". A knowledge contract declares what a template needs, and `capability-check` answers
+  `satisfied / repairable / probe_limited / blocked` per dataset with concrete repair actions. Parse
+  profiles are repaired explicitly (`409/40915` before `409/40917`, never a silent re-parse). One
+  instantiation endpoint orchestrates chat/search/agent, keyed by an `Idempotency-Key` header and
+  guarded by a unique index — and a failed run resumes on the same key instead of answering
+  "in progress" forever. Engine skeletons are mirrored read-only and imported as drafts behind an
+  eval gate and signature checks, and Scenario Pack v3 separates the engine-agnostic core from the
+  `runtimeExtension.ragflow` runtime block.
+- **Error honesty.** An upstream business rejection (HTTP 200 with `code≠0`) is no longer reported as
+  a `502`: it becomes `400/40085` carrying the engine's own message. `502` is now reserved for
+  transport failures and 5xx.
+- **Schema 162 → 166**: four additive migrations (permission backfill, recovery claim table, baseline
+  lineage columns, instantiation provenance plus the idempotency index). No table rebuild, no drops.
 
 ## What's new in v0.5.0
 
@@ -103,10 +131,10 @@ per-capability view is served at runtime by `GET /api/v1/system/capabilities`
 
 ## Quick start
 
-### Run a release archive (UI included)
+### Run a release archive (recommended, UI included)
 
-Every release binary embeds the frontend build, so API and UI come out of one
-file:
+**v0.5.2 ships as release archives only — no container image is published yet.** Every release
+binary embeds the frontend build, so API and UI come out of one file:
 
 ```bash
 # unpack ragflow-x-<version>-<os>-<arch>.tar.gz / .zip, then
@@ -141,7 +169,10 @@ The local profile uses SQLite and a mock RAGFlow client.
 2. Configure `ragflow.base_url`, `api_key`, PostgreSQL, and Redis. Inject secrets through `RGX_*` environment variables.
 3. Start with `make start`.
 
-### Docker Compose
+### Docker (optional: build the image yourself)
+
+No prebuilt image is published for this release. The `docker/` directory still
+builds a working image and a Compose stack from source:
 
 ```bash
 cd docker
@@ -149,17 +180,10 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-To use a prebuilt image:
-
-```bash
-docker pull ghcr.io/davidsche/ragflow-x:v0.5.1
-```
-
-Replace the `build:` section in `docker-compose.yml` with:
-
-```yaml
-image: ghcr.io/davidsche/ragflow-x:v0.5.1
-```
+When an image registry is available again, the release workflow can publish
+multi-arch images by setting the repository variable `PUSH_IMAGE=true`; the
+`release.yml` docker job is opt-in for exactly that reason. Until then, the
+release archive above is the supported install path.
 
 ## User documentation
 

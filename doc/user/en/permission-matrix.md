@@ -1,6 +1,6 @@
 # Built-In Roles and Permission Matrix
 
-> Version: v1.16 | Updated: 2026-11-10
+> Version: v1.18 | Updated: 2026-11-13
 
 The authoritative source is `BuiltinPermissionMatrix()` in
 `internal/db/migrate.go`. The service reconciles built-in permissions from this
@@ -86,6 +86,10 @@ compilation sub-resources:
   audit-chain anchors, and the audit export across workspaces.
 - `tenant_admin` manages resources inside one workspace but cannot implicitly
   write another workspace.
+- `model-default` (platform-scoped, doc/269): default models are global settings
+  on the shared RAGFlow tenant, so only `platform_admin` may write them
+  (`read`+`manage`); `tenant_admin` may read them (read-only panel in the UI).
+  No other built-in role holds either grant.
 - `operator` can run knowledge operations but cannot manage system settings,
   roles, brands, model providers, API keys, or audit.
 - `business_user` can ask questions and read/export answer snapshots within
@@ -160,7 +164,7 @@ had already reached the latest schema version. Startup reconciliation replaces
 the built-in matrix with current explicit grants and prevents stale wildcard
 permissions from remaining active.
 
-As of v0.5.0 (schema 162) the matrix holds **424 rows across 59 resources with
+As of v0.5.2 (schema 166) the matrix holds **429 rows across 61 resources with
 zero read-privilege inversions**. `viewer` keeps read-only access to 14 business
 resources, `trial-run` has been its own resource (`read`/`execute`) since
 migration 160, and the superset edges `business_user ⊇ viewer` and

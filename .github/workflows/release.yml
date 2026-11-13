@@ -9,7 +9,12 @@
 #   1. build job: cross-compile Go binaries (linux/amd64, linux/arm64, darwin/amd64,
 #      windows/amd64) with the release version stamped into main.version, build the
 #      frontend, package everything into tarballs with SHA256SUMS
-#   2. docker job: build & push the multi-arch image to ghcr.io
+#   2. docker job (opt-in): build & push the multi-arch image to ghcr.io. It only
+#      runs when the repository variable PUSH_IMAGE is "true"; until the registry
+#      path is settled, releases ship binary archives only and the release notes
+#      omit the `docker pull` line so they cannot advertise an image that does not
+#      exist. `release` does not `needs` this job, so skipping it never blocks a
+#      release.
 #   3. release job: download artifacts, verify SHA256 checksums (integrity gate),
 #      render release notes from git history, create the GitHub Release and upload
 
@@ -187,6 +192,10 @@ jobs:
 
   docker:
     needs: build
+    # Opt-in: binary archives are the supported install path until an image
+    # registry is available. Set the PUSH_IMAGE repository variable to "true" to
+    # re-enable publishing; nothing else in this workflow has to change.
+    if: vars.PUSH_IMAGE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -320,6 +329,9 @@ jobs:
           }
           SUPPORTED_BLOCK="$(changelog_block 'Supported engine versions')"
           UPSTREAM_BLOCK="$(changelog_block 'Known upstream issues (RAGFlow v1.0.0)')"
+          # The image only exists when the docker leg ran (see that job's `if:`);
+          # advertising it otherwise sends users to a 404 on the registry.
+          PUSH_IMAGE="${{ vars.PUSH_IMAGE == 'true' }}"
 
           {
             echo "## ragflow-x ${TAG}"
@@ -367,9 +379,19 @@ jobs:
             echo "ragflow-x.exe"
             echo "# 打开 http://localhost:9191/ ：无可用数据库时进入配置向导，向导完成后原地切换"
             echo
-            echo "# Docker"
-            echo "docker pull ${IMAGE}:${TAG}"
             echo '```'
+            if [ "${PUSH_IMAGE}" = "true" ]; then
+              echo
+              echo "容器镜像："
+              echo
+              echo '```bash'
+              echo "docker pull ${IMAGE}:${TAG}"
+              echo '```'
+            else
+              echo
+              echo "> 本版本**不提供容器镜像**：请使用上面的 release 二进制包（前端已内嵌）。"
+              echo "> 需要镜像时可从源码构建：`cd docker && docker compose up -d --build`。"
+            fi
             echo
             echo "### 校验"
             echo

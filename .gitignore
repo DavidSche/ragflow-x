@@ -81,6 +81,10 @@ run/
 # Local scratch dirs (kept out of VCS pending per-file review)
 tmp/
 
+# tasks/ is a transient execution area (see tasks/README.md): it is emptied at
+# the end of every slice, so its contents never belong in history.
+/tasks/
+
 # Development docs and local test data: intentionally untracked until each
 # file is reviewed for release (see doc/126 pre-release review report).
 # Do NOT add these back in bulk; whitelist individual files after review.

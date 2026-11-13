@@ -1,6 +1,6 @@
 # Operations Runbook and Failure Drill SOP
 
-> Updated: 2026-11-10 | Applies to: RAGFlow-X v0.5.0 (schema migration v162 and later)
+> Updated: 2026-11-13 | Applies to: RAGFlow-X v0.5.2 (schema migration v166 and later)
 > Note: `doc/NNN` identifiers refer to engineering-internal design records that are not part of
 > this repository; this document itself ships with the release.
 
@@ -37,16 +37,18 @@ Do not bypass approvals to modify production data.
 
 1. Announce the maintenance window.
 2. Back up the database and audit table.
-3. Build or pull the release artifact.
+3. Obtain the release artifact: v0.5.2 ships as a **binary archive** (frontend embedded); no
+   container image is published for this version. To run a container in staging, build it from
+   source with `docker compose up -d --build` in `docker/`.
 4. Call `POST /api/v1/system/capabilities/verify` and confirm the engine
    version band and capability state before touching storage.
-5. Apply migrations with the migration account. v0.5.0 brings the schema to
-   **162**; every step is forward-only and re-runnable.
+5. Apply migrations with the migration account. v0.5.2 brings the schema to
+   **166**; every step is forward-only and re-runnable.
 6. Start the new version with the runtime account.
 7. Verify health, audit verification, task workers, gateway, and UI login.
 8. Keep the previous artifact available for rollback.
 
-### Migration map (150–162)
+### Migration map (150–166)
 
 | Migration | Content | Rollback impact |
 |---|---|---|
@@ -63,6 +65,19 @@ Do not bypass approvals to modify production data.
   idempotent; a restart re-reconciles the built-in matrix |
 | 162 | Citation locator columns + per-turn top retrieval similarity |
   Additive; older versions ignore the new columns |
+| 163 | `model-default` permission resource backfill (**data only**, idempotent) |
+  Older versions do not know the resource; after a rollback its endpoints 403 |
+| 164 | `rgx_model_default_recovery_claim` (idempotent claim table for failed
+  default-model writes) | Older versions ignore it; never drop it by hand while a
+  compensation is in flight |
+| 165 | Template baseline lineage (`baseline_key`/`baseline_version`/
+  `lineage_state`) plus idempotent stamping of historical rows | Additive columns;
+  payloads are never rewritten |
+| 166 | Template-instance `idempotency_key`/`assistant_kind`/`instantiation_state`/
+  `upstream_refs`, template provenance on trial-run and shadow tables, and the
+  `uidx_rgx_template_instance_idempotency` partial unique index | Older versions
+  ignore the columns; after a rollback duplicate instantiation on one key can
+  reappear (the old version never had the guarantee) |
 
 ### Upstream engine upgrade checklist (v1.0.0)
 
@@ -106,6 +121,9 @@ troubleshooting, compare against `GET /api/v1/system/capabilities` — its
 | U8 | #21096 — Windows build breakage in the agent sandbox (`statusFromExitCode`, PR #21099 unreviewed) | The upstream sandbox cannot be built on Windows | The upstream sandbox runs on Linux only; the platform governs and audits it, never re-implements it |
 | U9–U11 | Graph-retrieval scoring form / Memory `team-me` permission model / agent `sandbox`·`skills` surfaces drift between builds | Behaviour differs across versions (`untested`) | Exercised in dry runs only; never used as a release gate on an unverified band; pilot small traffic after an upgrade |
 | U12 | The singular search-app `/completion` path regressed with `50265` | Old path errors out | Fixed upstream; this product pins the plural `/searches/{id}/completions` — check contract tests before changing it |
+| U13 | Dataset config read/write shapes disagree: writes reject `chunk_method` (`101 extra inputs are not permitted`), reads return only `parser_id`, a no-op `PUT` answers `102 no properties were modified` | Parse-type writes look ignored or rejected | Read/write go through `ParseMethod()` / `{parse_type:1, parser_id:…}`; message 102 is treated as idempotent success |
+| U14 | `GET /agents/templates/{id}` returns 404 for templates that exist in the list; `components` is serialised as an object keyed by node id, not an array | Single-template detail looks missing; canvas validation fails on shape | A 404 on single-read falls back to the catalogue; the canvas whitelist accepts both shapes |
+| U15 | With no embedding model registered, `POST /datasets` answers **HTTP 200 + `code:500 model configuration unavailable`** (runtime face of U3) | Dataset creation fails with an opaque engine message | Blocked locally with `400/40085` and an actionable hint; upstream business rejections map to 400 with the engine's text |
 
 ## Rollback
 
@@ -114,7 +132,39 @@ troubleshooting, compare against `GET /api/v1/system/capabilities` — its
    requires it. Do not guess schema compatibility.
 3. Start the previous version.
 4. Run health checks and audit-chain verification.
+5. Re-check platform defaults after a rollback: `GET /api/v1/model-providers/defaults`
+   (a resource unknown to an older build answers 403) and confirm scenario templates
+   still list their published versions before reopening business traffic.
 5. Record the rollback cause and evidence.
+
+## v0.5.2 additions: default models and scenario templates
+
+**Default model writes.** `PATCH /api/v1/model-providers/defaults` is a
+consistency operation, so the failure codes are operational, not cosmetic:
+`409/40912` means the expected value changed (refresh, then retry);
+`409/40913` means another request holds the write lock (wait, never hammer it);
+`502/50256` means the engine refused or failed the write (the upstream reason is
+passed through — fix the model or instance and retry); `502/50257` means the
+outcome is unknown because read-back disagreed with the expectation (read the
+current default back and hand `operation_ref` to engineering, do not loop). A type showing `unset` blocks dataset creation locally with
+`400/40085 no embedding model is registered in the engine…`. The compensator
+coordinates through `rgx_model_default_recovery_claim` and never updates audit
+rows — if audit verification reports a broken chain, follow the audit SOP
+instead of "repairing" it through this path.
+
+**Scenario templates.** Capability verdicts are
+`satisfied / repairable / probe_limited / blocked` (priority
+`blocked > probe_limited > repairable > satisfied`); `repairable` is a work item,
+not an incident. Parse-profile repair has a fixed order: `403` → `409/40915`
+(parsed content exists, send `rewrite_existing: true`) → `409/40917` (shared
+dataset unacknowledged, send `acknowledge_shared_impact: true`) → approval →
+write. `pushdown_enabled` is a platform-side execution policy and is never
+pushed upstream. Instantiation accepts only the `Idempotency-Key` header
+(`422/42231` when missing), answers `409/40916` while the key is executing, and
+**resumes a failed run on the same key** — check `instantiation_state` via
+`GET /api/v1/template-instances/{id}`. Imports always create drafts that must
+clear the eval gate (`409/40918`) and signature checks (`400/40116`). Metrics
+without an evidence source report as unavailable, never as zero.
 
 ## RAGFlow degradation
 

@@ -26,6 +26,13 @@ WORKDIR /src
 # Release version stamped into the binary (set by release.yml / docker build --build-arg).
 ARG VERSION=dev
 
+# Module proxy. Defaults to the upstream one, which is what CI uses; networks
+# that cannot reach proxy.golang.org (mainland China, some corp egress) build
+# with `--build-arg GOPROXY=https://goproxy.cn,direct` instead of failing on
+# `go mod download`.
+ARG GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=${GOPROXY}
+
 # Cache module downloads first so dependency layers are reused.
 COPY go.mod go.sum ./
 RUN go mod download

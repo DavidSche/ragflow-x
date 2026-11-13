@@ -8,6 +8,137 @@
 > 引用约定：文中 `doc/NNN`、`doc/<目录>` 为工程内部设计/性能记录编号，**不随本仓库发布**，仅用于追证；
 > 随仓库发布的用户文档在 [`doc/user`](./doc/user/README.md)（用户手册、权限矩阵、运维 Runbook、审计链 SOP）。
 
+## [0.5.2] - 2026-11-13
+
+> **功能版本：默认模型管理与场景模板 2.0。** 两条主线都解决「能力在引擎里、但用户拿不到」的问题：
+> 默认 LLM / embedding 从「只能去引擎后台点」变成平台内有 CAS、有锁、有审计、有补偿的一次写；
+> 场景模板从「一键生成草稿」升级为「基线 + 知识契约 + 能力四态 + 可修复 + 可验证 + 可导入导出」的闭环。
+> **迁移 162 → 166**（163 纯数据回填、164 新表、165 三列 + 数据打标、166 实例状态/幂等列 + 试跑与影子表溯源列 + 唯一索引），
+> 升级方式：替换二进制后启动即自动迁移。
+
+### 新增：平台级默认模型管理
+
+- **三种默认类型一个写入口**：`GET /api/v1/model-providers/defaults`（读当前默认 + 每类型状态
+  `ok/invalid/verify_failed/unset`）、`GET /api/v1/model-providers/defaults/options`（候选模型树，
+  `no-store`）、`PATCH /api/v1/model-providers/defaults`（写默认）。
+- **写入是一致性操作而不是一次 PUT**：CAS 期望值不符 `409/40912`、并发写锁占用 `409/40913`、
+  上游设置失败 `502/50256`（带原文）、写后回读与期望不一致 `502/50257`（`status:unknown` + `operation_ref`）；
+  参数侧 `400/40035`（当前引擎不支持该类型）、`400/40036`（缺 `expected_model_id`）、`400/40037`（模型不属于本租户）、
+  `400/40038`（类型不符）；锁连接/SQL 故障 `502/50258`、`502/50259`；读失败 `502/50293`（**不推断为未设置**）。
+  审计 `model-default.write` 记录操作人、前后值与 `operation_ref`。
+  恢复补偿 worker 用独立 claim 表（migration 164）做幂等协调，**从不 UPDATE 审计行**（哈希链不变）。
+- **新权限资源 `model-default`**（migration 163，纯数据 + 幂等回填）：平台管理员
+  `read+manage`、工作区管理员 `read`，权限矩阵与 `doc/user/*/permission-matrix.md` 同批更新。
+- **前端**：模型提供商页新增「默认模型」面板，按类型展示当前默认、候选树选择、状态徽章与失败原因。
+
+### 新增：场景模板 2.0
+
+- **基线 / 分支 / 发布生命周期**：`GET /api/v1/scenario-template-baseline`、
+  `POST /api/v1/scenario-template-baseline/:key/publish`、`POST /api/v1/scenario-template-assets/:id/fork`
+  （平台基线 `40107`、工作区动作 `40108`）、`POST /api/v1/scenario-template-assets/:id/copy`。
+  平台基线只有一份，工作区改动靠 fork；发布是追加不可变版本，重复发布同一 payload 不 bump 版本；
+  基线血缘（`baseline_key` / 版本 / `lineage_state`）落在 migration 165 的三列上。
+- **目录 = 平台基线 ∪ 工作区已发布**：`GET /api/v1/scenario-template-catalog` 同时给出
+  `payload_schema`、`eval_gate`、`renderable_app_types`，且首阶段排序失败时降级为 key 序而不是报错。
+- **知识契约 + 能力四态判定**：模板声明 8 种知识能力（`vector` / `metadata_filter` / `citation_locator` /
+  `graph` / `raptor` / `vision` / `compilation` / `parse_profile`）与最低档位；
+  `POST /api/v1/scenario-template-assets/:id/capability-check` 按 `blocked > probe_limited > repairable >
+  satisfied` 给出数据集级结论、逐条需求、可执行修复项与共享影响，`capability_set_version=capability-set/v1`。
+- **解析档修复（显式、可审计、不静默改）**：`GET/POST /api/v1/datasets/:id/parse-profile` 读写解析档；
+  已有解析内容时先 `409/40915`（要 `rewrite_existing=true` 才重解析），共享未确认时 `409/40917`，
+  检查顺序固定为「403 → 40915 → 40917 → 审批 → 写入」。元数据下推 `pushdown_enabled` 是**本地执行策略**，
+  只存平台库、永不上推引擎。
+- **统一实例化**：`POST /api/v1/scenario-template-assets/:id/instantiate` 一个端点编排 chat / search / agent。
+  幂等键**只认 Header `Idempotency-Key`**（缺失 `422/42231`），并发同键 `409/40916`，
+  **失败实例可用同一键续跑**（不再让终态失败永远回答「进行中」）；`project_id` 必填；
+  迁移 166 的 `uidx_rgx_template_instance_idempotency` 是幂等的硬保证，上游探测只是尽力而为。
+- **骨架镜像与导入**：`GET /api/v1/scenario-template-skeletons` 把引擎的 pipeline / agent / compilation / wiki
+  四类骨架聚合成只读镜像（单类失败降级、全失败才 `503/50303`）；`POST /api/v1/scenario-template-skeletons/:id/import`
+  导入为**草稿**，评测门未过 `409/40918`、签名不符 `400/40116`、未知方言 `400/40047`、
+  「声称 v3 但无 pack」`400/40062`。
+- **Scenario Pack v3**：引擎无关核心（prompt / 参数 / 知识 / 评测）+ `runtimeExtension.ragflow`，
+  canvas 节点走白名单校验（接受数组与引擎的 map 两种形态）；v2 / v3 只由 `payload_schema` 判别，
+  `Pack` 字段 `json:"-"` 保证不参与兼容性比较；打包不兼容 `409/40914`。
+- **模板健康板**：`GET /api/v1/scenario-template-assets/:id/health` 汇总首次运行完成率、7 日活跃、
+  评测回流与修复完成率；**没有证据源的指标显式 `available=false` + 原因**，不用 0 冒充。
+- **前端向导重写**：`ScenarioTemplateWizard` 530 → 101 行 shell + 5 个子组件（场景 / 知识 / 应用 / 校验 + hook），
+  删除前端自造 agent DSL 与直接建会话的旁路；四态徽章不只靠颜色（带 `aria-label` 与文字），
+  400 行上限由测试守住。
+
+### 修复
+
+- **建库 / 建会话把上游业务拒绝变成假 502**：RAGFlow 对业务错误返回 **HTTP 200 + `code≠0`**，
+  平台一律映射成 `502/50200`、`502/50240`，用户只看到「失败」看不到原因。现在
+  `upstreamWriteFailure` 统一识别：业务拒绝 → `400/40085` 并携带引擎原文（截断 200 字），
+  只有传输错误 / 5xx 才是 502。
+- **没有 embedding 模型时不再打上游**：引擎会把缺省值当字面量 `"0"` 去查供应商，必然失败。
+  现在 `POST /datasets` 入口直接 `400/40085 no embedding model is registered in the engine; add one
+  before creating a dataset`。
+- **解析档读写契约错位（`502/50295`）**：v1.0.0 读侧只回 `parser_id`、写侧要求 `{parse_type, parser_id}`
+  且会静默忽略 `chunk_method`，`PUT` 无改动时回 `102 no properties were modified`。现在读写都走
+  `DatasetConfig.ParseMethod()` / `{parse_type:1,parser_id:…}`，并把 102 按消息识别为幂等成功。
+- **`PUT /datasets/:id` 单独改元数据下推报 `400/40000`**：`name` 曾是必填，导致下推开关这个写入器
+  没有任何请求能到达。现在 `name` 可选（空 = 保留现名），并新增「空更新」守卫 `400/40085`。
+- **导出文档不自描述 payload 方言**：v2 payload 没有 `schema` 成员，读者只能猜。现在导出信封带
+  `payload_schema`（以存储列为准，pack 存在性兜底），导入用它判别。
+- **登录跳转打 `GET /login` 404**：前端曾用整页导航跳真实路径 `/login`，而 SPA 只从 `/` 提供。
+  现在改走哈希路由（`#/login`），纯客户端跳转，不再产生 404 与整页刷新。
+- **Mock provider 伪装成「空引擎」**：`ListModels` 曾返回空列表，让新增的 embedding 前置拦截把
+  一系列数据集用例打成失败。现在每种可写类型返回一条 `mock-<type>-model`。
+- **CI 与 Nightly 的 apt、Playwright 安装不再被镜像 DNS 拖红**：2026-11-11
+  `archive.ubuntu.com` 与 `azure.archive.ubuntu.com` 在 GitHub 托管 runner 上无法解析
+  （同期 `github.com`、Go 代理、npm registry 均正常），一次抖动让 CI / Integration /
+  Nightly 三条流水线同时红，重跑仍红，且无界重试把 `Install CJK fonts` 卡在步骤里
+  30 分钟。现在先按解析结果挑镜像宿主（`archive.ubuntu.com` → `mirrors.kernel.org`
+  → `mirrors.edge.kernel.org`），每次 `apt-get` 调用都在 `timeout` 下运行并按短
+  超时重试，一个宿主都解析不出来时立即以「runner DNS 故障、不是代码缺陷」报错；
+  Playwright 的 `--with-deps` 走同一前置探测。
+
+
+### 升级
+
+- 迁移 `163`（权限回填，纯数据）、`164`（默认模型恢复 claim 表）、`165`（模板基线血缘三列 + 数据打标）、
+  `166`（实例 `idempotency_key`/`assistant_kind`/`instantiation_state`/`upstream_refs` + 试跑与搜索/智能体影子表的模板溯源列 +
+  `uidx_rgx_template_instance_idempotency` 部分唯一索引）。全部**加法式**，无表重建、无列删除；启动时自动执行，幂等可重跑。
+- 权限矩阵新增资源 `model-default`（platform_admin `read+manage`、tenant_admin `read`）；
+  自定义角色需按需授予，未授予者看到的默认模型面板为只读/不可见。
+- **行为变化（唯一两处）**：上游业务拒绝从 `502` 改为 `400/40085` + 引擎原文；
+  `PUT /datasets/:id` 的 `name` 从必填改为可选。其余端点、请求体、权限语义不变。
+
+### Supported engine versions
+
+引擎兼容带自 v0.5.1 起**未变更**：
+
+| RAGFlow 引擎 | 状态 | 语义 |
+|---|---|---|
+| `0.27.x` | 已验证带（legacy） | `page_index` 等旧编译产物契约可用；`ListAgents` 无 `type` 字段时按 agent 处理 |
+| `1.0.0` | **已验证（2026-11-10 抬钉，2026-11-13 复测）** | 97 条端点 `MaxVerified` 抬钉 `v1.0.0`；本版在 4.151 live 环境复测数据集解析、默认模型与场景模板实例化全链路 |
+| `> 1.0.0` | `verification_required` | fail-closed：建发布版本与能力启用都要求先重跑 live 契约集并留档 |
+| 不可解析 / 不可达 | `blocked` | 建发布版本 fail-closed；运行期降级到最近已验证带 |
+
+运行时自查：`GET /api/v1/system/capabilities`（`capabilities[]` 带 `min_version`/`max_verified`，
+`version_issues` 带逐条台账）。编译 kind 声明式映射未变更（`wiki` = supported，其余 `1.0+` = unsupported / unverified）。
+
+### Known upstream issues (RAGFlow v1.0.0)
+
+本版新增 3 条（U13–U15），其余条目沿用 0.5.0 台账（见下方 0.5.0「Known upstream issues」）。
+
+| # | 上游缺陷 | 状态 | 本产品处置 |
+|---|---|---|---|
+| U13 | 数据集配置读写形态不一致：写入拒绝 `chunk_method`（`101 extra inputs are not permitted`），读取只回 `parser_id`；无改动时 `PUT` 回 `102 no properties were modified` | observed | 读写统一走 `ParseMethod()` / `{parse_type:1,parser_id:…}`，102 按消息识别为幂等成功 |
+| U14 | `GET /agents/templates/:id` 对列表里存在的模板返回 404；`components` 序列化为按节点 id 键的对象而非数组 | observed | 单行读 404 时回退目录；canvas 白名单同时接受数组与 map 两种形态 |
+| U15 | 未注册任何 embedding 模型时，`POST /datasets` 返回 **HTTP 200 + `code:500 model configuration unavailable`**（U3 的运行时表现） | observed | 平台侧前置拦截 `400/40085` 并给出可行动提示；上游业务拒绝统一映射为 400 + 原文 |
+
+### Known Limitations (v0.5.2)
+
+- **暂不提供公共容器镜像**：`ghcr.io` 镜像推送已从本版本的发版流程中摘除，安装以 release 二进制包
+  （`ragflow-x-<version>-<os>-<arch>.tar.gz|.zip`，前端已内嵌）为准；镜像路径待镜像仓库打通后恢复，
+  `docker/` 下的自建镜像与 Compose 仍可用源码构建。
+- **`repair_completion_rate` 暂不可用**：能力四态判定尚未持久化，健康板上该指标显式
+  `available=false`（不给 0 冒充）。
+- **场景模板 2.0 的 search 实例化与「建议式建库」路径**未做 live 验收；`legacy_reconstructed`
+  标记、上游重名探测、骨架快照字节级比对仍为未实现项。
+
 ## [Unreleased]
 
 下一版本（v0.6.0）已登记、尚未开工：
@@ -19,17 +150,6 @@
   tree/graph/mindmap/timeline 产物，应另立 artifact kind（`doc/262` §7.1 D3 边界）。
 - **数据源连接器**（注册/授权/定时同步调度）仍是数据管道闭环的主要缺口（`doc/41` §20.1）；
   知识图谱 / MCP 全功能写路径为登记先行（运行期显式 501）。
-
-### 修复（工程 / CI）
-
-- **CI 与 Nightly 的 apt、Playwright 安装不再被镜像 DNS 拖红**：2026-11-11
-  `archive.ubuntu.com` 与 `azure.archive.ubuntu.com` 在 GitHub 托管 runner 上无法解析
-  （同期 `github.com`、Go 代理、npm registry 均正常），一次抖动让 CI / Integration /
-  Nightly 三条流水线同时红，重跑仍红，且无界重试把 `Install CJK fonts` 卡在步骤里
-  30 分钟。现在先按解析结果挑镜像宿主（`archive.ubuntu.com` → `mirrors.kernel.org`
-  → `mirrors.edge.kernel.org`），每次 `apt-get` 调用都在 `timeout` 下运行并按短
-  超时重试，一个宿主都解析不出来时立即以「runner DNS 故障、不是代码缺陷」报错；
-  Playwright 的 `--with-deps` 走同一前置探测。
 
 ## [0.5.1] - 2026-11-11
 
@@ -484,7 +604,7 @@
   `fonts-wqy-zenhei` 的处置，不再把不可嵌入的字体报成 PASS。
   测试侧把硬编码的 `C:\Windows\Fonts\Deng.ttf` 换成生产同源查找（`testPDFFont`），使 Linux CI
   （`fonts-noto-cjk`）真正覆盖绝对路径 + 集合字体这两条链路，而不是静默 skip。
-- **依赖工程内部文档的测试在发布仓为显式 skip（发版后补齐）**：`doc/develop`、`doc/runbooks` 不随仓库发布
+- **依赖工程内部文档的测试在发布仓为显式 skip（发版后补齐）**：`doc/develop`、`doc/operations/runbooks` 不随仓库发布
   （只有 `doc/user/**` 发布），但 `TestREL3ExternalReviewGate`、`TestCompilationRecoveryRunbookLocksTenantSafetyGates`
   与 Prometheus 告警 runbook 存在性检查会去 stat 这些文件，导致检出发布仓后必红。现新增 `internal/engdocs`
   （模块根探测 + 工程文档树探测 + 统一的 skip 原因文案）：`relcheck` 的根目录探测改为只认 `go.mod`，三个门禁
@@ -660,7 +780,7 @@ Gateway）：不 Fork RAGFlow，通过官方 HTTP API 集成，在其之上补�
 ### Validated
 
 - 与 RAGFlow `v0.27.x` 真实环境联调：数据集解析、Agent Workflow、审批与审计链
-  （见 `doc/43_真实场景验证执行报告_20260902.md`）。
+  （见 `doc/environment/verification/43_真实场景验证执行报告_20260902.md`）。
 
 ### Known Limitations
 
@@ -669,7 +789,8 @@ Gateway）：不 Fork RAGFlow，通过官方 HTTP API 集成，在其之上补�
 - Agent 画布中"编译算子模板"能力开发中，创建入口已禁用。
 - K8s / Helm 编排为后续演进方向，当前推荐 Docker Compose 部署。
 
-[Unreleased]: https://github.com/DavidSche/ragflow-x/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/DavidSche/ragflow-x/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/DavidSche/ragflow-x/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/DavidSche/ragflow-x/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/DavidSche/ragflow-x/compare/v0.2.0...v0.5.0
 [0.2.0]: https://github.com/DavidSche/ragflow-x/compare/v0.1.0...v0.2.0

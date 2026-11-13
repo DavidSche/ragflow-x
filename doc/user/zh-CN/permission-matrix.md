@@ -1,7 +1,7 @@
 # 内置角色与权限矩阵（RAGFlow-X）
 
-> 版本：v1.16 | 日期：2026-11-10\
-> 依据：`internal/db/migrate.go` 的 `BuiltinPermissionMatrix()`。该函数是内置角色权限的唯一权威来源；服务启动时按矩阵整体 reconcile，不使用平台通配权限。本版同步资源同步、Answer Delivery 与知识任务路由落地后的矩阵增量：新增 `ragflow-sync` 资源，收敛 Answer Delivery 与知识任务路由的资源归属。迁移 128 专门修复“数据库已到最新 schema 但内置权限矩阵新增条目未回填”的存量库场景。
+> 版本：v1.18 | 日期：2026-11-13\
+> 依据：`internal/db/migrate.go` 的 `BuiltinPermissionMatrix()`。该函数是内置角色权限的唯一权威来源；服务启动时按矩阵整体 reconcile，不使用平台通配权限。本版同步资源同步、Answer Delivery 与知识任务路由落地后的矩阵增量：新增 `ragflow-sync` 资源与 `model-default` 平台级资源（doc/269，迁移 163），收敛 Answer Delivery 与知识任务路由的资源归属。迁移 128 专门修复“数据库已到最新 schema 但内置权限矩阵新增条目未回填”的存量库场景。
 
 ## 1. 模型与术语
 
@@ -60,6 +60,7 @@ RAGFlow-X 是企业私有环境的 AI/RAG 控制面。产品语义使用 **工�
 | task | R M E | R M E | R M E | - | - | - |
 | compilation | R M E | R M E | R M E | - | - | R M E |
 | model-provider | R M E | R M E | - | - | - | - |
+| model-default | R M | R | - | - | - | - |
 | enterprise-connection | R M T | R T | - | - | - | - |
 | connector | R M | R M | - | - | - | - |
 | db-connection | R M T | R M T | - | - | - | - |
@@ -87,6 +88,7 @@ RAGFlow-X 是企业私有环境的 AI/RAG 控制面。产品语义使用 **工�
 | agent | R M E S | R M E S | R M E S | R E S | R | R E S |
 | ragflow-sync | R M | - | - | - | - | - |
 | scenario-template | R M | R M | R | R | R | R M（own） |
+| scenario-template-baseline | R M | - | - | - | - | - |
 | trial-run | R E | R E | R E | R | R | R E |
 | prompt-policy | R M | R M | R M | - | - | R |
 | parser-policy | R M | R M | R | - | - | R |
@@ -198,4 +200,4 @@ RAGFlow-X 是企业私有环境的 AI/RAG 控制面。产品语义使用 **工�
 - 权威矩阵：`internal/db/migrate.go: BuiltinPermissionMatrix()`。
 - 回归：启动后内置角色权限被整体替换，禁止历史 `* / *` 残留；幂等回归见 `internal/db/migrate_p0_test.go: TestP0_DBMIG_001_MigrationAndBuiltinRoleReconciliationAreIdempotent`。
 - 内置角色目录（六个角色、名称、作用域、描述）由 `internal/service/role_test.go: TestBuiltinRoleCatalogMatchesDoc30` 守护；权限目录由 `PermissionCatalog()` 聚合，前端角色权限 UI 只展示目录内的 `(资源, 动作)`。
-- 文档同步状态（v0.5.0 / 迁移 162 口径）：矩阵收敛后共 **424 行 / 59 个资源 / 读权倒挂 0**；`viewer` 只保留 14 个业务资源只读，`trial-run` 自迁移 160 起是独立资源（`read`/`execute`），`business_user ⊇ viewer` 与 `team_admin ⊇ business_user` 两条超集边由 `role_lattice.go` 与测试守护。本表同时已同步 `ragflow-sync` 拆分、Answer Delivery 权限映射、Fact Guard 运行时 API 复用授权、最新最小权限矩阵，以及 M-B 治理/记忆/编译新增资源（`compilation`/`context-decision`/`document-governance`/`knowledge-profile`/`memory-content`/`memory-forget`/`memory-operation`/`memory-policy`/`memory-write`/`query-template`/`user-clearance`）与版本评审运行 `execute` 权限、`evidence-snapshot` 团队只读（2026-10-22）。
+- 文档同步状态（v0.5.2 / 迁移 166 口径）：矩阵收敛后共 **429 行 / 61 个资源 / 读权倒挂 0**；`viewer` 只保留 14 个业务资源只读，`trial-run` 自迁移 160 起是独立资源（`read`/`execute`），`business_user ⊇ viewer` 与 `team_admin ⊇ business_user` 两条超集边由 `role_lattice.go` 与测试守护。本表同时已同步 `ragflow-sync` 拆分、Answer Delivery 权限映射、Fact Guard 运行时 API 复用授权、最新最小权限矩阵，以及 M-B 治理/记忆/编译新增资源（`compilation`/`context-decision`/`document-governance`/`knowledge-profile`/`memory-content`/`memory-forget`/`memory-operation`/`memory-policy`/`memory-write`/`query-template`/`user-clearance`）与版本评审运行 `execute` 权限、`evidence-snapshot` 团队只读（2026-10-22）。新增 `model-default` 平台级资源：`platform_admin` 可读可写，`tenant_admin` 只读（doc/269）。新增 `scenario-template-baseline` 平台级资源：仅 `platform_admin` 读/管，工作区经 catalog 消费基线、经 `fork` 生成自己的 `scenario-template` 行（doc/276）。
