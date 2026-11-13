@@ -568,6 +568,10 @@ func (c *HTTPClient) GetDatasetConfig(ctx context.Context, datasetID string) (*D
 	if err := c.do(ctx, http.MethodGet, "/datasets/"+url.PathEscape(datasetID), nil, "", &out); err != nil {
 		return nil, err
 	}
+	// Normalise the engine's `parser_id` into the platform's chunk_method so every
+	// consumer (config panel, capability check, parse-profile repair) reads one
+	// field instead of re-deriving the fallback.
+	out.ChunkMethod = out.ParseMethod()
 	return &out, nil
 }
 
@@ -591,7 +595,11 @@ func (c *HTTPClient) GetDatasetGraph(ctx context.Context, datasetID string) (*Da
 }
 
 func (c *HTTPClient) UpdateDatasetConfig(ctx context.Context, datasetID string, cfg DatasetConfigUpdate) error {
-	body, err := json.Marshal(cfg)
+	payload, err := cfg.body()
+	if err != nil {
+		return fmt.Errorf("marshal dataset config: %w", err)
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal dataset config: %w", err)
 	}
@@ -608,6 +616,12 @@ func (c *HTTPClient) UpdateDatasetConfig(ctx context.Context, datasetID string, 
 		if err == nil {
 			return nil
 		}
+		// Writing the value the dataset already has is a success, not a failure:
+		// RAGFlow answers 102 "no properties were modified" for an idempotent
+		// update, and the caller asked for that state.
+		if isNoopUpdate(err) {
+			return nil
+		}
 		if !isTransientRAGFlowErr(err) {
 			return err
 		}
@@ -618,6 +632,20 @@ func (c *HTTPClient) UpdateDatasetConfig(ctx context.Context, datasetID string, 
 
 // isTransientRAGFlowErr reports whether a RAGFlow error is likely a transient DB
 // lock / contention that a retry can clear, versus a persistent request error.
+// isNoopUpdate reports RAGFlow's "the request is already satisfied" answer.
+// The engine reuses code 102 for several business errors, so the message is part
+// of the signal, not just the code.
+func isNoopUpdate(err error) bool {
+	var upstream *Error
+	if !errors.As(err, &upstream) {
+		return false
+	}
+	if upstream.HTTPStatus != http.StatusOK && upstream.HTTPStatus != 0 {
+		return false
+	}
+	return upstream.Code == 102 && strings.Contains(strings.ToLower(upstream.Message), "no properties were modified")
+}
+
 func isTransientRAGFlowErr(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "status 500") ||

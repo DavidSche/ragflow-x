@@ -358,7 +358,10 @@ var drillableInternalEndpoints = map[string]string{
 	"GET /system/version":                                                            "live",
 	"GET /models":                                                                    "live",
 	"GET /models/default":                                                            "live",
+	"PATCH /models/default":                                                          "opt-in (default-model set/clear verified during live drill, doc/269 §6.4)",
 	"GET /pipelines":                                                                 "live (read-only builtin pipeline catalog)",
+	"GET /agents/templates":                                                          "live (read-only canvas template catalogue; 19 rows on 4.151)",
+	"GET /agents/templates/:template_id":                                             "live (single template re-read for skeleton import; list rows may omit dsl)",
 	"GET /pipelines/{pipeline_id}":                                                   "live (read-only builtin pipeline DSL)",
 }
 

@@ -24,8 +24,11 @@ type Mock struct {
 	chunks                          map[string][]*mockChunk
 	searchApps                      map[string]*mockSearchApp
 	memories                        map[string]*mockMemory
+	defaults                        map[string]DefaultModel
 	agents                          map[string]*mockAgent
 	pipelines                       map[string]PipelineTemplateDetail
+	agentTemplates                  map[string]AgentTemplate
+	agentTemplateOrder              []string
 	pipelineOrder                   []string
 	lastPipelineID                  string
 	engineVersion                   string
@@ -323,7 +326,9 @@ func NewMock() *Mock {
 		searchApps:                map[string]*mockSearchApp{},
 		memories:                  map[string]*mockMemory{},
 		agents:                    map[string]*mockAgent{},
+		defaults:                  map[string]DefaultModel{},
 		pipelines:                 map[string]PipelineTemplateDetail{},
+		agentTemplates:            map[string]AgentTemplate{},
 		artifacts:                 map[string][]DatasetArtifact{},
 		artifactDetails:           map[string]map[string]map[string]DatasetArtifactDetail{},
 		compilationStatuses:       map[string]CompilationStatus{},

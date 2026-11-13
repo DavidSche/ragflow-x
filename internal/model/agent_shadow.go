@@ -9,15 +9,18 @@ const AgentStatusActive = "active"
 // to the platform tenant that owns it so multi-tenant isolation holds even
 // though providers authenticate with a shared engine credential.
 type AgentShadow struct {
-	ID         string    `gorm:"column:id;primaryKey;size:64" json:"id"`
-	TenantID   string    `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	TenantName string    `gorm:"-" json:"tenant_name,omitempty"`
-	Title      string    `gorm:"column:title;size:128;not null" json:"title"`
-	Status     string    `gorm:"column:status;size:32;not null;default:active" json:"status"`
-	Release    bool      `gorm:"column:release;not null;default:false;index" json:"release"`
-	OwnerID    string    `gorm:"column:owner_id;size:32;index" json:"owner_id"`
-	CreatedAt  time.Time `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt  time.Time `gorm:"column:updated_at" json:"updated_at"`
+	ID         string `gorm:"column:id;primaryKey;size:64" json:"id"`
+	TenantID   string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	TenantName string `gorm:"-" json:"tenant_name,omitempty"`
+	Title      string `gorm:"column:title;size:128;not null" json:"title"`
+	Status     string `gorm:"column:status;size:32;not null;default:active" json:"status"`
+	Release    bool   `gorm:"column:release;not null;default:false;index" json:"release"`
+	OwnerID    string `gorm:"column:owner_id;size:32;index" json:"owner_id"`
+	// Template provenance (doc/276 §7.5, migration 166).
+	ScenarioTemplateID      string    `gorm:"column:scenario_template_id;size:32" json:"scenario_template_id"`
+	ScenarioTemplateVersion int64     `gorm:"column:scenario_template_version;not null;default:0" json:"scenario_template_version"`
+	CreatedAt               time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt               time.Time `gorm:"column:updated_at" json:"updated_at"`
 
 	// CanvasCategory is copied from the live RAGFlow canvas for API views.
 	// RAGFlow remains authoritative and the ownership shadow does not store it.

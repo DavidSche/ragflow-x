@@ -76,8 +76,16 @@ type Client interface {
 	UpdateDatasetConfig(ctx context.Context, datasetID string, cfg DatasetConfigUpdate) error
 	// Health probes connectivity with the engine.
 	Health(ctx context.Context) (*Health, error)
+	// GetAgentTemplate reads one canvas template with its DSL, for skeleton
+	// import (doc/276 §8.4). The list endpoint may omit the DSL.
+	GetAgentTemplate(ctx context.Context, id string) (AgentTemplate, error)
 	// ListPipelines reads the RAGFlow builtin ingestion pipeline catalog.
 	ListPipelines(ctx context.Context) ([]PipelineTemplate, error)
+	// ListAgentTemplates reads the RAGFlow canvas template catalogue
+	// (`GET /agents/templates`). Scenario Pack 2.0 exposes these rows as
+	// read-only "upstream skeletons" (doc/276 §8.4): they can be previewed and
+	// imported into a draft, never instantiated directly.
+	ListAgentTemplates(ctx context.Context) ([]AgentTemplate, error)
 	// GetPipeline reads one builtin ingestion pipeline DSL for validation.
 	GetPipeline(ctx context.Context, pipelineID string) (*PipelineTemplateDetail, error)
 	// UpsertModelProvider registers an LLM provider (factory + instance + model)
@@ -252,6 +260,13 @@ type Client interface {
 	ListModels(ctx context.Context, modelType string) ([]AddedModel, error)
 	// ListDefaultModels returns the tenant's RAGFlow default model settings.
 	ListDefaultModels(ctx context.Context) ([]DefaultModel, error)
+	// SetDefaultModel upserts the tenant default for a model type (doc/269).
+	//   - req with ModelID set  -> set default to that model
+	//   - req all-empty (ModelID "") -> clear the default (RAGFlow's correct clear
+	//     path; the all-empty body is what clears, see doc/269 §3.2).
+	// RAGFlow business errors (code != 0) surface as *Error with
+	// ErrorTypeBusiness; transport failures keep their own ErrorType.
+	SetDefaultModel(ctx context.Context, req SetDefaultModelRequest) error
 }
 
 // RegisterModelProviderRequest carries everything needed to register an LLM
@@ -343,6 +358,19 @@ type DefaultModel struct {
 	Type    string `json:"model_type"`
 }
 
+// SetDefaultModelRequest mirrors RAGFlow's tenant default-model write contract
+// (SetModelRequest in ragflow/internal/handler/tenant.go, doc/269 §3.1).
+// model_type uses the canonical provider vocabulary (chat | embedding | rerank |
+// speech2text | image2text | tts | ocr | decision); alias normalisation happens
+// at the provider boundary, not in callers.
+type SetDefaultModelRequest struct {
+	ModelProvider string `json:"model_provider,omitempty"`
+	ModelInstance string `json:"model_instance,omitempty"`
+	ModelName     string `json:"model_name,omitempty"`
+	ModelID       string `json:"model_id,omitempty"`
+	ModelType     string `json:"model_type"`
+}
+
 // MetadataCondition mirrors RAGFlow's retrieval metadata filter
 // (docs v0.27.2 §Retrieve chunks / OpenAI-Compatible chat completions
 // extra_body.metadata_condition / §Update or delete metadata selector).
@@ -377,24 +405,66 @@ type Dataset struct {
 
 // CreateDatasetRequest carries dataset creation parameters.
 // DatasetConfig mirrors a dataset's parse/embedding/permission configuration.
+//
+// RAGFlow v1.0.0 answers the read side with `parser_id` (e.g. "general") and
+// never with `chunk_method`, while the write side takes `parse_type`+`parser_id`.
+// The platform vocabulary is chunk_method, so both names are decoded and
+// ParseMethod picks whichever upstream sent.
 type DatasetConfig struct {
 	ID             string                 `json:"id"`
 	Name           string                 `json:"name"`
 	Description    string                 `json:"description"`
 	ChunkMethod    string                 `json:"chunk_method"`
+	ParserID       string                 `json:"parser_id"`
 	EmbeddingModel string                 `json:"embedding_model"`
 	Permission     string                 `json:"permission"`
 	ParserConfig   map[string]interface{} `json:"parser_config"`
 }
 
+// ParseMethod returns the dataset's built-in chunk method under either upstream
+// field name (`chunk_method` on older engines, `parser_id` on v1.0.0).
+func (c DatasetConfig) ParseMethod() string {
+	if strings.TrimSpace(c.ChunkMethod) != "" {
+		return c.ChunkMethod
+	}
+	return strings.TrimSpace(c.ParserID)
+}
+
 // DatasetConfigUpdate carries optional dataset config fields to update.
+//
+// ChunkMethod is the platform-facing knob but it is never sent as-is: v1.0.0
+// silently ignores a `chunk_method` body field (it answers 102 "no properties
+// were modified"), so the client translates it into the discriminated
+// `{"parse_type": 1, "parser_id": ...}` form the engine actually applies.
 type DatasetConfigUpdate struct {
 	Name           *string                `json:"name,omitempty"`
 	Description    *string                `json:"description,omitempty"`
-	ChunkMethod    *string                `json:"chunk_method,omitempty"`
+	ChunkMethod    *string                `json:"-"`
 	EmbeddingModel *string                `json:"embedding_model,omitempty"`
 	Permission     *string                `json:"permission,omitempty"`
 	ParserConfig   map[string]interface{} `json:"parser_config,omitempty"`
+}
+
+// ParseTypeBuiltIn selects the built-in parser (`parser_id`) in the engine's
+// parse_type discriminator; 2 means "run an ingestion pipeline".
+const ParseTypeBuiltIn = 1
+
+// body renders the wire payload: a chunk-method change always travels as
+// parse_type=builtin + parser_id, which is what RAGFlow v1.0.0 validates.
+func (u DatasetConfigUpdate) body() (map[string]interface{}, error) {
+	raw, err := json.Marshal(u)
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, err
+	}
+	if u.ChunkMethod != nil {
+		body["parse_type"] = ParseTypeBuiltIn
+		body["parser_id"] = *u.ChunkMethod
+	}
+	return body, nil
 }
 
 // DatasetKnowledgeGraphNode / Edge mirror the RAGFlow knowledge graph payload

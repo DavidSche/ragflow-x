@@ -20,6 +20,11 @@ type AssistantReleaseRepo interface {
 	BindTemplateInstanceAssistant(ctx context.Context, tenantID, id, assistantID string) error
 	ListTemplateInstances(ctx context.Context, tenantID, projectID, status string, page, pageSize int) ([]model.TemplateInstance, int64, error)
 	UpdateTemplateInstanceState(ctx context.Context, tenantID, id, fromStatus, toStatus string) error
+	GetTemplateInstanceByIdempotencyKey(ctx context.Context, tenantID, key string) (*model.TemplateInstance, error)
+	AdvanceTemplateInstanceState(ctx context.Context, tenantID, id, fromState, toState string, patch map[string]interface{}) error
+	ListTemplateInstanceLastUsed(ctx context.Context, tenantID string) (map[string]time.Time, error)
+	ListTemplateInstancesForHealth(ctx context.Context, tenantID, templateID string, limit int) ([]model.TemplateInstance, error)
+	AnswerActivityByAssistant(ctx context.Context, tenantID string, assistantIDs []string, since time.Time) (map[string]AssistantActivity, error)
 	CreateAssistant(ctx context.Context, assistant *model.Assistant) error
 	GetAssistant(ctx context.Context, tenantID, id string) (*model.Assistant, error)
 	GetAssistantForUpdate(ctx context.Context, tenantID, id string) (*model.Assistant, error)
@@ -96,6 +101,63 @@ func (s *store) GetTemplateInstanceByNameKey(ctx context.Context, tenantID, proj
 	return firstAssistant(ctx, s.DB, &model.TemplateInstance{},
 		"tenant_id = ? AND project_id = ? AND template_id = ? AND name_key = ?",
 		tenantID, projectID, templateID, nameKey)
+}
+
+// ListTemplateInstanceLastUsed returns the newest instantiation timestamp per
+// template id. The catalog's stage-1 ordering ("最近使用") needs it, and doing it
+// as one grouped query keeps the catalog list O(1) queries instead of one per
+// row (doc/276 §8.5).
+func (s *store) ListTemplateInstanceLastUsed(ctx context.Context, tenantID string) (map[string]time.Time, error) {
+	type row struct {
+		TemplateID string
+		LastUsed   time.Time
+	}
+	var rows []row
+	err := s.WithContext(ctx).Model(&model.TemplateInstance{}).
+		Select("template_id, MAX(created_at) AS last_used").
+		Where("tenant_id = ?", tenantID).
+		Group("template_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]time.Time, len(rows))
+	for _, item := range rows {
+		out[item.TemplateID] = item.LastUsed
+	}
+	return out, nil
+}
+
+// GetTemplateInstanceByIdempotencyKey is the replay anchor of the unified
+// instantiation endpoint (doc/276 §7.5). The partial unique index makes the
+// lookup race-free: two concurrent requests cannot both insert.
+func (s *store) GetTemplateInstanceByIdempotencyKey(ctx context.Context, tenantID, key string) (*model.TemplateInstance, error) {
+	if key == "" {
+		return nil, nil
+	}
+	return firstAssistant(ctx, s.DB, &model.TemplateInstance{},
+		"tenant_id = ? AND idempotency_key = ?", tenantID, key)
+}
+
+// AdvanceTemplateInstanceState is the CAS transition of the instantiation state
+// machine: it only moves a row that is still in the expected state, so two
+// retries can never both drive the same instance.
+func (s *store) AdvanceTemplateInstanceState(
+	ctx context.Context, tenantID, id, fromState, toState string, patch map[string]interface{},
+) error {
+	updates := map[string]interface{}{"instantiation_state": toState, "updated_at": time.Now().UTC()}
+	for key, value := range patch {
+		updates[key] = value
+	}
+	result := s.WithContext(ctx).Model(&model.TemplateInstance{}).
+		Where("tenant_id = ? AND id = ? AND instantiation_state = ?", tenantID, id, fromState).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // BindTemplateInstanceAssistant links a pre-created instance projection to

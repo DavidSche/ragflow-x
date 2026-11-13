@@ -10,7 +10,6 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
-	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
@@ -36,12 +35,10 @@ func (s *Service) CreateTenant(ctx context.Context, name string) (model.Tenant, 
 	if err := s.Store.CreateTenant(ctx, &t); err != nil {
 		return model.Tenant{}, err
 	}
-	// Seed the shipped scenario templates so a fresh workspace can start from
-	// the wizard immediately. Seeding failures stay non-fatal: the startup
-	// backfill retries idempotently and records its own audit entry.
-	if _, err := s.EnsureBuiltinScenarioTemplates(ctx, t.ID); err != nil {
-		logger.Warn("seed builtin scenario templates failed", "tenant_id", t.ID, "error", err)
-	}
+	// doc/276 §7.1 step 2: a new workspace no longer copies the 9 builtin rows.
+	// The catalog merges the platform baseline with the workspace's own rows, so
+	// a fresh workspace sees the same 9 templates with zero local rows until it
+	// explicitly forks one. (This intentionally changes doc/232 behaviour.)
 	return t, nil
 }
 

@@ -15,6 +15,7 @@ import (
 func TestScenarioTemplateCatalogResolvesInstantiationDefaults(t *testing.T) {
 	svc := newScenarioSeedService(t)
 	ctx := context.Background()
+	seedPlatformBaseline(t, svc)
 	tenant, err := svc.CreateTenant(ctx, "Catalog Resolve Tenant")
 	if err != nil {
 		t.Fatal(err)
@@ -54,12 +55,13 @@ func TestScenarioTemplateCatalogResolvesInstantiationDefaults(t *testing.T) {
 }
 
 // TestScenarioTemplateCatalogStaysInTheCallersWorkspace is the regression for
-// the live-smoke 404: a platform admin used to receive a cross-tenant catalog
-// (scopeAll) but instantiation resolves the asset in the caller's workspace, so
-// every template shown by the wizard failed with "scenario template not found".
+// the live-smoke 404, adapted to the 2.0 baseline (doc/276 §7.1 step 3): the
+// catalog is platform baselines + the caller's own rows, so a workspace sees
+// the 9 baselines by platform id, and another workspace's fork never leaks.
 func TestScenarioTemplateCatalogStaysInTheCallersWorkspace(t *testing.T) {
 	svc := newScenarioSeedService(t)
 	ctx := context.Background()
+	seedPlatformBaseline(t, svc)
 	owner, err := svc.CreateTenant(ctx, "Catalog Owner Tenant")
 	if err != nil {
 		t.Fatal(err)
@@ -72,8 +74,8 @@ func TestScenarioTemplateCatalogStaysInTheCallersWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) == 0 {
-		t.Fatal("expected seeded templates for the owner tenant")
+	if len(items) != len(builtinScenarioTemplates) {
+		t.Fatalf("expected %d baseline templates for the owner tenant, got %d", len(builtinScenarioTemplates), len(items))
 	}
 	ownAssets, _, err := svc.ListScenarioTemplates(ctx, owner.ID, true, 1, 200, repository.GovernanceFilter{})
 	if err != nil {
@@ -85,18 +87,51 @@ func TestScenarioTemplateCatalogStaysInTheCallersWorkspace(t *testing.T) {
 			own[asset.ID] = true
 		}
 	}
+	if len(own) != 0 {
+		t.Fatalf("a new workspace must own no template rows, got %d", len(own))
+	}
+	baselineOf := map[string]string{}
 	for _, item := range items {
-		if !own[item.ID] {
-			t.Fatalf("catalog leaked template %s from another workspace", item.ID)
+		baselineOf[item.Key] = item.ID
+	}
+
+	// Fork one baseline in the owner workspace: only the owner's catalog may
+	// switch that key to the local row id.
+	financeID := baselineOf["finance"]
+	if financeID == "" {
+		t.Fatal("finance baseline missing from the catalog")
+	}
+	forked, err := svc.ForkScenarioTemplate(ctx, owner.ID, actorID(t, svc), financeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerItems, err := svc.ScenarioTemplateCatalog(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asserted := false
+	for _, item := range ownerItems {
+		if item.Key != "finance" {
+			continue
 		}
+		asserted = true
+		if item.ID != forked.ID || !item.OverridesBaseline {
+			t.Fatalf("owner catalog must serve the fork: %+v", item)
+		}
+	}
+	if !asserted {
+		t.Fatal("owner catalog lost the forked key")
 	}
 	otherItems, err := svc.ScenarioTemplateCatalog(ctx, other.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range otherItems {
-		if own[item.ID] {
-			t.Fatalf("template %s appeared in two workspaces", item.ID)
+		if item.ID == forked.ID {
+			t.Fatalf("template %s leaked from another workspace", item.ID)
+		}
+		if item.Key == "finance" && item.ID != financeID {
+			t.Fatalf("another workspace must still see the baseline id, got %s", item.ID)
 		}
 	}
 }

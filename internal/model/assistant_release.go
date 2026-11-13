@@ -89,7 +89,27 @@ type TemplateInstance struct {
 	NameKey   string    `gorm:"column:name_key;size:192;index" json:"name_key"`
 	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
+
+	// Unified instantiation state machine (doc/276 §7.5 / R24). The idempotency
+	// key comes from the `Idempotency-Key` header only, and the partial unique
+	// index on (tenant_id, idempotency_key) WHERE idempotency_key <> '' is what
+	// actually makes instantiation idempotent — upstream probing is best-effort.
+	IdempotencyKey     string `gorm:"column:idempotency_key;size:128" json:"idempotency_key"`
+	AssistantKind      string `gorm:"column:assistant_kind;size:16;not null;default:chat" json:"assistant_kind"`
+	InstantiationState string `gorm:"column:instantiation_state;size:32;not null;default:completed" json:"instantiation_state"`
+	// UpstreamRefs keeps the ids of resources already created in the engine so a
+	// retry can skip them; it is never used to rewrite local state.
+	UpstreamRefs string `gorm:"column:upstream_refs;type:text" json:"upstream_refs"`
 }
+
+// Template instance state machine (doc/276 §7.5).
+const (
+	InstantiationPending         = "pending"
+	InstantiationCreatingDataset = "creating_dataset"
+	InstantiationCreatingApp     = "creating_application"
+	InstantiationCompleted       = "completed"
+	InstantiationFailed          = "failed"
+)
 
 func (TemplateInstance) TableName() string { return "rgx_template_instance" }
 

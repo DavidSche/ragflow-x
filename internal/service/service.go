@@ -42,6 +42,11 @@ type Service struct {
 	// allowPrivateProviderBaseURL is an explicit deployment exception for
 	// internal LLM gateways. Production internet-facing deployments keep it off.
 	allowPrivateProviderBaseURL bool
+	// scenarioPackMu guards the optional export signing key (doc/276 §8.7).
+	// An unset secret means "exports are unsigned", which is the default.
+	scenarioPackMu     sync.RWMutex
+	scenarioPackKeyID  string
+	scenarioPackSecret string
 	// httpClient/streamClient handle outbound provider requests. They use
 	// separate timeouts so long-lived SSE streams aren't cut short.
 	httpClient   *http.Client
@@ -62,6 +67,17 @@ type Service struct {
 	embeddingMu         sync.Mutex
 	embeddingModel      string
 	embeddingResolvedAt time.Time
+	// defaultCapabilities holds per-build default-model type capability knowledge
+	// (doc/269 §4.5, v9 BuildIdentity tiers) scoped to the connected RAGFlow.
+	defaultCapabilities *defaultModelCapabilityRegistry
+	// modelDefaultProcessMu is the in-process mutex fallback used when the store
+	// does not back advisory locks (sqlite / fake stores), doc/269 §4.2. Value
+	// type on purpose: the zero value is usable, so no lazy init (and no init
+	// race) is possible. Service is always used through *Service.
+	modelDefaultProcessMu sync.Mutex
+	// ragflowVersionCache memoises the RAGFlow version probe for capability
+	// resolution.
+	ragflowVersionCache ragflowVersionCache
 	// Runner is the in-process async worker (doc/33 A2); nil until SetupWorker.
 	Runner       *Runner
 	RoutePolicy  config.ConversationRouting
@@ -139,6 +155,7 @@ func New(store repository.Store, ragClient ragflow.Client, jm *jwt.Manager, encr
 	svc.SetRuntimeConfig(config.Runtime{HeartbeatTimeoutSec: 60})
 	svc.capabilities = newCapabilityRegistry()
 	svc.connectorRegistry = connectorpkg.NewRegistry()
+	svc.defaultCapabilities = newDefaultModelCapabilityRegistry()
 	return svc
 }
 

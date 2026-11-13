@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"sort"
 	"sync"
 	"time"
@@ -301,10 +302,73 @@ func (m *Mock) GetChunk(ctx context.Context, datasetID, documentID, chunkID stri
 	return nil, fmt.Errorf("chunk not found")
 }
 
+// ListModels mirrors an engine that has one model registered per writable type.
+// Returning an empty list used to be harmless, but dataset creation now refuses
+// to invent an embedding model (RAGFlow substitutes the literal "0" and fails),
+// so the mock must look like a configured engine or every dataset-creating test
+// would trip the guard instead of testing its own subject.
 func (m *Mock) ListModels(ctx context.Context, modelType string) ([]AddedModel, error) {
-	return nil, nil
+	if modelType != "" && !validDefaultModelType(modelType) {
+		return nil, nil
+	}
+	types := []string{"embedding", "chat"}
+	if modelType != "" {
+		types = []string{modelType}
+	}
+	out := make([]AddedModel, 0, len(types))
+	for _, modelKind := range types {
+		out = append(out, AddedModel{
+			ModelID:  "mock-" + modelKind + "-model",
+			Name:     "mock-" + modelKind + "-model",
+			Type:     []string{modelKind},
+			Provider: "Mock",
+			Instance: "mock-instance",
+		})
+	}
+	return out, nil
 }
 
 func (m *Mock) ListDefaultModels(ctx context.Context) ([]DefaultModel, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]DefaultModel, 0, len(m.defaults))
+	for _, dm := range m.defaults {
+		out = append(out, dm)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Type < out[j].Type })
+	return out, nil
+}
+
+// SetDefaultModel implements the Client interface for the Mock provider. It
+// validates the model type against the v1.0.0 vocabulary (doc/269 §3.1): every
+// type except decision is accepted, so decision is rejected with the upstream
+// "model type %s is invalid" business error (doc/269 §3.2). Accepted writes are
+// recorded so tests can assert the all-empty clear path.
+func (m *Mock) SetDefaultModel(ctx context.Context, req SetDefaultModelRequest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !validDefaultModelType(req.ModelType) {
+		return &Error{
+			Type:       ErrorTypeBusiness,
+			HTTPStatus: http.StatusOK,
+			Message:    fmt.Sprintf("model type %s is invalid", req.ModelType),
+		}
+	}
+	if req.ModelID != "" {
+		m.defaults[req.ModelType] = DefaultModel{ModelID: req.ModelID, Type: req.ModelType}
+	} else {
+		delete(m.defaults, req.ModelType)
+	}
+	return nil
+}
+
+// validDefaultModelType reports whether modelType belongs to the RAGFlow v1.0.0
+// default-model vocabulary (doc/269 §3.1): 7 types, decision absent.
+func validDefaultModelType(modelType string) bool {
+	switch modelType {
+	case "chat", "embedding", "rerank", "speech2text", "image2text", "tts", "ocr":
+		return true
+	default:
+		return false
+	}
 }

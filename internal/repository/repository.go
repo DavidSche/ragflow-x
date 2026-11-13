@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sync"
 	"time"
@@ -13,12 +14,21 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// RawDBProvider is implemented by the production gorm-backed store so the
+// service layer can reach the underlying *sql.DB pool — e.g. for the platform
+// default-model advisory lock (doc/269 §4.2). Tests backed by a fake store
+// simply don't implement it; callers degrade to the in-process path.
+type RawDBProvider interface {
+	RawDB() *sql.DB
+}
+
 // Store groups the repository interfaces used by services.
 type Store interface {
 	TenantRepo
 	UserRepo
 	OIDCRepo
 	DatasetRepo
+	ModelDefaultRepo
 	Close() error
 	WithinTransaction(ctx context.Context, operation func(tx Store) error) error
 	RoleRepo
@@ -124,6 +134,11 @@ type DatasetRepo interface {
 	ListDatasetLinksForScopePage(ctx context.Context, scopeAll bool, tenantIDs []string, filter DatasetFilter, page, pageSize int) ([]model.DatasetLink, int64, error)
 	DeleteDatasetLink(ctx context.Context, id string) error
 	ListAllDatasetLinks(ctx context.Context, filter DatasetFilter) ([]model.DatasetLink, error)
+	// CountDatasetSharedUsage reports which chats/search apps/releases already
+	// consume a dataset, so a capability check can warn before a repair.
+	CountDatasetSharedUsage(ctx context.Context, tenantID, datasetID string) (DatasetUsage, error)
+	// SetDatasetPushdownEnabled is the only writer of the local pushdown policy.
+	SetDatasetPushdownEnabled(ctx context.Context, tenantID, datasetID string, enabled bool) error
 	DeleteDatasetLinkByTenant(ctx context.Context, tenantID, id string) error
 	SetDatasetProject(ctx context.Context, tenantID, id, projectID string) error
 	UpdateDatasetLinkName(ctx context.Context, tenantID, id, name string) error
@@ -191,6 +206,17 @@ func paginate(page, pageSize int) (offset, limit int) {
 
 // NewStore builds a Store backed by the given GORM connection.
 func NewStore(db *gorm.DB) Store { return &store{DB: db} }
+
+// RawDB exposes the underlying database/sql pool. Calling it surfaces the
+// driver name too (pgx | sqlite | mysql), which the service layer uses to pick
+// the advisory-lock strategy (doc/269 §4.2, 评审 P0-1/P0-2: postgres-only).
+func (s *store) RawDB() *sql.DB {
+	raw, err := s.DB.DB()
+	if err != nil {
+		return nil
+	}
+	return raw
+}
 
 // lockTenant returns the unlock func for the tenant's audit-append mutex.
 func (s *store) lockTenant(tenantID string) func() {

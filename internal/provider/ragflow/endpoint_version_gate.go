@@ -80,7 +80,7 @@ func CompareReleaseVersions(a, b string) (int, error) {
 		if rc >= 0 {
 			return rc
 		}
-		return int(^uint(0)>>1) // stable sorts above every rc
+		return int(^uint(0) >> 1) // stable sorts above every rc
 	}
 	ao, bo := rcOrder(pa.rc), rcOrder(pb.rc)
 	switch {

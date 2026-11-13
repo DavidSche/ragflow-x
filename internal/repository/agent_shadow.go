@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"gorm.io/gorm"
@@ -20,6 +21,7 @@ type AgentFilter struct {
 // multi-tenant isolation for RAGFlow agents.
 type AgentShadowRepo interface {
 	UpsertAgentShadow(ctx context.Context, s *model.AgentShadow) error
+	SetAgentScenarioTemplate(ctx context.Context, tenantID, agentID, templateID string, version int64) error
 	GetAgentShadowByTitle(ctx context.Context, tenantID, title, excludeID string) (*model.AgentShadow, error)
 	ListAgentShadows(ctx context.Context, tenantID string, scopeAll bool, filter AgentFilter, page, pageSize int) ([]model.AgentShadow, int64, error)
 	ListAgentShadowsForScope(ctx context.Context, scopeAll bool, tenantIDs []string, filter AgentFilter, page, pageSize int) ([]model.AgentShadow, int64, error)
@@ -46,6 +48,17 @@ func (s *store) UpsertAgentShadow(ctx context.Context, a *model.AgentShadow) err
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{"title": a.Title, "status": a.Status, "release": a.Release, "owner_id": a.OwnerID, "tenant_id": a.TenantID, "updated_at": a.UpdatedAt}),
 	}).Create(a).Error
+}
+
+// SetAgentScenarioTemplate records template provenance on an agent shadow.
+func (s *store) SetAgentScenarioTemplate(ctx context.Context, tenantID, agentID, templateID string, version int64) error {
+	return s.WithContext(ctx).Model(&model.AgentShadow{}).
+		Where("tenant_id = ? AND id = ?", tenantID, agentID).
+		Updates(map[string]interface{}{
+			"scenario_template_id":      templateID,
+			"scenario_template_version": version,
+			"updated_at":                time.Now().UTC(),
+		}).Error
 }
 
 func (s *store) ListAgentShadows(ctx context.Context, tenantID string, scopeAll bool, filter AgentFilter, page, pageSize int) ([]model.AgentShadow, int64, error) {

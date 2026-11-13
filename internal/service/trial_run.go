@@ -108,27 +108,32 @@ type TrialCaseView struct {
 
 // TrialRunView is the run plus its case rows.
 type TrialRunView struct {
-	ID                 string                 `json:"id"`
-	ScenarioTemplateID string                 `json:"scenario_template_id"`
-	TemplateVersion    int64                  `json:"template_version"`
-	AssistantID        string                 `json:"assistant_id"`
-	AssistantKind      string                 `json:"assistant_kind"`
-	EvalSetID          string                 `json:"eval_set_id"`
-	EvalSetVersion     int64                  `json:"eval_set_version"`
-	EvalSetHash        string                 `json:"eval_set_hash"`
-	PolicyID           string                 `json:"policy_id"`
-	PolicyHash         string                 `json:"policy_hash"`
-	Mode               string                 `json:"mode"`
-	Status             string                 `json:"status"`
-	FailureReason      string                 `json:"failure_reason,omitempty"`
-	IdempotencyKey     string                 `json:"idempotency_key"`
-	Snapshot           TrialAuthoringSnapshot `json:"config_snapshot"`
-	Summary            TrialRunSummary        `json:"summary"`
-	GateEligible       bool                   `json:"gate_eligible"`
-	Cases              []TrialCaseView        `json:"cases,omitempty"`
-	CreatedAt          time.Time              `json:"created_at"`
-	StartedAt          *time.Time             `json:"started_at,omitempty"`
-	CompletedAt        *time.Time             `json:"completed_at,omitempty"`
+	ID                 string `json:"id"`
+	ScenarioTemplateID string `json:"scenario_template_id"`
+	TemplateVersion    int64  `json:"template_version"`
+	AssistantID        string `json:"assistant_id"`
+	AssistantKind      string `json:"assistant_kind"`
+	EvalSetID          string `json:"eval_set_id"`
+	EvalSetVersion     int64  `json:"eval_set_version"`
+	EvalSetHash        string `json:"eval_set_hash"`
+	PolicyID           string `json:"policy_id"`
+	PolicyHash         string `json:"policy_hash"`
+	Mode               string `json:"mode"`
+	// ValidationScope + ApplicationExecutionVerified state the boundary of what
+	// this run proves (doc/276 §7.6 / R6). P0 only runs Knowledge Trials, so the
+	// UI must never render "three forms verified" from a trial run.
+	ValidationScope              string                 `json:"validation_scope"`
+	ApplicationExecutionVerified bool                   `json:"application_execution_verified"`
+	Status                       string                 `json:"status"`
+	FailureReason                string                 `json:"failure_reason,omitempty"`
+	IdempotencyKey               string                 `json:"idempotency_key"`
+	Snapshot                     TrialAuthoringSnapshot `json:"config_snapshot"`
+	Summary                      TrialRunSummary        `json:"summary"`
+	GateEligible                 bool                   `json:"gate_eligible"`
+	Cases                        []TrialCaseView        `json:"cases,omitempty"`
+	CreatedAt                    time.Time              `json:"created_at"`
+	StartedAt                    *time.Time             `json:"started_at,omitempty"`
+	CompletedAt                  *time.Time             `json:"completed_at,omitempty"`
 }
 
 // CreateTrialRun validates, snapshots and launches a retrieval-only run.
@@ -158,7 +163,9 @@ func (s *Service) CreateTrialRun(ctx context.Context, tenantID, actorID string, 
 		return s.trialRunView(ctx, existing, true)
 	}
 
-	asset, err := s.Store.GetScenarioTemplate(ctx, tenantID, templateID)
+	// Platform baselines are readable by every workspace (doc/276 §7.1 step 3),
+	// so a trial run may target a baseline id before the tenant forks it.
+	asset, err := s.ResolveScenarioTemplateAsset(ctx, tenantID, templateID)
 	if err != nil {
 		return nil, err
 	}
@@ -241,6 +248,7 @@ func (s *Service) CreateTrialRun(ctx context.Context, tenantID, actorID string, 
 		AssistantID: assistantID, AssistantKind: model.TrialAssistantKindChat,
 		EvalSetID: evalSet.ID, EvalSetVersion: setVersion.Version, EvalSetHash: setVersion.CasesSnapshotHash,
 		PolicyID: trialPolicyID, PolicyHash: policyHash, Mode: model.TrialModeRetrievalOnly,
+		ValidationScope: model.TrialModeRetrievalOnly, ApplicationExecutionVerified: false,
 		AuthoringSnapshot: string(snapshotJSON), DatasetIDs: string(datasetJSON),
 		Status: model.TrialRunQueued, CreatedAt: now, UpdatedAt: now, Actor: actorID,
 	}
@@ -559,6 +567,7 @@ func (s *Service) trialRunView(ctx context.Context, run *model.TrialRun, withCas
 		AssistantID: run.AssistantID, AssistantKind: run.AssistantKind,
 		EvalSetID: run.EvalSetID, EvalSetVersion: run.EvalSetVersion, EvalSetHash: run.EvalSetHash,
 		PolicyID: run.PolicyID, PolicyHash: run.PolicyHash, Mode: run.Mode, Status: run.Status,
+		ValidationScope: trialValidationScope(run), ApplicationExecutionVerified: run.ApplicationExecutionVerified,
 		FailureReason: run.FailureReason, IdempotencyKey: run.IdempotencyKey,
 		Snapshot: snapshot, Summary: summary, GateEligible: false,
 		CreatedAt: run.CreatedAt, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt,
@@ -582,6 +591,15 @@ func (s *Service) trialRunView(ctx context.Context, run *model.TrialRun, withCas
 		})
 	}
 	return view, nil
+}
+
+// trialValidationScope defaults a legacy row (created before migration 166) to
+// `retrieval_only`, which is exactly what it ran.
+func trialValidationScope(run *model.TrialRun) string {
+	if run.ValidationScope == "" {
+		return model.TrialModeRetrievalOnly
+	}
+	return run.ValidationScope
 }
 
 func (s *Service) recordTrialAudit(ctx context.Context, run *model.TrialRun, action, result string) {

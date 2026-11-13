@@ -14,6 +14,16 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
+// createChatFailure separates "RAGFlow refused this request" from "we could not
+// reach RAGFlow". A business rejection arrives as HTTP 200 with a non-zero
+// envelope code — most often 102, "the dataset ... doesn't own parsed file", when
+// a bound knowledge base has no parsed document yet. Answering 502 for that hides
+// an actionable precondition behind a gateway error, so it becomes a 400 carrying
+// the upstream reason; transport and 5xx failures stay 502 (doc/276 §7.4).
+func createChatFailure(err error) error {
+	return upstreamWriteFailure(err, "chat creation", 50240)
+}
+
 // ListChats returns the tenant's chat assistants (or all tenants for scopeAll).
 func (s *Service) ListChats(ctx context.Context, tenantID string, scopeAll bool, filter repository.ChatFilter, page, pageSize int) ([]model.ChatShadow, int64, error) {
 	if page < 1 {
@@ -175,7 +185,7 @@ func (s *Service) CreateChat(ctx context.Context, tenantID, name string, dataset
 		Name: name, DatasetIDs: datasetIDs, Language: chatLanguage(""),
 	})
 	if err != nil {
-		return nil, httperr.New(502, 50240, "ragflow create chat failed")
+		return nil, createChatFailure(err)
 	}
 	now := time.Now().UTC()
 	cs := &model.ChatShadow{
@@ -449,7 +459,7 @@ func (s *Service) CreateChatWithConfig(ctx context.Context, tenantID, name strin
 		VectorSimilarityWeight: a.VectorSimilarityWeight,
 	})
 	if err != nil {
-		return nil, httperr.New(502, 50240, "ragflow create chat failed")
+		return nil, createChatFailure(err)
 	}
 	cs := &model.ChatShadow{
 		ID: created.ID, TenantID: tenantID, Name: created.Name, Status: "active",

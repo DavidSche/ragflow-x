@@ -262,3 +262,54 @@ func TestParseAuditManifest_RejectsDuplicateKeys(t *testing.T) {
 		t.Fatal("duplicate manifest key accepted")
 	}
 }
+
+func TestCSPViolation_ScopesUnsafeInlineToScriptContext(t *testing.T) {
+	cases := []struct {
+		name string
+		csp  string
+		want string // "" = pass
+	}{
+		{
+			name: "style unsafe-inline allowed, strict scripts",
+			csp:  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; object-src 'none'",
+			want: "",
+		},
+		{
+			name: "empty style-src unsafe-inline allowed",
+			csp:  "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'",
+			want: "",
+		},
+		{
+			name: "script unsafe-inline rejected",
+			csp:  "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'",
+			want: "security.content_security_policy must not allow unsafe-inline or unsafe-eval for scripts",
+		},
+		{
+			name: "script unsafe-eval rejected",
+			csp:  "default-src 'self'; script-src 'self' 'unsafe-eval'",
+			want: "security.content_security_policy must not allow unsafe-inline or unsafe-eval for scripts",
+		},
+		{
+			name: "default-src unsafe-inline falls through to scripts",
+			csp:  "default-src 'self' 'unsafe-inline'",
+			want: "security.content_security_policy must not allow unsafe-inline or unsafe-eval for scripts",
+		},
+		{
+			name: "default-src strict, scripts inherit and pass",
+			csp:  "default-src 'self'; img-src https:",
+			want: "",
+		},
+		{
+			name: "empty csp passes (required check handles it elsewhere)",
+			csp:  "",
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cspScriptDirectiveViolation(tc.csp); got != tc.want {
+				t.Fatalf("cspScriptDirectiveViolation(%q) = %q, want %q", tc.csp, got, tc.want)
+			}
+		})
+	}
+}

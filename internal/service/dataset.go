@@ -42,12 +42,24 @@ func (s *Service) CreateDataset(ctx context.Context, tenantID, name string) (*Da
 	if existing != nil {
 		return nil, displayNameConflict("dataset")
 	}
+	// RAGFlow v1.0.0 substitutes the literal "0" when embedding_model is absent
+	// and then fails with "model configuration unavailable". Fail here instead,
+	// where the answer is actionable (live drill 2026-11-13: the 4.151 engine has
+	// chat models only).
+	embeddingModel := s.defaultEmbeddingModel(ctx)
+	if embeddingModel == "" {
+		return nil, httperr.BadRequest(40085,
+			"no embedding model is registered in the engine; add one before creating a dataset")
+	}
 	ds, err := s.RAGFlow.CreateDataset(ctx, ragflow.CreateDatasetRequest{
 		Name: name, ParseType: 1, ParserID: "naive",
-		EmbeddingModel: s.defaultEmbeddingModel(ctx),
+		EmbeddingModel: embeddingModel,
 	})
 	if err != nil {
-		return nil, httperr.New(502, 50200, "ragflow create dataset failed")
+		// An engine-side model misconfiguration (no embedding model registered)
+		// answers HTTP 200 + code 500; surfacing it as 502/50200 would hide the one
+		// sentence that explains how to fix it.
+		return nil, upstreamWriteFailure(err, "dataset creation", 50200)
 	}
 	link := &model.DatasetLink{
 		ID:               id.New(),
@@ -228,12 +240,21 @@ func (s *Service) GetDatasetForScope(ctx context.Context, scope TenantScope, dat
 }
 
 // UpdateDataset renames a dataset link within a tenant.
+// UpdateDataset renames a dataset, or — when name is empty — returns its current
+// summary untouched so that pushdown/budget-only updates can reuse this endpoint
+// without inventing a second rename path (drill defect 2026-11-13).
 func (s *Service) UpdateDataset(ctx context.Context, tenantID, datasetID, name string) (*DatasetSummary, error) {
-	name, err := normalizeDisplayName(name, "dataset name is required", 40010)
+	name = strings.TrimSpace(name)
+	d, err := s.resolveDataset(ctx, tenantID, datasetID)
 	if err != nil {
 		return nil, err
 	}
-	d, err := s.resolveDataset(ctx, tenantID, datasetID)
+	if name == "" {
+		return &DatasetSummary{
+			ID: d.ID, TenantID: tenantID, Name: d.Name, RAGFlowDatasetID: d.RAGFlowDatasetID,
+		}, nil
+	}
+	name, err = normalizeDisplayName(name, "dataset name is required", 40010)
 	if err != nil {
 		return nil, err
 	}

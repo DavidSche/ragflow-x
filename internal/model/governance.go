@@ -17,6 +17,14 @@ type ScenarioTemplateAsset struct {
 	CreatedBy     string    `gorm:"column:created_by;size:32" json:"created_by"`
 	CreatedAt     time.Time `gorm:"column:created_at" json:"created_at"`
 	UpdatedAt     time.Time `gorm:"column:updated_at" json:"updated_at"`
+
+	// Baseline provenance (doc/276 §7.1, migration 165). A tenant row that was
+	// explicitly forked from a platform baseline records which baseline key and
+	// version it derives from; LineageState keeps `copy` + empty BaselineKey
+	// from meaning "same-tenant copy" and "unknown baseline" at once.
+	BaselineKey     string `gorm:"column:baseline_key;size:96;not null;default:''" json:"baseline_key"`
+	BaselineVersion int64  `gorm:"column:baseline_version;not null;default:0" json:"baseline_version"`
+	LineageState    string `gorm:"column:lineage_state;size:24;not null;default:none;index" json:"lineage_state"`
 }
 
 func (ScenarioTemplateAsset) TableName() string { return "rgx_scenario_template" }
@@ -31,9 +39,26 @@ type ScenarioTemplateVersion struct {
 	ChangeNote  string    `gorm:"column:change_note;size:512" json:"change_note"`
 	CreatedBy   string    `gorm:"column:created_by;size:32" json:"created_by"`
 	CreatedAt   time.Time `gorm:"column:created_at" json:"created_at"`
+
+	// Historical immutability (doc/276 §7.7 / R7). Existing rows keep their
+	// payload verbatim and are stamped `v2/authored`; a v3 payload is stored as
+	// `v3/authored`. A v2 payload re-materialized during a migration is
+	// `v2/legacy_reconstructed` and may never be sold as "identical to history",
+	// because the frozen preset snapshot captures the migration-time values.
+	PayloadSchema      string `gorm:"column:payload_schema;size:16;not null;default:v2" json:"payload_schema"`
+	SnapshotProvenance string `gorm:"column:snapshot_provenance;size:32;not null;default:authored" json:"snapshot_provenance"`
 }
 
 func (ScenarioTemplateVersion) TableName() string { return "rgx_scenario_template_version" }
+
+// Payload schema + snapshot provenance values (doc/276 §7.7).
+const (
+	TemplatePayloadSchemaV2 = "v2"
+	TemplatePayloadSchemaV3 = "v3"
+
+	SnapshotAuthored            = "authored"
+	SnapshotLegacyReconstructed = "legacy_reconstructed"
+)
 
 // PromptPolicyVersion stores one immutable prompt/parameter policy version.
 type PromptPolicyVersion struct {
@@ -105,6 +130,13 @@ const (
 	AssetStatusDraft     = "draft"
 	AssetStatusPublished = "published"
 	AssetStatusArchived  = "archived"
+
+	// Baseline lineage states (doc/276 §7.1 / R22). `source` keeps its four
+	// legacy values so no historical row needs a rewrite; lineage is what tells
+	// a confirmed baseline derivative from a same-tenant copy.
+	LineageStateNone              = "none"
+	LineageStateConfirmedBaseline = "confirmed_baseline"
+	LineageStateLegacyUnknown     = "legacy_unknown"
 
 	PromptScopeTenant = "tenant"
 	PromptScopeChat   = "chat"
