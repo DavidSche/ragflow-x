@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createScenarioAgentDsl } from "./scenario-agent-dsl";
 import {
   SCENARIO_TEMPLATE_KEYS,
   localizeScenarioTemplate,
@@ -111,32 +110,58 @@ describe("scenario template catalog projection", () => {
     });
   });
 
-  it("creates a Begin → Agent → Message agent workflow", () => {
-    const view = localizeScenarioTemplate(catalogItem({ key: "operations" }), "zh");
-    const dsl = createScenarioAgentDsl({
-      description: view.description,
-      prompt: view.prompt,
-      parameters: view.parameters,
-      datasetIds: ["ds-1", "ds-2"],
-      modelId: "model-1",
-    });
-    expect(dsl.graph.nodes.map((node: { id: string }) => node.id)).toEqual([
-      "begin",
-      "Agent:Scenario",
-      "Message:Output",
-    ]);
-    const agent = dsl.components["Agent:Scenario"].obj.params;
-    expect(agent.llm_id).toBe("model-1");
-    expect(agent.sys_prompt).toBe(view.prompt.system);
-    expect(agent.temperature).toBe(view.parameters.temperature);
-    expect(agent.tools[0].params.kb_ids).toEqual(["ds-1", "ds-2"]);
-    expect(agent.tools[0].params.top_n).toBe(view.parameters.top_n);
+  it("passes the eval gate and baseline provenance through to the view", () => {
+    const view = localizeScenarioTemplate(
+      catalogItem({
+        baseline_key: "contract-compliance",
+        baseline_version: 3,
+        latest_baseline_version: 4,
+        baseline_update_available: true,
+        lineage_state: "forked",
+        eval_gate: { required: true, passed: false, reason: "no evaluation run" },
+      }),
+      "zh",
+    );
+    expect(view.baselineVersion).toBe(3);
+    expect(view.latestBaselineVersion).toBe(4);
+    expect(view.baselineUpdateAvailable).toBe(true);
+    expect(view.evalGate.required).toBe(true);
+    expect(view.evalGate.passed).toBe(false);
+  });
+
+  it("defaults the eval gate to not-required when the server omits it", () => {
+    const view = localizeScenarioTemplate(catalogItem(), "zh");
+    expect(view.evalGate.required).toBe(false);
+    expect(view.baselineUpdateAvailable).toBe(false);
+  });
+
+  it("gates the wizard on renderable app types, not the declared ones", () => {
+    // A v2 template declares `agent` for documentation but ships no canvas, so
+    // offering the button would guarantee a 40085 at submit time.
+    const view = localizeScenarioTemplate(
+      catalogItem({ app_types: ["chat", "agent"], renderable_app_types: ["chat"] }),
+      "zh",
+    );
+    expect(view.appTypes).toEqual(["chat", "agent"]);
+    expect(view.renderableAppTypes).toEqual(["chat"]);
+  });
+
+  it("falls back to the declared app types when the server omits the field", () => {
+    const view = localizeScenarioTemplate(catalogItem({ app_types: ["chat", "search"] }), "zh");
+    expect(view.renderableAppTypes).toEqual(["chat", "search"]);
   });
 });
 
 describe("scenario template single source of truth", () => {
   const read = (file: string) => readFileSync(path.resolve(import.meta.dirname, file), "utf8");
-  const wizardSource = read("ScenarioTemplateWizard.tsx");
+  const wizardSource = [
+    read("ScenarioTemplateWizard.tsx"),
+    read("wizard/useScenarioWizard.ts"),
+    read("wizard/StepApplication.tsx"),
+    read("wizard/StepKnowledge.tsx"),
+    read("wizard/StepVerify.tsx"),
+    read("wizard/StepScenario.tsx"),
+  ].join("\n");
   const catalogSource = read("scenario-templates.ts");
 
   it("reads the catalog from the API instead of a static table", () => {
@@ -145,9 +170,48 @@ describe("scenario template single source of truth", () => {
     expect(wizardSource).not.toMatch(/const SCENARIO_TEMPLATES\s*:/);
   });
 
-  it("creates assistants through the template instantiation endpoint", () => {
+  it("creates all three forms through the unified instantiation endpoint", () => {
     expect(catalogSource).toContain("/scenario-template-assets/");
-    expect(wizardSource).toContain("instantiateScenarioChat");
+    expect(catalogSource).toContain("/instantiate");
+    expect(wizardSource).toContain("instantiateScenarioTemplate");
+    // No direct form-specific creation posts may come back (doc/276 §12 "删拼装").
+    expect(wizardSource).not.toContain('"/search-apps"');
+    expect(wizardSource).not.toContain('"/agents"');
+  });
+
+  it("sends the idempotency key in the header, never the body", () => {
+    expect(catalogSource).toContain('"Idempotency-Key"');
+    expect(catalogSource).not.toMatch(/idempotency_key[^,]*instantiate/);
+  });
+
+  it("keeps every wizard file under the 400-line ceiling", () => {
+    [
+      "ScenarioTemplateWizard.tsx",
+      "wizard/useScenarioWizard.ts",
+      "wizard/StepScenario.tsx",
+      "wizard/StepKnowledge.tsx",
+      "wizard/StepApplication.tsx",
+      "wizard/StepVerify.tsx",
+      "wizard/CapabilityBadge.tsx",
+    ].forEach((file) => {
+      const lines = read(file).split("\n").length;
+      expect(lines, `${file} has ${lines} lines`).toBeLessThanOrEqual(400);
+    });
+  });
+
+  it("renders capability badges with text and aria-label, not colour alone", () => {
+    const badge = read("wizard/CapabilityBadge.tsx");
+    expect(badge).toContain("aria-label");
+    expect(badge).toContain("sr-only");
+    expect(badge).toContain('aria-hidden="true"');
+  });
+
+  it("disables the forms the server cannot render and says why", () => {
+    const stepApplication = read("wizard/StepApplication.tsx");
+    expect(stepApplication).toContain("template.renderableAppTypes.includes(option.value)");
+    expect(stepApplication).toContain("scenarioTemplates.wizard.appTypeUnavailable");
+    const hook = read("wizard/useScenarioWizard.ts");
+    expect(hook).toContain("item.renderableAppTypes[0]");
   });
 
   it("never re-sends prompt or parameters as an override", () => {

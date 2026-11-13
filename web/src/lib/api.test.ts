@@ -1,6 +1,36 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
-import { api } from "./api";
+import {
+  api,
+  getModelDefaultOptions,
+  getModelDefaults,
+  patchModelDefault,
+  redirectToLogin,
+} from "./api";
+
+describe("redirectToLogin", () => {
+  it("navigates within the hash router instead of hitting the real /login path", () => {
+    window.location.hash = "";
+    redirectToLogin();
+    expect(window.location.hash).toBe("#/login");
+    // pathname stays "/" so no server request for /login is ever issued
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("is a no-op when already on the login route", () => {
+    window.location.hash = "#/login";
+    redirectToLogin();
+    expect(window.location.hash).toBe("#/login");
+    redirectToLogin();
+    expect(window.location.hash).toBe("#/login");
+  });
+
+  it("honours a login route with a query string", () => {
+    window.location.hash = "#/login?next=%2Fworkbench";
+    redirectToLogin();
+    expect(window.location.hash).toBe("#/login?next=%2Fworkbench");
+  });
+});
 
 describe("api auth interceptor", () => {
   afterEach(() => {
@@ -77,5 +107,46 @@ describe("api auth interceptor", () => {
       message: "export result is too large",
       traceId: "trace-1",
     });
+  });
+});
+
+describe("default model API helpers", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("cache-busts both defaults reads so external changes are always visible", async () => {
+    vi.spyOn(api, "get").mockResolvedValue({
+      data: { code: 0, message: "ok", data: [] },
+    } as AxiosResponse);
+    await getModelDefaults();
+    await getModelDefaultOptions();
+
+    const urls = vi.mocked(api.get).mock.calls.map((c) => String(c[0]));
+    expect(urls).toEqual([
+      "/model-providers/defaults",
+      "/model-providers/defaults/options",
+    ]);
+    for (const call of vi.mocked(api.get).mock.calls) {
+      const params = call[1]?.params as Record<string, number>;
+      expect(typeof params._).toBe("number");
+    }
+  });
+
+  it("sends the mandatory CAS declaration on PATCH", async () => {
+    vi.spyOn(api, "patch").mockResolvedValue({
+      data: { code: 0, message: "ok", data: { status: "succeeded" } },
+    } as AxiosResponse);
+
+    await patchModelDefault({
+      model_type: "chat",
+      model_id: "m1",
+      expected_model_id: null,
+    });
+
+    expect(vi.mocked(api.patch).mock.calls[0]).toEqual([
+      "/model-providers/defaults",
+      { model_type: "chat", model_id: "m1", expected_model_id: null },
+    ]);
   });
 });

@@ -65,6 +65,7 @@ const RESOURCE_ACCESS: Record<string, { resource: string; action: string }> = {
   memories: { resource: "memory", action: "read" },
   agents: { resource: "agent", action: "read" },
   "model-providers": { resource: "model-provider", action: "read" },
+  "model-default": { resource: "model-default", action: "read" },
   "api-keys": { resource: "api-key", action: "read" },
   connectors: { resource: "connector", action: "read" },
   approvals: { resource: "approval", action: "read" },

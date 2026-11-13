@@ -7,13 +7,14 @@ import { List, DataTable, SearchInput, AutocompleteInput, ReferenceInput } from 
 import { IconButtonWithTooltip } from "@/components/admin/icon-button-with-tooltip";
 import { Plus, Settings, Server, Trash2 } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
+import { ModelDefaultsPanel } from "./ModelDefaultsPanel";
 import { ProviderSelectDialog } from "./ProviderSelectDialog";
 import { ProviderManageDialog } from "./ProviderManageDialog";
 import { getProviderLogo } from "./provider-logos";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { WorkspaceLabel } from "@/components/admin/ReferenceLabel";
 
-function ModelProviderActions() {
+function ModelProviderActions({ onProvidersChanged }: { onProvidersChanged: () => void }) {
   const { refetch } = useListContext();
   const t = useTranslate();
   const [open, setOpen] = useState(false);
@@ -26,7 +27,10 @@ function ModelProviderActions() {
       <ProviderSelectDialog
         open={open}
         onOpenChange={setOpen}
-        onAdded={() => void refetch()}
+        onAdded={() => {
+          void refetch();
+          onProvidersChanged();
+        }}
       />
     </>
   );
@@ -145,74 +149,81 @@ export const ModelProviderList = () => {
       </ReferenceInput>]
     : [];
   const [manage, setManage] = useState<{ id: string; name: string; tenantID: string } | null>(null);
+  // Bumped whenever the set of providers/instances/models changes: the default
+  // model panel reads candidates from RAGFlow (never cached) and must reload.
+  const [defaultsRefresh, setDefaultsRefresh] = useState(0);
+  const bumpDefaults = () => setDefaultsRefresh((n) => n + 1);
 
   return (
-    <List perPage={20} actions={<ModelProviderActions />} filters={filters} aria-label={t("providers.list_title")}>
-      <DataTable aria-label={t("providers.data_table")} empty={<EmptyProviderGuidance />}>
-        <DataTable.Col source="name" label={t("providers.name")} render={() => <ProviderNameCell />} />
-        <DataTable.Col
-          source="provider_type"
-          label={t("providers.provider_type")}
-          className="hidden md:table-cell"
-        />
-        <DataTable.Col
-          source="base_url"
-          label={t("providers.base_url")}
-          className="hidden lg:table-cell"
-        />
-        <DataTable.Col
-          label={t("providers.target_workspace")}
-          className="hidden lg:table-cell"
-          render={() => <ProviderTenantCell />}
-        />
-        <DataTable.Col
-          label={t("providers.instance_model")}
-          render={(r) => (
-            <span className="whitespace-nowrap">
-              {r.instance_count ?? 0} / {r.model_count ?? 0}
-            </span>
-          )}
-        />
-        <DataTable.Col
-          label={t("providers.capability")}
-          render={(r) =>
-            Array.isArray(r.model_types) && r.model_types.length > 0 ? (
-              <div className="flex max-w-56 flex-wrap gap-1">
-                {r.model_types.map((mt: string) => (
-                  <Badge key={mt} variant="secondary">
-                    {mt}
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <span className="text-muted-foreground">-</span>
-            )
-          }
-        />
-        <DataTable.Col
-          label={t("providers.status")}
-          render={(r) => (
-            <Badge variant={r.status === "active" ? "default" : "outline"}>
-              {r.status === "active" ? t("providers.status_active") : t("providers.status_disabled")}
-            </Badge>
-          )}
-        />
-        <DataTable.Col label="">
-          <ManageCell onManage={(id, name, tenantID) => setManage({ id, name, tenantID })} />
-        </DataTable.Col>
-      </DataTable>
-      {manage ? (
-        <ProviderManageDialog
-          providerId={manage.id}
-          providerName={manage.name}
-          targetTenantID={manage.tenantID}
-          open={!!manage}
-          onOpenChange={(open) => {
-            if (!open) setManage(null);
-          }}
-        />
-      ) : null}
-    </List>
+    <>
+      <ModelDefaultsPanel refreshToken={defaultsRefresh} />
+      <List perPage={20} actions={<ModelProviderActions onProvidersChanged={bumpDefaults} />} filters={filters} aria-label={t("providers.list_title")}>
+        <DataTable aria-label={t("providers.data_table")} empty={<EmptyProviderGuidance />}>
+          <DataTable.Col source="name" label={t("providers.name")} render={() => <ProviderNameCell />} />
+          <DataTable.Col
+            source="provider_type"
+            label={t("providers.provider_type")}
+            className="hidden md:table-cell"
+          />
+          <DataTable.Col
+            source="base_url"
+            label={t("providers.base_url")}
+            className="hidden lg:table-cell"
+          />
+          <DataTable.Col
+            label={t("providers.target_workspace")}
+            className="hidden lg:table-cell"
+            render={() => <ProviderTenantCell />}
+          />
+          <DataTable.Col
+            label={t("providers.instance_model")}
+            render={(r) => (
+              <span className="whitespace-nowrap">
+                {r.instance_count ?? 0} / {r.model_count ?? 0}
+              </span>
+            )}
+          />
+          <DataTable.Col
+            label={t("providers.capability")}
+            render={(r) =>
+              Array.isArray(r.model_types) && r.model_types.length > 0 ? (
+                <div className="flex max-w-56 flex-wrap gap-1">
+                  {r.model_types.map((mt: string) => (
+                    <Badge key={mt} variant="secondary">
+                      {mt}
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-muted-foreground">-</span>
+              )
+            }
+          />
+          <DataTable.Col
+            label={t("providers.status")}
+            render={(r) => (
+              <Badge variant={r.status === "active" ? "default" : "outline"}>
+                {r.status === "active" ? t("providers.status_active") : t("providers.status_disabled")}
+              </Badge>
+            )}
+          />
+          <DataTable.Col label="">
+            <ManageCell onManage={(id, name, tenantID) => setManage({ id, name, tenantID })} />
+          </DataTable.Col>
+        </DataTable>
+        {manage ? (
+          <ProviderManageDialog
+            providerId={manage.id}
+            providerName={manage.name}
+            targetTenantID={manage.tenantID}
+            open={!!manage}
+            onOpenChange={(open) => {
+              if (!open) setManage(null);
+            }}
+          />
+        ) : null}
+      </List>
+    </>
   );
 };
 

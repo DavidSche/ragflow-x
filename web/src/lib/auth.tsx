@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, unwrap } from "./api";
+import { api, redirectToLogin, unwrap } from "./api";
 import { optionalWarning } from "./optional-error";
 
 export interface CurrentUser {
@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     void api.post("/auth/logout").catch((error) => optionalWarning(error, "退出登录请求失败"));
     setUser(null);
-    window.location.href = "/login";
+    redirectToLogin();
   }, []);
 
   // Load the current user once on boot if a token exists.
