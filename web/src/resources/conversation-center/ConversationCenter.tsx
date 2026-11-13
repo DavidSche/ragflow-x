@@ -156,6 +156,15 @@ export function ConversationCenter({
   const chatRead = chatReadResult?.canAccess === true;
   const searchAccess = searchAccessResult?.canAccess === true;
   const agentAccess = agentAccessResult?.canAccess === true;
+  // The three kind checks resolve asynchronously and report `canAccess:
+  // undefined` while pending. Reading that as "denied" makes this screen wipe a
+  // deep link's targetId (it rebuilds the query with `kind` only) before the
+  // user ever sees the target - a `#/workbench?chat=<id>` hand-off then lands on
+  // an empty conversation centre. Wait for the checks instead of guessing.
+  const kindAccessPending =
+    chatAccessResult?.isPending === true ||
+    searchAccessResult?.isPending === true ||
+    agentAccessResult?.isPending === true;
   const agentSessionCreate = agentSessionCreateResult?.canAccess === true;
   const contextSourceAccess = contextSourceAccessResult?.canAccess === true;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -744,6 +753,7 @@ export function ConversationCenter({
     if (
       !identity ||
       identityLoading ||
+      kindAccessPending ||
       activeRunRef.current ||
       requestState.hasActivePending
     ) {
@@ -873,6 +883,7 @@ export function ConversationCenter({
     chatAccess,
     identity,
     identityLoading,
+    kindAccessPending,
     notify,
     recentStore,
     searchAccess,
