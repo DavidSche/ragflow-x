@@ -1,13 +1,13 @@
 # RAGFlow-X User Guide
 
-> Applies to: RAGFlow-X v0.5.2 (schema migration v166 and later) | Updated: 2026-11-13 | Screenshots: local development environment (sample data)
+> Applies to: RAGFlow-X v0.5.3 (schema migration v166 and later) | Updated: 2026-11-13 | Screenshots: local development environment (sample data)
 
 This guide covers administrator and business-user workflows in RAGFlow-X. The
 product closes the gap between enterprise production requirements and RAGFlow's
 core RAG engine through governed security, a full-lifecycle knowledge system,
 and a unified conversation experience.
 
-## Install (v0.5.2)
+## Install (v0.5.3)
 
 This release ships as **binary archives only — no container image is published
 yet**. Download `ragflow-x-<version>-<os>-<arch>.tar.gz` (`.zip` on Windows),
