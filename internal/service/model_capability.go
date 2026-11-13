@@ -70,10 +70,8 @@ const negativeBindingTTL = 10 * time.Minute
 // Service. It is a single instance-level cache because the service talks to
 // exactly one RAGFlow deployment at a time.
 type defaultModelCapabilityRegistry struct {
-	mu        sync.Mutex
-	byBuild   map[buildIdentityKey]*capabilityCacheEntry
-	lastProbe time.Time
-	lastError error
+	mu      sync.Mutex
+	byBuild map[buildIdentityKey]*capabilityCacheEntry
 }
 
 func newDefaultModelCapabilityRegistry() *defaultModelCapabilityRegistry {

@@ -244,27 +244,6 @@ func (p *ScenarioParseIntent) Validate() error {
 	}
 }
 
-// chunkMethodOf returns the normalized chunk method a knowledge block declares
-// for the given dataset role, or "" when the block does not declare one.
-func (k *ScenarioTemplateKnowledge) chunkMethodOf(role string) string {
-	if k == nil {
-		return ""
-	}
-	for i := range k.Datasets {
-		dataset := &k.Datasets[i]
-		if role != "" && dataset.Role != "" && dataset.Role != role {
-			continue
-		}
-		if dataset.ParseIntent == nil {
-			continue
-		}
-		if method := normalizeChunkMethod(dataset.ParseIntent.ChunkMethod); method != "" {
-			return method
-		}
-	}
-	return ""
-}
-
 // hashTemplatePayload is the drift detector used by the seed/baseline publish
 // paths: identical content must not create a new immutable version.
 func hashTemplatePayload(raw string) string {

@@ -48,13 +48,7 @@ func (s *store) AnswerActivityByAssistant(
 	if len(assistantIDs) == 0 {
 		return out, nil
 	}
-	type row struct {
-		AssistantID string
-		AnswerCount int
-		FirstAt     time.Time
-		LastAt      time.Time
-	}
-	var rows []row
+	var rows []AssistantActivity
 	err := s.WithContext(ctx).Model(&model.AnswerRun{}).
 		Select("assistant_id, COUNT(*) AS answer_count, MIN(created_at) AS first_at, MAX(created_at) AS last_at").
 		Where("tenant_id = ? AND assistant_id IN ? AND created_at >= ?", tenantID, assistantIDs, since).
@@ -63,10 +57,7 @@ func (s *store) AnswerActivityByAssistant(
 		return nil, err
 	}
 	for _, item := range rows {
-		out[item.AssistantID] = AssistantActivity{
-			AssistantID: item.AssistantID, AnswerCount: item.AnswerCount,
-			FirstAt: item.FirstAt, LastAt: item.LastAt,
-		}
+		out[item.AssistantID] = item
 	}
 	return out, nil
 }
