@@ -129,7 +129,7 @@ security:
   max_age_sec: 600             # (RGX_SECURITY_CORS_MAX_AGE)
   hsts_enabled: true           # required behind the production TLS terminator (RGX_SECURITY_HSTS_ENABLED)
   hsts_max_age_sec: 31536000   # (RGX_SECURITY_HSTS_MAX_AGE)
-  content_security_policy: "default-src 'none'"   # (RGX_SECURITY_CSP)
+  content_security_policy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"   # (RGX_SECURITY_CSP)
   frame_options: DENY          # DENY | SAMEORIGIN (RGX_SECURITY_FRAME_OPTIONS)
   max_request_bytes: 26214400  # 25 MiB; (RGX_SECURITY_MAX_REQUEST_BYTES)
   allow_private_provider_base_url: true  # required for isolated intranet model gateways # enable only for internal LLM gateways

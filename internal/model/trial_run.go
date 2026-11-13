@@ -25,32 +25,38 @@ const (
 // TrialRun is one retrieval-only trial execution with the exact configuration
 // snapshot it ran under. Terminal rows are immutable.
 type TrialRun struct {
-	ID                 string     `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID           string     `gorm:"column:tenant_id;size:32;not null;uniqueIndex:uk_trial_run_idempotency;index" json:"tenant_id"`
-	IdempotencyKey     string     `gorm:"column:idempotency_key;size:128;not null;uniqueIndex:uk_trial_run_idempotency" json:"idempotency_key"`
-	ScenarioTemplateID string     `gorm:"column:scenario_template_id;size:32;not null;index" json:"scenario_template_id"`
-	TemplateVersion    int64      `gorm:"column:template_version;not null;default:0" json:"template_version"`
-	AssistantID        string     `gorm:"column:assistant_id;size:64;not null;index" json:"assistant_id"`
-	AssistantKind      string     `gorm:"column:assistant_kind;size:16;not null;default:chat" json:"assistant_kind"`
-	EvalSetID          string     `gorm:"column:eval_set_id;size:32;not null" json:"eval_set_id"`
-	EvalSetVersion     int64      `gorm:"column:eval_set_version;not null;default:0" json:"eval_set_version"`
-	EvalSetHash        string     `gorm:"column:eval_set_hash;size:64;not null" json:"eval_set_hash"`
-	PolicyID           string     `gorm:"column:policy_id;size:32;not null;default:trial-retrieval-v1" json:"policy_id"`
-	PolicyHash         string     `gorm:"column:policy_hash;size:64;not null" json:"policy_hash"`
-	Mode               string     `gorm:"column:mode;size:16;not null;default:retrieval_only" json:"mode"`
-	AuthoringSnapshot  string     `gorm:"column:authoring_snapshot;type:text;not null" json:"authoring_snapshot"`
-	DatasetIDs         string     `gorm:"column:dataset_ids;type:text;not null" json:"dataset_ids"`
-	RAGFlowVersion     string     `gorm:"column:ragflow_version;size:64" json:"ragflow_version"`
-	Status             string     `gorm:"column:status;size:16;not null;default:QUEUED;index" json:"status"`
-	FailureReason      string     `gorm:"column:failure_reason;size:32" json:"failure_reason"`
-	Summary            string     `gorm:"column:summary;type:text" json:"summary"`
-	CancelRequestedAt  *time.Time `gorm:"column:cancel_requested_at" json:"cancel_requested_at"`
-	StartedAt          *time.Time `gorm:"column:started_at" json:"started_at"`
-	CompletedAt        *time.Time `gorm:"column:completed_at" json:"completed_at"`
-	CreatedAt          time.Time  `gorm:"column:created_at;index" json:"created_at"`
-	UpdatedAt          time.Time  `gorm:"column:updated_at" json:"updated_at"`
-	Actor              string     `gorm:"column:actor;size:32;not null" json:"actor"`
-	TraceID            string     `gorm:"column:trace_id;size:64" json:"trace_id"`
+	ID                 string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID           string `gorm:"column:tenant_id;size:32;not null;uniqueIndex:uk_trial_run_idempotency;index" json:"tenant_id"`
+	IdempotencyKey     string `gorm:"column:idempotency_key;size:128;not null;uniqueIndex:uk_trial_run_idempotency" json:"idempotency_key"`
+	ScenarioTemplateID string `gorm:"column:scenario_template_id;size:32;not null;index" json:"scenario_template_id"`
+	TemplateVersion    int64  `gorm:"column:template_version;not null;default:0" json:"template_version"`
+	AssistantID        string `gorm:"column:assistant_id;size:64;not null;index" json:"assistant_id"`
+	AssistantKind      string `gorm:"column:assistant_kind;size:16;not null;default:chat" json:"assistant_kind"`
+	EvalSetID          string `gorm:"column:eval_set_id;size:32;not null" json:"eval_set_id"`
+	EvalSetVersion     int64  `gorm:"column:eval_set_version;not null;default:0" json:"eval_set_version"`
+	EvalSetHash        string `gorm:"column:eval_set_hash;size:64;not null" json:"eval_set_hash"`
+	PolicyID           string `gorm:"column:policy_id;size:32;not null;default:trial-retrieval-v1" json:"policy_id"`
+	PolicyHash         string `gorm:"column:policy_hash;size:64;not null" json:"policy_hash"`
+	Mode               string `gorm:"column:mode;size:16;not null;default:retrieval_only" json:"mode"`
+	// ValidationScope is the explicit boundary of what a trial proves
+	// (doc/276 §7.6 / R6): `retrieval_only` covers hits, retrieval parameters and
+	// evidence location. Application execution is a separate, later capability,
+	// so `application_execution_verified` stays false until P2 lands it.
+	ValidationScope              string     `gorm:"column:validation_scope;size:32;not null;default:retrieval_only" json:"validation_scope"`
+	ApplicationExecutionVerified bool       `gorm:"column:application_execution_verified;not null;default:false" json:"application_execution_verified"`
+	AuthoringSnapshot            string     `gorm:"column:authoring_snapshot;type:text;not null" json:"authoring_snapshot"`
+	DatasetIDs                   string     `gorm:"column:dataset_ids;type:text;not null" json:"dataset_ids"`
+	RAGFlowVersion               string     `gorm:"column:ragflow_version;size:64" json:"ragflow_version"`
+	Status                       string     `gorm:"column:status;size:16;not null;default:QUEUED;index" json:"status"`
+	FailureReason                string     `gorm:"column:failure_reason;size:32" json:"failure_reason"`
+	Summary                      string     `gorm:"column:summary;type:text" json:"summary"`
+	CancelRequestedAt            *time.Time `gorm:"column:cancel_requested_at" json:"cancel_requested_at"`
+	StartedAt                    *time.Time `gorm:"column:started_at" json:"started_at"`
+	CompletedAt                  *time.Time `gorm:"column:completed_at" json:"completed_at"`
+	CreatedAt                    time.Time  `gorm:"column:created_at;index" json:"created_at"`
+	UpdatedAt                    time.Time  `gorm:"column:updated_at" json:"updated_at"`
+	Actor                        string     `gorm:"column:actor;size:32;not null" json:"actor"`
+	TraceID                      string     `gorm:"column:trace_id;size:64" json:"trace_id"`
 }
 
 // TableName is the physical table name.

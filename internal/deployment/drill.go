@@ -309,9 +309,8 @@ func checkSecurityBaseline(ctx context.Context, cfg config.Config, client *http.
 		if strings.TrimSpace(cfg.Security.ContentSecurityPolicy) == "" {
 			problems = append(problems, "security.content_security_policy is required")
 		}
-		lowerCSP := strings.ToLower(cfg.Security.ContentSecurityPolicy)
-		if strings.Contains(lowerCSP, "unsafe-inline") || strings.Contains(lowerCSP, "unsafe-eval") {
-			problems = append(problems, "security.content_security_policy must not allow unsafe-inline or unsafe-eval")
+		if violation := cspScriptDirectiveViolation(cfg.Security.ContentSecurityPolicy); violation != "" {
+			problems = append(problems, violation)
 		}
 		if !cfg.Security.HSTSEnabled || cfg.Security.HSTSMaxAgeSec < 31536000 {
 			problems = append(problems, "security.hsts must be enabled for at least 31536000 seconds")
@@ -430,6 +429,40 @@ func checkSecurityBaseline(ctx context.Context, cfg config.Config, client *http.
 type securityProbeResponse struct {
 	headers http.Header
 	status  int
+}
+
+// cspScriptDirectiveViolation inspects the effective script-execution source
+// list of a Content-Security-Policy (the script-src directive, falling back to
+// default-src per the CSP spec). It reports a problem when that list permits
+// unsafe-inline or unsafe-eval — the two vectors that can execute code. It
+// deliberately does NOT police style-src 'unsafe-inline': inline styles are not
+// a code-execution vector and the embedded SPA's CSS-in-JS runtime (Radix,
+// react-remove-scroll, sonner, mermaid) requires injecting <style> dynamically.
+func cspScriptDirectiveViolation(csp string) string {
+	const required = "security.content_security_policy must not allow unsafe-inline or unsafe-eval for scripts"
+	if strings.TrimSpace(csp) == "" {
+		return "" // empty policy is caught by the required check above
+	}
+	lower := strings.ToLower(csp)
+	directives := make(map[string]string)
+	for _, part := range strings.Split(lower, ";") {
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			continue
+		}
+		directives[fields[0]] = strings.Join(fields[1:], " ")
+	}
+	// The effective script source list is script-src, else default-src.
+	sources, ok := directives["script-src"]
+	if !ok {
+		sources = directives["default-src"]
+	}
+	for _, token := range strings.Fields(sources) {
+		if token == "'unsafe-inline'" || token == "'unsafe-eval'" {
+			return required
+		}
+	}
+	return ""
 }
 
 func securityProbe(ctx context.Context, client *http.Client, method, endpoint string, headers map[string]string, body, forwardedProto string) (securityProbeResponse, error) {

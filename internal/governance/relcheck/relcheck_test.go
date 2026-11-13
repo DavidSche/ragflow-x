@@ -68,7 +68,7 @@ func crossDocUniverse(root, statusPath string) ([]string, error) {
 	named := milestoneDocPattern.FindAllStringSubmatch(string(raw), -1)
 	files := []string{
 		filepath.Join(root, "doc", "develop", "137_知识编译与Memory无声落地实施方案.md"),
-		filepath.Join(root, "doc", "develop", "ragflow-upstream-issues.md"),
+		filepath.Join(root, "doc", "environment", "upstream", "ragflow-upstream-issues.md"),
 	}
 	seen := map[string]bool{}
 	for _, match := range named {

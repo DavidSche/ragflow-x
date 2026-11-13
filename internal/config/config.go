@@ -408,6 +408,11 @@ type App struct {
 	RequestIDHeader    string `yaml:"request_id_header"`
 	EncryptionKey      string `yaml:"encryption_key"`
 	DataDir            string `yaml:"data_dir"`
+	// ScenarioPackSigningKey* sign exported scenario packs (doc/276 §8.7). An
+	// empty key means exports are unsigned: the import path tolerates that, but a
+	// present-and-invalid signature is always rejected as tampering.
+	ScenarioPackSigningKeyID string `yaml:"scenario_pack_signing_key_id"`
+	ScenarioPackSigningKey   string `yaml:"scenario_pack_signing_key"`
 }
 
 // FactGuard controls answer claim enforcement. Off is valid only for
@@ -517,13 +522,22 @@ func defaults() *Config {
 		Gateway: Gateway{NonStreamTimeoutSec: 120, StreamHeaderTimeoutSec: 30, StreamTimeoutSec: 0, MaxConns: 20, RateLimitPerMin: 120},
 		Redis:   Redis{Addr: "localhost:6379", DB: 0, PoolSize: 10},
 		Security: Security{
-			AllowedMethods:              []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-			AllowedHeaders:              []string{"Content-Type", "Authorization", "X-Request-Id"},
-			AllowCredentials:            true,
-			MaxAgeSec:                   600,
-			HSTSMaxAgeSec:               31536000,
-			HSTSIncludeSubdomains:       true,
-			ContentSecurityPolicy:       "default-src 'none'",
+			AllowedMethods:        []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+			AllowedHeaders:        []string{"Content-Type", "Authorization", "X-Request-Id"},
+			AllowCredentials:      true,
+			MaxAgeSec:             600,
+			HSTSMaxAgeSec:         31536000,
+			HSTSIncludeSubdomains: true,
+			// Functional same-origin policy for the embedded SPA. The all-blocking
+			// default-src 'none' makes the shipped web UI a blank page (it blocks the
+			// app's own scripts/stylesheets/fonts). data:/blob: are required for
+			// inline SVG icons and generated font/favicon payloads the UI loads.
+			// style-src allows inline so CSS-in-JS (Radix/react-remove-scroll,
+			// sonner, mermaid) can inject <style> tags at runtime; these carry no
+			// code-execution risk and cannot be hashed (dynamic content) or nonced
+			// (mermaid ignores nonces). script-src stays strict ('self', no
+			// inline/eval) so script execution remains locked down.
+			ContentSecurityPolicy:       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
 			FrameOptions:                "DENY",
 			MaxRequestBytes:             25 << 20,
 			AllowPrivateProviderBaseURL: false,
@@ -585,6 +599,8 @@ func applyEnv(cfg *Config) {
 	setStr(&cfg.App.JWTSecret, "RGX_JWT_SECRET")
 	setStr(&cfg.App.Environment, "RGX_ENVIRONMENT")
 	setStr(&cfg.App.EncryptionKey, "RGX_ENCRYPTION_KEY")
+	setStr(&cfg.App.ScenarioPackSigningKeyID, "RGX_SCENARIO_PACK_SIGNING_KEY_ID")
+	setStr(&cfg.App.ScenarioPackSigningKey, "RGX_SCENARIO_PACK_SIGNING_KEY")
 	setInt(&cfg.App.RefreshExpireHours, "RGX_REFRESH_EXPIRE_HOURS")
 	setStr(&cfg.App.DataDir, "RGX_DATA_DIR")
 	setStr(&cfg.Database.Driver, "RGX_DB_DRIVER")

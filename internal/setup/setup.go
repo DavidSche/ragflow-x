@@ -606,6 +606,7 @@ func (m *Manager) buildEngine(cfg *config.Config, sec *secretstore.Secrets) (htt
 		return nil, nil, err
 	}
 	svc := service.New(store, rg, jm, cryptoKey)
+	svc.SetScenarioPackSigningKey(cfg.App.ScenarioPackSigningKeyID, cfg.App.ScenarioPackSigningKey)
 	notify.Get().SetSink(svc)
 	svc.SetRoutePolicy(cfg.ConversationRouting)
 	svc.SetProviderURLPolicy(cfg.Security.AllowPrivateProviderBaseURL)

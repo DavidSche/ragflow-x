@@ -9,7 +9,6 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
-	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
 type trialFixture struct {
@@ -30,19 +29,26 @@ func newTrialFixture(t *testing.T) *trialFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assets, _, err := svc.Store.ListScenarioTemplates(ctx, tenant.ID, 1, 100, repository.GovernanceFilter{Key: "enterprise-qa"})
-	if err != nil || len(assets) != 1 {
+	// doc/276 §7.1: the shipped catalog is the platform baseline, so the fixture
+	// seeds it once and forks the template the trial run will target.
+	seedPlatformBaseline(t, svc)
+	baseline, err := svc.Store.GetPlatformScenarioTemplateByKey(ctx, "enterprise-qa")
+	if err != nil || baseline == nil {
 		t.Fatalf("seeded template missing: %v", err)
 	}
-	inst, err := svc.CreateChatFromScenarioTemplate(ctx, tenant.ID, "owner", assets[0].ID,
+	template, err := svc.ForkScenarioTemplate(ctx, tenant.ID, actorID(t, svc), baseline.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := svc.CreateChatFromScenarioTemplate(ctx, tenant.ID, "owner", template.ID,
 		ScenarioTemplateInstantiationInput{CreateMissingDatasets: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if inst.Chat.ScenarioTemplateID != assets[0].ID || inst.Chat.ScenarioTemplateVersion != assets[0].LatestVersion {
+	if inst.Chat.ScenarioTemplateID != template.ID || inst.Chat.ScenarioTemplateVersion != template.LatestVersion {
 		t.Fatalf("instantiation must record provenance: %+v", inst.Chat)
 	}
-	return &trialFixture{svc: svc, ctx: ctx, tenant: tenant, template: &assets[0], chat: inst.Chat}
+	return &trialFixture{svc: svc, ctx: ctx, tenant: tenant, template: template, chat: inst.Chat}
 }
 
 func (f *trialFixture) waitForRun(t *testing.T, runID string) *TrialRunView {

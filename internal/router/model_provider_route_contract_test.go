@@ -41,7 +41,10 @@ func TestP0_PROVIDER_001_ModelProviderRoutesMatchAccessRules(t *testing.T) {
 	}
 	expected := map[string]bool{}
 	for _, rule := range accessRules(nil) {
-		if rule.Resource == "model-provider" {
+		// Match by path prefix (not just Resource == "model-provider") so the
+		// platform-scoped model-default routes under /api/v1/model-providers/
+		// (doc/269 §4.3) are also asserted to have an access rule.
+		if strings.HasPrefix(rule.Path, "/api/v1/model-providers") {
 			expected[rule.Method+" "+rule.Path] = true
 		}
 	}

@@ -35,9 +35,20 @@ type createDatasetRequest struct {
 	Name string `json:"name" binding:"required"`
 }
 
+// updateDatasetRequest is a partial update: rename, compilation budget and the
+// local pushdown policy are independent knobs. `name` used to be
+// binding:"required", which made the pushdown toggle unreachable without also
+// renaming the dataset — the writer existed but no request could reach it
+// (drill defect 2026-11-13).
 type updateDatasetRequest struct {
-	Name                   string `json:"name" binding:"required"`
+	Name                   string `json:"name"`
 	CompilationTokenBudget *int64 `json:"compilation_token_budget"`
+	// PushdownEnabled is the local retrieval-pushdown policy (doc/276 §7.4 /
+	// R26): stored on rgx_dataset_link, never pushed to the engine config.
+	PushdownEnabled *bool `json:"pushdown_enabled"`
+	// AcknowledgeSharedImpact is required when other applications already use
+	// the dataset.
+	AcknowledgeSharedImpact bool `json:"acknowledge_shared_impact"`
 }
 
 // ListDatasets lists datasets bound to the authenticated tenant.
@@ -994,6 +1005,62 @@ func (h *Handler) UpdateDocumentChunk(c *gin.Context) {
 	response.OK(c, gin.H{"updated": true})
 }
 
+// GetDatasetParseProfile returns the dataset's current parse profile plus the
+// write-impact pre-check the repair UI needs (doc/276 §7.4).
+func (h *Handler) GetDatasetParseProfile(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID := c.GetString(middleware.ContextUserID)
+	if err := h.Service.Authorize(ctx, userID, "read", "dataset"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	scope, ok := h.resolveGovernanceScope(c, "dataset")
+	if !ok {
+		return
+	}
+	profile, err := h.Service.GetParseProfile(ctx, scope.CurrentTenantID(), c.Param("id"))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, profile)
+}
+
+// ApplyDatasetParseProfile is the single protected channel for the
+// `apply_parse_profile` repair action (doc/276 §7.4 / R4). It refuses to rewrite
+// already-parsed content and refuses to touch a shared dataset without an
+// explicit acknowledgement.
+func (h *Handler) ApplyDatasetParseProfile(c *gin.Context) {
+	var req service.ParseProfileInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40000, "invalid parse profile payload")
+		return
+	}
+	ctx := c.Request.Context()
+	scope, ok := h.resolveGovernanceWriteScope(c, "dataset")
+	if !ok {
+		return
+	}
+	tenantID := scope.CurrentTenantID()
+	crossTenant := tenantID != scope.ActorTenantID
+	userID := c.GetString(middleware.ContextUserID)
+	datasetID := c.Param("id")
+	if err := h.Service.Authorize(ctx, userID, "manage", "dataset"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	if h.approvalHoldForTenant(c, tenantID, crossTenant, model.ApprovalObjectDataset, model.ApprovalActionUpdate, datasetID,
+		map[string]any{"chunk_method": req.ChunkMethod}) {
+		return
+	}
+	profile, err := h.Service.ApplyParseProfile(ctx, tenantID, userID, datasetID, req)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, profile)
+}
+
 // GetDatasetConfig returns a dataset's parsing/embedding/permission config.
 func (h *Handler) GetDatasetConfig(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -1070,16 +1137,32 @@ func (h *Handler) UpdateDataset(c *gin.Context) {
 		return
 	}
 	datasetID := c.Param("id")
-	if h.approvalHoldForTenant(c, tenantID, crossTenant, model.ApprovalObjectDataset, model.ApprovalActionUpdate, datasetID, map[string]any{"name": req.Name}) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" && req.CompilationTokenBudget == nil && req.PushdownEnabled == nil {
+		response.Fail(c, 400, 40085, "nothing to update: send name, compilation_token_budget or pushdown_enabled")
 		return
 	}
-	ds, err := h.Service.UpdateDataset(ctx, tenantID, datasetID, req.Name)
+	approvalPayload := map[string]any{"name": name}
+	if req.PushdownEnabled != nil {
+		approvalPayload["pushdown_enabled"] = *req.PushdownEnabled
+	}
+	if h.approvalHoldForTenant(c, tenantID, crossTenant, model.ApprovalObjectDataset, model.ApprovalActionUpdate, datasetID, approvalPayload) {
+		return
+	}
+	// Empty name keeps the current display name (pushdown/budget-only update).
+	ds, err := h.Service.UpdateDataset(ctx, tenantID, datasetID, name)
 	if err != nil {
 		response.Err(c, err)
 		return
 	}
 	if req.CompilationTokenBudget != nil {
 		if err := h.Service.UpdateDatasetCompilationBudget(ctx, tenantID, datasetID, *req.CompilationTokenBudget); err != nil {
+			response.Err(c, err)
+			return
+		}
+	}
+	if req.PushdownEnabled != nil {
+		if err := h.Service.SetDatasetPushdown(ctx, tenantID, userID, datasetID, *req.PushdownEnabled, req.AcknowledgeSharedImpact); err != nil {
 			response.Err(c, err)
 			return
 		}

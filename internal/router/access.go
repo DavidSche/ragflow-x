@@ -204,6 +204,8 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/datasets/:id/graph", Action: "read", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
 		{Method: "DELETE", Path: "/api/v1/datasets/:id", Action: "manage", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
 		{Method: "PUT", Path: "/api/v1/datasets/:id", Action: "manage", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+		{Method: "GET", Path: "/api/v1/datasets/:id/parse-profile", Action: "read", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
+		{Method: "POST", Path: "/api/v1/datasets/:id/parse-profile", Action: "manage", Resource: "dataset", Resolve: resolveDatasetScope(svc)},
 
 		{Method: "GET", Path: "/api/v1/datasets/:id/documents", Action: "read", Resource: "document"},
 		{Method: "POST", Path: "/api/v1/datasets/:id/documents", Action: "append", Resource: "document"},
@@ -250,6 +252,9 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/model-providers", Action: "read", Resource: "model-provider"},
 		{Method: "POST", Path: "/api/v1/model-providers", Action: "manage", Resource: "model-provider"},
 		{Method: "GET", Path: "/api/v1/model-providers/catalog", Action: "read", Resource: "model-provider"},
+		{Method: "GET", Path: "/api/v1/model-providers/defaults", Action: "read", Resource: "model-default"},
+		{Method: "GET", Path: "/api/v1/model-providers/defaults/options", Action: "read", Resource: "model-default"},
+		{Method: "PATCH", Path: "/api/v1/model-providers/defaults", Action: "manage", Resource: "model-default"},
 		{Method: "GET", Path: "/api/v1/model-providers/:id", Action: "read", Resource: "model-provider"},
 		{Method: "DELETE", Path: "/api/v1/model-providers/:id", Action: "manage", Resource: "model-provider"},
 		{Method: "GET", Path: "/api/v1/model-providers/:id/instances", Action: "read", Resource: "model-provider"},
@@ -355,10 +360,22 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/onboarding/readiness", Action: "read", Resource: "scenario-template"},
 		{Method: "POST", Path: "/api/v1/scenario-template-assets", Action: "manage", Resource: "scenario-template"},
 		{Method: "POST", Path: "/api/v1/scenario-template-assets/import", Action: "manage", Resource: "scenario-template"},
+		{Method: "GET", Path: "/api/v1/scenario-template-assets/:id/health", Action: "read", Resource: "scenario-template"},
+		{Method: "GET", Path: "/api/v1/scenario-template-skeletons", Action: "read", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/scenario-template-skeletons/:id/import", Action: "manage", Resource: "scenario-template"},
 		{Method: "PUT", Path: "/api/v1/scenario-template-assets/:id", Action: "manage", Resource: "scenario-template"},
 		{Method: "GET", Path: "/api/v1/scenario-template-assets/:id", Action: "read", Resource: "scenario-template"},
 		{Method: "GET", Path: "/api/v1/scenario-template-assets/:id/export", Action: "read", Resource: "scenario-template"},
 		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/copy", Action: "manage", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/fork", Action: "manage", Resource: "scenario-template"},
+		// The unified entry point is gated on scenario-template:manage here; the
+		// per-form permission (chat/search-app/agent) is enforced inside the
+		// handler so a request cannot borrow the template's readability
+		// (doc/276 §7.5).
+		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/instantiate", Action: "manage", Resource: "scenario-template"},
+		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/capability-check", Action: "read", Resource: "scenario-template"},
+		{Method: "GET", Path: "/api/v1/scenario-template-baseline", Action: "read", Resource: "scenario-template-baseline"},
+		{Method: "POST", Path: "/api/v1/scenario-template-baseline/:key/publish", Action: "manage", Resource: "scenario-template-baseline"},
 		{Method: "DELETE", Path: "/api/v1/scenario-template-assets/:id", Action: "manage", Resource: "scenario-template"},
 		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/eval-set", Action: "manage", Resource: "eval-set"},
 		{Method: "POST", Path: "/api/v1/scenario-template-assets/:id/release-candidate", Action: "manage", Resource: "release-governance"},

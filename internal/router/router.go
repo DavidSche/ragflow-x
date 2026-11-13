@@ -156,6 +156,11 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.PUT("/datasets/:id/project", h.BindDatasetProject)
 		protected.GET("/datasets/:id/config", h.GetDatasetConfig)
 		protected.PUT("/datasets/:id/config", h.UpdateDatasetConfig)
+		// The parse profile is the single repair channel for scenario capability
+		// checks (doc/276 §7.4): the read side exists because the repair panel must
+		// show the current profile and the shared-usage pre-check before writing.
+		protected.GET("/datasets/:id/parse-profile", h.GetDatasetParseProfile)
+		protected.POST("/datasets/:id/parse-profile", h.ApplyDatasetParseProfile)
 		protected.POST("/datasets", h.CreateDataset)
 		protected.GET("/datasets/:id/documents", h.ListDocuments)
 		protected.POST("/datasets/:id/documents", h.UploadDocument)
@@ -376,6 +381,9 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.DELETE("/model-providers/:id", h.DeleteModelProvider)
 		protected.GET("/model-providers/:id", h.GetModelProvider)
 		protected.GET("/model-providers/catalog", h.ListAvailableProviders)
+		protected.GET("/model-providers/defaults", h.GetModelDefaults)
+		protected.GET("/model-providers/defaults/options", h.GetModelDefaultOptions)
+		protected.PATCH("/model-providers/defaults", h.SetModelDefault)
 		protected.GET("/model-providers/:id/instances", h.ListProviderInstances)
 		protected.POST("/model-providers/:id/instances", h.CreateProviderInstance)
 		protected.PUT("/model-providers/:id/instances/:instanceId", h.UpdateProviderInstance)

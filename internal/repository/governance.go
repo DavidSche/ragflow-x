@@ -30,6 +30,14 @@ type GovernanceRepo interface {
 	UpdateScenarioTemplate(ctx context.Context, asset *model.ScenarioTemplateAsset, version *model.ScenarioTemplateVersion) error
 	GetScenarioTemplate(ctx context.Context, tenantID, id string) (*model.ScenarioTemplateAsset, error)
 	GetScenarioTemplateByKey(ctx context.Context, tenantID, key string) (*model.ScenarioTemplateAsset, error)
+	// GetPlatformScenarioTemplate and ListPlatformScenarioTemplates are the only
+	// two readers allowed to bypass the tenant filter (doc/276 §7.1 step 3):
+	// the platform baseline is shared read-only content, everything else stays
+	// tenant-scoped.
+	GetPlatformScenarioTemplate(ctx context.Context, id string) (*model.ScenarioTemplateAsset, error)
+	GetPlatformScenarioTemplateByKey(ctx context.Context, key string) (*model.ScenarioTemplateAsset, error)
+	ListPlatformScenarioTemplates(ctx context.Context, filter GovernanceFilter) ([]model.ScenarioTemplateAsset, error)
+	SetScenarioTemplateLineage(ctx context.Context, tenantID, templateID, baselineKey string, baselineVersion int64, lineageState string) error
 	ListScenarioTemplates(ctx context.Context, tenantID string, page, pageSize int, filter GovernanceFilter) ([]model.ScenarioTemplateAsset, int64, error)
 	ListAllScenarioTemplates(ctx context.Context, page, pageSize int, filter GovernanceFilter) ([]model.ScenarioTemplateAsset, int64, error)
 	ListScenarioTemplateVersions(ctx context.Context, tenantID, templateID string) ([]model.ScenarioTemplateVersion, error)
@@ -176,9 +184,55 @@ func (s *store) GetScenarioTemplateMaxVersion(ctx context.Context, tenantID, tem
 }
 
 func (s *store) SetScenarioTemplateSource(ctx context.Context, tenantID, templateID, source string) error {
-	return s.WithContext(ctx).Model(&model.ScenarioTemplateAsset{}).
+	// RowsAffected is checked on purpose: the G13 defect (doc/276 §7.1 step 6)
+	// was a cross-tenant update that matched 0 rows and still returned nil, so
+	// the response claimed `copy` while the row said otherwise.
+	res := s.WithContext(ctx).Model(&model.ScenarioTemplateAsset{}).
 		Where("tenant_id = ? AND id = ?", tenantID, templateID).
-		Update("source", source).Error
+		Update("source", source)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// SetScenarioTemplateLineage records which platform baseline version a tenant
+// row was forked from (doc/276 §7.1). Zero affected rows is an error for the
+// same reason as SetScenarioTemplateSource.
+func (s *store) SetScenarioTemplateLineage(ctx context.Context, tenantID, templateID, baselineKey string, baselineVersion int64, lineageState string) error {
+	res := s.WithContext(ctx).Model(&model.ScenarioTemplateAsset{}).
+		Where("tenant_id = ? AND id = ?", tenantID, templateID).
+		Updates(map[string]interface{}{
+			"baseline_key":     baselineKey,
+			"baseline_version": baselineVersion,
+			"lineage_state":    lineageState,
+		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// GetPlatformScenarioTemplate reads a platform baseline row by id.
+func (s *store) GetPlatformScenarioTemplate(ctx context.Context, id string) (*model.ScenarioTemplateAsset, error) {
+	return s.GetScenarioTemplate(ctx, model.PlatformTenantID, id)
+}
+
+// GetPlatformScenarioTemplateByKey reads a platform baseline row by key.
+func (s *store) GetPlatformScenarioTemplateByKey(ctx context.Context, key string) (*model.ScenarioTemplateAsset, error) {
+	return s.GetScenarioTemplateByKey(ctx, model.PlatformTenantID, key)
+}
+
+// ListPlatformScenarioTemplates lists every platform baseline row.
+func (s *store) ListPlatformScenarioTemplates(ctx context.Context, filter GovernanceFilter) ([]model.ScenarioTemplateAsset, error) {
+	list, _, err := s.ListScenarioTemplates(ctx, model.PlatformTenantID, 1, 500, filter)
+	return list, err
 }
 
 func (s *store) UpdateScenarioTemplateStatus(ctx context.Context, tenantID, templateID, status string) error {

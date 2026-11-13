@@ -67,7 +67,7 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 		if runbook == "" || strings.Contains(runbook, "..") {
 			t.Fatalf("alert %q has unexpected runbook %q", rule.Alert, rule.Annotations["runbook"])
 		}
-		// The runbook targets are engineering docs (doc/develop, doc/runbooks),
+		// The runbook targets are engineering docs (doc/develop, doc/operations/runbooks),
 		// which are intentionally not shipped: only doc/user/** is published. The
 		// path shape above is still enforced everywhere; existence is only
 		// verifiable in a checkout that has the engineering doc tree.
@@ -213,9 +213,9 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 		},
 	}
 	expectedRunbook := map[string]string{
-		"CompilationUpstreamStalled":    "doc/runbooks/CompilationUpstreamRecoveryRunbook.md",
-		"CompilationUnknownAgeWarning":  "doc/runbooks/CompilationUpstreamRecoveryRunbook.md",
-		"CompilationUnknownAgeCritical": "doc/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"CompilationUpstreamStalled":    "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"CompilationUnknownAgeWarning":  "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"CompilationUnknownAgeCritical": "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
 	}
 	for alert, wantRunbook := range expectedRunbook {
 		rule, exists := rules[alert]

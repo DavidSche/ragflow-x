@@ -1,11 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +56,16 @@ type ScenarioTemplatePayload struct {
 	PublishChecklist    []string                               `json:"publishChecklist,omitempty"`
 	ExpectedOutcome     string                                 `json:"expectedOutcome,omitempty"`
 	Translations        map[string]ScenarioTemplateTranslation `json:"translations,omitempty"`
+	// Knowledge is the optional 2.0 knowledge contract (doc/276 §7.2). It stays
+	// optional so v1/v2 payloads keep round-tripping; when present it is
+	// validated on every write.
+	Knowledge *ScenarioTemplateKnowledge `json:"knowledge,omitempty"`
+	// Pack marks this payload as an authored v3 Scenario Pack (doc/276 §6.4).
+	// It is never set for v2 rows: the version's `payload_schema` column is the
+	// discriminator on read, and a v3 document sets it through UnmarshalJSON.
+	// Consumers that only understand v2 read the projection fields above, which
+	// ProjectPayload fills at decode time.
+	Pack *ScenarioPack `json:"-"`
 }
 
 // ScenarioTemplateExport is the stable import/export contract.
@@ -64,6 +76,15 @@ type ScenarioTemplateExport struct {
 	AppTypes []string                `json:"appTypes"`
 	Payload  ScenarioTemplatePayload `json:"payload"`
 	Version  int64                   `json:"version"`
+	// PayloadSchema declares which dialect `payload` speaks, so an exported
+	// document is self-describing instead of leaving the reader to sniff for a
+	// `schema` member (a v2 payload has none by design). It is informational on
+	// import: the stored discriminator is still derived from the decoded payload.
+	PayloadSchema string `json:"payload_schema,omitempty"`
+	// Signature is attached on export when this installation has a signing key
+	// configured. Import verifies it for the audit trail but never lets it
+	// change the trust level (doc/276 §8.7).
+	Signature *ScenarioExportSignature `json:"signature,omitempty"`
 }
 
 // ScenarioTemplateInput validates create/update requests.
@@ -275,6 +296,9 @@ func (s *Service) CreateScenarioTemplate(ctx context.Context, tenantID, userID s
 	} else if existing != nil {
 		return nil, httperr.New(409, 40901, "template key already exists")
 	}
+	if err := validateTemplatePayloadForStatus(input.Payload, status == model.AssetStatusDraft); err != nil {
+		return nil, err
+	}
 	payload, err := marshalJSON(input.Payload)
 	if err != nil {
 		return nil, err
@@ -289,6 +313,7 @@ func (s *Service) CreateScenarioTemplate(ctx context.Context, tenantID, userID s
 	version := &model.ScenarioTemplateVersion{
 		ID: id.New(), TenantID: tenantID, TemplateID: asset.ID, Version: 1,
 		PayloadJSON: payload, ChangeNote: strings.TrimSpace(input.ChangeNote), CreatedBy: userID, CreatedAt: now,
+		PayloadSchema: payloadSchemaOf(input.Payload), SnapshotProvenance: model.SnapshotAuthored,
 	}
 	if err := s.Store.CreateScenarioTemplate(ctx, asset, version); err != nil {
 		return nil, err
@@ -323,9 +348,29 @@ func (s *Service) UpdateScenarioTemplate(ctx context.Context, tenantID, userID, 
 	if err != nil {
 		return nil, err
 	}
+	// An update is a content write. Accepting an empty payload would let a PUT
+	// with only `status` silently replace the stored content with nothing, which
+	// is data loss dressed up as a publish (doc/276 §7.7 history is immutable,
+	// so a destructive write must be impossible by construction).
+	if isZeroTemplatePayload(input.Payload) {
+		return nil, httperr.BadRequest(40085, "payload is required when updating a scenario template")
+	}
+	if err := validateTemplatePayloadForStatus(input.Payload, status != model.AssetStatusPublished); err != nil {
+		return nil, err
+	}
 	payloadJSON, err := marshalJSON(input.Payload)
 	if err != nil {
 		return nil, err
+	}
+	// P2 quality gate (doc/276 §9): a pack that declares `requireEvalPass` may
+	// only go live with evidence. A content change necessarily introduces a new
+	// version that no evaluation run can cover yet, so the gate applies to the
+	// status-only publish of already-evaluated content; new content goes through
+	// the release-candidate flow.
+	if status == model.AssetStatusPublished {
+		if err := s.ensurePublishablePayload(ctx, tenantID, asset, payloadJSON); err != nil {
+			return nil, err
+		}
 	}
 	nextVersion := asset.LatestVersion + 1
 	asset.LatestVersion = nextVersion
@@ -335,6 +380,7 @@ func (s *Service) UpdateScenarioTemplate(ctx context.Context, tenantID, userID, 
 	version := &model.ScenarioTemplateVersion{
 		ID: id.New(), TenantID: tenantID, TemplateID: asset.ID, Version: nextVersion,
 		PayloadJSON: payloadJSON, ChangeNote: strings.TrimSpace(input.ChangeNote), CreatedBy: userID, CreatedAt: asset.UpdatedAt,
+		PayloadSchema: payloadSchemaOf(input.Payload), SnapshotProvenance: model.SnapshotAuthored,
 	}
 	if err := s.Store.UpdateScenarioTemplate(ctx, asset, version); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -345,16 +391,32 @@ func (s *Service) UpdateScenarioTemplate(ctx context.Context, tenantID, userID, 
 	return asset, nil
 }
 
+// isZeroTemplatePayload reports whether a payload carries no content at all.
+func isZeroTemplatePayload(payload ScenarioTemplatePayload) bool {
+	if payload.Pack != nil || payload.Knowledge != nil {
+		return false
+	}
+	return payload.Description == "" && payload.PromptPresetID == "" && payload.ParameterProfileID == "" &&
+		len(payload.DatasetSuggestions) == 0 && len(payload.SampleQuestions) == 0 &&
+		len(payload.EvaluationQuestions) == 0 && len(payload.Translations) == 0 &&
+		payload.PermissionAdvice == "" && payload.ExpectedOutcome == "" &&
+		len(payload.PublishChecklist) == 0
+}
+
 // GetScenarioTemplate returns the pointer plus selected or full version history.
 func (s *Service) GetScenarioTemplate(ctx context.Context, tenantID, templateID string, version int64, withVersions bool) (*model.ScenarioTemplateAsset, *model.ScenarioTemplateVersion, []model.ScenarioTemplateVersion, error) {
-	asset, err := s.Store.GetScenarioTemplate(ctx, tenantID, templateID)
+	// Read paths fall back to the platform baseline (doc/276 §7.1 step 3): the
+	// baseline is shared read-only content, so a workspace may read/instantiate
+	// it by its platform id. Rows owned by another workspace still 404.
+	asset, err := s.ResolveScenarioTemplateAsset(ctx, tenantID, templateID)
 	if err != nil || asset == nil {
 		return nil, nil, nil, err
 	}
+	ownerTenant := asset.TenantID
 	if version <= 0 {
 		version = asset.LatestVersion
 	}
-	selected, err := s.Store.GetScenarioTemplateVersion(ctx, tenantID, templateID, version)
+	selected, err := s.Store.GetScenarioTemplateVersion(ctx, ownerTenant, templateID, version)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -363,7 +425,7 @@ func (s *Service) GetScenarioTemplate(ctx context.Context, tenantID, templateID 
 	}
 	var versions []model.ScenarioTemplateVersion
 	if withVersions {
-		versions, err = s.Store.ListScenarioTemplateVersions(ctx, tenantID, templateID)
+		versions, err = s.Store.ListScenarioTemplateVersions(ctx, ownerTenant, templateID)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -377,6 +439,18 @@ func (s *Service) ListScenarioTemplates(ctx context.Context, tenantID string, sc
 		return s.Store.ListAllScenarioTemplates(ctx, page, pageSize, filter)
 	}
 	return s.Store.ListScenarioTemplates(ctx, tenantID, page, pageSize, filter)
+}
+
+// declaredPayloadSchema prefers the stored discriminator and falls back to the
+// decoded payload, so an export never claims v2 for a document carrying a pack.
+func declaredPayloadSchema(stored string, payload ScenarioTemplatePayload) string {
+	if payload.Pack != nil {
+		return model.TemplatePayloadSchemaV3
+	}
+	if stored == "" {
+		return model.TemplatePayloadSchemaV2
+	}
+	return stored
 }
 
 // ExportScenarioTemplate returns the stable JSON contract.
@@ -393,18 +467,75 @@ func (s *Service) ExportScenarioTemplate(ctx context.Context, tenantID, template
 	if strings.TrimSpace(asset.AppTypes) != "" {
 		appTypes = strings.Split(asset.AppTypes, ",")
 	}
-	return &ScenarioTemplateExport{
+	export := &ScenarioTemplateExport{
 		Schema: scenarioTemplateSchema, Key: asset.Key, Name: asset.Name,
 		AppTypes: appTypes, Payload: payload, Version: selected.Version,
-	}, nil
+		PayloadSchema: declaredPayloadSchema(selected.PayloadSchema, payload),
+	}
+	// Sign the exact bytes the client will store. The signature covers the
+	// document without its own field, so signing must happen on a copy.
+	unsigned, err := marshalJSON(export)
+	if err != nil {
+		return nil, err
+	}
+	export.Signature = s.signScenarioPackDocument([]byte(unsigned))
+	return export, nil
 }
 
 // ImportScenarioTemplate validates the export contract and stores a new asset.
+// The document is untrusted input (doc/276 §8.7): it is scanned for credentials
+// and external endpoints, strictly decoded, compatibility-gated against the
+// running engine, and always stored as a DRAFT with source=imported. The
+// caller's requested status is ignored on purpose — an imported template must
+// be reviewed and published explicitly.
 func (s *Service) ImportScenarioTemplate(ctx context.Context, tenantID, userID string, export ScenarioTemplateExport) (*model.ScenarioTemplateAsset, error) {
-	if export.Schema != scenarioTemplateSchema && export.Schema != scenarioTemplateSchemaV1 {
+	document, err := marshalJSON(export)
+	if err != nil {
+		return nil, err
+	}
+	return s.ImportScenarioTemplateDocument(ctx, tenantID, userID, []byte(document))
+}
+
+// ImportScenarioTemplateDocument is the raw-document form used by the HTTP
+// handler: strict decoding must see the original JSON, otherwise unknown and
+// forbidden fields would be silently dropped before the trust scan.
+func (s *Service) ImportScenarioTemplateDocument(ctx context.Context, tenantID, userID string, document []byte) (*model.ScenarioTemplateAsset, error) {
+	if err := ValidateScenarioImportTrust(document); err != nil {
+		return nil, err
+	}
+	var export ScenarioTemplateExport
+	decoder := json.NewDecoder(bytes.NewReader(document))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return nil, httperr.BadRequest(40062, "invalid scenario template export payload")
+	}
+	// Signature verification is a tamper check, not a trust upgrade: a valid
+	// signature is recorded, an invalid one rejects the document, and the asset
+	// still lands as an `imported` draft either way.
+	signatureVerified, err := s.verifyExportSignature(document, export.Signature)
+	if err != nil {
+		return nil, err
+	}
+	if export.Schema != scenarioTemplateSchema && export.Schema != scenarioTemplateSchemaV1 && export.Schema != ScenarioPackSchemaV3 {
 		return nil, httperr.BadRequest(40047, "unsupported scenario template schema")
 	}
-	input := ScenarioTemplateInput{Key: export.Key, Name: export.Name, AppTypes: export.AppTypes, Payload: export.Payload, ChangeNote: "imported from JSON"}
+	// `payload_schema` is informational, but a document that claims v3 while its
+	// payload has no pack is internally inconsistent; rejecting it keeps the
+	// "v3 means pack" invariant honest instead of silently storing v2.
+	if export.PayloadSchema != "" && export.PayloadSchema != model.TemplatePayloadSchemaV2 &&
+		export.PayloadSchema != model.TemplatePayloadSchemaV3 {
+		return nil, httperr.BadRequest(40047, "unsupported scenario template payload_schema")
+	}
+	if export.PayloadSchema == model.TemplatePayloadSchemaV3 && export.Payload.Pack == nil {
+		return nil, httperr.BadRequest(40062, "payload_schema is v3 but the payload carries no scenario pack")
+	}
+	if err := s.checkPackCompatibility(ctx, export.Payload); err != nil {
+		return nil, err
+	}
+	input := ScenarioTemplateInput{
+		Key: export.Key, Name: export.Name, AppTypes: export.AppTypes, Payload: export.Payload,
+		Status: model.AssetStatusDraft, ChangeNote: "imported from JSON",
+	}
 	asset, err := s.CreateScenarioTemplate(ctx, tenantID, userID, input)
 	if err != nil {
 		return nil, err
@@ -413,7 +544,141 @@ func (s *Service) ImportScenarioTemplate(ctx context.Context, tenantID, userID s
 		return nil, err
 	}
 	asset.Source = model.TemplateSourceImport
+	s.recordScenarioImportProvenance(ctx, tenantID, asset.ID, signatureVerified)
 	return asset, nil
+}
+
+// verifyExportSignature re-serializes the document without its signature field
+// and compares the HMAC. Serialization must be stable, so the check hashes the
+// received bytes with the signature member removed by re-marshalling the decoded
+// struct — the same shape the signer produced (see ExportScenarioTemplate).
+func (s *Service) verifyExportSignature(document []byte, signature *ScenarioExportSignature) (bool, error) {
+	if signature == nil {
+		return false, nil
+	}
+	var export ScenarioTemplateExport
+	if err := json.Unmarshal(document, &export); err != nil {
+		return false, httperr.BadRequest(40062, "invalid scenario template export payload")
+	}
+	export.Signature = nil
+	unsigned, err := marshalJSON(export)
+	if err != nil {
+		return false, err
+	}
+	return s.VerifyScenarioImportSignature([]byte(unsigned), signature)
+}
+
+// recordScenarioImportProvenance stores the signature verdict as an audit note
+// so a reviewer can tell "signed by another rgx installation" apart from "plain
+// document". It never changes source or status.
+func (s *Service) recordScenarioImportProvenance(ctx context.Context, tenantID, templateID string, signatureVerified bool) {
+	verdict := `{"signature":"unsigned"}`
+	if signatureVerified {
+		verdict = `{"signature":"signature_verified"}`
+	}
+	s.recordTemplateAudit(ctx, tenantID, "system", "scenario_template.import_provenance", templateID, verdict)
+}
+
+// checkPackCompatibility is the P2 compatibility gate (doc/276 §9): a pack that
+// pins a runtime baseline or capability level this deployment cannot satisfy is
+// rejected with 40914 instead of failing later at run time.
+func (s *Service) checkPackCompatibility(ctx context.Context, payload ScenarioTemplatePayload) error {
+	if payload.Pack == nil {
+		return nil
+	}
+	requires := payload.Pack.Requires.RuntimeCompatibility
+	if requires.Runtime == "" {
+		return nil
+	}
+	if requires.Runtime != "ragflow" {
+		return httperr.New(409, 40914, "scenario pack requires an unsupported runtime: "+requires.Runtime)
+	}
+	if requires.Baseline != "" {
+		version, err := s.RAGFlow.EngineVersion(ctx)
+		if err != nil {
+			// An unreadable engine version is not a compatibility verdict; the
+			// import stays allowed and the hash/version is recorded for audit.
+			return nil
+		}
+		if !engineBaselineSatisfies(version, requires.Baseline) {
+			return httperr.New(409, 40914, "scenario pack requires ragflow "+requires.Baseline+", engine is "+version)
+		}
+	}
+	for capability, minimum := range requires.Capabilities {
+		if minimum <= 0 {
+			continue
+		}
+		if !s.engineCapabilityConfigured(capability) {
+			return httperr.New(409, 40914, "scenario pack requires engine capability "+capability+" which this build does not expose")
+		}
+	}
+	return nil
+}
+
+// engineBaselineSatisfies compares dotted versions numerically from the left.
+// A pack baseline of "1.0.0" is satisfied by "1.0.0" and "1.0.1" but not by
+// "0.27.2"; an unparsable pair is treated as satisfied so a malformed upstream
+// version string cannot block an otherwise valid import.
+func engineBaselineSatisfies(engineVersion, baseline string) bool {
+	engineParts, ok := numericVersionParts(engineVersion)
+	if !ok {
+		return true
+	}
+	baselineParts, ok := numericVersionParts(baseline)
+	if !ok {
+		return true
+	}
+	for i := 0; i < len(baselineParts); i++ {
+		left := 0
+		if i < len(engineParts) {
+			left = engineParts[i]
+		}
+		if left != baselineParts[i] {
+			return left > baselineParts[i]
+		}
+	}
+	return true
+}
+
+func numericVersionParts(value string) ([]int, bool) {
+	value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "v"))
+	if value == "" {
+		return nil, false
+	}
+	segments := strings.Split(value, ".")
+	parts := make([]int, 0, len(segments))
+	for _, segment := range segments {
+		digits := strings.Builder{}
+		for _, char := range segment {
+			if char >= '0' && char <= '9' {
+				digits.WriteRune(char)
+				continue
+			}
+			break
+		}
+		if digits.Len() == 0 {
+			return nil, false
+		}
+		number, err := strconv.Atoi(digits.String())
+		if err != nil {
+			return nil, false
+		}
+		parts = append(parts, number)
+	}
+	return parts, true
+}
+
+// engineCapabilityConfigured answers "does this build expose this engine
+// capability at all" without calling the engine: it is the Capability Matrix
+// declaration, which is the build's contract surface (doc/276 §9).
+func (s *Service) engineCapabilityConfigured(name string) bool {
+	report := s.ListRAGFlowCapabilities()
+	for _, item := range report.Items {
+		if item.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // CopyScenarioTemplate lets a platform admin replicate an asset across tenants.
@@ -447,7 +712,11 @@ func (s *Service) CopyScenarioTemplate(ctx context.Context, actorID, tenantID, t
 	if err != nil {
 		return nil, err
 	}
-	if err := s.Store.SetScenarioTemplateSource(ctx, tenantID, asset.ID, model.TemplateSourceCopy); err != nil {
+	// G13 (doc/276 §7.1 step 6): the source flip must be keyed by the *target*
+	// tenant. Keying it by the source tenant matched zero rows, the repository
+	// swallowed the mismatch, and the response claimed `copy` while the row
+	// stayed `custom`. The repository now also fails on zero affected rows.
+	if err := s.Store.SetScenarioTemplateSource(ctx, targetTenantID, asset.ID, model.TemplateSourceCopy); err != nil {
 		return nil, err
 	}
 	asset.Source = model.TemplateSourceCopy
@@ -769,7 +1038,7 @@ func (s *Service) CreateChatFromScenarioTemplate(
 	if name == "" {
 		name = asset.Name + " 草稿"
 	}
-	authoring := mergeTemplateAuthoring(payload, input.Authoring)
+	authoring := mergeTemplateAuthoringForVersion(payload, input.Authoring, selected.PayloadSchema, selected.SnapshotProvenance)
 	chat, err := s.CreateChatWithConfig(ctx, tenantID, name, datasetIDs, authoring)
 	if err != nil {
 		if len(createdDatasetIDs) > 0 {
@@ -852,7 +1121,7 @@ func (s *Service) PrepareScenarioTemplateInstantiation(
 		"create_missing_datasets":   input.CreateMissingDatasets,
 		"scenario_template_id":      asset.ID,
 		"scenario_template_version": selected.Version,
-		"authoring":                 mergeTemplateAuthoring(templatePayload, input.Authoring),
+		"authoring":                 mergeTemplateAuthoringForVersion(templatePayload, input.Authoring, selected.PayloadSchema, selected.SnapshotProvenance),
 	}, nil
 }
 
@@ -879,8 +1148,18 @@ func (s *Service) publishedChatTemplateForInstantiation(
 	// Builtin templates ship with the product and are platform-reviewed; they
 	// have no per-tenant release candidate chain, so requiring a PASS gate here
 	// would make the first-run wizard unusable for every new workspace
-	// (doc/228 §3.1 T7.0). Custom templates keep the full gate requirement.
-	if asset.Source == model.TemplateSourceBuiltin {
+	// (doc/228 §3.1 T7.0).
+	//
+	// doc/276 §7.1 step 4 extends that to an *unmodified* fork: a confirmed
+	// baseline version is byte-identical to the reviewed baseline, so it is
+	// platform-reviewed by definition. As soon as the workspace edits it, the
+	// selecting version moves past baseline_version and the full gate applies
+	// again — the exemption can never cover tenant-authored content.
+	baselineReviewed := asset.Source == model.TemplateSourceBuiltin ||
+		(asset.Source == model.TemplateSourceCopy &&
+			asset.LineageState == model.LineageStateConfirmedBaseline &&
+			asset.BaselineVersion > 0 && selected.Version == asset.BaselineVersion)
+	if baselineReviewed {
 		return asset, selected, payload, nil
 	}
 	candidate, err := s.Store.GetReleaseCandidateVersion(ctx, tenantID, asset.ID, selected.Version)
@@ -908,14 +1187,51 @@ func (s *Service) publishedChatTemplateForInstantiation(
 // parameters - the exact "frontend overrides the backend template" drift that
 // doc/228 T7.0 forbids.
 func mergeTemplateAuthoring(payload ScenarioTemplatePayload, override ChatAuthoring) ChatAuthoring {
+	return mergeTemplateAuthoringForVersion(payload, override, model.TemplatePayloadSchemaV2, model.SnapshotAuthored)
+}
+
+// mergeTemplateAuthoringForVersion is the version-aware form (doc/276 §7.7): a
+// historical v2 version reconstructed during migration must resolve its preset
+// text from the frozen snapshot, not from the live map.
+func mergeTemplateAuthoringForVersion(payload ScenarioTemplatePayload, override ChatAuthoring, payloadSchema, provenance string) ChatAuthoring {
 	authoring := parameterProfileAuthoring(payload.ParameterProfileID)
-	if prompt := promptPresetText(payload.PromptPresetID); prompt != nil {
+	if prompt := promptPresetTextForVersion(payload.PromptPresetID, payloadSchema, provenance); prompt != nil {
 		if authoring.PromptConfig == nil {
 			authoring.PromptConfig = defaultPromptConfigSeed()
 		}
 		authoring.PromptConfig["system"] = prompt.system
 		authoring.PromptConfig["prologue"] = prompt.prologue
 		authoring.PromptConfig["empty_response"] = prompt.emptyResponse
+	}
+	// An authored v3 pack carries its prompt and knobs inline (doc/276 §6.4):
+	// they win over the v2 preset lookup, and the client override still wins
+	// over both (it is the reviewed per-instantiation tweak).
+	if pack := payload.Pack; pack != nil && pack.Application.Prompt.System != "" {
+		if authoring.PromptConfig == nil {
+			authoring.PromptConfig = map[string]interface{}{}
+		}
+		authoring.PromptConfig["system"] = pack.Application.Prompt.System
+		authoring.PromptConfig["prologue"] = pack.Application.Prompt.Prologue
+		authoring.PromptConfig["empty_response"] = pack.Application.Prompt.EmptyResponse
+		if pack.Application.Parameters.TopN != 0 {
+			authoring.TopN = pack.Application.Parameters.TopN
+		}
+		if pack.Application.Parameters.SimilarityThreshold != 0 {
+			authoring.SimilarityThreshold = pack.Application.Parameters.SimilarityThreshold
+		}
+		if pack.Application.Parameters.VectorSimilarityWeight != 0 {
+			authoring.VectorSimilarityWeight = pack.Application.Parameters.VectorSimilarityWeight
+		}
+		if len(pack.Application.Parameters.LLMSetting) > 0 {
+			merged := map[string]interface{}{}
+			for key, value := range authoring.LLMSetting {
+				merged[key] = value
+			}
+			for key, value := range pack.Application.Parameters.LLMSetting {
+				merged[key] = value
+			}
+			authoring.LLMSetting = merged
+		}
 	}
 	if override.PromptConfig != nil {
 		authoring.PromptConfig = override.PromptConfig

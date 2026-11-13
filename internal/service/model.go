@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -378,6 +379,12 @@ func (s *Service) ListModelProviders(ctx context.Context, tenantID string) ([]mo
 
 // DeleteModelProvider removes a provider locally (cascade) and best-effort from
 // RAGFlow, so a failed engine sync never blocks the operator.
+//
+// The upstream RAGFlow provider factory (e.g. "OpenAI-API-Compatible") is shared
+// across every local provider of the same type. We must only delete it from
+// RAGFlow when the last local provider using that factory is removed; otherwise
+// the remaining providers silently lose their existing instances upstream and
+// later "add instance" calls fail with "provider does not exist".
 func (s *Service) DeleteModelProvider(ctx context.Context, tenantID, id string) error {
 	p, err := s.Store.GetModelProvider(ctx, tenantID, id)
 	if err != nil {
@@ -386,8 +393,17 @@ func (s *Service) DeleteModelProvider(ctx context.Context, tenantID, id string) 
 	if p == nil {
 		return httperr.NotFound("model provider not found")
 	}
+	sharedFactory, err := s.sharedProviderFactoryStillInUse(ctx, tenantID, id, p.ProviderType)
+	if err != nil {
+		return err
+	}
 	if err := s.Store.DeleteModelProvider(ctx, tenantID, id); err != nil {
 		return err
+	}
+	if sharedFactory {
+		logger.Info("kept shared upstream provider factory; other local providers still reference it",
+			"provider_type", p.ProviderType, "provider_id", id)
+		return nil
 	}
 	if deleteErr := s.RAGFlow.DeleteProvider(ctx, p.ProviderType); deleteErr != nil {
 		logger.Warn("failed to delete external provider after local deletion",
@@ -395,6 +411,21 @@ func (s *Service) DeleteModelProvider(ctx context.Context, tenantID, id string) 
 		recordProviderCompensationFailure(ctx, s, tenantID, id, "delete-model-provider", "delete-upstream-provider", deleteErr)
 	}
 	return nil
+}
+
+// sharedProviderFactoryStillInUse reports whether any provider other than the one
+// being deleted still references the same RAGFlow factory name within the tenant.
+func (s *Service) sharedProviderFactoryStillInUse(ctx context.Context, tenantID, excludeID, factory string) (bool, error) {
+	providers, err := s.Store.ListModelProviders(ctx, tenantID)
+	if err != nil {
+		return false, err
+	}
+	for _, other := range providers {
+		if other.ID != excludeID && other.ProviderType == factory {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ListProviderInstances returns a provider's instances.
@@ -448,7 +479,10 @@ func (s *Service) CreateProviderInstance(ctx context.Context, tenantID, provider
 	}
 	remote, err := s.RAGFlow.CreateProviderInstance(ctx, regReq)
 	if err != nil {
-		return nil, httperr.New(502, 50205, "create provider instance in ragflow failed")
+		// Surface the upstream reason (e.g. "provider ... does not exist",
+		// network unreachable, invalid api key) alongside the stable code so
+		// operators can tell why instance creation actually failed.
+		return nil, httperr.New(502, 50205, fmt.Sprintf("create provider instance in ragflow failed: %v", err))
 	}
 	inst := &model.ModelProviderInstance{
 		ID:           id.New(),

@@ -3218,6 +3218,101 @@ var migrations = []Migration{
 			return tx.AutoMigrate(&model.CitationReference{}, &model.KnowledgeOpsEvent{})
 		},
 	},
+	{
+		Version: 163,
+		Name:    "rbac_model_default_resource",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/269: introduce the platform-scoped model-default resource
+			// (platform_admin read+manage, tenant_admin read). Data-only idempotent
+			// backfill: reconcileBuiltinPermissions deletes and recreates the
+			// builtin rows from BuiltinPermissionMatrix(), so re-running is a no-op
+			// for already-synced stores.
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 164,
+		Name:    "model_default_recovery_claim",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/269 §4.2 (v9 self-audit ⑧(a)): the recovery compensator's
+			// idempotent claim table. It is deliberately NOT part of the audit
+			// log: pending/terminal audit rows A/B share one operation_ref, so a
+			// unique key on the audit table would swallow terminal appends, and
+			// UPDATE-ing audit rows would break the hash chain. The claim table
+			// is the pure coordination point (ON CONFLICT DO NOTHING, single
+			// worker wins) and never mutates audit rows.
+			return tx.AutoMigrate(&model.ModelDefaultRecoveryClaim{})
+		},
+	},
+	{
+		Version: 165,
+		Name:    "scenario_template_baseline_lineage",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/276 §7.1 / R22 + R25: baseline provenance lives in three additive
+			// columns on the existing asset table (no new table, no payload rewrite).
+			if err := tx.AutoMigrate(&model.ScenarioTemplateAsset{}, &model.ScenarioTemplateVersion{}); err != nil {
+				return err
+			}
+			// Existing immutable versions keep their payload verbatim and are
+			// stamped `v2/authored` (doc/276 §7.7 / R7): no UPDATE of payload_json,
+			// ever.
+			if err := tx.Exec(
+				`UPDATE rgx_scenario_template_version SET payload_schema = ? WHERE payload_schema = '' OR payload_schema IS NULL`,
+				model.TemplatePayloadSchemaV2,
+			).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(
+				`UPDATE rgx_scenario_template_version SET snapshot_provenance = ? WHERE snapshot_provenance = '' OR snapshot_provenance IS NULL`,
+				model.SnapshotAuthored,
+			).Error; err != nil {
+				return err
+			}
+			// Historical rows seeded into a workspace (source=builtin) are exactly
+			// the `builtin` → `copy` normalization the design requires: after this
+			// migration every platform baseline row is the only `builtin` row.
+			// Their payload was never compared against the baseline here (SQL cannot
+			// hash JSON portably), so they start as `legacy_unknown` and are
+			// upgraded to `confirmed_baseline` by the idempotent startup backfill
+			// (BootstrapScenarioTemplateLineage) when the payload hash matches.
+			if err := tx.Exec(
+				`UPDATE rgx_scenario_template SET source = ? WHERE source = ? AND tenant_id <> ?`,
+				model.TemplateSourceCopy, model.TemplateSourceBuiltin, model.PlatformTenantID,
+			).Error; err != nil {
+				return err
+			}
+			// Idempotent: rows already carrying a lineage decision are left alone.
+			return tx.Exec(
+				`UPDATE rgx_scenario_template SET lineage_state = ? WHERE source = ? AND tenant_id <> ? AND (baseline_key = '' OR baseline_key IS NULL) AND lineage_state = ?`,
+				model.LineageStateLegacyUnknown, model.TemplateSourceCopy, model.PlatformTenantID, model.LineageStateNone,
+			).Error
+		},
+	},
+	{
+		Version: 166,
+		Name:    "scenario_template_instantiation_provenance",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/276 §7.5 + §7.6: unified instantiation provenance and state,
+			// plus the explicit boundary of what a trial run proves. Purely
+			// additive; existing rows default to `completed` (they were created
+			// before the state machine existed) and to `retrieval_only`.
+			if err := tx.AutoMigrate(
+				&model.TemplateInstance{},
+				&model.TrialRun{},
+				&model.SearchAppShadow{},
+				&model.AgentShadow{},
+			); err != nil {
+				return err
+			}
+			// The partial unique index is the *only* hard idempotency guarantee:
+			// upstream resource names are probed best-effort, RAGFlow has no
+			// idempotency key. Rows without a key keep working (legacy creates
+			// never sent one).
+			return tx.Exec(
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_template_instance_idempotency ON rgx_template_instance (tenant_id, idempotency_key) WHERE idempotency_key <> ''",
+			).Error
+		},
+	},
 }
 
 func evaluationScopeCondition(columnPrefix string) string {
@@ -4174,7 +4269,7 @@ type PermissionGrant struct {
 }
 
 // BuiltinPermissionMatrix is the single source of truth for built-in role
-// grants. Keep in sync with the permission matrix in doc/11_权限控制规范.md.
+// grants. Keep in sync with the permission matrix in doc/specification/11_权限控制规范.md.
 func BuiltinPermissionMatrix() []PermissionGrant {
 	return []PermissionGrant{
 		// Platform governance is explicitly enumerated. Platform Admin must
@@ -4217,6 +4312,11 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RolePlatformAdmin, "read", "model-provider"},
 		{model.RolePlatformAdmin, "manage", "model-provider"},
 		{model.RolePlatformAdmin, "execute", "model-provider"},
+		// doc/269: default models are a platform-scoped control-plane setting on the
+		// shared RAGFlow tenant. Only platform_admin writes; tenant_admin may read
+		// (read-only panel in the UI). No role below platform_admin gets manage.
+		{model.RolePlatformAdmin, "read", "model-default"},
+		{model.RolePlatformAdmin, "manage", "model-default"},
 		{model.RolePlatformAdmin, "read", "enterprise-connection"},
 		{model.RolePlatformAdmin, "test", "enterprise-connection"},
 		{model.RolePlatformAdmin, "manage", "enterprise-connection"},
@@ -4247,6 +4347,8 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RolePlatformAdmin, "execute", "search-app"},
 		{model.RolePlatformAdmin, "read", "scenario-template"},
 		{model.RolePlatformAdmin, "manage", "scenario-template"},
+		{model.RolePlatformAdmin, "read", "scenario-template-baseline"},
+		{model.RolePlatformAdmin, "manage", "scenario-template-baseline"},
 		{model.RolePlatformAdmin, "read", "trial-run"},
 		{model.RolePlatformAdmin, "execute", "trial-run"},
 		{model.RolePlatformAdmin, "read", "prompt-policy"},
@@ -4340,6 +4442,7 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "read", "model-provider"},
 		{model.RoleTenantAdmin, "manage", "model-provider"},
 		{model.RoleTenantAdmin, "execute", "model-provider"},
+		{model.RoleTenantAdmin, "read", "model-default"},
 		{model.RoleTenantAdmin, "read", "enterprise-connection"},
 		{model.RoleTenantAdmin, "test", "enterprise-connection"},
 		{model.RoleTenantAdmin, "read", "connector"},

@@ -296,7 +296,7 @@ func defaultSystemSettingsSnapshot() map[string]interface{} {
 				"hsts_enabled":                    false,
 				"hsts_max_age_sec":                31536000,
 				"hsts_include_subdomains":         true,
-				"content_security_policy":         "default-src 'none'",
+				"content_security_policy":         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
 				"frame_options":                   "DENY",
 				"max_request_bytes":               26214400,
 				"allow_private_provider_base_url": false,

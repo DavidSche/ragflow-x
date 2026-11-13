@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
@@ -35,11 +38,17 @@ type ScenarioTemplateCatalogParameters struct {
 // source of truth for template copy: the frontend no longer ships a static
 // catalog (doc/228 §3.1 T7.0).
 type ScenarioTemplateCatalogItem struct {
-	ID                  string   `json:"id"`
-	Key                 string   `json:"key"`
-	Name                string   `json:"name"`
-	Description         string   `json:"description"`
-	AppTypes            []string `json:"app_types"`
+	ID          string   `json:"id"`
+	Key         string   `json:"key"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	AppTypes    []string `json:"app_types"`
+	// RenderableAppTypes is `app_types` minus the forms this template cannot
+	// actually build. A v2 template declares `agent` for documentation purposes
+	// but carries no canvas, and a v3 pack only instantiates the form it declares
+	// — letting the wizard offer those buttons produces a guaranteed 40085 after
+	// the user has already picked datasets (doc/276 §8.3).
+	RenderableAppTypes  []string `json:"renderable_app_types"`
 	LatestVersion       int64    `json:"latest_version"`
 	Source              string   `json:"source"`
 	Status              string   `json:"status"`
@@ -58,6 +67,24 @@ type ScenarioTemplateCatalogItem struct {
 	Prompt       ScenarioTemplateCatalogPrompt          `json:"prompt"`
 	Parameters   ScenarioTemplateCatalogParameters      `json:"parameters"`
 	Translations map[string]ScenarioTemplateTranslation `json:"translations,omitempty"`
+	// Knowledge is the optional 2.0 knowledge contract (doc/276 §7.2): the
+	// wizard creates datasets with these parse intents and renders the
+	// capability panel from these requirements.
+	Knowledge *ScenarioTemplateKnowledge `json:"knowledge,omitempty"`
+	// Baseline provenance (doc/276 §7.1). `ID` is the platform baseline id when
+	// the workspace has not forked the template; OverridesBaseline=true means
+	// the workspace row shadows the baseline and BaselineUpdateAvailable tells
+	// the UI to offer a re-fork.
+	BaselineKey             string `json:"baseline_key,omitempty"`
+	BaselineVersion         int64  `json:"baseline_version"`
+	LatestBaselineVersion   int64  `json:"latest_baseline_version"`
+	OverridesBaseline       bool   `json:"overrides_baseline"`
+	BaselineUpdateAvailable bool   `json:"baseline_update_available"`
+	LineageState            string `json:"lineage_state"`
+	// EvalGate explains why publish is unavailable for a pack that requires
+	// evaluation evidence (doc/276 §9). Zero value = the pack does not require
+	// it, so the wizard keeps publish enabled.
+	EvalGate scenarioEvalGateStatus `json:"eval_gate"`
 }
 
 // ScenarioTemplateCatalog lists the published templates for a workspace. It
@@ -71,44 +98,161 @@ type ScenarioTemplateCatalogItem struct {
 // found" (found in the C3.4 live smoke, 2026-10-26). Cross-tenant inventory is
 // the governance asset list, not this endpoint.
 func (s *Service) ScenarioTemplateCatalog(ctx context.Context, tenantID string) ([]ScenarioTemplateCatalogItem, error) {
-	assets, _, err := s.ListScenarioTemplates(ctx, tenantID, false, 1, 200, repository.GovernanceFilter{
+	tenantAssets, _, err := s.ListScenarioTemplates(ctx, tenantID, false, 1, 500, repository.GovernanceFilter{
 		Status: model.AssetStatusPublished,
 	})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ScenarioTemplateCatalogItem, 0, len(assets))
-	for i := range assets {
-		asset := assets[i]
-		payload, err := parseTemplatePayload(asset.PayloadJSON)
-		if err != nil {
-			// A single malformed custom template must not hide the catalog.
-			payload = ScenarioTemplatePayload{}
-		}
-		description := strings.TrimSpace(asset.Description)
-		if description == "" {
-			description = payload.Description
-		}
-		prompt, parameters := resolveCatalogInstantiationDefaults(payload)
-		out = append(out, ScenarioTemplateCatalogItem{
-			ID: asset.ID, Key: asset.Key, Name: asset.Name, Description: description,
-			AppTypes: splitAssetAppTypes(asset.AppTypes), LatestVersion: asset.LatestVersion,
-			Source: asset.Source, Status: asset.Status,
-			PayloadSchema:       scenarioTemplateSchema,
-			PromptPresetID:      payload.PromptPresetID,
-			ParameterProfileID:  payload.ParameterProfileID,
-			DatasetSuggestions:  nonNilStrings(payload.DatasetSuggestions),
-			SampleQuestions:     nonNilStrings(payload.SampleQuestions),
-			EvaluationQuestions: nonNilStrings(payload.EvaluationQuestions),
-			PermissionAdvice:    payload.PermissionAdvice,
-			PublishChecklist:    nonNilStrings(payload.PublishChecklist),
-			ExpectedOutcome:     payload.ExpectedOutcome,
-			Prompt:              prompt,
-			Parameters:          parameters,
-			Translations:        payload.Translations,
-		})
+	// The catalog is the union of the platform baseline and the workspace's own
+	// published rows, with the workspace row winning on the same key (doc/276
+	// §7.1 step 3). Forking is explicit, so a fresh workspace sees the baseline
+	// rows (platform ids) and owns zero rows of its own.
+	baselines, err := s.Store.ListPlatformScenarioTemplates(ctx, repository.GovernanceFilter{
+		Status: model.AssetStatusPublished,
+	})
+	if err != nil {
+		return nil, err
 	}
+	own := make(map[string]model.ScenarioTemplateAsset, len(tenantAssets))
+	for _, asset := range tenantAssets {
+		own[asset.Key] = asset
+	}
+	out := make([]ScenarioTemplateCatalogItem, 0, len(baselines)+len(tenantAssets))
+	seen := make(map[string]bool, len(baselines))
+	for i := range baselines {
+		baseline := baselines[i]
+		if baseline.TenantID != model.PlatformTenantID || baseline.Key == "" {
+			continue
+		}
+		seen[baseline.Key] = true
+		tenantAsset, overridden := own[baseline.Key]
+		if !overridden {
+			item := s.newCatalogItem(ctx, baseline)
+			item.BaselineKey = baseline.Key
+			item.BaselineVersion = baseline.LatestVersion
+			item.LatestBaselineVersion = baseline.LatestVersion
+			item.LineageState = model.LineageStateNone
+			out = append(out, item)
+			continue
+		}
+		item := s.newCatalogItem(ctx, tenantAsset)
+		item.BaselineKey = baseline.Key
+		item.BaselineVersion = tenantAsset.BaselineVersion
+		item.LatestBaselineVersion = baseline.LatestVersion
+		item.OverridesBaseline = true
+		item.LineageState = tenantAsset.LineageState
+		// A legacy (pre-2.0) copy has no baseline_version at all, so it always
+		// advertises the update: its payload predates the knowledge contract and
+		// only a re-fork can give it one (doc/276 §7.1 self-check S15).
+		item.BaselineUpdateAvailable = tenantAsset.LineageState != model.LineageStateConfirmedBaseline ||
+			tenantAsset.BaselineVersion < baseline.LatestVersion
+		out = append(out, item)
+	}
+	for i := range tenantAssets {
+		asset := tenantAssets[i]
+		if seen[asset.Key] {
+			continue
+		}
+		out = append(out, s.newCatalogItem(ctx, asset))
+	}
+	// Stage 1 ordering (doc/276 §8.5): every row here is already published, so
+	// the tie-breakers that remain are baseline provenance, recent use, then key.
+	// Stage 2 (capability verdict) re-sorts inside the wizard after datasets are
+	// chosen; the service cannot know a dataset verdict before selection.
+	lastUsed, err := s.Store.ListTemplateInstanceLastUsed(ctx, tenantID)
+	if err != nil {
+		// Ordering is cosmetic: a failed usage query falls back to key order
+		// rather than failing the catalog the wizard depends on.
+		logger.Warn("scenario template catalog usage lookup failed", "error", err)
+		lastUsed = map[string]time.Time{}
+	}
+	sortCatalogStage1(out, lastUsed)
 	return out, nil
+}
+
+// sortCatalogStage1 orders by baseline provenance, then recency, then key.
+// Baseline rows lead because they are the supported path (fork/instantiate
+// read-only); workspace rows follow so a forked copy never hides its origin.
+func sortCatalogStage1(items []ScenarioTemplateCatalogItem, lastUsed map[string]time.Time) {
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := items[i], items[j]
+		leftBaseline := left.Source == model.TemplateSourceBuiltin
+		rightBaseline := right.Source == model.TemplateSourceBuiltin
+		if leftBaseline != rightBaseline {
+			return leftBaseline
+		}
+		leftUsed, rightUsed := lastUsed[left.ID], lastUsed[right.ID]
+		if !leftUsed.Equal(rightUsed) {
+			return leftUsed.After(rightUsed)
+		}
+		return left.Key < right.Key
+	})
+}
+
+// newCatalogItem projects one stored asset into the read-only catalog shape.
+// A single malformed custom template must not hide the catalog, so an
+// unparsable payload degrades to an empty payload instead of an error.
+func (s *Service) newCatalogItem(ctx context.Context, asset model.ScenarioTemplateAsset) ScenarioTemplateCatalogItem {
+	payload, err := parseTemplatePayload(asset.PayloadJSON)
+	if err != nil {
+		payload = ScenarioTemplatePayload{}
+	}
+	description := strings.TrimSpace(asset.Description)
+	if description == "" {
+		description = payload.Description
+	}
+	prompt, parameters := resolveCatalogInstantiationDefaults(payload)
+	schema := scenarioTemplateSchema
+	if payload.Pack != nil {
+		schema = ScenarioPackSchemaV3
+	}
+	return ScenarioTemplateCatalogItem{
+		ID: asset.ID, Key: asset.Key, Name: asset.Name, Description: description,
+		AppTypes:           splitAssetAppTypes(asset.AppTypes),
+		RenderableAppTypes: renderableScenarioAppTypes(splitAssetAppTypes(asset.AppTypes), payload),
+		LatestVersion:      asset.LatestVersion,
+		Source:             asset.Source, Status: asset.Status,
+		PayloadSchema:       schema,
+		PromptPresetID:      payload.PromptPresetID,
+		ParameterProfileID:  payload.ParameterProfileID,
+		DatasetSuggestions:  nonNilStrings(payload.DatasetSuggestions),
+		SampleQuestions:     nonNilStrings(payload.SampleQuestions),
+		EvaluationQuestions: nonNilStrings(payload.EvaluationQuestions),
+		PermissionAdvice:    payload.PermissionAdvice,
+		PublishChecklist:    nonNilStrings(payload.PublishChecklist),
+		ExpectedOutcome:     payload.ExpectedOutcome,
+		Prompt:              prompt,
+		Parameters:          parameters,
+		Translations:        payload.Translations,
+		Knowledge:           payload.Knowledge,
+		LineageState:        asset.LineageState,
+		EvalGate:            s.describeScenarioEvalGate(ctx, asset.TenantID, asset.ID, asset.PayloadJSON),
+	}
+}
+
+// renderableScenarioAppTypes answers "which buttons can this template honour?".
+// It is deliberately conservative: chat and search are always renderable because
+// both paths have a server-side fallback (preset resolver / default search knobs),
+// while an agent needs a canvas that only a v3 pack supplies. A v3 pack is also
+// form-specific, so it only renders the form it declares.
+func renderableScenarioAppTypes(declared []string, payload ScenarioTemplatePayload) []string {
+	out := make([]string, 0, len(declared))
+	for _, appType := range declared {
+		switch appType {
+		case "chat", "search":
+			if payload.Pack != nil && payload.Pack.Application.AppType != appType {
+				continue
+			}
+			out = append(out, appType)
+		case "agent":
+			if payload.Pack != nil && payload.Pack.RuntimeExtension.RAGFlow != nil &&
+				len(payload.Pack.RuntimeExtension.RAGFlow.CanvasDSL) > 0 {
+				out = append(out, appType)
+			}
+		}
+	}
+	return out
 }
 
 // resolveCatalogInstantiationDefaults reuses mergeTemplateAuthoring so the

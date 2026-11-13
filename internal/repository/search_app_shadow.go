@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"gorm.io/gorm"
@@ -20,6 +21,7 @@ type SearchAppFilter struct {
 // to keep multi-tenant isolation for RAGFlow Search Apps.
 type SearchAppShadowRepo interface {
 	UpsertSearchAppShadow(ctx context.Context, s *model.SearchAppShadow) error
+	SetSearchAppScenarioTemplate(ctx context.Context, tenantID, searchAppID, templateID string, version int64) error
 	ListSearchAppShadows(ctx context.Context, tenantID string, scopeAll bool, filter SearchAppFilter, page, pageSize int) ([]model.SearchAppShadow, int64, error)
 	ListSearchAppShadowsForScope(ctx context.Context, scopeAll bool, tenantIDs []string, filter SearchAppFilter, page, pageSize int) ([]model.SearchAppShadow, int64, error)
 	GetSearchAppShadow(ctx context.Context, tenantID, searchAppID string, scopeAll bool) (*model.SearchAppShadow, error)
@@ -32,6 +34,18 @@ func (s *store) UpsertSearchAppShadow(ctx context.Context, sa *model.SearchAppSh
 		Columns:   []clause.Column{{Name: "id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{"name": sa.Name, "status": sa.Status, "dataset_ids": sa.DatasetIDs, "owner_id": sa.OwnerID, "tenant_id": sa.TenantID, "updated_at": sa.UpdatedAt}),
 	}).Create(sa).Error
+}
+
+// SetSearchAppScenarioTemplate records template provenance on a search app
+// (doc/276 §7.5). A targeted update keeps generic edits from clearing it.
+func (s *store) SetSearchAppScenarioTemplate(ctx context.Context, tenantID, searchAppID, templateID string, version int64) error {
+	return s.WithContext(ctx).Model(&model.SearchAppShadow{}).
+		Where("tenant_id = ? AND id = ?", tenantID, searchAppID).
+		Updates(map[string]interface{}{
+			"scenario_template_id":      templateID,
+			"scenario_template_version": version,
+			"updated_at":                time.Now().UTC(),
+		}).Error
 }
 
 func (s *store) ListSearchAppShadows(ctx context.Context, tenantID string, scopeAll bool, filter SearchAppFilter, page, pageSize int) ([]model.SearchAppShadow, int64, error) {

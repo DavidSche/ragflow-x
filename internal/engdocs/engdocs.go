@@ -1,5 +1,5 @@
 // Package engdocs answers one question: is the internal engineering
-// documentation tree (doc/develop, doc/runbooks, doc/<NNN>-*.md) present next to
+// documentation tree (doc/develop, doc/operations/runbooks, doc/<NNN>-*.md) present next to
 // this repository?
 //
 // Only doc/user/** ships with the repository (see AGENTS.local.md, "doc git
@@ -55,4 +55,4 @@ func PresentFromWorkingDirectory() bool {
 // SkipReason is the message tests log when they skip because the engineering
 // docs are not shipped: it names the boundary so the skip is not mistaken for a
 // silently weakened gate.
-const SkipReason = "engineering docs (doc/develop, doc/runbooks, doc/<NNN>-*.md) are not part of the published repository; only doc/user/** ships"
+const SkipReason = "engineering docs (doc/develop, doc/operations/runbooks, doc/<NNN>-*.md) are not part of the published repository; only doc/user/** ships"

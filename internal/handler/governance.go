@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"strconv"
 	"strings"
 
@@ -320,20 +321,76 @@ func importScenarioTemplate(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	var req service.ScenarioTemplateExport
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// The import path must see the original bytes: the trust scan (credentials,
+	// external endpoints, unknown fields) cannot work on a decoded struct,
+	// because decoding silently drops exactly the fields it has to reject
+	// (doc/276 §8.7).
+	document, err := io.ReadAll(io.LimitReader(c.Request.Body, 8<<20))
+	if err != nil || len(document) == 0 {
 		response.Fail(c, 400, 40062, "invalid scenario template export payload")
 		return
 	}
 	tenantID, userID, _ := governanceContext(c)
 	h := c.MustGet("handler").(*Handler)
-	asset, err := h.Service.ImportScenarioTemplate(c.Request.Context(), tenantID, userID, req)
+	asset, err := h.Service.ImportScenarioTemplateDocument(c.Request.Context(), tenantID, userID, document)
 	if err != nil {
 		response.Err(c, err)
 		return
 	}
-	governanceAudit(c, "scenario_template.import", "scenario-template", asset.ID, req.Schema)
+	governanceAudit(c, "scenario_template.import", "scenario-template", asset.ID, asset.Source)
 	response.OK(c, asset)
+}
+
+// listScenarioTemplateSkeletons mirrors the four upstream catalogues read-only
+// (doc/276 §8.4). Nothing is stored: the wizard previews a skeleton and imports
+// it explicitly.
+func listScenarioTemplateSkeletons(c *gin.Context) {
+	if err := authorizeResource(c, "scenario-template", "read"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	h := c.MustGet("handler").(*Handler)
+	catalog, err := h.Service.ListScenarioSkeletons(c.Request.Context())
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, catalog)
+}
+
+// importScenarioTemplateSkeleton materialises one skeleton as a workspace draft.
+// The draft is intentionally incomplete-friendly; publish validation is stricter
+// than create validation, so an unreviewed draft cannot go live.
+func importScenarioTemplateSkeleton(c *gin.Context) {
+	if err := authorizeResource(c, "scenario-template", "manage"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, userID, _ := governanceContext(c)
+	h := c.MustGet("handler").(*Handler)
+	asset, err := h.Service.ImportScenarioSkeleton(c.Request.Context(), tenantID, userID, c.Param("id"))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	governanceAudit(c, "scenario_template.import_skeleton", "scenario-template", asset.ID, c.Param("id"))
+	response.OK(c, asset)
+}
+
+// scenarioTemplateHealth serves the five-metric health board (doc/276 §8.6).
+func scenarioTemplateHealth(c *gin.Context) {
+	if err := authorizeResource(c, "scenario-template", "read"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, _, _ := governanceContext(c)
+	h := c.MustGet("handler").(*Handler)
+	health, err := h.Service.ScenarioTemplateHealth(c.Request.Context(), tenantID, c.Param("id"))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, health)
 }
 
 func copyScenarioTemplate(c *gin.Context) {
@@ -353,6 +410,146 @@ func copyScenarioTemplate(c *gin.Context) {
 	}
 	governanceAudit(c, "scenario_template.copy", "scenario-template", asset.ID, req.TargetTenantID)
 	response.OK(c, asset)
+}
+
+// forkScenarioTemplate copies a platform baseline into the caller's workspace
+// (doc/276 §7.1). Forking is explicit: instantiation never forks implicitly.
+func forkScenarioTemplate(c *gin.Context) {
+	if err := authorizeResource(c, "scenario-template", "manage"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, userID, _ := governanceContext(c)
+	h := c.MustGet("handler").(*Handler)
+	asset, err := h.Service.ForkScenarioTemplate(c.Request.Context(), tenantID, userID, c.Param("id"))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	governanceAudit(c, "scenario_template.fork", "scenario-template", asset.ID, asset.BaselineKey)
+	response.OK(c, asset)
+}
+
+// publishScenarioTemplateBaseline appends a version to a platform baseline. It
+// is platform-admin only: workspaces fork instead of publishing.
+func publishScenarioTemplateBaseline(c *gin.Context) {
+	if err := authorizeResource(c, "scenario-template-baseline", "manage"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	var req service.BaselinePublishInput
+	// The body is optional: `{}` means "publish the current draft as the next
+	// version".
+	if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
+		response.Fail(c, 400, 40064, "invalid baseline publish payload")
+		return
+	}
+	h := c.MustGet("handler").(*Handler)
+	asset, replayed, err := h.Service.PublishScenarioTemplateBaseline(c.Request.Context(), c.GetString(middleware.ContextUserID), c.Param("key"), req)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	governanceAudit(c, "scenario_template.baseline_publish", "scenario-template-baseline", asset.ID, asset.Key)
+	response.OK(c, gin.H{"asset": asset, "replayed": replayed})
+}
+
+// capabilityCheckScenarioTemplate probes the supplied datasets against the
+// template's knowledge contract. Read-only: it never repairs anything.
+func capabilityCheckScenarioTemplate(c *gin.Context) {
+	if err := authorizeResource(c, "scenario-template", "read"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	var req service.CapabilityCheckInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40000, "invalid capability check payload")
+		return
+	}
+	tenantID, _, _ := governanceContext(c)
+	h := c.MustGet("handler").(*Handler)
+	view, err := h.Service.CheckScenarioTemplateCapabilities(c.Request.Context(), tenantID, c.Param("id"), req)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
+// instantiateScenarioTemplate is the single orchestration entry point for all
+// three forms (doc/276 §7.5 / C3). The idempotency key comes from the header
+// only — never from the body.
+func instantiateScenarioTemplate(c *gin.Context) {
+	var req service.UnifiedInstantiateInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40000, "invalid instantiation payload")
+		return
+	}
+	// Cross-resource permissions must fail explicitly (doc/276 §7.5): a readable
+	// template never grants the right to create an application.
+	action, resource := "manage", "chat"
+	switch strings.ToLower(strings.TrimSpace(req.AppType)) {
+	case "search", "search-app":
+		resource = "search-app"
+	case "agent":
+		resource = "agent"
+	}
+	if err := authorizeResource(c, resource, action); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, userID, _ := governanceContext(c)
+	h := c.MustGet("handler").(*Handler)
+	// Approval is a separate resource, not a step of the instantiation state
+	// machine (doc/276 §7.5 rule 5): gate first, then claim the idempotency
+	// anchor. Chat reuses the template approval payload, agent the agent one;
+	// search apps have no approval object, so they run ungated.
+	switch resource {
+	case "chat":
+		payload, err := h.Service.PrepareScenarioTemplateInstantiation(c.Request.Context(), tenantID, c.Param("id"), service.ScenarioTemplateInstantiationInput{
+			Name: req.Name, DatasetIDs: req.DatasetIDs, DatasetSuggestions: req.DatasetSuggestions,
+			CreateMissingDatasets: req.CreateMissingDatasets, TemplateVersion: req.TemplateVersion,
+			Authoring: req.Authoring,
+		})
+		if err != nil {
+			response.Err(c, err)
+			return
+		}
+		name, _ := payload["name"].(string)
+		if h.approvalHold(c, model.ApprovalObjectChat, model.ApprovalActionCreate, "new:"+name, payload) {
+			return
+		}
+	case "agent":
+		if h.approvalHold(c, model.ApprovalObjectAgent, model.ApprovalActionCreate, "new:"+req.Name,
+			map[string]any{"title": req.Name, "canvas_category": req.CanvasCategory}) {
+			return
+		}
+	}
+	result, err := h.Service.InstantiateScenarioTemplate(
+		c.Request.Context(), tenantID, userID, c.Param("id"), c.GetHeader("Idempotency-Key"), req,
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	governanceAudit(c, "scenario_template.instantiate", "scenario-template", c.Param("id"), result.AppType)
+	response.OK(c, result)
+}
+
+// listScenarioTemplateBaselines returns the platform baselines. It is a
+// platform-scoped read: workspaces consume baselines through the catalog.
+func listScenarioTemplateBaselines(c *gin.Context) {
+	if err := authorizeResource(c, "scenario-template-baseline", "read"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	h := c.MustGet("handler").(*Handler)
+	baselines, err := h.Service.ListScenarioTemplateBaselines(c.Request.Context())
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, gin.H{"items": baselines, "total": len(baselines)})
 }
 
 func archiveScenarioTemplate(c *gin.Context) {
@@ -780,19 +977,28 @@ func RegisterGovernanceRoutes(group *gin.RouterGroup, h *Handler) {
 	group.GET("/scenario-template-catalog", listScenarioTemplateCatalog)
 	group.POST("/scenario-template-assets", createScenarioTemplate)
 	group.POST("/scenario-template-assets/import", importScenarioTemplate)
+	group.GET("/scenario-template-assets/:id/health", scenarioTemplateHealth)
+	group.GET("/scenario-template-skeletons", listScenarioTemplateSkeletons)
+	group.POST("/scenario-template-skeletons/:id/import", importScenarioTemplateSkeleton)
 	group.PUT("/scenario-template-assets/:id", updateScenarioTemplate)
 	group.GET("/scenario-template-assets/:id", getScenarioTemplate)
 	group.GET("/scenario-template-assets/:id/export", exportScenarioTemplate)
 	group.POST("/scenario-template-assets/:id/copy", copyScenarioTemplate)
+	group.POST("/scenario-template-assets/:id/fork", forkScenarioTemplate)
 	group.DELETE("/scenario-template-assets/:id", archiveScenarioTemplate)
 	group.POST("/scenario-template-assets/:id/eval-set", createEvalSetFromTemplate)
 	group.POST("/scenario-template-assets/:id/release-candidate", createTemplateReleaseCandidate)
 	group.POST("/scenario-template-assets/:id/instantiate-chat", instantiateChatFromScenarioTemplate)
+	group.POST("/scenario-template-assets/:id/instantiate", instantiateScenarioTemplate)
+	group.POST("/scenario-template-assets/:id/capability-check", capabilityCheckScenarioTemplate)
 
 	group.GET("/trial-runs", listTrialRuns)
 	group.POST("/trial-runs", createTrialRun)
 	group.GET("/trial-runs/:id", getTrialRun)
 	group.POST("/trial-runs/:id/cancel", cancelTrialRun)
+
+	group.GET("/scenario-template-baseline", listScenarioTemplateBaselines)
+	group.POST("/scenario-template-baseline/:key/publish", publishScenarioTemplateBaseline)
 
 	group.GET("/onboarding/readiness", onboardingReadiness)
 

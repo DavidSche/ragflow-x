@@ -110,6 +110,8 @@ var businessUserReadRules = []BusinessUserReadRule{
 		Rationale: "Agents are consumed by the same audience."},
 	{Resource: "scenario-template", Intent: BusinessUserReadAllowed, Journey: JourneyAssistant,
 		Rationale: "The template catalog and onboarding readiness are how a consumer discovers what a workspace can offer, and the only non-403 path out of the empty conversation state (doc/238 §3)."},
+	{Resource: "scenario-template-baseline", Intent: BusinessUserReadDenied, Journey: JourneyPlatform,
+		Rationale: "Publishing the platform scenario baseline is a platform-governance action (doc/276 §7.1); workspaces fork the baseline into their own scenario-template rows, which is where business_user:read already applies."},
 	{Resource: "trial-run", Intent: BusinessUserReadAllowed, Journey: JourneyAssistant,
 		Rationale: "Trial runs keep exactly the visibility they had through scenario-template:read (doc/244): a consumer may inspect the practice result of an assistant they can use, but starting one is authoring work that stays with team admins and operators."},
 
@@ -168,6 +170,8 @@ var businessUserReadRules = []BusinessUserReadRule{
 		Rationale: "Upstream RAGFlow synchronization is platform-only."},
 	{Resource: "model-provider", Intent: BusinessUserReadDenied, Journey: JourneyPlatform,
 		Rationale: "Model provider credentials and endpoints are admin owned."},
+	{Resource: "model-default", Intent: BusinessUserReadDenied, Journey: JourneyPlatform,
+		Rationale: "Default models are global settings on the shared RAGFlow tenant; business roles do not read them."},
 	{Resource: "model-route", Intent: BusinessUserReadDenied, Journey: JourneyPlatform,
 		Rationale: "Routing rules between models are admin owned."},
 	{Resource: "api-key", Intent: BusinessUserReadDenied, Journey: JourneyPlatform,

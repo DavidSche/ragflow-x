@@ -27,6 +27,31 @@ type BuiltinScenarioTemplate struct {
 // templates. Tenant users never authenticate as this principal.
 const builtinScenarioBootstrapActor = "system"
 
+// Builtin capability requirements (doc/276 §7.2.1). Each shipped template
+// declares the parse intent of its primary dataset and the capabilities the
+// scenario needs, so "A 阶段做完还是 naive" cannot happen: the wizard creates the
+// dataset from this intent instead of the hardcoded upstream default.
+var (
+	requireVectorOperational = ScenarioCapabilityRequirement{Capability: CapabilityVector, Scope: scenarioRequirementScopeAll, MinLevel: scenarioRequirementLevelOperation}
+	requireMetadataReady     = ScenarioCapabilityRequirement{Capability: CapabilityMetadataFilter, Scope: scenarioRequirementScopeAll, MinLevel: scenarioRequirementLevelReady}
+	requireCitationConfig    = ScenarioCapabilityRequirement{Capability: CapabilityCitationLocator, Scope: scenarioRequirementScopePrimary, MinLevel: scenarioRequirementLevelConfig}
+)
+
+// builtinKnowledge builds the knowledge block for one shipped template.
+func builtinKnowledge(chunkMethod string, required ...ScenarioCapabilityRequirement) *ScenarioTemplateKnowledge {
+	return &ScenarioTemplateKnowledge{
+		Aggregate: scenarioAggregateAllRequired,
+		Datasets: []ScenarioKnowledgeDataset{{
+			Role: scenarioDatasetRolePrimary,
+			ParseIntent: &ScenarioParseIntent{
+				Mode:        model.ParseModeBuiltin,
+				ChunkMethod: chunkMethod,
+			},
+		}},
+		RequiredCapabilities: required,
+	}
+}
+
 var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 	{
 		Key:         "enterprise-qa",
@@ -35,6 +60,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"chat", "search"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "enterprise-qa",
+			Knowledge:          builtinKnowledge("book", requireVectorOperational),
 			ParameterProfileID: "balanced",
 			DatasetSuggestions: []string{"制度流程", "FAQ", "项目知识包"},
 			SampleQuestions:    []string{"报销流程是什么？", "新员工第 1 周要完成什么？"},
@@ -69,6 +95,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"chat", "search"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "policy",
+			Knowledge:          builtinKnowledge("book", requireVectorOperational, requireCitationConfig),
 			ParameterProfileID: "safe",
 			DatasetSuggestions: []string{"员工手册", "制度文件", "政策问答"},
 			SampleQuestions:    []string{"年假如何申请？", "加班调休的有效期是多久？"},
@@ -103,6 +130,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"chat", "search", "agent"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "customer-service",
+			Knowledge:          builtinKnowledge("general", requireVectorOperational),
 			ParameterProfileID: "balanced",
 			DatasetSuggestions: []string{"客服 FAQ", "工单案例", "服务政策"},
 			SampleQuestions:    []string{"订单未收到怎么办？", "发票丢失如何补开？"},
@@ -137,6 +165,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"search", "agent"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "product-manual",
+			Knowledge:          builtinKnowledge("book", requireVectorOperational, requireMetadataReady),
 			ParameterProfileID: "safe",
 			DatasetSuggestions: []string{"产品手册", "维修手册", "配件清单"},
 			SampleQuestions:    []string{"设备报 E03 如何处理？", "泵体滤芯多久更换？"},
@@ -171,6 +200,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"chat", "agent"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "sales-support",
+			Knowledge:          builtinKnowledge("general", requireVectorOperational),
 			ParameterProfileID: "balanced",
 			DatasetSuggestions: []string{"产品资料", "客户案例", "销售话术"},
 			SampleQuestions:    []string{"向制造业客户推荐哪个方案？", "常见异议如何回应？"},
@@ -205,6 +235,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"chat", "agent"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "contract-compliance",
+			Knowledge:          builtinKnowledge("paper", requireVectorOperational, requireCitationConfig, requireMetadataReady),
 			ParameterProfileID: "citation-strict",
 			DatasetSuggestions: []string{"合同模板", "合规制度", "审批口径"},
 			SampleQuestions:    []string{"付款条款有哪些风险？", "数据保护条款怎么审？"},
@@ -239,6 +270,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"chat", "search", "agent"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "operations",
+			Knowledge:          builtinKnowledge("book", requireVectorOperational),
 			ParameterProfileID: "safe",
 			DatasetSuggestions: []string{"运维手册", "变更记录", "故障复盘"},
 			SampleQuestions:    []string{"生产队列积压怎么排查？", "数据库回退步骤是什么？"},
@@ -273,6 +305,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"chat", "agent"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "training",
+			Knowledge:          builtinKnowledge("book", requireVectorOperational),
 			ParameterProfileID: "balanced",
 			DatasetSuggestions: []string{"岗位培训包", "流程说明", "考核材料"},
 			SampleQuestions:    []string{"新销售第 1 周学什么？", "实施工程师需要掌握哪些流程？"},
@@ -307,6 +340,7 @@ var builtinScenarioTemplates = []BuiltinScenarioTemplate{
 		AppTypes:    []string{"chat", "search"},
 		Payload: ScenarioTemplatePayload{
 			PromptPresetID:     "finance",
+			Knowledge:          builtinKnowledge("book", requireVectorOperational, requireMetadataReady),
 			ParameterProfileID: "safe",
 			DatasetSuggestions: []string{"财务制度", "指标口径", "报表说明"},
 			SampleQuestions:    []string{"毛利率如何计算？", "月结截止日是哪天？"},
@@ -348,9 +382,19 @@ func BuiltinScenarioTemplates() []BuiltinScenarioTemplate {
 }
 
 // EnsureBuiltinScenarioTemplates seeds the shipped templates for one tenant.
-// It is idempotent per (tenant_id, key): existing rows — including tenant
-// customizations that reuse a builtin key — are never overwritten, only
-// missing keys are added. It returns the number of rows created.
+//
+// doc/276 §7.1 step 1: the shipped catalog is *the platform baseline*, so in
+// steady state this is only called with model.PlatformTenantID. The function
+// stays tenant-parameterised because bootstrap and tests still address the
+// platform tenant explicitly.
+//
+// Semantics changed with the 2.0 baseline (R23):
+//   - a missing key is created (returns 1 in the created count);
+//   - a platform `builtin` row whose payload hash differs is *upgraded by
+//     appending an immutable version* and bumping latest_version, never by
+//     rewriting the existing version;
+//   - a workspace row that reuses a builtin key is a fork/customization and is
+//     never touched.
 func (s *Service) EnsureBuiltinScenarioTemplates(ctx context.Context, tenantID string) (int, error) {
 	if tenantID == "" {
 		return 0, nil
@@ -359,16 +403,13 @@ func (s *Service) EnsureBuiltinScenarioTemplates(ctx context.Context, tenantID s
 	if err != nil {
 		return 0, err
 	}
-	present := make(map[string]bool, len(existing))
+	byKey := make(map[string]model.ScenarioTemplateAsset, len(existing))
 	for _, asset := range existing {
-		present[asset.Key] = true
+		byKey[asset.Key] = asset
 	}
 	created := 0
 	now := time.Now().UTC()
 	for _, item := range builtinScenarioTemplates {
-		if present[item.Key] {
-			continue
-		}
 		payload, err := json.Marshal(item.Payload)
 		if err != nil {
 			return created, err
@@ -377,17 +418,38 @@ func (s *Service) EnsureBuiltinScenarioTemplates(ctx context.Context, tenantID s
 		if err != nil {
 			return created, err
 		}
+		if asset, ok := byKey[item.Key]; ok {
+			// Only the platform baseline may advance in place. A tenant row with
+			// the same key belongs to the workspace and must not be rewritten by
+			// a later release.
+			if tenantID != model.PlatformTenantID || asset.Source != model.TemplateSourceBuiltin {
+				continue
+			}
+			if hashTemplatePayload(asset.PayloadJSON) == hashTemplatePayload(string(payload)) {
+				continue
+			}
+			if _, err := s.UpdateScenarioTemplate(ctx, tenantID, builtinScenarioBootstrapActor, asset.ID, ScenarioTemplateInput{
+				Key: item.Key, Name: item.Name, AppTypes: appTypes, Description: item.Description,
+				Status: model.AssetStatusPublished, Payload: item.Payload, ChangeNote: "builtin seed upgrade",
+			}); err != nil {
+				return created, err
+			}
+			continue
+		}
 		asset := &model.ScenarioTemplateAsset{
 			ID: id.New(), TenantID: tenantID, Key: item.Key, Name: item.Name,
 			AppTypes: joinStrings(appTypes, ","), Description: item.Description,
 			LatestVersion: 1, Source: model.TemplateSourceBuiltin,
 			Status: model.AssetStatusPublished, PayloadJSON: string(payload),
+			BaselineKey: item.Key, BaselineVersion: 1, LineageState: model.LineageStateConfirmedBaseline,
 			CreatedBy: builtinScenarioBootstrapActor, CreatedAt: now, UpdatedAt: now,
 		}
 		version := &model.ScenarioTemplateVersion{
 			ID: id.New(), TenantID: tenantID, TemplateID: asset.ID, Version: 1,
 			PayloadJSON: asset.PayloadJSON, ChangeNote: "builtin seed",
-			CreatedBy: builtinScenarioBootstrapActor, CreatedAt: now,
+			PayloadSchema:      model.TemplatePayloadSchemaV2,
+			SnapshotProvenance: model.SnapshotAuthored,
+			CreatedBy:          builtinScenarioBootstrapActor, CreatedAt: now,
 		}
 		if err := s.Store.CreateScenarioTemplate(ctx, asset, version); err != nil {
 			// A concurrent bootstrap (or a tenant edit landing first) already
@@ -403,38 +465,29 @@ func (s *Service) EnsureBuiltinScenarioTemplates(ctx context.Context, tenantID s
 	return created, nil
 }
 
-// BootstrapScenarioTemplates backfills builtin templates for every existing
-// tenant at startup. Failures are logged and audited per tenant but never
-// block startup (doc/228 §3.1 T7.0 trigger 3).
+// BootstrapScenarioTemplates seeds the platform baseline at startup and then
+// backfills lineage on existing workspace copies (doc/276 §7.1 steps 1 and 7).
+// It is idempotent: re-running it creates no duplicate rows and no duplicate
+// versions. Failures are logged and audited but never block startup.
 func (s *Service) BootstrapScenarioTemplates(ctx context.Context) {
-	const pageSize = 200
-	for page := 1; ; page++ {
-		tenants, total, err := s.Store.ListTenants(ctx, page, pageSize, repository.TenantFilter{})
-		if err != nil {
-			logger.Warn("scenario template bootstrap: list tenants failed", "error", err)
-			return
-		}
-		for _, tenant := range tenants {
-			created, err := s.EnsureBuiltinScenarioTemplates(ctx, tenant.ID)
-			detail := fmt.Sprintf(`{"created":%d}`, created)
-			entry := &model.AuditLog{
-				ID: id.New(), TenantID: tenant.ID, UserID: builtinScenarioBootstrapActor,
-				Action: "scenario_template.bootstrap", Resource: "scenario-template",
-				Result: "SUCCESS", DetailJSON: detail, At: time.Now().UTC(),
-			}
-			if err != nil {
-				entry.Result = "FAILED"
-				entry.DetailJSON = fmt.Sprintf(`{"created":%d,"error":"bootstrap failed"}`, created)
-				logger.Warn("scenario template bootstrap failed", "tenant_id", tenant.ID, "error", err)
-			}
-			if err := s.RecordAudit(ctx, entry); err != nil {
-				logger.Warn("scenario template bootstrap audit failed", "tenant_id", tenant.ID, "error", err)
-			}
-		}
-		if int64(page*pageSize) >= total || len(tenants) == 0 {
-			return
-		}
+	created, err := s.EnsureBuiltinScenarioTemplates(ctx, model.PlatformTenantID)
+	entry := &model.AuditLog{
+		ID: id.New(), TenantID: model.PlatformTenantID, UserID: builtinScenarioBootstrapActor,
+		Action: "scenario_template.bootstrap", Resource: "scenario-template",
+		Result: "SUCCESS", DetailJSON: fmt.Sprintf(`{"created":%d}`, created), At: time.Now().UTC(),
 	}
+	if err != nil {
+		entry.Result = "FAILED"
+		entry.DetailJSON = fmt.Sprintf(`{"created":%d,"error":"bootstrap failed"}`, created)
+		logger.Warn("scenario template bootstrap failed", "error", err)
+	}
+	if auditErr := s.RecordAudit(ctx, entry); auditErr != nil {
+		logger.Warn("scenario template bootstrap audit failed", "error", auditErr)
+	}
+	if err != nil {
+		return
+	}
+	s.BootstrapScenarioTemplateLineage(ctx)
 }
 
 func joinStrings(values []string, sep string) string {

@@ -121,8 +121,14 @@ func TestHTTPClientOperationalResourceContract(t *testing.T) {
 	}
 
 	mock := NewMock()
-	if added, err := mock.ListModels(ctx, "chat"); err != nil || len(added) != 0 {
+	// The mock mirrors a configured engine: one model per writable type, so
+	// callers that need a real model id (dataset creation) behave as in
+	// production instead of tripping a "no embedding model" guard.
+	if added, err := mock.ListModels(ctx, "chat"); err != nil || len(added) != 1 || added[0].Type[0] != "chat" {
 		t.Fatalf("mock models: %+v err=%v", added, err)
+	}
+	if added, err := mock.ListModels(ctx, "embedding"); err != nil || len(added) != 1 || added[0].Type[0] != "embedding" {
+		t.Fatalf("mock embedding models: %+v err=%v", added, err)
 	}
 	if defaults, err := mock.ListDefaultModels(ctx); err != nil || len(defaults) != 0 {
 		t.Fatalf("mock defaults: %+v err=%v", defaults, err)

@@ -409,7 +409,7 @@ func (s *Service) ProbeCompilationRecoveryRun(ctx context.Context, actorID, tena
 }
 
 // Wire-level action spellings documented in
-// doc/runbooks/CompilationUpstreamRecoveryRunbook.md (underscore forms). The
+// doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md (underscore forms). The
 // model constants use hyphens; the M204 live drill caught that the HTTP
 // endpoint accepted only the underscore forms while the service only accepted
 // the hyphenated constants, making recovery-approval impossible to satisfy

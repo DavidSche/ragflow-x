@@ -152,7 +152,7 @@ func (s *Service) InstantiateTemplateInstance(ctx context.Context, tenantID, use
 
 	// Create the provider-side chat, then the canonical release through the
 	// existing saga. Chat failure aborts before any release row is written.
-	authoring := mergeTemplateAuthoring(payload, ChatAuthoring{})
+	authoring := mergeTemplateAuthoringForVersion(payload, ChatAuthoring{}, model.TemplatePayloadSchemaV2, model.SnapshotAuthored)
 	chat, err := s.CreateChatWithConfig(ctx, tenantID, name, datasetIDs, authoring)
 	if err != nil {
 		return nil, err
