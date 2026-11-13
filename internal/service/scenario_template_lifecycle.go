@@ -56,11 +56,6 @@ func (s *Service) ResolveScenarioTemplateAsset(ctx context.Context, tenantID, te
 	return s.Store.GetPlatformScenarioTemplate(ctx, templateID)
 }
 
-// isPlatformBaseline reports whether the asset is a platform baseline row.
-func isPlatformBaseline(asset *model.ScenarioTemplateAsset) bool {
-	return asset != nil && asset.TenantID == model.PlatformTenantID
-}
-
 // ForkScenarioTemplate creates a tenant-owned copy of a platform baseline
 // (doc/276 §7.1 step 4). It is an explicit action: instantiation never forks.
 // A tenant key collision returns the existing 40901 code so the wizard can tell
@@ -296,8 +291,3 @@ func (s *Service) recordTemplateAudit(ctx context.Context, tenantID, userID, act
 	}
 }
 
-// sortCatalogByKey keeps the catalog deterministic regardless of the two
-// sources (platform baselines then tenant overrides) it is merged from.
-func sortCatalogByKey(items []ScenarioTemplateCatalogItem) {
-	sort.SliceStable(items, func(i, j int) bool { return items[i].Key < items[j].Key })
-}

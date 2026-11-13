@@ -195,16 +195,3 @@ func canonicalOf(raw string) string {
 	return hash
 }
 
-// assetPublishBlocked is the shared "may this template go live" predicate. It
-// keeps the eval gate in one place for both the workspace publish path and the
-// platform baseline publish path.
-func (s *Service) assetPublishBlocked(ctx context.Context, tenantID string, asset *model.ScenarioTemplateAsset) error {
-	if asset == nil {
-		return httperr.BadRequest(40001, "scenario template is required")
-	}
-	current, err := s.Store.GetScenarioTemplateVersion(ctx, tenantID, asset.ID, 0)
-	if err != nil || current == nil {
-		return nil
-	}
-	return s.enforceScenarioEvalGate(ctx, tenantID, asset.ID, current.PayloadJSON)
-}
