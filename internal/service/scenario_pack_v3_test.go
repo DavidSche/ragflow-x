@@ -389,6 +389,42 @@ func TestValidateScenarioImportTrustAcceptsExportEnvelope(t *testing.T) {
 	}
 }
 
+// TestValidateScenarioImportTrustAllowsIncompleteDraftPacks keeps the round
+// trip honest for the draft side: an exported skeleton asset intentionally
+// carries an empty system prompt (drafts are structurally sound but business-
+// incomplete, doc/276 §8.4), and re-importing that draft must succeed as an
+// `imported` draft. The trust scan must only enforce structure + security, not
+// the business completeness that publish's full Validate owns (live drill
+// 2026-11-14, "application.prompt.system is required" broke export→import).
+func TestValidateScenarioImportTrustAllowsIncompleteDraftPacks(t *testing.T) {
+	document := validPackDocument()
+	application := document["application"].(map[string]interface{})
+	prompt := application["prompt"].(map[string]interface{})
+	prompt["system"] = ""
+	delete(document, "business") // role absent: another draft-only gap
+	envelope := map[string]interface{}{
+		"schema": scenarioTemplateSchema, "key": "draft-roundtrip", "name": "draft round trip",
+		"app_types": []interface{}{"chat"}, "payload": document,
+	}
+	raw, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateScenarioImportTrust(raw); err != nil {
+		t.Fatalf("an incomplete-but-structural draft must stay importable: %v", err)
+	}
+	// An incomplete pack must still fail the security half: credentials are
+	// rejected regardless of draft status.
+	credentialDocument := validPackDocument()
+	application = credentialDocument["application"].(map[string]interface{})
+	prompt = application["prompt"].(map[string]interface{})
+	prompt["system"] = ""
+	prompt["apiKey"] = "sk-live-roundtrip"
+	if err := ValidateScenarioImportTrust(encodePack(t, credentialDocument)); err == nil {
+		t.Fatal("a credential in an incomplete draft must still be rejected")
+	}
+}
+
 // TestValidateScenarioImportTrustScansEnvelopePayload keeps the trust scan
 // honest for the nested shape: a credential inside `payload` must still be
 // caught, and an invalid nested pack must still fail.
