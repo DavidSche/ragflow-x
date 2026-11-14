@@ -4,8 +4,11 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 )
 
@@ -201,7 +204,42 @@ func (s *Service) CheckScenarioTemplateCapabilities(
 	view.Aggregate = AggregateVerdicts(knowledge, view.Datasets)
 	view.Verdict = aggregateVerdict(anyBlocked, anyLimited, anyRepairable, allSupported)
 	view.ProbeStatus = aggregateProbeStatus(view.Datasets)
+	// Persist one append-only observation row per dataset so the health board's
+	// repair_completion_rate has real evidence (doc/276 §7.4-7). This is shadow
+	// telemetry in our own store — the check itself never mutates RAGFlow.
+	s.persistCapabilityCheck(ctx, tenantID, asset.ID, asset.LatestVersion, view)
 	return view, nil
+}
+
+// persistCapabilityCheck writes one immutable observation row per dataset so a
+// later health board can distinguish “was repairable and got fixed” from “was
+// always fine”. A telemetry write failure must never turn a read-only capability
+// question into an error, so the write is logged and ignored.
+func (s *Service) persistCapabilityCheck(
+	ctx context.Context, tenantID, templateID string, templateVersion int64, view *CapabilityCheckView,
+) {
+	rows := make([]model.ScenarioCapabilityCheck, 0, len(view.Datasets))
+	for _, item := range view.Datasets {
+		rows = append(rows, model.ScenarioCapabilityCheck{
+			ID:                   id.New(),
+			TenantID:             tenantID,
+			TemplateID:           templateID,
+			TemplateVersion:      templateVersion,
+			AppType:              view.AppType,
+			DatasetID:            item.DatasetID,
+			Role:                 item.Role,
+			Verdict:              item.Verdict,
+			AggregateVerdict:     view.Aggregate,
+			ProbeStatus:          item.ProbeStatus,
+			RepairCount:          len(item.Repairs),
+			CapabilitySetVersion: view.CapabilitySetVersion,
+			CreatedAt:            time.Now().UTC(),
+		})
+	}
+	if err := s.Store.RecordScenarioCapabilityChecks(ctx, rows); err != nil {
+		logger.Warn("persist capability check evidence",
+			"tenant_id", tenantID, "template_id", templateID, "datasets", len(rows), "error", err)
+	}
 }
 
 // normalizedRoleDatasets drops empty entries and de-duplicates by dataset id,

@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 )
 
@@ -364,6 +366,63 @@ func TestScenarioTemplateHealthReportsUnknownInsteadOfZero(t *testing.T) {
 		if metric.Definition == "" {
 			t.Fatalf("metric %q must carry its formula", metric.Key)
 		}
+	}
+}
+
+// TestScenarioTemplateHealthRepairCompletionFromPersistedChecks pins the §8.6
+// repair metric against the migration-167 evidence table: a dataset that had a
+// repairable verdict and later a satisfied one counts as repaired; one with only
+// a repairable verdict does not. Without any gap row the metric must read
+// unavailable, never 0 (covered by the test above).
+func TestScenarioTemplateHealthRepairCompletionFromPersistedChecks(t *testing.T) {
+	svc := newScenarioSeedService(t)
+	ctx := context.Background()
+	tenant, err := svc.CreateTenant(ctx, "Repair Metric Tenant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := svc.CreateScenarioTemplate(ctx, tenant.ID, actorID(t, svc), ScenarioTemplateInput{
+		Key: "repair-metric", Name: "Repair Metric", AppTypes: []string{"chat"},
+		Payload: ScenarioTemplatePayload{PromptPresetID: "preset-contract-review"},
+		Status:  model.AssetStatusPublished,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	check := func(ds, verdict string, at time.Time) model.ScenarioCapabilityCheck {
+		return model.ScenarioCapabilityCheck{
+			ID: id.New(), TenantID: tenant.ID, TemplateID: asset.ID,
+			TemplateVersion: asset.LatestVersion, DatasetID: ds, Role: scenarioDatasetRolePrimary,
+			Verdict: verdict, ProbeStatus: CapabilityProbeSuccess,
+			CapabilitySetVersion: CapabilityCheckVersion, CreatedAt: at,
+		}
+	}
+	if err := svc.Store.RecordScenarioCapabilityChecks(ctx, []model.ScenarioCapabilityCheck{
+		check("ds-a", CapabilityVerdictRepairable, now.Add(-48*time.Hour)),
+		check("ds-a", CapabilityVerdictSatisfied, now.Add(-24*time.Hour)),
+		check("ds-b", CapabilityVerdictRepairable, now.Add(-24*time.Hour)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	health, err := svc.ScenarioTemplateHealth(ctx, tenant.ID, asset.ID)
+	if err != nil {
+		t.Fatalf("health: %v", err)
+	}
+	var repair *ScenarioTemplateMetric
+	for i := range health.Metrics {
+		if health.Metrics[i].Key == "repair_completion_rate" {
+			repair = &health.Metrics[i]
+		}
+	}
+	if repair == nil {
+		t.Fatal("repair_completion_rate missing from health metrics")
+	}
+	if !repair.Available {
+		t.Fatalf("expected repair metric available, got reason %q", repair.Reason)
+	}
+	if repair.Numerator != 1 || repair.Denominator != 2 || repair.Value != 0.5 {
+		t.Fatalf("expected 1/2 = 0.5, got %d/%d = %v", repair.Numerator, repair.Denominator, repair.Value)
 	}
 }
 

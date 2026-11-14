@@ -51,6 +51,31 @@ type ScenarioTemplateVersion struct {
 
 func (ScenarioTemplateVersion) TableName() string { return "rgx_scenario_template_version" }
 
+// ScenarioCapabilityCheck is one immutable capability-check observation row
+// (doc/276 §7.4-7 / §9.4). The check endpoint records one row per dataset so
+// the health board's repair_completion_rate has a real evidence source instead
+// of an invented number. Rows are append-only: a later check is a new row, never
+// an UPDATE — mirroring the audit-log discipline. `capability_set_version`
+// records which evidence model produced the verdict so stale rows can be
+// recomputed honestly (never deleted) if the evidence model changes.
+type ScenarioCapabilityCheck struct {
+	ID                  string    `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID            string    `gorm:"column:tenant_id;size:32;not null;index:idx_cc_scope,priority:1" json:"tenant_id"`
+	TemplateID          string    `gorm:"column:template_id;size:32;not null;index:idx_cc_scope,priority:2" json:"template_id"`
+	TemplateVersion     int64     `gorm:"column:template_version;not null" json:"template_version"`
+	AppType             string    `gorm:"column:app_type;size:24" json:"app_type"`
+	DatasetID           string    `gorm:"column:dataset_id;size:32;not null" json:"dataset_id"`
+	Role                string    `gorm:"column:role_name;size:32;not null" json:"role"`
+	Verdict             string    `gorm:"column:verdict;size:24;not null" json:"verdict"`
+	AggregateVerdict    string    `gorm:"column:aggregate_verdict;size:40" json:"aggregate_verdict"`
+	ProbeStatus         string    `gorm:"column:probe_status;size:24" json:"probe_status"`
+	RepairCount         int       `gorm:"column:repair_count;not null;default:0" json:"repair_count"`
+	CapabilitySetVersion string   `gorm:"column:capability_set_version;size:32;not null" json:"capability_set_version"`
+	CreatedAt           time.Time `gorm:"column:created_at;not null;index:idx_cc_scope,priority:3" json:"created_at"`
+}
+
+func (ScenarioCapabilityCheck) TableName() string { return "rgx_scenario_capability_check" }
+
 // Payload schema + snapshot provenance values (doc/276 §7.7).
 const (
 	TemplatePayloadSchemaV2 = "v2"

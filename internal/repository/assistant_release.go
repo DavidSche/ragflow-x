@@ -25,6 +25,10 @@ type AssistantReleaseRepo interface {
 	ListTemplateInstanceLastUsed(ctx context.Context, tenantID string) (map[string]time.Time, error)
 	ListTemplateInstancesForHealth(ctx context.Context, tenantID, templateID string, limit int) ([]model.TemplateInstance, error)
 	AnswerActivityByAssistant(ctx context.Context, tenantID string, assistantIDs []string, since time.Time) (map[string]AssistantActivity, error)
+
+	// ScenarioCapabilityCheckRepo — append-only capability evidence.
+	RecordScenarioCapabilityChecks(ctx context.Context, checks []model.ScenarioCapabilityCheck) error
+	ListScenarioCapabilityChecksForHealth(ctx context.Context, tenantID, templateID string, since time.Time) ([]model.ScenarioCapabilityCheck, error)
 	CreateAssistant(ctx context.Context, assistant *model.Assistant) error
 	GetAssistant(ctx context.Context, tenantID, id string) (*model.Assistant, error)
 	GetAssistantForUpdate(ctx context.Context, tenantID, id string) (*model.Assistant, error)
