@@ -164,6 +164,22 @@ func TestCheckScenarioTemplateCapabilitiesReportsRoles(t *testing.T) {
 	if view.CapabilitySetVersion != CapabilityCheckVersion {
 		t.Fatalf("capability set version missing: %q", view.CapabilitySetVersion)
 	}
+	// doc/276 §7.4-7: the check persists one append-only observation per dataset,
+	// and the health board’s repair metric reads that evidence — not an invented
+	// number.
+	checks, err := svc.Store.ListScenarioCapabilityChecksForHealth(ctx, tenant.ID, asset.ID, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 {
+		t.Fatalf("expected one persisted capability observation, got %d", len(checks))
+	}
+	got := checks[0]
+	if got.DatasetID != dataset.ID || got.Verdict != CapabilityVerdictRepairable ||
+		got.Role != scenarioDatasetRolePrimary || got.TemplateID != asset.ID ||
+		got.CapabilitySetVersion != CapabilityCheckVersion || got.AggregateVerdict != view.Aggregate {
+		t.Fatalf("persisted observation mismatch: %+v", got)
+	}
 }
 
 // P0-4 repairs: 40915 before 40917, and the pushdown writer finally exists.
@@ -310,6 +326,76 @@ func TestInstantiateScenarioTemplateReplaysOnSameKey(t *testing.T) {
 	}
 	if second.Chat == nil || second.Chat.ID != first.Chat.ID {
 		t.Fatalf("replay must return the same chat, got %+v", second.Chat)
+	}
+}
+
+// Search instantiation happy path (closes the doc 279 §7.4 gap: drill templates
+// only declared chat, so the search branch of unified instantiation was never
+// exercised). The unified entry point creates a search app, records template
+// provenance on the shadow (migration 166) and replays under the same header
+// idempotency key.
+func TestInstantiateSearchScenarioTemplateHappyPath(t *testing.T) {
+	svc := newScenarioSeedService(t)
+	ctx := context.Background()
+	seedPlatformBaseline(t, svc)
+	tenant, err := svc.CreateTenant(ctx, "Search Instantiate Tenant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := svc.CreateProject(ctx, tenant.ID, actorID(t, svc), "search project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := svc.ScenarioTemplateCatalog(ctx, tenant.ID)
+	if err != nil || len(items) == 0 {
+		t.Fatalf("catalog empty: %v", err)
+	}
+	var templateID string
+	for _, item := range items {
+		for _, appType := range item.AppTypes {
+			if appType == instantiationAppTypeSearch {
+				templateID = item.ID
+				break
+			}
+		}
+		if templateID != "" {
+			break
+		}
+	}
+	if templateID == "" {
+		t.Fatal("no search-capable template in baseline catalog")
+	}
+
+	first, err := svc.InstantiateScenarioTemplate(ctx, tenant.ID, actorID(t, svc), templateID, "search-key-1", UnifiedInstantiateInput{
+		AppType: "search", Name: "inst search", ProjectID: project.ID, CreateMissingDatasets: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Replayed || first.SearchApp == nil {
+		t.Fatalf("expected a fresh search instantiation, got %+v", first)
+	}
+	if first.InstantiationState != model.InstantiationCompleted {
+		t.Fatalf("expected completed, got %q", first.InstantiationState)
+	}
+	// Provenance is persisted on the shadow so search apps trace back to the
+	// template version they came from (doc/276 §7.5).
+	shadow, err := svc.Store.GetSearchAppShadow(ctx, tenant.ID, first.SearchApp.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shadow == nil || shadow.ScenarioTemplateID != templateID || shadow.ScenarioTemplateVersion == 0 {
+		t.Fatalf("search app provenance missing or wrong: %+v", shadow)
+	}
+	// Same header key replays the same search app (header-only idempotency).
+	second, err := svc.InstantiateScenarioTemplate(ctx, tenant.ID, actorID(t, svc), templateID, "search-key-1", UnifiedInstantiateInput{
+		AppType: "search", Name: "inst search", ProjectID: project.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.Replayed || second.SearchApp == nil || second.SearchApp.ID != first.SearchApp.ID {
+		t.Fatalf("expected replay of %s, got %+v", first.InstanceID, second)
 	}
 }
 

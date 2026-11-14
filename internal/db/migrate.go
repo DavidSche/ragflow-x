@@ -3313,6 +3313,23 @@ var migrations = []Migration{
 			).Error
 		},
 	},
+	{
+		Version: 167,
+		Name:    "scenario_capability_check_evidence",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/276 §7.4-7 + §9.4: persist capability-check verdicts so the
+			// health board's repair_completion_rate stops reporting unavailable.
+			// Purely additive and append-only: each check is an immutable
+			// observation (one row per dataset), never updated, never deleted —
+			// mirroring the audit-log discipline.
+			if err := tx.AutoMigrate(&model.ScenarioCapabilityCheck{}); err != nil {
+				return err
+			}
+			return tx.Exec(
+				"CREATE INDEX IF NOT EXISTS idx_cc_scope ON rgx_scenario_capability_check (tenant_id, template_id, created_at)",
+			).Error
+		},
+	},
 }
 
 func evaluationScopeCondition(columnPrefix string) string {

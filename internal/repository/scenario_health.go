@@ -61,3 +61,31 @@ func (s *store) AnswerActivityByAssistant(
 	}
 	return out, nil
 }
+
+// RecordScenarioCapabilityChecks persists one capability-check observation per
+// dataset (doc/276 §7.4-7). It is append-only evidence for the health board's
+// repair_completion_rate: rows are never updated or deleted, so the metric can
+// later distinguish "was repairable and got fixed" from "was always fine".
+func (s *store) RecordScenarioCapabilityChecks(ctx context.Context, checks []model.ScenarioCapabilityCheck) error {
+	if len(checks) == 0 {
+		return nil
+	}
+	return s.WithContext(ctx).Create(&checks).Error
+}
+
+// ListScenarioCapabilityChecksForHealth returns the observation rows the health
+// board's repair metric needs for one template, newest first, bounded to the
+// metric window by the caller.
+func (s *store) ListScenarioCapabilityChecksForHealth(
+	ctx context.Context, tenantID, templateID string, since time.Time,
+) ([]model.ScenarioCapabilityCheck, error) {
+	var checks []model.ScenarioCapabilityCheck
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND template_id = ? AND created_at >= ?", tenantID, templateID, since).
+		Order("created_at DESC").
+		Find(&checks).Error
+	if err != nil {
+		return nil, err
+	}
+	return checks, nil
+}

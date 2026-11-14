@@ -79,6 +79,13 @@ func (s *Service) ScenarioTemplateHealth(ctx context.Context, tenantID, template
 	if err != nil {
 		return nil, err
 	}
+	// Capability-check observations (doc/276 §7.4-7, migration 167) are the
+	// repair metric's evidence source — persisted by the check endpoint, read
+	// here, never approximated from unrelated tables.
+	capabilityChecks, err := s.Store.ListScenarioCapabilityChecksForHealth(ctx, tenantID, asset.ID, windowStart)
+	if err != nil {
+		return nil, err
+	}
 
 	firstRunNumerator := 0
 	for _, instance := range instances {
@@ -122,17 +129,54 @@ func (s *Service) ScenarioTemplateHealth(ctx context.Context, tenantID, template
 	}
 	health.Metrics = append(health.Metrics, evalMetrics...)
 
-	// Repair completion needs a record of "this dataset had a repairable gap and
-	// was fixed later". We do not persist capability-check verdicts yet (doc 279
-	// §5), so the metric is reported as unavailable rather than approximated
-	// from unrelated tables.
-	health.Metrics = append(health.Metrics, ScenarioTemplateMetric{
+	// Repair completion computes from persisted verdicts: a dataset that had a
+	// repairable verdict and later a satisfied one counts as repaired. With no
+	// recorded repairable gap the metric reports unavailable (unknown, not zero).
+	health.Metrics = append(health.Metrics, repairCompletionMetric(capabilityChecks))
+	return health, nil
+}
+
+// repairCompletionMetric derives the §8.6 repair rate from the persisted
+// capability-check observations. Denominator: distinct datasets with a
+// `repairable` verdict inside the rolling window. Numerator: of those, ones
+// with a `satisfied` verdict at-or-after their most recent repairable verdict
+// (repaired at least once since the last gap). No recorded gap ⇒ unknown, which
+// must read as unavailable, never as 0.
+func repairCompletionMetric(checks []model.ScenarioCapabilityCheck) ScenarioTemplateMetric {
+	metric := ScenarioTemplateMetric{
 		Key: "repair_completion_rate", Label: "修复完成率",
 		Available:  false,
-		Reason:     "capability-check 历史未落库（doc 279 §5 未闭环项），无法区分“曾经 repairable”与“一直正常”",
-		Definition: "有 repairable 缺口且 7 日内修复的数据集 / 有 repairable 缺口的数据集",
-	})
-	return health, nil
+		Reason:     "窗口内无 repairable 判定记录",
+		Definition: "窗口内曾判定 repairable 且后续出现 satisfied 判定的数据集 / 窗口内曾判定 repairable 的数据集",
+	}
+	latestGapAt := make(map[string]time.Time, len(checks))
+	for _, c := range checks {
+		if c.Verdict != CapabilityVerdictRepairable {
+			continue
+		}
+		if existing, ok := latestGapAt[c.DatasetID]; !ok || c.CreatedAt.After(existing) {
+			latestGapAt[c.DatasetID] = c.CreatedAt
+		}
+	}
+	if len(latestGapAt) == 0 {
+		return metric
+	}
+	repaired := make(map[string]bool, len(latestGapAt))
+	for _, c := range checks {
+		if c.Verdict != CapabilityVerdictSatisfied {
+			continue
+		}
+		gapAt, ok := latestGapAt[c.DatasetID]
+		if ok && !gapAt.IsZero() && !c.CreatedAt.Before(gapAt) {
+			repaired[c.DatasetID] = true
+		}
+	}
+	metric.Numerator = len(repaired)
+	metric.Denominator = len(latestGapAt)
+	metric.Value = ratio(len(repaired), len(latestGapAt))
+	metric.Available = true
+	metric.Reason = ""
+	return metric
 }
 
 // scenarioEvalMetrics reads the two retrieval-scoped rates from the newest
