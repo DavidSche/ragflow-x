@@ -259,6 +259,7 @@ func (s *Sampler) runConcurrency(ctx context.Context, operation Operation, concu
 	if drain > s.Policy.TimeoutPerAttempt {
 		drain = s.Policy.TimeoutPerAttempt
 	}
+	parentCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, runDuration+drain)
 	defer cancel()
 	deadline := time.Now().Add(runDuration)
@@ -288,6 +289,13 @@ func (s *Sampler) runConcurrency(ctx context.Context, operation Operation, concu
 				if ctx.Err() != nil {
 					continue
 				}
+				// An attempt that finishes after the window closed belongs to the
+				// drain period, not to this sample window: on a slow or cold runner
+				// it can be a half-served request whose error would otherwise show
+				// up as a regression in the error rate.
+				if time.Now().After(deadline) {
+					continue
+				}
 
 				mu.Lock()
 				samples = append(samples, sample{duration: elapsed, ttft: attempt.TTFT, success: err == nil, err: err})
@@ -307,13 +315,49 @@ func (s *Sampler) runConcurrency(ctx context.Context, operation Operation, concu
 		}()
 	}
 	wg.Wait()
+
+	mu.Lock()
+	if runErr != nil {
+		mu.Unlock()
+		cancel()
+		return outcome, runErr
+	}
+	drained := len(samples) > 0
+	mu.Unlock()
+
+	// A window shorter than the first round trip (cold engine, slow 2-vCPU
+	// runner) can close before any worker finishes, and a concurrency level with
+	// zero samples cannot be reported. Take one guaranteed attempt so the level
+	// still measures something instead of failing the whole run.
+	if !drained {
+		// Measure against the caller's context, not the sampling one: that one
+		// has just been proven too short for this operation.
+		attemptCtx, attemptCancel := context.WithTimeout(parentCtx, s.Policy.TimeoutPerAttempt)
+		started := time.Now()
+		attempt, err := operation(attemptCtx)
+		elapsed := time.Since(started)
+		attemptCancel()
+		if parentCtx.Err() != nil {
+			cancel()
+			return outcome, fmt.Errorf("no samples captured: %w", parentCtx.Err())
+		}
+		mu.Lock()
+		samples = append(samples, sample{duration: elapsed, ttft: attempt.TTFT, success: err == nil, err: err})
+		if err != nil {
+			outcome.Errors++
+			if outcome.ErrorSamples == nil {
+				outcome.ErrorSamples = map[string]int64{}
+			}
+			outcome.ErrorSamples[errorKey(err)]++
+		} else {
+			outcome.Successes++
+		}
+		mu.Unlock()
+	}
 	cancel()
 
 	mu.Lock()
 	defer mu.Unlock()
-	if runErr != nil {
-		return outcome, runErr
-	}
 	if len(samples) == 0 {
 		return outcome, fmt.Errorf("performance: no samples captured")
 	}
