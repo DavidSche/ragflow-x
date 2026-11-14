@@ -24,6 +24,14 @@
   `internal/service/scenario_eval_gate.go`、`internal/service/scenario_template_lifecycle.go`、
   `internal/service/scenario_template_knowledge.go`），纯清理，无行为变化。
 
+### 已知问题（不改变本版本发布的二进制）
+
+- `v0.5.3` tag 上 `CI / go-build (windows-latest)` 的单测红在 `internal/performance`：采样窗口
+  （200ms / 500ms）比冷启动后的首次往返更短时，该并发档会「零样本」直接报错，或把 drain 期内
+  才结束的失败算进当窗口的错误率。已在 `main` 修复采样器（窗口外完成的请求不计入窗口；
+  零样本档补一次兜底采样）并补两个用例。该修复只动测量与测试代码，**运行时二进制与 v0.5.3 完全相同**，
+  故不另发版本号。
+
 ## [0.5.2] - 2026-11-13
 
 > **功能版本：默认模型管理与场景模板 2.0。** 两条主线都解决「能力在引擎里、但用户拿不到」的问题：

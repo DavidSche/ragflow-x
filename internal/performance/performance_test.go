@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -61,6 +62,59 @@ func TestHTTPOperationValidatesStatusAndSSE(t *testing.T) {
 	}
 	if attempt.TTFT == nil || *attempt.TTFT <= 0 {
 		t.Fatalf("expected positive TTFT, got %+v", attempt)
+	}
+}
+
+func TestSamplerTakesOneSampleWhenTheWindowClosesBeforeTheFirstAttempt(t *testing.T) {
+	t.Parallel()
+	// A window far shorter than one round trip is what a cold engine on a slow
+	// 2-vCPU runner looks like: the workers all start, the deck closes, and the
+	// level would report zero samples for a perfectly healthy operation.
+	policy := SamplingPolicy{DurationPerConcurrency: time.Nanosecond, ConcurrencyLevels: []int{2}, TimeoutPerAttempt: 5 * time.Second}
+	sampler := NewSampler(&policy)
+	scenario := Scenario{
+		Name: "cold", Kind: "test",
+		Operation: func(ctx context.Context) (Attempt, error) {
+			time.Sleep(20 * time.Millisecond)
+			return Attempt{}, nil
+		},
+	}
+	report, err := sampler.Run(context.Background(), []Scenario{scenario}, Environment{Host: "test"})
+	if err != nil {
+		t.Fatalf("run sampler: %v", err)
+	}
+	result := report.Scenarios[0].Results[0]
+	if result.Total != 1 || result.Successes != 1 || result.Errors != 0 {
+		t.Fatalf("expected exactly one guaranteed sample, got %+v", result)
+	}
+}
+
+func TestSamplerIgnoresAttemptsThatFinishAfterTheWindow(t *testing.T) {
+	t.Parallel()
+	// The first request outlives the window and fails during the drain period, a
+	// shape a cold engine produces (half-served request, cancelled upstream).
+	// That failure belongs to no window: it must not be counted as an error, and
+	// the level still reports the guaranteed sample taken afterwards.
+	policy := SamplingPolicy{DurationPerConcurrency: 10 * time.Millisecond, ConcurrencyLevels: []int{1}, TimeoutPerAttempt: 5 * time.Second}
+	sampler := NewSampler(&policy)
+	var calls int32
+	scenario := Scenario{
+		Name: "drain", Kind: "test",
+		Operation: func(ctx context.Context) (Attempt, error) {
+			if atomic.AddInt32(&calls, 1) == 1 {
+				time.Sleep(40 * time.Millisecond)
+				return Attempt{}, errors.New("upstream cancelled during drain")
+			}
+			return Attempt{}, nil
+		},
+	}
+	report, err := sampler.Run(context.Background(), []Scenario{scenario}, Environment{Host: "test"})
+	if err != nil {
+		t.Fatalf("run sampler: %v", err)
+	}
+	result := report.Scenarios[0].Results[0]
+	if result.Total != 1 || result.Successes != 1 || result.Errors != 0 {
+		t.Fatalf("drain-period failure leaked into the window: %+v", result)
 	}
 }
 
