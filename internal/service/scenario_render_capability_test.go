@@ -214,3 +214,57 @@ func TestImportAgentSkeletonUsesAgentAppType(t *testing.T) {
 		t.Fatalf("source=%q, want imported", asset.Source)
 	}
 }
+
+// The credential scan matches its pattern against key names, and `token` is one
+// of its substrings: an RAGFlow agent DSL node carries `maxTokensEnabled` and
+// `max_tokens` as ordinary model parameters. Rejecting those made every exported
+// agent pack fail to import (40116) even though it held no credential at all.
+func TestScanScenarioContentKeepsNonSecretTokenKeys(t *testing.T) {
+	t.Parallel()
+	pack := map[string]interface{}{
+		"runtimeExtension": map[string]interface{}{
+			"ragflow": map[string]interface{}{
+				"canvasDsl": map[string]interface{}{
+					"components": map[string]interface{}{
+						"Agent:One": map[string]interface{}{
+							"obj": map[string]interface{}{
+								"params": map[string]interface{}{
+									"maxTokensEnabled": true,
+									"max_tokens":       float64(4096),
+									"tokenLimit":       float64(0),
+									"tokenEvent":       "",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	if err := scanScenarioContent(pack, "document.payload"); err != nil {
+		t.Fatalf("model parameters were read as credentials: %v", err)
+	}
+}
+
+func TestScanScenarioContentStillRejectsCredentials(t *testing.T) {
+	t.Parallel()
+	cases := map[string]interface{}{
+		"apiKey":            "sk-live-123",
+		"maxTokensOverride": "sk-live-123",
+		"client_secret":     "shh",
+		"authorization":     "Bearer abc",
+		"tokens":            []interface{}{"sk-live-123"},
+		"credentials":       map[string]interface{}{"user": "u"},
+	}
+	for key, value := range cases {
+		pack := map[string]interface{}{"obj": map[string]interface{}{"params": map[string]interface{}{key: value}}}
+		err := scanScenarioContent(pack, "document.payload")
+		if err == nil {
+			t.Fatalf("key %q was not rejected", key)
+		}
+		var apiErr *httperr.Error
+		if !errors.As(err, &apiErr) || apiErr.Code != 40116 {
+			t.Fatalf("key %q produced %v, want 40116", key, err)
+		}
+	}
+}

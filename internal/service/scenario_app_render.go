@@ -211,6 +211,29 @@ func sortedComponentIDs(components map[string]interface{}) []string {
 	return ids
 }
 
+// carriesSecretValue reports whether a value under a credential-shaped key can
+// actually carry a credential. The key pattern matches `token` as a substring,
+// so ordinary model parameters such as `maxTokensEnabled: true` or
+// `max_tokens: 4096` would otherwise be rejected as credentials. A secret is a
+// non-empty string (or a container holding one); a boolean or a number cannot
+// carry one, so those keys are skipped and the walk continues into containers.
+func carriesSecretValue(value interface{}) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return false
+	case string:
+		return strings.TrimSpace(typed) != ""
+	case map[string]interface{}:
+		return len(typed) > 0
+	case []interface{}:
+		return len(typed) > 0
+	}
+	// json.Number, float64, int, ...: a count or a flag, not a secret.
+	return false
+}
+
 // scanScenarioContent rejects credential-shaped keys and cross-origin link
 // fields anywhere in the provided value (doc/276 §8.7).
 func scanScenarioContent(value interface{}, path string) error {
@@ -218,7 +241,7 @@ func scanScenarioContent(value interface{}, path string) error {
 	case map[string]interface{}:
 		for key, child := range typed {
 			childPath := path + "." + key
-			if scenarioForbiddenKeyPattern.MatchString(key) {
+			if scenarioForbiddenKeyPattern.MatchString(key) && carriesSecretValue(child) {
 				return httperr.BadRequest(40116, "scenario pack must not contain credentials: "+childPath)
 			}
 			if text, ok := child.(string); ok && scenarioLinkKeyPattern.MatchString(key) && isExternalURL(text) {
@@ -293,7 +316,14 @@ func ValidateScenarioImportTrust(raw []byte) error {
 	if err != nil {
 		return err
 	}
-	return pack.Validate()
+	// The trust scan guards the untrusted path: credentials, external endpoints
+	// and unknown fields. Import always lands as an `imported` draft, so only
+	// the structural half of validation runs here — the business parts a human
+	// author owns (system prompt, business copy, evaluation questions) are
+	// tolerated and enforced later by publish's full Validate. Running the full
+	// Validate here would make an exported draft un-reimportable (drill 2026-11-14,
+	// "application.prompt.system is required" on a legitimately empty skeleton draft).
+	return pack.ValidateDraft()
 }
 
 // packsAsV3 reports whether a payload declares the v3 pack schema.
