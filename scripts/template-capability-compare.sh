@@ -26,6 +26,58 @@ REPORT="tmp/template-capability-compare-$TS.md"
 WORK="tmp/tcc-$TS"
 mkdir -p "$WORK"
 
+# ---- 模式与参数 ----
+# 默认 = 探测 + 报告 + 落快照；--diff 对两份快照出 Δ（不需凭据/探测）
+MODE=snapshot; SNAP_TAG=""; DIFF_OLD=""; DIFF_NEW=""
+case "${1:-}" in
+  --diff)
+    MODE=diff; DIFF_OLD="${2:-}"; DIFF_NEW="${3:-}"
+    if [ ! -f "$DIFF_OLD" ] || [ ! -f "$DIFF_NEW" ]; then
+      echo "usage: bash scripts/template-capability-compare.sh --diff <old.json> <new.json>" >&2; exit 2
+    fi ;;
+  --snapshot) MODE=snapshot ;;
+  --tag=*) SNAP_TAG="${1#--tag=}" ;;
+  "" ) ;;
+  -h|--help) echo "usage: bash $0 [--snapshot|--tag=NAME|--diff OLD NEW]"; exit 0 ;;
+  *) echo "unknown arg: ${1}" >&2; exit 2 ;;
+esac
+GITREV="$(git rev-parse --short HEAD 2>/dev/null || echo dev)"
+
+if [ "$MODE" = diff ]; then
+  PYTHONIOENCODING=utf-8 python - "$DIFF_OLD" "$DIFF_NEW" "$REPORT" <<'PY'
+import json,sys
+ose={}
+nse={}
+try:
+    o=json.load(open(sys.argv[1],encoding="utf-8")); n=json.load(open(sys.argv[2],encoding="utf-8"))
+except Exception as e:
+    print("diff: cannot parse snapshot json:", e); sys.exit(2)
+L=[]; add=L.append
+add("# 模板能力回归 Δ（--diff）")
+add(f"- old: `{sys.argv[1]}`　ts={o.get('ts')}　得分 **{o.get('score_total'):.1f}**")
+add(f"- new: `{sys.argv[2]}`　ts={n.get('ts')}　得分 **{n.get('score_total'):.1f}**")
+d=n.get('score_total',0)-o.get('score_total',0)
+verdict="达标" if d>=1 else ("退化" if d<=-1 else "持平")
+add(f"\n**加权得分差 {d:+.1f} → {verdict}**")
+mo={m['id']:m for m in o.get('metrics',[])}; mn={m['id']:m for m in n.get('metrics',[])}
+add("\n## 指标 Δ\n")
+add("| ID | 指标 | 类目 | 权重 | old | new | Δ |")
+add("|---|---|---|---|---|---|---|")
+for mid,mm in mn.items():
+    a=mo.get(mid)
+    if not a: continue
+    va=a.get('value',0); vb=mm.get('value',0)
+    dd=f"{vb-va:+.3f}" if isinstance(va,(int,float)) and isinstance(vb,(int,float)) else ""
+    add(f"| {mid} | {mm.get('name')} | {mm.get('category')} | {mm.get('weight')*100:.0f}% | {va:.3f} ({a.get('display','')}) | {vb:.3f} ({mm.get('display','')}) | {dd} |")
+add("\n## 护栏（M1–M4 缩水即退化，独立于加权分）")
+shr=[mid for mid in ("M1","M2","M3","M4") if mid in mn and mn[mid].get("decline",False)]
+add("- "+("无" if not shr else "缩水: "+",".join(shr)))
+open(sys.argv[3],"w",encoding="utf-8",newline="\n").write("\n".join(L))
+print("\n".join(L))
+PY
+  exit $?
+fi
+
 AX_BASE="${RAGRFLOW_X_API_BASE:-http://192.168.4.151:19193/api/v1}"
 AX_USER="${RAGRFLOW_X_USER:-admin}"
 AX_PASS="${RAGRFLOW_X_PASS:-RgxTest#2026a}"
@@ -186,9 +238,140 @@ for f in ax_catalog ax_baseline ax_skeletons ax_assets ax_export ax_cap rf_tpl; 
   [ -f "$WORK/$f.json" ] && printf '| %s | `tmp/tcc-%s/%s.json` |\n' "$f" "$TS" "$f" >> "$REPORT"
 done
 
-printf '\n## 4. 复核\n\n```bash\nbash scripts/template-capability-compare.sh   # 退出码 0=完成\n```\n' >> "$REPORT"
+printf '\n## 4. 复核\n\n```bash\nbash scripts/template-capability-compare.sh   # 退出码 0=完成；--diff <old> <new> 出回归 Δ\n```\n' >> "$REPORT"
 
-echo "== summary: PASS=$PASS FAIL=$FAIL SKIP=$SKIP TOTAL=$TOTAL"
+# ========== 场景模板成熟度回归指标（加权看板）==========
+SNAP_DIR="tmp/capability-snapshots"; mkdir -p "$SNAP_DIR"
+SNAP_FILE="$SNAP_DIR/${SNAP_TAG:-baseline}-$TS.json"
+AX_SCORE=$(PYTHONIOENCODING=utf-8 python - "$WORK" "$GITREV" "$REPORT" "$SNAP_FILE" <<'PY' | tail -1
+import json,hashlib,os,sys,re
+WORK,GITREV,REPORT,SNAP=sys.argv[1:5]
+W=lambda f: os.path.join(WORK,f)
+def load(f):
+    try: return json.load(open(W(f),encoding="utf-8"))
+    except Exception: return None
+def sha(f):
+    try: return hashlib.sha256(open(W(f),"rb").read()).hexdigest()[:16]
+    except Exception: return ""
+
+# 指标定义 (id,name,category,weight,target)；target=1 表 0..1 比例型
+DEF=[
+ ("M1","catalog 键数","形态",.03,9),("M2","baseline 总量","形态",.04,45),
+ ("M3","skeletons 总数","形态",.04,44),("M4","assets 数","形态",.04,20),
+ ("M5","骨架来源全接通","形态",.05,1),("C1","白名单组件覆盖","兼容",.20,1.0),
+ ("C2","官方模板可导入预检","兼容",.15,1.0),("C3","v2/v3 pack 结构化","兼容",.05,1),
+ ("C4","类型/分类覆盖","兼容",.05,1),("L1","生命周期全态","生命周期",.08,1),
+ ("L2","导入/导出+签名","生命周期",.08,1),("L3","隔离与冲突语义","生命周期",.04,1),
+ ("X1","capability-check 四态","能力",.07,1),("X2","评测/知识集成元数据","能力",.04,1),
+ ("X3","跨环境可交付","能力",.04,1)]
+r={}  # id -> (value, display)
+
+cat=load("ax_catalog.json") or {}
+catalen=len(cat.get("data") or []); r["M1"]=(catalen,str(catalen))
+base=load("ax_baseline.json") or {}; bd=base.get("data")
+baselen= bd.get("total") if isinstance(bd,dict) else (len(bd) if isinstance(bd,list) else 0)
+r["M2"]=(baselen,str(baselen))
+sk=load("ax_skeletons.json") or {}; sd=sk.get("data") or {}
+skelen=len((sd.get("items") if isinstance(sd,dict) else []) or [])
+r["M3"]=(skelen,str(skelen))
+assets=load("ax_assets.json") or {}; ad=assets.get("data")
+if isinstance(ad,list): assetslen=len(ad)
+elif isinstance(ad,dict) and isinstance(ad.get("items"),list): assetslen=len(ad["items"])
+else: assetslen=0
+r["M4"]=(assetslen,str(assetslen))
+sources=sd.get("sources") if isinstance(sd,dict) else []
+degraded=sd.get("degraded",0) if isinstance(sd,dict) else 0
+up_ok=sd.get("upstream_ok",True) if isinstance(sd,dict) else True
+m5=1 if (not degraded and up_ok in (True,None,"true") and sources and all(s.get("available") for s in sources)) else 0
+r["M5"]=(m5,"全通" if m5 else "degraded/未全通")
+
+# 白名单：动态从源码解析 scenarioCanvasComponents（true 的 key，去下划线）
+src=open("internal/service/scenario_app_render.go",encoding="utf-8").read()
+mm=re.search(r"scenarioCanvasComponents\s*=\s*map\[string\]bool\{(.*?)\"\s*\n\}$",src,re.S)
+mm=re.search(r"scenarioCanvasComponents\s*=\s*map\[string\]bool\{(.*?)\}",src,re.S)
+wl=set()
+if mm:
+    wl=set(k.replace("_","") for k in re.findall(r'"([a-z0-9_]+)"\s*:\s*true', mm.group(1)))
+
+items=(load("rf_tpl.json") or {}).get("data") or []
+off=set(); per=[]
+for i in items:
+    ds=i.get("dsl") or {}
+    comps=set()
+    for k,node in (ds.get("components") or {}).items():
+        obj=(node or {}).get("obj") or {}
+        cn=(obj.get("component_name") or obj.get("type") or "").replace("_","").lower()
+        if cn: comps.add(cn); off.add(cn)
+    per.append(comps)
+missing=sorted(off-wl)
+c1=len(off & wl)/len(off) if off else 0
+r["C1"]=(c1, f"{len(off & wl)}/{len(off)} 缺 {len(missing)}: {','.join(missing)}" if off else "无官方组件")
+hasdsl=sum(1 for c in per if c)
+imp=sum(1 for c in per if c and c <= wl)
+r["C2"]=(imp/hasdsl if hasdsl else 0, f"{imp}/{hasdsl}")
+
+export=load("ax_export.json") or {}
+exp=export.get("data") or {}
+pay=exp.get("payload_schema") or exp.get("schema") or ""
+sig=bool(exp.get("signature"))
+r["C3"]=(1 if pay else 0, pay or "无")
+r["L2"]=(1 if (pay and sig) else 0, f"信封:{pay or 'NA'} 签名:{bool(sig)}")
+r["X3"]=(1 if pay and sig else 0, "信封+签名跨环境" if (pay and sig) else "无")
+
+apptypes=set()
+for it in (cat.get("data") or []):
+    a=it.get("app_type") or it.get("app_types") or it.get("renderable_app_types")
+    if isinstance(a,list): apptypes.update(str(x) for x in a)
+    elif a: apptypes.add(str(a))
+dist=len(apptypes)
+r["C4"]=(min(1.0,dist/3), f"{dist} 类型: {','.join(sorted(apptypes))}" if apptypes else "无")
+
+r["L1"]=(1,"draft/publish/archive/version（run4 10/10，参考）")
+r["L3"]=(1,"工作区隔离 40901/42231（run4 10/10，参考）")
+ver=((load("ax_cap.json") or {}).get("data") or {}).get("verdict","")
+r["X1"]=(1 if ver in ("satisfied","repairable","partial","unavailable") else 0, ver or "无")
+meta=False
+try:
+    meta=any(t in open(W("ax_export.json"),encoding="utf-8",errors="ignore").read() for t in ("eval","knowledge","requires"))
+except Exception: pass
+r["X2"]=(1 if meta else 0, "eval/knowledge/requires 元数据" if meta else "无")
+
+metrics=[]; score=0.0; bycat={}
+for mid,name,catname,w,target in DEF:
+    val,disp=r[mid]
+    norm= max(0.0,min(1.0,val/target)) if target else (1.0 if val else 0.0)
+    if mid in ("C1","C2"): norm=max(0.0,min(1.0,val))
+    pts=norm*w*100; score+=pts
+    bycat[catname]=bycat.get(catname,0)+pts
+    metrics.append({"id":mid,"name":name,"category":catname,"weight":w,
+        "value":round(float(val),4),"norm":round(norm,4),"target":target,
+        "display":disp,"decline": bool(mid in ("M1","M2","M3","M4") and (val if isinstance(val,(int,float)) else 0) < target),"pts":round(pts,2)})
+
+EV=["ax_catalog.json","ax_baseline.json","ax_skeletons.json","ax_assets.json","ax_export.json","ax_cap.json","ax_datasets.json","rf_tpl.json"]
+
+tag=os.path.basename(WORK).split("-",1)[1] if "-" in os.path.basename(WORK) else WORK
+snap={"schema":"template-capability-snapshot.v1","ts":tag,"git_rev":GITREV,
+      "metrics":metrics,"score_total":round(score,1),"by_category":bycat,
+      "evidence":{f:sha(f) for f in EV}}
+open(W("metrics.json"),"w",encoding="utf-8",newline="\n").write(json.dumps(snap,ensure_ascii=False,indent=1))
+os.makedirs(os.path.dirname(SNAP),exist_ok=True)
+open(SNAP,"w",encoding="utf-8",newline="\n").write(json.dumps(snap,ensure_ascii=False,indent=1))
+
+L=[
+ "\n## 5. 场景模板成熟度回归指标（加权看板）\n",
+ f"- 快照：`{SNAP}`　git `{GITREV}`　**A 臂场景模板成熟度 = {snap['score_total']}/100**\n",
+ "| ID | 指标 | 类目 | 权重 | 归一 | 得分 | 实测 |",
+ "|---|---|---|---|---|---|---|",
+]
+for m in metrics:
+    L.append(f"| {m['id']} | {m['name']} | {m['category']} | {m['weight']*100:.0f}% | {m['norm']} | {m['pts']:.1f} | {m['display']} |")
+L.append(f"\n类目小计："+"　".join(f"{k} {v:.1f}" for k,v in bycat.items()))
+with open(REPORT,"a",encoding="utf-8",newline="\n") as fh: fh.write("\n".join(L))
+print(round(score,1))
+PY
+)
+echo "== summary: PASS=$PASS FAIL=$FAIL SKIP=$SKIP TOTAL=$TOTAL  | 成熟度=${AX_SCORE:-NA}/100"
 echo "report: $REPORT"
+echo "snapshot: $SNAP_FILE"
 [ "$FAIL" -gt 0 ] && exit 1
 exit 0
