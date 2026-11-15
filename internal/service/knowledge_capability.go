@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
-	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 )
 
 // Capability check (doc/276 §6.5 + §7.3 / R3, R15, R21).
@@ -89,6 +89,10 @@ type CapabilityRepair struct {
 	Action   string `json:"action"`
 	Reason   string `json:"reason"`
 	Severity string `json:"severity"`
+	// Endpoint is the machine-readable exec path for actions that have one
+	// (doc/282 §6). Only genuinely executable repairs carry a hint; advisory
+	// actions leave it empty rather than promising a fake channel.
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // RequirementVerdict is the per-requirement outcome for one dataset.
@@ -540,6 +544,10 @@ func EvaluateRequirements(knowledge *ScenarioTemplateKnowledge, role string, pro
 				verdict.Repairs = append(verdict.Repairs, CapabilityRepair{
 					Action: "enable_pushdown_and_sync_meta", Severity: CapabilityVerdictRepairable,
 					Reason: "enable metadata pushdown on the dataset and re-sync document meta_fields",
+					// The closure channel is the existing dataset update: enabling
+					// pushdown triggers the (async) meta_fields backfill
+					// (doc/282 §4, defect #13).
+					Endpoint: "PUT /api/v1/datasets/" + profile.DatasetID + " (pushdown_enabled=true, acknowledge_shared_impact=true)",
 				})
 			} else {
 				item.Reason = "below_min_level"
@@ -614,6 +622,8 @@ func (k ScenarioTemplateKnowledge) chunkMethodRepairs(role string, profile *Data
 	return []CapabilityRepair{{
 		Action: "apply_parse_profile", Severity: CapabilityVerdictRepairable,
 		Reason: "chunk_method is " + profile.ChunkMethod + ", template expects " + wanted,
+		// The dedicated parse-profile endpoint applies chunk_method + reparse.
+		Endpoint: "POST /api/v1/datasets/" + profile.DatasetID + "/parse-profile",
 	}}
 }
 

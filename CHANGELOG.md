@@ -39,6 +39,14 @@
   `40105 application.prompt.system is required`，现改调 `ValidateDraft()`，凭据/外链/未知字段扫描
   均保留，publish 仍跑全量校验。两处均有反向验证的单测（去补丁即失败）。待 CI 对一路修复验证
   通过、Track B 收口后统一决定发版。
+- **pushdown 元数据回填静默失效（`main` 已修，v0.5.3 发布二进制未含；doc/282 缺陷 #13）**：
+  开启 retrieval pushdown 后的 `meta_fields` 回填 goroutine 复用了请求级 ctx，gin 在 handler 返回
+  时取消该 ctx，上游写入（`POST /api/v1/datasets/{id}/metadata/update`）落库前被中断，导致文档
+  `rgx_sensitivity` 从不写入、pushdown 条件匹配与场景模板 `capability-check metadata_filter`
+  永远等不到文档 meta。修复：回填改用 `context.WithoutCancel + 120s` 脱离请求取消，同步语义不变
+  （仍 fire-and-forget、失败不阻塞调用方）。单测 `TestDetachedSyncContextOutlivesRequestCancellation`
+  钉住（退回请求 ctx 即红）；真机闭环：pushdown on → `meta_fields={"rgx_sensitivity":"internal"}`
+  → capability-check `satisfied` → `repair_completion_rate n=1/d=1`。
 
 ## [0.5.2] - 2026-11-13
 

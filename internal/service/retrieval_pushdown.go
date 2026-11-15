@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/notify"
@@ -34,7 +35,22 @@ const (
 
 	// metadataBatchSize bounds each POST /metadata/update payload.
 	metadataBatchSize = 100
+
+	// metadataSyncTimeout bounds a detached pushdown backfill so a slow
+	// upstream never leaks goroutines (doc/282 §4 / defect #13).
+	metadataSyncTimeout = 120 * time.Second
 )
+
+// detachedSyncContext decouples the pushdown backfill from the calling
+// request's lifetime (doc/282 §4, defect #13). A fire-and-forget goroutine
+// must not inherit the request-scoped ctx: gin cancels it as soon as the
+// handler returns, aborting the upstream metadata write before it lands —
+// which is exactly why pushdown-enabled datasets never observed
+// rgx_sensitivity in live drills. WithoutCancel keeps values/deadlines but
+// strips cancellation; the timeout then bounds the detached run.
+func detachedSyncContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), metadataSyncTimeout)
+}
 
 // normalizeSensitivity maps a governance sensitivity value onto the
 // fail-closed scale shared with citationRedactionReasons (doc/118 F-06):
@@ -205,6 +221,11 @@ func (s *Service) SyncDatasetPushdownMetadata(ctx context.Context, tenantID, dat
 	}
 	ids := make([]string, 0, len(docs))
 	for _, doc := range docs {
+		// Skip documents without an upstream id (parity with
+		// enabledDocumentIDs): an empty id in the selector would be nonsense.
+		if strings.TrimSpace(doc.ID) == "" {
+			continue
+		}
 		ids = append(ids, doc.ID)
 	}
 	for start := 0; start < len(ids); start += metadataBatchSize {
@@ -222,8 +243,13 @@ func (s *Service) SyncDatasetPushdownMetadata(ctx context.Context, tenantID, dat
 // syncDatasetPushdownMetadataAsync best-effort wrapper for governance flows:
 // failures never block the caller (doc/123 §5.3).
 func (s *Service) syncDatasetPushdownMetadataAsync(ctx context.Context, tenantID, datasetID string) {
+	// Run on a detached ctx (doc/282 §4 / defect #13): the goroutine must
+	// outlive the calling handler, otherwise request-cancellation aborts the
+	// upstream metadata write and meta never lands on documents.
+	bg, cancel := detachedSyncContext(ctx)
 	go func() {
-		if err := s.SyncDatasetPushdownMetadata(ctx, tenantID, datasetID); err != nil {
+		defer cancel()
+		if err := s.SyncDatasetPushdownMetadata(bg, tenantID, datasetID); err != nil {
 			notify.Emit(context.Background(), notify.Event{
 				Title: "retrieval pushdown metadata sync failed", Severity: "warn", TenantID: tenantID,
 				Type: "knowledge.pushdown_sync_failed", Resource: "dataset", ResourceID: datasetID,
