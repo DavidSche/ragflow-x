@@ -31,7 +31,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -107,38 +107,17 @@ jobs:
           echo "::error::CJK fonts could not be installed after 3 bounded attempts; the ubuntu mirror was unreachable. Re-run this job once the network recovers."
           exit 1
 
-      # Lock the dump/restore toolchain to the same major version as the
-      # postgres:16-alpine service container. The Ubuntu runner's default
-      # pg_dump/pg_restore 18.x write `SET transaction_timeout = 0;` into the
-      # archive, a PG17+ GUC that a PG16 server rejects with `--exit-on-error`
-      # at the very first statement (doc/283 §8). Pinning to 16 makes the
-      # release-rollback contract exercise our migration path instead of a
-      # tool-vs-server GUC barrier.
-      - name: Install PostgreSQL 16 client (version-lock dump/restore)
-        shell: bash
-        run: |
-          APT_OPTS="-o Acquire::http::Timeout=20 -o Acquire::Retries=2 -o Acquire::ForceIPv4=true"
-          for attempt in 1 2 3; do
-            if sudo DEBIAN_FRONTEND=noninteractive timeout 180 apt-get $APT_OPTS update &&
-               sudo DEBIAN_FRONTEND=noninteractive timeout 240 apt-get -y $APT_OPTS install postgresql-client-16; then
-              break
-            fi
-            echo "::warning::postgresql-client-16 install attempt ${attempt} failed (mirror/DNS); retrying in 10s"
-            sleep 10
-          done
-          ls -l /usr/lib/postgresql/16/bin/pg_dump /usr/lib/postgresql/16/bin/pg_restore || {
-            echo "::error::PostgreSQL 16 client binaries missing after install"
-            exit 1
-          }
-          /usr/lib/postgresql/16/bin/pg_dump --version
-          /usr/lib/postgresql/16/bin/pg_restore --version
-
+      # Pinned to postgres:17-alpine so the runner's bundled pg_dump/pg_restore
+      # (18.x — ubuntu-26 no longer ships postgresql-client-16) can both create
+      # and restore the release-rollback archive: 18.x writes `SET
+      # transaction_timeout = 0;` (PG17+ GUC) into the archive, which a 16
+      # server rejects with --exit-on-error at the first statement but a 17
+      # server understands (doc/283 §8). version print in the test now
+      # documents the controlled tool-vs-server pairing (18.6 <-> 17).
       - name: Run all tests (with PostgreSQL)
         env:
           RGX_DB_DSN: "postgres://postgres:postgres@localhost:5432/ragflow_x_test?sslmode=disable"
           RGX_TEST_POSTGRES_DSN: "postgres://postgres:postgres@localhost:5432/ragflow_x_test?sslmode=disable"
-          RGX_TEST_PG_DUMP_BIN: "/usr/lib/postgresql/16/bin/pg_dump"
-          RGX_TEST_PG_RESTORE_BIN: "/usr/lib/postgresql/16/bin/pg_restore"
         shell: bash
         run: |
           set -o pipefail

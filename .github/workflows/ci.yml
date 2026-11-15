@@ -267,7 +267,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -296,6 +296,11 @@ jobs:
           cache-dependency-path: go.sum
           cache: true
 
+      # Pinned to postgres:17-alpine so the runner's bundled pg_dump/pg_restore
+      # (18.x on ubuntu-26, which now lacks postgresql-client-16) can create and
+      # restore the release-rollback archive: 18.x writes `SET
+      # transaction_timeout = 0;` (PG17+ GUC) and a 17 server understands it,
+      # while a 16 server rejects it under --exit-on-error (doc/283 §8).
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -307,26 +312,7 @@ jobs:
         run: npm ci
         working-directory: web
 
-      # Version-lock dump/restore to the postgres:16-alpine service container
-      # (same reasoning as integration.yml; doc/283 §8).
-      - name: Install PostgreSQL 16 client (version-lock dump/restore)
-        shell: bash
-        run: |
-          APT_OPTS="-o Acquire::http::Timeout=20 -o Acquire::Retries=2 -o Acquire::ForceIPv4=true"
-          for attempt in 1 2 3; do
-            if sudo DEBIAN_FRONTEND=noninteractive timeout 180 apt-get $APT_OPTS update &&
-               sudo DEBIAN_FRONTEND=noninteractive timeout 240 apt-get -y $APT_OPTS install postgresql-client-16; then
-              break
-            fi
-            echo "::warning::postgresql-client-16 install attempt ${attempt} failed (mirror/DNS); retrying in 10s"
-            sleep 10
-          done
-          ls -l /usr/lib/postgresql/16/bin/pg_dump /usr/lib/postgresql/16/bin/pg_restore || { echo "::error::PostgreSQL 16 client binaries missing"; exit 1; }
-
       - name: Run Changed Lines Coverage gate
-        env:
-          RGX_TEST_PG_DUMP_BIN: "/usr/lib/postgresql/16/bin/pg_dump"
-          RGX_TEST_PG_RESTORE_BIN: "/usr/lib/postgresql/16/bin/pg_restore"
         shell: bash
         run: |
           set -o pipefail
