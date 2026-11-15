@@ -163,11 +163,6 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open restored target: %v", err)
 	}
-
-	target, err = openPostgresContractDB(targetDSN)
-	if err != nil {
-		t.Fatalf("open restored target: %v", err)
-	}
 	var restoredVersion int64
 	if err := target.Model(&model.SchemaVersion{}).
 		Select("COALESCE(MAX(version), 0)").Scan(&restoredVersion).Error; err != nil {
