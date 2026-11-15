@@ -93,6 +93,35 @@ func TestEvaluateRequirementsChunkMethodMismatchIsRepairable(t *testing.T) {
 	}
 }
 
+// TestEvaluateRequirementsRepairEndpointHints pins doc/282 §6: repairs that
+// have a real executable channel carry a machine-readable endpoint hint, so
+// the board/UI can render "how to repair". Only genuinely executable actions
+// get a hint — advisory repairs stay empty rather than promising a fake path.
+func TestEvaluateRequirementsRepairEndpointHints(t *testing.T) {
+	metaContract := &ScenarioTemplateKnowledge{
+		RequiredCapabilities: []ScenarioCapabilityRequirement{
+			{Capability: "metadata_filter", Scope: scenarioRequirementScopeAll, MinLevel: CapabilityStatusReady},
+		},
+	}
+	metaProfile := DatasetCapabilityProfile{DatasetID: "ds-meta", DocumentCount: 2, ParsedCount: 2}
+	metaVerdict := EvaluateRequirements(metaContract, scenarioDatasetRolePrimary, metaProfile)
+	if got := metaVerdict.Repairs[0].Endpoint; got != "PUT /api/v1/datasets/ds-meta (pushdown_enabled=true, acknowledge_shared_impact=true)" {
+		t.Fatalf("meta repair endpoint hint mismatch: %q", got)
+	}
+
+	parseContract := &ScenarioTemplateKnowledge{
+		Datasets: []ScenarioKnowledgeDataset{{
+			Role:        scenarioDatasetRolePrimary,
+			ParseIntent: &ScenarioParseIntent{Mode: model.ParseModeBuiltin, ChunkMethod: "book"},
+		}},
+	}
+	parseProfile := DatasetCapabilityProfile{DatasetID: "ds-parse", ChunkMethod: "general"}
+	parseVerdict := EvaluateRequirements(parseContract, scenarioDatasetRolePrimary, parseProfile)
+	if got := parseVerdict.Repairs[0].Endpoint; got != "POST /api/v1/datasets/ds-parse/parse-profile" {
+		t.Fatalf("parse repair endpoint hint mismatch: %q", got)
+	}
+}
+
 func TestAggregateVerdictsHonoursAnyPrimary(t *testing.T) {
 	verdicts := []DatasetCapabilityVerdict{
 		{Role: scenarioDatasetRolePrimary, Verdict: CapabilityVerdictSatisfied},

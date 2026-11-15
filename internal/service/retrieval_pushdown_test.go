@@ -232,3 +232,21 @@ func TestSyncDatasetPushdownMetadata(t *testing.T) {
 		}
 	}
 }
+
+// TestDetachedSyncContextOutlivesRequestCancellation pins defect #13
+// (doc/282 §4): the async backfill must survive the caller's request being
+// cancelled the moment the handler returns. Before the fix the goroutine
+// inherited the request ctx, so upstream metadata writes were aborted and
+// pushdown-enabled datasets never gained rgx_sensitivity in live drills.
+func TestDetachedSyncContextOutlivesRequestCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	detached, timeout := detachedSyncContext(ctx)
+	defer timeout()
+
+	// Simulate the handler returning: the request ctx is cancelled, which
+	// used to kill the in-flight backfill before its upstream call landed.
+	cancel()
+	if err := detached.Err(); err != nil {
+		t.Fatalf("detached backfill ctx must survive request cancellation, got: %v", err)
+	}
+}
