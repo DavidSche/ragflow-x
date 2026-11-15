@@ -15,6 +15,14 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
+// logStage marks the progress of the long dump/restore pipeline so a CI run's
+// captured output identifies exactly which external operation failed without
+// needing the full job log. doc/283 §4.
+func logStage(t *testing.T, format string, args ...interface{}) {
+	t.Helper()
+	t.Logf("[release-rollback] "+format, args...)
+}
+
 func TestPostgresReleaseRollbackContract(t *testing.T) {
 	baseDSN := os.Getenv("RGX_TEST_POSTGRES_DSN")
 	if strings.TrimSpace(baseDSN) == "" {
@@ -36,6 +44,15 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 		t.Skipf("pg_restore unavailable: %v", err)
 	}
 
+	// Surface the exact toolchain so host/client version skew (a CI runner
+	// image drift can silently change the bundled pg_dump/pg_restore) is visible
+	// in captured output instead of surfacing as an opaque dump failure.
+	for _, b := range []string{dumpBinary, restoreBinary} {
+		if vOut, vErr := exec.Command(b, "--version").Output(); vErr == nil {
+			t.Logf("[release-rollback] %s version: %s", filepath.Base(b), strings.TrimSpace(string(vOut)))
+		}
+	}
+
 	admin, err := sql.Open("pgx", baseDSN)
 	if err != nil {
 		t.Fatalf("open postgres admin: %v", err)
@@ -45,6 +62,7 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 		t.Fatalf("ping postgres admin: %v", err)
 	}
 
+	logStage(t, "admin connected; preparing isolated target database")
 	nonce := strings.ToLower(fmt.Sprintf("%x", time.Now().UnixNano()))
 	targetName := "rgx_release_rollback_" + nonce
 	targetDSN := swapPostgresDatabase(baseDSN, targetName)
@@ -62,6 +80,7 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open migration target: %v", err)
 	}
+	logStage(t, "migrating isolated target to baseline %d", baselineVersion)
 	if err := MigrateTo(target, baselineVersion); err != nil {
 		t.Fatalf("migrate to baseline: %v", err)
 	}
@@ -88,14 +107,29 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 		t.Fatalf("close baseline target: %v", err)
 	}
 
+	// The baseline dump is an idempotent read of an untouched schema, so a
+	// transient external-process failure (FS/pipe/timing under CI load) is safe
+	// to retry once; a schema regression produces the same failure on retry and
+	// still fails loudly with both attempts' output. doc/283 §4.
 	backupPath := filepath.Join(t.TempDir(), "release-baseline.dump")
-	if err := runPostgresTool(t, dumpBinary, []string{
-		"--format=custom",
-		"--serializable-deferrable",
-		"--file=" + backupPath,
-		targetDSN,
-	}); err != nil {
-		t.Fatalf("create pg_dump baseline: %v", err)
+	var dumpErr error
+	logStage(t, "creating pg_dump baseline (custom, serializable-deferrable)")
+	for attempt := 1; attempt <= 2; attempt++ {
+		dumpErr = runPostgresTool(t, dumpBinary, []string{
+			"--format=custom",
+			"--serializable-deferrable",
+			"--file=" + backupPath,
+			targetDSN,
+		})
+		if dumpErr == nil {
+			break
+		}
+		if attempt == 1 {
+			t.Logf("[release-rollback] pg_dump attempt 1 failed, retrying: %v", dumpErr)
+		}
+	}
+	if dumpErr != nil {
+		t.Fatalf("create pg_dump baseline (after retry): %v", dumpErr)
 	}
 	info, err := os.Stat(backupPath)
 	if err != nil {
@@ -104,6 +138,7 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 	if info.Size() == 0 {
 		t.Fatal("pg_dump baseline is empty")
 	}
+	logStage(t, "pg_dump baseline ok (%d bytes); rebuilding target from dump", info.Size())
 
 	if err := dropPostgresDatabase(admin, targetName); err != nil {
 		t.Fatalf("drop upgraded target: %v", err)
@@ -111,6 +146,7 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 	if err := createPostgresDatabase(admin, targetName, ""); err != nil {
 		t.Fatalf("create restore target: %v", err)
 	}
+	logStage(t, "restoring baseline from dump (exit-on-error, no-owner)")
 	if err := runPostgresTool(t, restoreBinary, []string{
 		"--exit-on-error",
 		"--clean",
@@ -121,6 +157,11 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 		backupPath,
 	}); err != nil {
 		t.Fatalf("restore pg_dump baseline: %v", err)
+	}
+	logStage(t, "restore ok; verifying restored schema/data")
+	target, err = openPostgresContractDB(targetDSN)
+	if err != nil {
+		t.Fatalf("open restored target: %v", err)
 	}
 
 	target, err = openPostgresContractDB(targetDSN)
@@ -151,6 +192,7 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 		t.Fatalf("restored baseline records %d post-upgrade schema versions, want 0", futureVersions)
 	}
 
+	logStage(t, "baseline restored at version %d; re-applying latest %d", restoredVersion, latestVersion)
 	if err := MigrateTo(target, latestVersion); err != nil {
 		t.Fatalf("re-apply latest after rollback: %v", err)
 	}
@@ -163,6 +205,7 @@ func TestPostgresReleaseRollbackContract(t *testing.T) {
 		t.Fatalf("recovered schema version = %d, want %d", recoveredVersion, latestVersion)
 	}
 	assertReleaseRollbackBusinessData(t, target, workspace.ID, operator.ID, 1)
+	logStage(t, "recovery ok at version %d; contract complete", recoveredVersion)
 	if err := closePostgresContractDB(target); err != nil {
 		t.Fatalf("close recovered target: %v", err)
 	}
