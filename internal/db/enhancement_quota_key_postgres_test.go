@@ -2,12 +2,8 @@ package db
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
-
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
@@ -19,20 +15,7 @@ import (
 // stayed green. Found by the milestone 201 deployment drill; this contract
 // pins the widened columns so the regression cannot come back silently.
 func TestPG145EnhancementQuotaKeyColumnsAcceptFullQuotaKey(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the PostgreSQL enhancement quota key contract")
-	}
-
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 
 	if err := Migrate(gdb); err != nil {
 		t.Fatalf("postgres migration: %v", err)

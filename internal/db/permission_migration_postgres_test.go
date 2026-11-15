@@ -1,11 +1,7 @@
 package db
 
 import (
-	"os"
 	"testing"
-
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
@@ -18,20 +14,7 @@ import (
 // delete-then-insert really applies inside the migration transaction on the
 // database shape the workspace actually runs.
 func TestMigrationV158BusinessUserReadsPostgreSQL(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the RBAC read-intent migration contract")
-	}
-
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		if err := Migrate(gdb); err != nil {
@@ -100,20 +83,7 @@ func TestMigrationV158BusinessUserReadsPostgreSQL(t *testing.T) {
 // declared in role_lattice.go must hold on the rows of an already-migrated
 // database after the corrective step runs, twice (re-entry), on PostgreSQL.
 func TestMigrationV159RoleLatticePostgreSQL(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the role-lattice migration contract")
-	}
-
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		if err := Migrate(gdb); err != nil {
@@ -184,20 +154,7 @@ func TestMigrationV159RoleLatticePostgreSQL(t *testing.T) {
 // tenant-wide operational/governance/config reads, gains nothing writable, and
 // the migration is a no-op when re-run.
 func TestMigrationV161ViewerConvergencePostgreSQL(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the viewer convergence migration contract")
-	}
-
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		if err := Migrate(gdb); err != nil {
@@ -257,20 +214,7 @@ func TestMigrationV161ViewerConvergencePostgreSQL(t *testing.T) {
 // eval-set:execute), and that re-running the migration is a no-op. This is the
 // concrete "existing deployment gets fixed" evidence for doc/244.
 func TestMigrationV160TrialRunPostgreSQL(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the trial-run migration contract")
-	}
-
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		if err := Migrate(gdb); err != nil {

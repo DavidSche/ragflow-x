@@ -1,30 +1,14 @@
 package db
 
 import (
-	"os"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 // ScenarioID: SC-PG-001
 func TestP0_PG_001_PostgresMigrationIsIdempotentUnderContract(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the PostgreSQL migration contract")
-	}
-
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 
 	if err := Migrate(gdb); err != nil {
 		t.Fatalf("initial postgres migration: %v", err)
