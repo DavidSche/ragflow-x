@@ -8,6 +8,32 @@
 > 引用约定：文中 `doc/NNN`、`doc/<目录>` 为工程内部设计/性能记录编号，**不随本仓库发布**，仅用于追证；
 > 随仓库发布的用户文档在 [`doc/user`](./doc/user/README.md)（用户手册、权限矩阵、运维 Runbook、审计链 SOP）。
 
+## [Unreleased]
+
+> **规划 0.6.0（minor）**：自 v0.5.3 累计 14 个提交，工程面收口 + 功能增强。含 **schema 变更
+> （迁移 v166 → v167：能力检查证据持久化）**，按语义化版本需 minor 升版；升级方式为替换二进制后
+> 启动即自动迁移。仍在 dev 版本变量记账，发版 tag 另行收口。
+
+### 新增
+
+- **能力检查证据持久化 + 修复完成率口径**（迁移 **v167**）：capability evidence 落库，
+  `repair_completion_rate` 改为由证据计算，搜索型场景模板实例化 happy path 打通。
+- **发布候选清单 provenance 盖印（R28）**：候选 manifest 顶层标记 `legacy_reconstructed` 来源，
+  哈希覆盖区可审计。
+- **场景模板 §7.5 rule 4 孤儿实例暴露 + 持久清理任务**：实例引用的孤儿 refs 失败即持久化并打
+  `orphan_warning` 标记；新增 `instantiation_orphan_reconcile` 常驻 worker（报告/审计式，不自动删上游）。
+- **模板能力回归看板脚本**：`scripts/template-capability-compare.sh` 超照比对/回归板（snapshot/ diff）。
+
+### 修复
+
+- **meta@ready 缺陷 #13**（retrieval-pushdown）：meta_fields 回填改用分离上下文，修复端点给出可行动提示。
+- **导入信任扫描**不再拒绝草稿或良性 token key。
+- **PG 契约测试确定性红修复**：共享 DSN 改为每测试独立库；release-rollback dump/restore 加固；
+  CI 服务容器配对 postgres:17-alpine，消除宿主 pg_dump/pg_restore 18.x 写 PG17+ GUC 导致的
+  `transaction_timeout` 确定性失败（ubuntu-26 环境）。
+- **可观测性**：外部 dump/restore 失败 stderr 进 stage 首窗（annotations 首窗可见）。
+- **go-lint 清理**（SA4006）与冷启动采样器丢帧/误计数修复。
+
 ## [0.5.3] - 2026-11-13
 
 > **补丁版本：深链保留 + lint 门禁。** 无 schema 变更（仍为迁移 v166）、无 API 契约变更、
