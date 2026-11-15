@@ -238,7 +238,13 @@ func runPostgresTool(t *testing.T, binary string, args []string) error {
 	}
 	trimmed := strings.TrimSpace(string(output))
 	if trimmed == "" {
+		logStage(t, "%s failed: %v", filepath.Base(binary), err)
 		return fmt.Errorf("%s failed: %v", filepath.Base(binary), err)
 	}
+	// Re-emit the external tool's stderr through the S-prefix stage marker so
+	// the failure lands in the first annotation window (doc/283 §4): the
+	// T-prefix assertion lines carry it too, but GitHub surfaces only a small
+	// window and marks grab the first slots.
+	logStage(t, "%s failed: %s", filepath.Base(binary), strings.ReplaceAll(trimmed, "\n", " · "))
 	return fmt.Errorf("%s failed: %s", filepath.Base(binary), trimmed)
 }
