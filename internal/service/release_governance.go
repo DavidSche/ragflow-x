@@ -301,6 +301,15 @@ func (s *Service) CreateScenarioTemplateReleaseCandidate(
 	if err != nil {
 		return nil, err
 	}
+	// R28 (doc/276 §7.7): a release candidate manifest must carry the snapshot
+	// provenance of the referenced template version, and must make the
+	// legacy_semantics_unknown limitation explicit for a migration-stabilized
+	// v2 preset so consumers never read it as "identical to history".
+	provenance := selected.SnapshotProvenance
+	if provenance == "" {
+		provenance = model.SnapshotAuthored
+	}
+	legacySemanticsUnknown := provenance == model.SnapshotLegacyReconstructed
 	templatePayload, err := parseTemplatePayload(selected.PayloadJSON)
 	if err != nil {
 		return nil, err
@@ -315,7 +324,18 @@ func (s *Service) CreateScenarioTemplateReleaseCandidate(
 		payload := map[string]any{
 			"schema":                scenarioTemplateSchema,
 			"template_payload_hash": payloadHash,
-			"value":                 value,
+			// R28 (doc/276 §7.7): every frozen section declares the provenance
+			// of the template version it was built from; prompt additionally
+			// flags legacy_semantics_unknown so a migration-stabilized v2
+			// preset is never read as "identical to history". These live in the
+			// payload (covered by the section hash) rather than the value body,
+			// so the mark is tamper-evident and distinct from template content.
+			"snapshot_provenance": provenance,
+			"payload_schema":      selected.PayloadSchema,
+			"value":               value,
+		}
+		if name == model.CandidateManifestPrompt {
+			payload["legacy_semantics_unknown"] = legacySemanticsUnknown
 		}
 		raw, marshalErr := json.Marshal(payload)
 		if marshalErr != nil {
