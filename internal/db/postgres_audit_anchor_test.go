@@ -1,30 +1,15 @@
 package db
 
 import (
-	"os"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 // ScenarioID: SC-AUDIT-001
 func TestP0_AUDIT_001_PostgresAuditAnchorImmutability(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the PostgreSQL baseline")
-	}
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatalf("get sql db: %v", err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 	if err := Migrate(gdb); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

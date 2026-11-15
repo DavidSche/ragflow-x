@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -12,8 +11,6 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/db/dbtest"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 func int64Ptr(value int64) *int64 { return &value }
@@ -61,24 +58,10 @@ func TestListReleaseCandidatesUsesIndependentCountAndListQueries(t *testing.T) {
 }
 
 func TestListReleaseCandidatesPostgreSQLPagination(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the PostgreSQL pagination contract")
-	}
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if sqlDB, err := gdb.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	}()
-
-	store := NewStore(gdb)
+	store := newPostgresContractStore(t)
 	ctx := context.Background()
 	tenantID := id.New()
-	err = store.WithinTransaction(ctx, func(tx Store) error {
+	err := store.WithinTransaction(ctx, func(tx Store) error {
 		now := time.Now().UTC()
 		for version := int64(1); version <= 2; version++ {
 			candidate := &model.ReleaseCandidate{

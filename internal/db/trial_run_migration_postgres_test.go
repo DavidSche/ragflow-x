@@ -1,11 +1,7 @@
 package db
 
 import (
-	"os"
 	"testing"
-
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
@@ -15,20 +11,7 @@ import (
 // §3). SQLite covers the DDL guards; PostgreSQL covers the real ALTER TABLE
 // behaviour and the two unique keys that make runs replay-safe.
 func TestMigrationV157TrialRunPostgreSQLReentry(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the trial run migration re-entry contract")
-	}
-
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		if err := Migrate(gdb); err != nil {

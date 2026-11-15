@@ -2,13 +2,9 @@ package db
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
-
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 // ScenarioID: SC-PG-118-F02
@@ -18,20 +14,7 @@ import (
 // was `RETURN OLD`, silently allowing every mutation; migration 108 repairs
 // the function with RAISE EXCEPTION semantics.
 func TestAnswerDeliveryFreezeGuardsPostgreSQL(t *testing.T) {
-	dsn := os.Getenv("RGX_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("set RGX_TEST_POSTGRES_DSN to run the PostgreSQL freeze guard regression")
-	}
-
-	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	sqlDB, err := gdb.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = sqlDB.Close() }()
+	gdb := isolatedPostgresDB(t)
 
 	if err := Migrate(gdb); err != nil {
 		t.Fatalf("migrate: %v", err)
