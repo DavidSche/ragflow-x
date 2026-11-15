@@ -319,6 +319,10 @@ jobs:
 
             grep -E '^[[:space:]]+/?[^ ]+_test\.go:[0-9]+:' test-results/changed-coverage.log | head -100 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
             grep -E '(^| )FAIL.*\(test timed out|panic:|is below|^FAIL)' test-results/changed-coverage.log | head -40 | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
+            # make test-coverage emits go test -json: surface release-rollback stage
+            # markers and failing tests from the JSON stream too (doc/283 §4).
+            grep -E 'release-rollback|pg_dump|pg_restore' test-results/changed-coverage.log | head -100 | awk '{printf "::error title=J%06d::%s\n", NR, $0}' || true
+            grep -E '"Action":"fail"' test-results/changed-coverage.log | head -60 | awk '{printf "::error title=K%06d::%s\n", NR, $0}' || true
             tail -30 test-results/changed-coverage.log | awk '{printf "::error title=H%06d::%s\n", NR, $0}' || true
             exit 1
           }
