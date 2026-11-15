@@ -205,6 +205,108 @@ func TestCreateScenarioTemplateReleaseCandidate(t *testing.T) {
 	}
 }
 
+func decodeCandidatePayload(t *testing.T, manifest map[string]json.RawMessage, section string) map[string]any {
+	t.Helper()
+	sectionRaw, ok := manifest[section]
+	if !ok {
+		t.Fatalf("manifest section %q missing", section)
+	}
+	var sectionMap map[string]json.RawMessage
+	if err := json.Unmarshal(sectionRaw, &sectionMap); err != nil {
+		t.Fatalf("section %q: %v", section, err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(sectionMap["payload"], &payload); err != nil {
+		t.Fatalf("section %q payload: %v", section, err)
+	}
+	return payload
+}
+
+func TestCreateScenarioTemplateReleaseCandidateMarksLegacyReconstructed(t *testing.T) {
+	svc, ctx, tenant, user := newGovernanceFixture(t)
+	now := time.Now().UTC()
+	payloadRaw, err := marshalJSON(ScenarioTemplatePayload{
+		PromptPresetID:      "frozen-preset",
+		ParameterProfileID:  "balanced",
+		DatasetSuggestions:  []string{"faq"},
+		EvaluationQuestions: []string{"What is the return policy?"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset := &model.ScenarioTemplateAsset{
+		ID: id.New(), TenantID: tenant.ID, Key: "legacy-recon-tpl", Name: "Legacy Reconstructed",
+		AppTypes: "chat", Status: model.AssetStatusPublished, Source: model.TemplateSourceCustom,
+		PayloadJSON: payloadRaw, LatestVersion: 1, CreatedBy: user.ID, CreatedAt: now, UpdatedAt: now,
+	}
+	version := &model.ScenarioTemplateVersion{
+		ID: id.New(), TenantID: tenant.ID, TemplateID: asset.ID, Version: 1,
+		PayloadJSON: payloadRaw, ChangeNote: "re-materialized during migration, not history-identical",
+		PayloadSchema:      model.TemplatePayloadSchemaV2,
+		SnapshotProvenance: model.SnapshotLegacyReconstructed,
+		CreatedBy:          user.ID, CreatedAt: now,
+	}
+	if err := svc.Store.CreateScenarioTemplate(ctx, asset, version); err != nil {
+		t.Fatal(err)
+	}
+	result, err := svc.CreateScenarioTemplateReleaseCandidate(ctx, tenant.ID, user.ID, asset.ID, ScenarioTemplateReleaseCandidateInput{})
+	if err != nil {
+		t.Fatalf("create template release candidate: %v", err)
+	}
+	var manifest map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(result.Candidate.CandidateManifest), &manifest); err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	target := decodeCandidatePayload(t, manifest, model.CandidateManifestTarget)
+	prompt := decodeCandidatePayload(t, manifest, model.CandidateManifestPrompt)
+	if got, _ := target["snapshot_provenance"].(string); got != model.SnapshotLegacyReconstructed {
+		t.Fatalf("target snapshot_provenance = %q, want %q", got, model.SnapshotLegacyReconstructed)
+	}
+	if got, _ := target["payload_schema"].(string); got != model.TemplatePayloadSchemaV2 {
+		t.Fatalf("target payload_schema = %q, want %q", got, model.TemplatePayloadSchemaV2)
+	}
+	if got, _ := prompt["snapshot_provenance"].(string); got != model.SnapshotLegacyReconstructed {
+		t.Fatalf("prompt snapshot_provenance = %q, want %q", got, model.SnapshotLegacyReconstructed)
+	}
+	if got, ok := prompt["legacy_semantics_unknown"].(bool); !ok || !got {
+		t.Fatalf("prompt legacy_semantics_unknown = %v (%v), want true", prompt["legacy_semantics_unknown"], ok)
+	}
+}
+
+func TestCreateScenarioTemplateReleaseCandidateMarksAuthoredSnapshot(t *testing.T) {
+	svc, ctx, tenant, user := newGovernanceFixture(t)
+	asset, err := svc.CreateScenarioTemplate(ctx, tenant.ID, user.ID, ScenarioTemplateInput{
+		Key: "authored-snapshot-tpl", Name: "Authored Snapshot", AppTypes: []string{"chat"},
+		Status: model.AssetStatusPublished,
+		Payload: ScenarioTemplatePayload{
+			PromptPresetID: "support", ParameterProfileID: "balanced",
+			EvaluationQuestions: []string{"What is the return policy?"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create scenario template: %v", err)
+	}
+	result, err := svc.CreateScenarioTemplateReleaseCandidate(ctx, tenant.ID, user.ID, asset.ID, ScenarioTemplateReleaseCandidateInput{})
+	if err != nil {
+		t.Fatalf("create template release candidate: %v", err)
+	}
+	var manifest map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(result.Candidate.CandidateManifest), &manifest); err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	target := decodeCandidatePayload(t, manifest, model.CandidateManifestTarget)
+	prompt := decodeCandidatePayload(t, manifest, model.CandidateManifestPrompt)
+	if got, _ := target["snapshot_provenance"].(string); got != model.SnapshotAuthored {
+		t.Fatalf("target snapshot_provenance = %q, want %q", got, model.SnapshotAuthored)
+	}
+	if got, _ := prompt["snapshot_provenance"].(string); got != model.SnapshotAuthored {
+		t.Fatalf("prompt snapshot_provenance = %q, want %q", got, model.SnapshotAuthored)
+	}
+	if got, ok := prompt["legacy_semantics_unknown"].(bool); !ok || got {
+		t.Fatalf("prompt legacy_semantics_unknown = %v (%v), want false", prompt["legacy_semantics_unknown"], ok)
+	}
+}
+
 func TestCreateScenarioTemplateReleaseCandidateRequiresEvaluationQuestions(t *testing.T) {
 	svc, ctx, tenant, user := newGovernanceFixture(t)
 	asset, err := svc.CreateScenarioTemplate(ctx, tenant.ID, user.ID, ScenarioTemplateInput{
