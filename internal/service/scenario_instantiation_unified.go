@@ -144,7 +144,12 @@ func (s *Service) InstantiateScenarioTemplate(
 			s.failInstantiation(ctx, tenantID, instance.ID)
 			return nil, err
 		}
+		// Persist the created upstream id before the terminal hop so a crash or
+		// a failed completion leaves the resource legible to the orphan
+		// reconcile task (doc/276 §7.5 rule 4).
+		s.recordInstantiationRefs(ctx, tenantID, instance.ID, map[string]string{"chat": created.Chat.ID}, false)
 		if err := s.completeInstantiation(ctx, tenantID, instance.ID, created.Chat.ID); err != nil {
+			s.recordInstantiationRefs(ctx, tenantID, instance.ID, map[string]string{"chat": created.Chat.ID}, true)
 			return nil, err
 		}
 		result.Chat = created.Chat
@@ -189,7 +194,9 @@ func (s *Service) InstantiateScenarioTemplate(
 		app.ScenarioTemplateID = asset.ID
 		app.ScenarioTemplateVersion = selected.Version
 		upstreamRefs["search_app"] = app.ID
+		s.recordInstantiationRefs(ctx, tenantID, instance.ID, upstreamRefs, false)
 		if err := s.completeInstantiationWithRefs(ctx, tenantID, instance.ID, app.ID, upstreamRefs); err != nil {
+			s.recordInstantiationRefs(ctx, tenantID, instance.ID, upstreamRefs, true)
 			return nil, err
 		}
 		result.SearchApp = app
@@ -226,7 +233,9 @@ func (s *Service) InstantiateScenarioTemplate(
 	agent.ScenarioTemplateID = asset.ID
 	agent.ScenarioTemplateVersion = selected.Version
 	upstreamRefs["agent"] = agent.ID
+	s.recordInstantiationRefs(ctx, tenantID, instance.ID, upstreamRefs, false)
 	if err := s.completeInstantiationWithRefs(ctx, tenantID, instance.ID, agent.ID, upstreamRefs); err != nil {
+		s.recordInstantiationRefs(ctx, tenantID, instance.ID, upstreamRefs, true)
 		return nil, err
 	}
 	result.Agent = agent
@@ -445,4 +454,127 @@ func (s *Service) resolveInstantiationDatasets(ctx context.Context, tenantID str
 		out = append(out, datasetID)
 	}
 	return out, nil
+}
+
+// recordInstantiationRefs persists created upstream ids into upstream_refs
+// without claiming any state transition (doc/276 §7.5 rule 4: local state may
+// lag, it must never lead). orphan=true additionally stamps orphan_warning so
+// the reconcile task can see a resource that was created but never confirmed.
+// The write is best-effort: it must never mask the real instantiation result.
+func (s *Service) recordInstantiationRefs(ctx context.Context, tenantID, instanceID string, refs map[string]string, orphan bool) {
+	if len(refs) == 0 {
+		return
+	}
+	extra := map[string]any{}
+	if orphan {
+		extra["orphan_warning"] = true
+		extra["orphan_warning_at"] = time.Now().UTC().Format(time.RFC3339)
+	}
+	if err := s.Store.MergeTemplateInstanceRefs(ctx, tenantID, instanceID, refs, extra); err != nil {
+		logger.Warn("instantiation refs record failed", "instance_id", instanceID, "error", err)
+	}
+}
+
+// instantiationOrphanReconcileInterval is both the staleness cutoff used by
+// the reconcile scan and the recurrence of the durable cleanup job.
+const instantiationOrphanReconcileInterval = 24 * time.Hour
+
+// InstantiationOrphanReport summarizes one orphan reconcile sweep.
+type InstantiationOrphanReport struct {
+	Scanned int `json:"scanned"`
+	Stale   int `json:"stale"`
+	Orphans int `json:"orphans"`
+	Audited int `json:"audited"`
+}
+
+// ReconcileInstantiationOrphans is the §7.5 rule 4 cleanup task: it surfaces
+// stale non-terminal instantiations (crashed runs) and orphan-marked failures
+// so the upstream resources they created stay legible for operator cleanup. It
+// ONLY reports and audits — it never deletes upstream resources and never
+// rewrites local instance state.
+func (s *Service) ReconcileInstantiationOrphans(ctx context.Context) (*InstantiationOrphanReport, error) {
+	before := time.Now().UTC().Add(-instantiationOrphanReconcileInterval)
+	instances, err := s.Store.ListOrphanReconcilableInstances(ctx, before, 200)
+	if err != nil {
+		return nil, err
+	}
+	report := &InstantiationOrphanReport{Scanned: len(instances)}
+	for i := range instances {
+		item := &instances[i]
+		report.Stale++
+		if item.InstantiationState == model.InstantiationFailed {
+			report.Orphans++
+		}
+		refs := parseInstantiationRefs(item.UpstreamRefs)
+		if len(refs) == 0 {
+			continue
+		}
+		detail, marshalErr := json.Marshal(refs)
+		if marshalErr != nil {
+			continue
+		}
+		s.recordTemplateAudit(ctx, SystemTenantID, "system", "instantiation.orphan_reconcile", item.ID, string(detail))
+		report.Audited++
+	}
+	return report, nil
+}
+
+func parseInstantiationRefs(raw string) map[string]any {
+	out := map[string]any{}
+	if raw == "" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return map[string]any{}
+	}
+	return out
+}
+
+// SetupInstantiationOrphanReconcile registers the durable cleanup worker.
+// Callers should schedule the first run once the runner is ready.
+func (s *Service) SetupInstantiationOrphanReconcile() {
+	if s.Runner != nil {
+		s.Runner.Register(&instantiationOrphanReconcileWorker{svc: s})
+	}
+}
+
+// ScheduleInstantiationOrphanReconcile arms the recurring cleanup job: one at a
+// time, crash-recoverable, rescheduling itself (mirrors JobKindAuditAnchor).
+func (s *Service) ScheduleInstantiationOrphanReconcile(ctx context.Context, excludeID string) (bool, error) {
+	if s.Runner == nil {
+		return false, httperr.Internal("async worker not initialized")
+	}
+	active, err := s.Store.CountActiveJobsExcept(ctx, model.JobKindInstantiationOrphanReconcile, SystemTenantID, excludeID)
+	if err != nil {
+		return false, err
+	}
+	if active > 0 {
+		return false, nil
+	}
+	key := "instantiation-orphan-" + time.Now().UTC().Format("20060102T150405Z")
+	runAfter := time.Now().UTC().Add(instantiationOrphanReconcileInterval)
+	return s.Runner.Enqueue(ctx, model.JobKindInstantiationOrphanReconcile, key, SystemTenantID, "", runAfter, 0)
+}
+
+type instantiationOrphanReconcileWorker struct {
+	svc *Service
+}
+
+func (w *instantiationOrphanReconcileWorker) Kind() string {
+	return model.JobKindInstantiationOrphanReconcile
+}
+
+func (w *instantiationOrphanReconcileWorker) Run(ctx context.Context, job *model.Job) error {
+	report, err := w.svc.ReconcileInstantiationOrphans(ctx)
+	if err != nil {
+		logger.Warn("instantiation orphan reconcile failed", "job_id", job.ID, "error", err)
+		return err
+	}
+	if _, err := w.svc.ScheduleInstantiationOrphanReconcile(ctx, job.ID); err != nil {
+		logger.Warn("instantiation orphan reconcile reschedule failed", "job_id", job.ID, "error", err)
+		return err
+	}
+	logger.Info("instantiation orphan reconcile complete",
+		"scanned", report.Scanned, "stale", report.Stale, "orphans", report.Orphans, "audited", report.Audited)
+	return nil
 }

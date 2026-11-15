@@ -9,6 +9,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
+	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
 // P0-3 capability check: fixed verdict order, per-role requirements, aggregate
@@ -590,5 +591,104 @@ func TestFrozenPresetSnapshotResolvesLegacyVersions(t *testing.T) {
 	}
 	if promptPresetTextForVersion("unknown", model.TemplatePayloadSchemaV2, model.SnapshotLegacyReconstructed) != nil {
 		t.Fatal("unknown preset must not resolve")
+	}
+}
+
+// P2 §7.5 rule 4: created upstream ids persist into upstream_refs before the
+// terminal hop and, on a failed completion, carry an orphan_warning marker so
+// the reconcile task can surface them for cleanup.
+func TestRecordInstantiationRefsPersistsAndMarksOrphan(t *testing.T) {
+	svc := newScenarioSeedService(t)
+	ctx := context.Background()
+	tenant, err := svc.CreateTenant(ctx, "Orphan Refs Tenant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst := &model.TemplateInstance{
+		ID: "or-inst-1", TenantID: tenant.ID, ProjectID: "or-proj-1", TemplateID: "or-tpl-1",
+		TemplateVersionID: "or-tv-1", AssistantID: "or-asst-1", OwnerID: "u1", NameKey: "or-name",
+		AssistantKind: "chat", InstantiationState: model.InstantiationCreatingApp,
+		GovernanceStatus: "DRAFT", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	if err := svc.Store.CreateTemplateInstance(ctx, inst); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-confirm persistence must not claim success: ref ships with no marker.
+	svc.recordInstantiationRefs(ctx, tenant.ID, inst.ID, map[string]string{"chat": "chat-A"}, false)
+	got, err := svc.Store.GetTemplateInstance(ctx, tenant.ID, inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := parseInstantiationRefs(got.UpstreamRefs)
+	if refs["chat"] != "chat-A" {
+		t.Fatalf("chat ref not persisted: %v", refs)
+	}
+	if _, exists := refs["orphan_warning"]; exists {
+		t.Fatalf("early persistence must not carry orphan_warning: %v", refs)
+	}
+
+	// Failed completion stamps the marker while preserving the first ref.
+	svc.recordInstantiationRefs(ctx, tenant.ID, inst.ID, map[string]string{"chat": "chat-A"}, true)
+	got, err = svc.Store.GetTemplateInstance(ctx, tenant.ID, inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs = parseInstantiationRefs(got.UpstreamRefs)
+	if refs["chat"] != "chat-A" || refs["orphan_warning"] != true {
+		t.Fatalf("orphan marker missing or chat ref dropped: %v", refs)
+	}
+	if _, ok := refs["orphan_warning_at"].(string); !ok {
+		t.Fatalf("orphan_warning_at missing: %v", refs)
+	}
+}
+
+// P2 §7.5 rule 4: the orphan reconcile task scans stale non-terminal runs and
+// orphan-marked failures, reports them, and writes an audit row per instance
+// with a refs snapshot — without deleting upstream resources or rewriting
+// local state.
+func TestReconcileInstantiationOrphansReportsAndAudits(t *testing.T) {
+	svc := newScenarioSeedService(t)
+	ctx := context.Background()
+	tenant, err := svc.CreateTenant(ctx, "Reconcile Tenant")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	seed := func(id, state, refs string, age time.Duration) {
+		inst := &model.TemplateInstance{
+			ID: id, TenantID: tenant.ID, ProjectID: "rp", TemplateID: "rt", TemplateVersionID: "rv",
+			AssistantID: "ra-" + id, OwnerID: "u1", NameKey: "n-" + id, AssistantKind: "chat",
+			InstantiationState: state, UpstreamRefs: refs, GovernanceStatus: "DRAFT",
+			CreatedAt: now, UpdatedAt: now.Add(-age),
+		}
+		if err := svc.Store.CreateTemplateInstance(ctx, inst); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Crashed run: stale pending with a created chat.
+	seed("rc-orphan-pending", model.InstantiationPending, `{"chat":"chat-orphan-1"}`, 50*time.Hour)
+	// Failed orphan-marked run.
+	seed("rc-orphan-failed", model.InstantiationFailed, `{"agent":"agent-x","orphan_warning":true,"orphan_warning_at":"2026-11-01T00:00:00Z"}`, 50*time.Hour)
+	// Terminal completed with stale age must NOT be scanned.
+	seed("rc-done", model.InstantiationCompleted, `{"chat":"chat-done"}`, 50*time.Hour)
+	// Fresh failed without refs: excluded by the 24h cutoff.
+	seed("rc-fresh", model.InstantiationFailed, `{}`, 1*time.Hour)
+
+	report, err := svc.ReconcileInstantiationOrphans(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Scanned != 2 || report.Stale != 2 || report.Orphans != 1 || report.Audited != 2 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+
+	_, total, err := svc.Store.ListAudits(ctx, SystemTenantID, 1, 50, repository.AuditFilter{Action: "instantiation.orphan_reconcile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total < 2 {
+		t.Fatalf("expected >=2 reconcile audit rows, got %d", total)
 	}
 }

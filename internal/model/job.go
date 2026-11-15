@@ -27,6 +27,10 @@ const (
 	// JobKindAuditAnchor periodically freezes each tenant's audit hash-chain
 	// tail for deletion/tamper evidence.
 	JobKindAuditAnchor = "audit_anchor"
+	// JobKindInstantiationOrphanReconcile periodically reconciles stale or
+	// orphan-marked instantiations so upstream resources created by a crashed
+	// run stay legible for cleanup (doc/276 §7.5 rule 4).
+	JobKindInstantiationOrphanReconcile = "instantiation_orphan_reconcile"
 	// JobKindAlertDeliveryCompensation retries persisted failed webhook
 	// deliveries after restarts and transient downstream failures.
 	JobKindAlertDeliveryCompensation = "alert_delivery_compensation"
