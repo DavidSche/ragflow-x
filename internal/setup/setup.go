@@ -702,6 +702,15 @@ func (m *Manager) buildEngine(cfg *config.Config, sec *secretstore.Secrets) (htt
 		closeGDB(gdb)
 		return nil, nil, fmt.Errorf("schedule audit anchoring: %w", err)
 	}
+	// §7.5 rule 4: the instantiation orphan reconcile surfaces upstream
+	// resources created by crashed runs so operators can clean them up. It is
+	// a durable recurring job: one at a time, crash-recoverable, and it
+	// re-arms itself after each sweep.
+	svc.SetupInstantiationOrphanReconcile()
+	if _, err := svc.ScheduleInstantiationOrphanReconcile(context.Background(), ""); err != nil {
+		closeGDB(gdb)
+		return nil, nil, fmt.Errorf("schedule instantiation orphan reconcile: %w", err)
+	}
 	if _, err := svc.ScheduleResourceSyncReconcile(context.Background(), ""); err != nil {
 		closeGDB(gdb)
 		return nil, nil, fmt.Errorf("schedule ragflow reconciliation: %w", err)

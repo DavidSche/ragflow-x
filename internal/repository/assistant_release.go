@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -22,6 +23,8 @@ type AssistantReleaseRepo interface {
 	UpdateTemplateInstanceState(ctx context.Context, tenantID, id, fromStatus, toStatus string) error
 	GetTemplateInstanceByIdempotencyKey(ctx context.Context, tenantID, key string) (*model.TemplateInstance, error)
 	AdvanceTemplateInstanceState(ctx context.Context, tenantID, id, fromState, toState string, patch map[string]interface{}) error
+	MergeTemplateInstanceRefs(ctx context.Context, tenantID, id string, refs map[string]string, extra map[string]any) error
+	ListOrphanReconcilableInstances(ctx context.Context, before time.Time, limit int) ([]model.TemplateInstance, error)
 	ListTemplateInstanceLastUsed(ctx context.Context, tenantID string) (map[string]time.Time, error)
 	ListTemplateInstancesForHealth(ctx context.Context, tenantID, templateID string, limit int) ([]model.TemplateInstance, error)
 	AnswerActivityByAssistant(ctx context.Context, tenantID string, assistantIDs []string, since time.Time) (map[string]AssistantActivity, error)
@@ -162,6 +165,71 @@ func (s *store) AdvanceTemplateInstanceState(
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// MergeTemplateInstanceRefs merges created upstream ids into a template
+// instance's upstream_refs JSON without claiming any state transition
+// (doc/276 §7.5 rule 4: local state may lag, it must never lead). `extra`
+// carries orphan markers so a crashed run's created resources stay legible to
+// the orphan reconcile task. Read-modify-write is safe in practice because the
+// instantiation state machine serializes advancement per instance.
+func (s *store) MergeTemplateInstanceRefs(ctx context.Context, tenantID, id string, refs map[string]string, extra map[string]any) error {
+	var instance model.TemplateInstance
+	if err := s.WithContext(ctx).
+		Where("tenant_id = ? AND id = ?", tenantID, id).
+		First(&instance).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return gorm.ErrRecordNotFound
+		}
+		return err
+	}
+	merged := map[string]any{}
+	if instance.UpstreamRefs != "" {
+		if err := json.Unmarshal([]byte(instance.UpstreamRefs), &merged); err != nil {
+			merged = map[string]any{}
+		}
+	}
+	for k, v := range refs {
+		merged[k] = v
+	}
+	for k, v := range extra {
+		merged[k] = v
+	}
+	raw, err := json.Marshal(merged)
+	if err != nil {
+		return err
+	}
+	res := s.WithContext(ctx).Model(&model.TemplateInstance{}).
+		Where("tenant_id = ? AND id = ?", tenantID, id).
+		Updates(map[string]interface{}{"upstream_refs": string(raw), "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// ListOrphanReconcilableInstances returns stale non-terminal instantiations
+// (crashed runs whose upstream resources were created but never confirmed) plus
+// failed instantiations carrying an orphan_warning marker in upstream_refs.
+// `before` is the staleness cutoff on updated_at; `limit` bounds the scan. The
+// reconcile task feeds these to reporting/audit only — nothing here deletes
+// upstream resources.
+func (s *store) ListOrphanReconcilableInstances(ctx context.Context, before time.Time, limit int) ([]model.TemplateInstance, error) {
+	staleStates := []string{model.InstantiationPending, model.InstantiationCreatingDataset, model.InstantiationCreatingApp}
+	var out []model.TemplateInstance
+	err := s.WithContext(ctx).
+		Where("updated_at < ?", before).
+		Where(
+			"(instantiation_state IN ?) OR (instantiation_state = ? AND upstream_refs LIKE ?)",
+			staleStates, model.InstantiationFailed, "%orphan_warning%",
+		).
+		Order("updated_at ASC").
+		Limit(limit).
+		Find(&out).Error
+	return out, err
 }
 
 // BindTemplateInstanceAssistant links a pre-created instance projection to
