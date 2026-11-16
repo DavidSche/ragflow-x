@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
@@ -96,6 +97,11 @@ func (s *Service) UsageSummary(ctx context.Context, tenantID, date string) ([]mo
 }
 
 // SystemHealth probes the RAGFlow engine and reports its dependency status.
+//
+// The engine answers with its own vocabulary (`doc_engine: "ok"`), while the
+// console renders ✅ on "up", so the values are normalised here instead of in
+// each consumer: a healthy engine used to paint `DB: ❌ Redis: ❌ DocEngine: ❌`
+// next to "在线" because "ok" != "up".
 func (s *Service) SystemHealth(ctx context.Context) (map[string]string, error) {
 	h, err := s.RAGFlow.Health(ctx)
 	if err != nil {
@@ -104,8 +110,21 @@ func (s *Service) SystemHealth(ctx context.Context) (map[string]string, error) {
 	return map[string]string{
 		"engine":     "up",
 		"status":     h.Status,
-		"db":         h.DB,
-		"redis":      h.Redis,
-		"doc_engine": h.DocEngine,
+		"db":         healthState(h.DB),
+		"redis":      healthState(h.Redis),
+		"doc_engine": healthState(h.DocEngine),
 	}, nil
+}
+
+// healthState maps an engine dependency status onto the `up`/`down` contract the
+// console reads. RAGFlow says "ok"; tolerating "up" keeps proxies and older
+// builds working, and anything unrecognised is reported as down rather than as
+// a silent success.
+func healthState(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "up", "ok":
+		return "up"
+	default:
+		return "down"
+	}
 }
