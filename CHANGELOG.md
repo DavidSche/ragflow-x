@@ -10,6 +10,10 @@
 
 ## [Unreleased]
 
+下一版本待登记。
+
+## [0.6.1] - 2026-11-16
+
 ### 新增
 
 - **`ragflow-x reset-admin-password`：把自己的部署救回来**。发布包新增离线恢复子命令，
@@ -1026,7 +1030,8 @@ Gateway）：不 Fork RAGFlow，通过官方 HTTP API 集成，在其之上补�
 - Agent 画布中"编译算子模板"能力开发中，创建入口已禁用。
 - K8s / Helm 编排为后续演进方向，当前推荐 Docker Compose 部署。
 
-[Unreleased]: https://github.com/DavidSche/ragflow-x/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/DavidSche/ragflow-x/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/DavidSche/ragflow-x/compare/v0.6.0...v0.6.1
 [0.5.2]: https://github.com/DavidSche/ragflow-x/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/DavidSche/ragflow-x/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/DavidSche/ragflow-x/compare/v0.2.0...v0.5.0
