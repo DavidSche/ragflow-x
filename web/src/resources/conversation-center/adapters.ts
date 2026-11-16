@@ -249,6 +249,9 @@ async function* consumeStream(
   let pendingDelta = "";
   let pendingCitations: Citation[] = [];
   let thinking = false;
+  // Text already handed to the UI. RAGFlow repeats the whole answer on its
+  // `final` frame, so without this the message doubles on screen.
+  let emittedText = "";
 
   function* startIfBound(): Generator<ConversationEvent> {
     if (messageStarted || !context) return;
@@ -258,6 +261,7 @@ async function* consumeStream(
     if (pendingDelta) {
       const base = eventBase(state, input, "message.delta");
       yield { ...base, type: "message.delta", context, messageId: state.assistantId, delta: pendingDelta };
+      emittedText += pendingDelta;
     }
     for (const citation of pendingCitations) {
       const base = eventBase(state, input, "citation.added");
@@ -298,6 +302,10 @@ async function* consumeStream(
         delta = String(inner?.answer ?? obj.answer ?? chatDelta?.content ?? "");
         citations = citationsFromObject(inner ?? obj);
       }
+      if (inner?.final === true || obj.final === true) {
+        const seen = emittedText + pendingDelta;
+        delta = delta.startsWith(seen) ? delta.slice(seen.length) : "";
+      }
       const sessionCandidate = inner?.session_id ?? obj.session_id;
       if (!context && typeof sessionCandidate === "string" && sessionCandidate) {
         context = { id: sessionCandidate, targetId: input.target.id, kind: input.target.kind === "agent" ? "agent" : "chat", type: "session" };
@@ -311,6 +319,7 @@ async function* consumeStream(
           if (pendingDelta) {
             const base = eventBase(state, input, "message.delta");
             yield { ...base, type: "message.delta", context, messageId: state.assistantId, delta: pendingDelta };
+            emittedText += pendingDelta;
             pendingDelta = "";
           }
           for (const citation of pendingCitations) {
@@ -365,9 +374,11 @@ function startStream(
   let transportTimer: ReturnType<typeof setTimeout> | undefined;
   let applicationTimer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
+  let timeoutKind: "connect" | "transport" | "application" | undefined;
 
   const failTimeout = (kind: "connect" | "transport" | "application") => {
     timedOut = true;
+    timeoutKind = kind;
     controller.abort(new DOMException(`${kind} timeout`, "TimeoutError"));
   };
   const resetTransport = () => {
@@ -383,7 +394,9 @@ function startStream(
     clearTimeout(transportTimer);
     clearTimeout(applicationTimer);
   };
-  connectTimer = setTimeout(() => failTimeout("connect"), 15_000);
+  // Retrieval plus the first LLM token routinely takes longer than 15s on a
+  // shared GPU cluster; a tight connect budget aborted perfectly healthy runs.
+  connectTimer = setTimeout(() => failTimeout("connect"), 60_000);
   resetTransport();
   resetApplication();
   const state: StreamState = { eventSequence: 0, assistantId: `assistant-${requestId}`, controller, streamId };
@@ -419,7 +432,13 @@ function startStream(
           ...eventBase(state, input, "error.occurred"),
           type: "error.occurred",
           context,
-          error: conversationError("execution_unknown", "Conversation execution status unknown", { failureKind: "unknown" }),
+          error: conversationError(
+            "execution_unknown",
+            timeoutKind === "connect"
+              ? "Timed out before the assistant started answering"
+              : "Conversation execution status unknown",
+            { failureKind: "unknown" },
+          ),
         };
         const completedEvent: ConversationEvent = { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: "failed" };
         yield errorEvent;
