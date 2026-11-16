@@ -36,11 +36,17 @@ const resetAdminUsage = `usage: ragflow-x reset-admin-password [-config <path>] 
   -list      only print the existing usernames, change nothing
 `
 
-// resetRefusal is returned when the account cannot be touched; the message is
-// meant for the operator's terminal, not for a log.
-type resetRefusal struct{ msg string }
+// fprintf / fprintln write to the operator's terminal. A failed write (closed
+// pipe, full disk) cannot be recovered from here and must not change the exit
+// code, so the error is discarded deliberately — hence helpers instead of a
+// `_, _ =` marker repeated at every call site.
+func fprintf(w io.Writer, format string, a ...any) {
+	_, _ = fmt.Fprintf(w, format, a...)
+}
 
-func (r resetRefusal) Error() string { return r.msg }
+func fprintln(w io.Writer, a ...any) {
+	_, _ = fmt.Fprintln(w, a...)
+}
 
 // runResetAdmin is the subcommand entry point. It returns a process exit code.
 func runResetAdmin(args []string, stdout, stderr io.Writer) int {
@@ -52,7 +58,7 @@ func runResetAdmin(args []string, stdout, stderr io.Writer) int {
 	listOnly := fs.Bool("list", false, "list existing usernames only")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprint(stdout, resetAdminUsage)
+			fprintf(stdout, "%s", resetAdminUsage)
 			return 0
 		}
 		return 2
@@ -60,7 +66,7 @@ func runResetAdmin(args []string, stdout, stderr io.Writer) int {
 
 	cfg, err := config.Load(resolveConfigPath(*configPath))
 	if err != nil {
-		fmt.Fprintf(stderr, "load config failed: %v\n", err)
+		fprintf(stderr, "load config failed: %v\n", err)
 		return 1
 	}
 	// The database may have been configured by the wizard, in which case the
@@ -68,12 +74,12 @@ func runResetAdmin(args []string, stdout, stderr io.Writer) int {
 	secretsPath := cfg.Setup.SecretsFile
 	masterKey, err := secretstore.LoadMasterKey(cfg.Setup.MasterKey, masterKeyFileFor(secretsPath))
 	if err != nil {
-		fmt.Fprintf(stderr, "load master key failed: %v\n", err)
+		fprintf(stderr, "load master key failed: %v\n", err)
 		return 1
 	}
 	secrets, err := secretstore.Load(secretsPath, masterKey)
 	if err != nil {
-		fmt.Fprintf(stderr, "load secrets (%s) failed: %v\n", secretsPath, err)
+		fprintf(stderr, "load secrets (%s) failed: %v\n", secretsPath, err)
 		return 1
 	}
 	dbc := resolveDatabase(cfg.Database, secrets)
@@ -94,8 +100,8 @@ func runResetAdmin(args []string, stdout, stderr io.Writer) int {
 	// found" block in the middle of an operator's terminal reads like a failure.
 	gdb, err := db.OpenQuiet(dbc)
 	if err != nil {
-		fmt.Fprintf(stderr, "open database failed: %v\n", err)
-		fmt.Fprintf(stderr, "hint: the wizard stores its connection in %s; make sure the server runs with the same -config\n", secretsPath)
+		fprintf(stderr, "open database failed: %v\n", err)
+		fprintf(stderr, "hint: the wizard stores its connection in %s; make sure the server runs with the same -config\n", secretsPath)
 		return 1
 	}
 	defer func() {
@@ -108,32 +114,32 @@ func runResetAdmin(args []string, stdout, stderr io.Writer) int {
 	if *listOnly {
 		users, _, err := store.ListUsers(ctx, 1, 50, repository.UserFilter{})
 		if err != nil {
-			fmt.Fprintf(stderr, "list users failed: %v\n", err)
+			fprintf(stderr, "list users failed: %v\n", err)
 			return 1
 		}
 		for _, u := range users {
-			fmt.Fprintf(stdout, "%s\t%s\t%s\n", u.Username, u.Role, u.Status)
+			fprintf(stdout, "%s\t%s\t%s\n", u.Username, u.Role, u.Status)
 		}
 		if len(users) == 0 {
-			fmt.Fprintln(stdout, "(no users: the first-run wizard has not been completed)")
+			fprintln(stdout, "(no users: the first-run wizard has not been completed)")
 		}
 		return 0
 	}
 
 	u, err := store.GetUserByUsername(ctx, name)
 	if err != nil {
-		fmt.Fprintf(stderr, "look up %q failed: %v\n", name, err)
+		fprintf(stderr, "look up %q failed: %v\n", name, err)
 		return 1
 	}
 	if u == nil {
-		fmt.Fprintf(stderr, "no such account: %s\n", name)
-		fmt.Fprintf(stderr, "existing accounts (rerun with -username <name>):\n")
+		fprintf(stderr, "no such account: %s\n", name)
+		fprintf(stderr, "existing accounts (rerun with -username <name>):\n")
 		if users, _, lerr := store.ListUsers(ctx, 1, 20, repository.UserFilter{}); lerr == nil {
 			for _, x := range users {
-				fmt.Fprintf(stderr, "  %s (%s)\n", x.Username, x.Role)
+				fprintf(stderr, "  %s (%s)\n", x.Username, x.Role)
 			}
 			if len(users) == 0 {
-				fmt.Fprintln(stderr, "  (none: complete the first-run wizard at the web UI)")
+				fprintln(stderr, "  (none: complete the first-run wizard at the web UI)")
 			}
 		}
 		return 1
@@ -144,32 +150,32 @@ func runResetAdmin(args []string, stdout, stderr io.Writer) int {
 	if plain == "" {
 		plain, err = generatePassword(16)
 		if err != nil {
-			fmt.Fprintf(stderr, "generate password failed: %v\n", err)
+			fprintf(stderr, "generate password failed: %v\n", err)
 			return 1
 		}
 		generated = true
 	}
 	if len(plain) < 8 {
-		fmt.Fprintln(stderr, "password must be at least 8 characters")
+		fprintln(stderr, "password must be at least 8 characters")
 		return 2
 	}
 	hash, err := password.Hash(plain)
 	if err != nil {
-		fmt.Fprintf(stderr, "hash password failed: %v\n", err)
+		fprintf(stderr, "hash password failed: %v\n", err)
 		return 1
 	}
 	u.PasswordHash = hash
 	if err := store.UpdateUser(ctx, u); err != nil {
-		fmt.Fprintf(stderr, "update password failed: %v\n", err)
+		fprintf(stderr, "update password failed: %v\n", err)
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "password updated for %q (tenant %s, role %s)\n", u.Username, u.TenantID, u.Role)
+	fprintf(stdout, "password updated for %q (tenant %s, role %s)\n", u.Username, u.TenantID, u.Role)
 	if generated {
-		fmt.Fprintf(stdout, "new password: %s\n", plain)
-		fmt.Fprintln(stdout, "store it now: it is not written anywhere and will not be shown again")
+		fprintf(stdout, "new password: %s\n", plain)
+		fprintln(stdout, "store it now: it is not written anywhere and will not be shown again")
 	}
-	fmt.Fprintln(stdout, "sign in at the web UI and change it under your profile once you are in")
+	fprintln(stdout, "sign in at the web UI and change it under your profile once you are in")
 	return 0
 }
 
@@ -243,7 +249,7 @@ func maybeRunSubcommand(args []string) bool {
 		os.Exit(runResetAdmin(args[2:], os.Stdout, os.Stderr))
 		return true
 	case "help", "-h", "--help":
-		fmt.Fprint(os.Stdout, "usage: ragflow-x [-config <path>]\n       ragflow-x reset-admin-password [-config <path>] [-username <name>] [-password <new>] [-list]\n")
+		fprintf(os.Stdout, "%s", "usage: ragflow-x [-config <path>]\n       ragflow-x reset-admin-password [-config <path>] [-username <name>] [-password <new>] [-list]\n")
 		os.Exit(0)
 		return true
 	}
