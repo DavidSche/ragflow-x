@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Database, Loader2, RefreshCw, Wrench } from "lucide-react";
 import type { DatasetLike } from "@/resources/chats/chat-types";
-import { CapabilityBadge } from "./CapabilityBadge";
+import { CapabilityBadge, requirementBadgeState } from "./CapabilityBadge";
 import type { DatasetCapabilityView } from "./types";
 import type { ScenarioWizardApi } from "./useScenarioWizard";
 
@@ -148,7 +148,7 @@ function DatasetVerdictCard({ row, checked, acknowledged, onAcknowledge, onRepai
         {row.requirements.map((requirement) => (
           <li key={requirement.capability} className="flex flex-wrap items-center gap-2 text-xs">
             <CapabilityBadge
-              state={requirement.satisfied ? requirement.achieved : "blocked"}
+              state={requirementBadgeState(requirement)}
               label={t(`scenarioTemplates.capability.name.${requirement.capability}`, {
                 defaultValue: requirement.capability,
               })}
