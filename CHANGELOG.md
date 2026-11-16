@@ -8,6 +8,17 @@
 > 引用约定：文中 `doc/NNN`、`doc/<目录>` 为工程内部设计/性能记录编号，**不随本仓库发布**，仅用于追证；
 > 随仓库发布的用户文档在 [`doc/user`](./doc/user/README.md)（用户手册、权限矩阵、运维 Runbook、审计链 SOP）。
 
+## [Unreleased]
+
+### 修复
+
+- **场景模板向导：已满足的能力要求被渲染成「阻断」红标**。`DatasetVerdictCard` 把
+  `requirement.achieved`（等级：`unknown/configured/ready/operational`）当四态传给了
+  `CapabilityBadge`，而 `normalizeCapabilityState()` 只认四态、其余一律落到 `blocked`，
+  于是体检结论卡上「已满足」的每一行都显示成红色阻断。新增语义正确的
+  `requirementBadgeState()`（满足 → `satisfied`，否则 `blocked`），并补 3 例单测锁住这个
+  映射，防止再次把等级和状态混用。
+
 ## [0.6.0] - 2026-11-15
 
 > **minor 版本（v0.5.3 → v0.6.0）**：自 v0.5.3 累计 14 个提交，工程面收口 + 功能增强。含 **schema

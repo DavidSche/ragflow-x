@@ -16,6 +16,16 @@ const STATE_ICONS: Record<CapabilityState, string> = {
   blocked: "⛔",
 };
 
+/**
+ * Badge state for one requirement row. `achieved` carries a *level* (unknown /
+ * configured / ready / operational), never one of the four states, so passing it
+ * straight to `CapabilityBadge` fell through to `blocked` and painted every
+ * satisfied requirement red (defect found while filming the wizard on 4.151).
+ */
+export function requirementBadgeState(requirement: { satisfied: boolean }): CapabilityState {
+  return requirement.satisfied ? "satisfied" : "blocked";
+}
+
 export function normalizeCapabilityState(value: string | undefined | null): CapabilityState {
   switch (value) {
     case "satisfied":
