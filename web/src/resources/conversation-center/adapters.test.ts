@@ -204,6 +204,39 @@ describe("conversation adapters", () => {
     ]);
   });
 
+  it("does not repeat the answer RAGFlow resends on its final frame", async () => {
+    const answer = "结论 [ID:0]";
+    const frames = [
+      { code: 0, data: { answer: "结论", session_id: "session-1", final: false } },
+      { code: 0, data: { answer: " [ID:0]", final: false } },
+      { code: 0, data: { answer, final: true, reference: { chunks: [] } } },
+      { code: 0, data: true },
+    ];
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(encoder.encode(`data:${JSON.stringify(frame)}\n\n`));
+        controller.close();
+      },
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })));
+
+    const stream = createChatAdapter().start({
+      target: { id: "chat-1", kind: "chat" },
+      text: "question",
+      requestId: "run-1",
+      conversationKey: "conversation-key",
+    });
+    const answerText = async () => {
+      let text = "";
+      for await (const event of stream.events) {
+        if (event.type === "message.delta") text += event.delta;
+      }
+      return text;
+    };
+    expect(await answerText()).toBe(answer);
+  });
+
   it("declares attachments for Chat and Agent", () => {
     expect(createChatAdapter().capabilities().attachments).toBe(true);
     expect(createSearchAdapter().capabilities().attachments).toBe(false);

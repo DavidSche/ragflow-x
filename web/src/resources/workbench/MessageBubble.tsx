@@ -68,6 +68,16 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const commentInputRef = useRef<HTMLInputElement>(null);
   const translate = useTranslate();
+  // A failed turn keeps its stable error code, but the sentence next to it must
+  // read in the operator's language — the adapter's own text is English.
+  const failureKey = m.errorCode ? `workbench.failure.${m.errorCode}` : "";
+  const failureText = (() => {
+    if (!failureKey) return m.error;
+    const localised = translate(failureKey, { _: m.error });
+    return typeof localised === "string" && localised !== "" && localised !== failureKey
+      ? localised
+      : m.error;
+  })();
   const finished =
     m.role === "assistant" && (m.turnId ?? "") !== "" && !isLastStreaming;
   const isNoHit =
@@ -282,7 +292,7 @@ export function MessageBubble({
               {m.errorCode ? (
                 <Badge variant="outline">{m.errorCode}</Badge>
               ) : null}{" "}
-              {m.error}
+              {failureText}
             </div>
             {onRegenerate ? (
               <Button
