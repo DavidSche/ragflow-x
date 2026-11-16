@@ -44,6 +44,60 @@ RAGFlow engine is enough, no PostgreSQL required. Either way you still need a
 reachable **RAGFlow engine** (`base_url` + `api_key`); a failed engine probe is
 reported separately with its own message.
 
+### First run: why do I only get a login page?
+
+The wizard appears **only when the database holds no account at all**
+(`/api/v1/system/setup/status` answers `initialized:false`). Once an account
+exists, the product goes straight to the login page — that is expected, not a
+lost wizard. If the login is rejected, check three things:
+
+1. **Which database you are hitting.** The wizard stores its connection in
+   `config/runtime.secrets.json` (encrypted), not in the YAML. If the binary runs
+   with a different `-config` than the wizard wrote, you are logging into a
+   different database. `reset-admin-password -list` (below) shows the accounts of
+   the configuration that is actually in effect — faster than guessing.
+2. **The username** (the wizard lets you choose it; it is not always `admin`).
+3. **The password.** Re-running the wizard does **not** silently rewrite the
+   password of an account that already exists (otherwise every restart would
+   revert a password you changed in the UI). Use the recovery command instead.
+
+### Locked out: resetting the administrator password
+
+The release archive ships an offline recovery subcommand. It reads the **same**
+`config/` (including the encrypted connection) the server uses, so it cannot
+write to some other database:
+
+```bash
+# Who exists under the current configuration? (read-only)
+./ragflow-x reset-admin-password -list
+
+# Reset admin to a random strong password, printed once
+./ragflow-x reset-admin-password -username admin
+
+# Or choose it yourself (8 characters minimum)
+./ragflow-x reset-admin-password -username admin -password 'Rgx#2026New'
+```
+
+- Run it in the same directory / with the same `-config` as the server.
+- It only resets an account that already exists; when the username is unknown it
+  lists the existing accounts (so a typo is obvious).
+- Sign in with the new password, then change it in the UI.
+
+### Where do the logs go?
+
+The built-in default is `logging.output: stdout`, so an unpack-and-run archive
+writes **no log file** (container deployments collect stdout). To get a file:
+
+```bash
+RGX_LOG_OUTPUT=./logs/ragflow-x.log ./ragflow-x   # the directory must exist and be writable
+```
+
+or set `logging: { output: ./logs/ragflow-x.log }` in `config/config.yaml`. Files
+rotate daily (`ragflow-x-YYYYMMDD.log`) and by size (`.1`, `.2`, …). Once a file
+is configured, stdout is deliberately **not** mirrored, so the terminal goes
+quiet. Other knobs: `RGX_LOG_LEVEL`, `RGX_LOG_FORMAT`, `RGX_LOG_ROTATE_DAILY`,
+`RGX_LOG_MAX_SIZE_MB`, `RGX_LOG_MAX_BACKUPS`, `RGX_LOG_RETENTION_DAYS`.
+
 ## Sign in
 
 1. Open the web UI and sign in with your username and password.

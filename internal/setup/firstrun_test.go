@@ -124,7 +124,9 @@ func TestBuiltinPlaceholderDatabaseOpensTheWizardDirectly(t *testing.T) {
 		{"config file present", func(c *config.Config) { c.Setup.ConfigFile = "/etc/ragflow-x/config.yaml" }},
 		{"different host", func(c *config.Config) { c.Database.Host = "10.0.0.5" }},
 		{"different password", func(c *config.Config) { c.Database.Password = "real-password" }},
-		{"sqlite", func(c *config.Config) { c.Database = config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "placeholder.db")} }},
+		{"sqlite", func(c *config.Config) {
+			c.Database = config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "placeholder.db")}
+		}},
 	}
 	for _, tc := range honoured {
 		mm, err := New(cfgWith(tc.mutate), func(http.Handler) error { return nil })
@@ -234,4 +236,64 @@ func TestPreflightSurfacesTheReasonOverHTTP(t *testing.T) {
 	if body.Data.DBError == "" || body.Data.DBHint == "" {
 		t.Fatalf("preflight must carry the reason and a hint: %s", rec.Body.String())
 	}
+}
+
+// TestApplyUpdatesAnExistingAdminPassword is the trap a second wizard run used to
+// fall into: buildEngine's bootstrap is idempotent and leaves an existing account
+// alone, so submitting a new admin password changed nothing — and the operator
+// then could not sign in with the password the wizard had just accepted.
+func TestApplyUpdatesAnExistingAdminPassword(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	cfg := &config.Config{
+		App:       config.App{Name: "ragflow-x", JWTSecret: strongTestJWTSecret, JWTExpireHours: 24, EncryptionKey: "test-encryption-key", DataDir: dir},
+		Database:  config.Database{Driver: "sqlite", DSN: filepath.Join(dir, "rerun.db")},
+		RAGFlow:   config.RAGFlow{Provider: "mock"},
+		FactGuard: config.FactGuard{Mode: "strict"},
+		Setup: config.Setup{
+			Enabled:     true,
+			SecretsFile: filepath.Join(dir, "secrets.json"),
+			RSAKeyPath:  filepath.Join(dir, "rsa.pem"),
+			AdminUser:   "root",
+		},
+	}
+	m, err := New(cfg, func(http.Handler) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+
+	apply := func(pass string) {
+		t.Helper()
+		req := ApplyRequest{
+			Database: DatabaseReq{Driver: "sqlite", Name: "main", Password: sealFor(t, m, "db-pass")},
+			RAGFlow:  RAGFlowReq{Provider: "mock", BaseURL: "http://engine", APIKey: sealFor(t, m, "engine-key")},
+			Admin:    &AdminReq{Username: "root", Password: sealFor(t, m, pass)},
+		}
+		if err := m.Apply(ctx, req); err != nil {
+			t.Fatalf("apply(%s): %v", pass, err)
+		}
+	}
+
+	apply("first-password")
+	if _, err := m.svc.Login(ctx, "root", "first-password", "127.0.0.1"); err != nil {
+		t.Fatalf("first password must sign in: %v", err)
+	}
+
+	apply("second-password")
+	if _, err := m.svc.Login(ctx, "root", "second-password", "127.0.0.1"); err != nil {
+		t.Fatalf("re-running the wizard must set the password it accepted: %v", err)
+	}
+	if _, err := m.svc.Login(ctx, "root", "first-password", "127.0.0.1"); err == nil {
+		t.Fatal("the previous password must no longer work")
+	}
+}
+
+func sealFor(t *testing.T, m *Manager, s string) string {
+	t.Helper()
+	out, err := m.rsa.Encrypt(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

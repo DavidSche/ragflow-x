@@ -53,6 +53,53 @@ cp config/config.example.yaml config/config.yaml   # Windows: copy
 SQLite 路径适合「先试一下产品」：填一个可写 DSN、「引擎地址」仍指向一个可访问的 RAGFlow 即可，不需要装 PostgreSQL。
 数据库确认可连后仍需一个可达的 **RAGFlow 引擎**（`base_url` + `api_key`），引擎探测失败会单独标「引擎不可达」并附原始错误。
 
+### 启动后为什么只有一个登录页（看不到初始化向导）
+
+向导只在**库里一个账号都没有**时出现（`/api/v1/system/setup/status` 返回 `initialized:false`）。
+只要目标库里已经存在账号，产品就会直接进登录页，这是正常行为，不是向导「丢了」。
+如果这时登录报错，先确认三件事：
+
+1. **你连的是哪一个库**。向导把连接写在 `config/runtime.secrets.json`（加密），不是 YAML；
+   `./ragflow-x -config <某个 yaml>` 与向导写入的密文不是同一份时，登录查的是另一个库。
+   用下面第 2 条的 `-list` 直接看当前配置下有哪些账号，比猜更快。
+2. **用户名是否就是你想的那个**（向导允许自定义，不一定是 `admin`）。
+3. **密码**。向导重复执行时，若账号已存在，**不会**悄悄改成你新填的密码（避免每次重启都覆盖你在界面上改过的密码）；
+   要改密码，用下面的恢复命令，而不是再跑一遍向导。
+
+### 忘了管理员密码 / 登录不进去怎么救
+
+发布包自带一个离线恢复子命令，它读的是**服务端同一份** `config/`（含加密的连接信息），
+因此不会改到别的库：
+
+```bash
+# 先看当前配置下到底有哪些账号（只读，不改任何东西）
+./ragflow-x reset-admin-password -list
+
+# 把 admin 重置为一个随机强密码，终端只打印一次
+./ragflow-x reset-admin-password -username admin
+
+# 或者指定密码（至少 8 位）
+./ragflow-x reset-admin-password -username admin -password 'Rgx#2026New'
+```
+
+- 必须在**服务端运行时的同一个目录 / 同一个 `-config`** 下执行，否则它会去开另一个库。
+- 它**只重置已存在的账号**，不会创建账号；账号不存在时会把现有账号列出来，方便你发现用户名拼错。
+- 重置完成后用新密码登录，再在界面里改成自己的密码。
+
+### 日志写到哪里
+
+出厂默认 `logging.output: stdout`，也就是**不写日志文件**（容器部署靠采集 stdout）。要落盘：
+
+```bash
+RGX_LOG_OUTPUT=./logs/ragflow-x.log ./ragflow-x     # 目录必须存在且可写
+```
+
+或在 `config/config.yaml` 里写 `logging: { output: ./logs/ragflow-x.log }`。
+按天切分为 `ragflow-x-YYYYMMDD.log`，超过 `logging.max_size_mb` 再切 `.1`、`.2`；
+**一旦指定了文件，stdout 就不再重复输出**（避免客户端无限增长）。其余可调项：
+`RGX_LOG_LEVEL`、`RGX_LOG_FORMAT`、`RGX_LOG_ROTATE_DAILY`、`RGX_LOG_MAX_SIZE_MB`、`RGX_LOG_MAX_BACKUPS`、`RGX_LOG_RETENTION_DAYS`。
+
+
 1. 打开 `http://<host>:5173/`（开发环境）或 `http://<host>:9191/`（发布包）。
 2. 输入管理员分配的用户名和密码，点击 **登录**。
 3. 进入仪表板后，先确认 **RAGFlow 引擎**、**DB**、**Redis**、**DocEngine** 状态。

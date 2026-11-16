@@ -24,6 +24,7 @@ import (
 var version = "dev"
 
 func main() {
+	maybeRunSubcommand(os.Args)
 	cfgPath := flagConfigPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -44,6 +45,13 @@ func main() {
 	if cfgPath == "" {
 		logger.Info("no config file found, using built-in defaults",
 			"hint", "pass -config <path> or create config/config.yaml next to the binary")
+		// An unpack-and-run archive writes no log file: the default is stdout so
+		// containers keep working, but an operator who later has to send logs in
+		// should not have to discover the env var by reading the source.
+		if cfg.Logging.OutputPath == "" || cfg.Logging.OutputPath == "stdout" {
+			logger.Info("logging to stdout",
+				"hint", "set RGX_LOG_OUTPUT=./logs/ragflow-x.log (or logging.output in YAML) to write a rotating file instead")
+		}
 	} else {
 		logger.Info("config loaded", "path", cfgPath)
 	}
