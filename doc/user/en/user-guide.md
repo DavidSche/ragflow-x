@@ -7,12 +7,52 @@ product closes the gap between enterprise production requirements and RAGFlow's
 core RAG engine through governed security, a full-lifecycle knowledge system,
 and a unified conversation experience.
 
-## Install (v0.5.3)
+## Install
 
 This release ships as **binary archives only — no container image is published
-yet**. Download `ragflow-x-<version>-<os>-<arch>.tar.gz` (`.zip` on Windows),
-unpack it, and run the binary: the frontend is embedded, so no separate static
-server is needed.
+yet**. Download `ragflow-x-<version>-<os>-<arch>.tar.gz` (`.zip` on Windows);
+the frontend is embedded, so no separate static server is needed. **Unpack into
+its own directory before starting it** — config and logs are resolved against the
+working directory, so running the binary in a crowded folder means it cannot find
+its own files.
+
+```bash
+mkdir -p ragflow-x && tar xzf ragflow-x-<version>-linux-amd64.tar.gz -C ragflow-x && cd ragflow-x
+./start.sh --sqlite --daemon       # try it first: SQLite under data/, in the background
+# once it prints "ready: http://localhost:9191/", open that URL
+./start.sh status                  # process and port
+./start.sh stop                    # stop the background process
+```
+
+On Windows, unpack and double-click `start.cmd` (foreground), or run
+`start.cmd --sqlite -Daemon` (background). `start.ps1 -Sqlite -Daemon` is the
+PowerShell spelling of the same thing.
+
+The launcher explains the startup, it is not a second configuration system:
+
+| Usage | What it does |
+|---|---|
+| `./start.sh` | Foreground, Ctrl-C stops it; uses `config/config.yaml` when present |
+| `./start.sh --sqlite` | SQLite trial run: absolute DSN and log path (`data/ragflow-x.db`, `logs/ragflow-x.log` when there is no config) |
+| `./start.sh --daemon` / `-d` | Background. pid in `logs/ragflow-x.pid`, output in `logs/console.out`, port remembered in `logs/ragflow-x.port` |
+| `./start.sh --port 8080` | Another port (same as `RGX_PORT=8080`) |
+| `./start.sh --config /etc/ragflow-x/config.yaml` | Explicit config file |
+| `./start.sh stop` / `status` | Stop / inspect the background process |
+| `./start.sh -- -config x.yaml` | Everything after `--` goes to the binary untouched |
+
+`--sqlite` only removes the database step; the product still needs a RAGFlow
+engine. The wizard asks for `base_url` + `api_key` (the two things that cannot be
+invented locally), creates the first administrator, and swaps the full router in
+place — no restart, no file to edit.
+
+It avoids the two traps that eat the first ten minutes: it **refuses to start**
+when something already answers on the port (otherwise the "wait until it listens"
+loop would call another service's socket ready), and it says out loud when no
+config file exists — that is the case where the first-run setup wizard appears,
+not a failed start. The script needs bash; the archive ships cmd/PowerShell
+variants with the line endings those shells require.
+
+Running the binary directly is still fully supported (no script required):
 
 ```bash
 cp config/config.example.yaml config/config.yaml
@@ -57,9 +97,13 @@ lost wizard. If the login is rejected, check three things:
    different database. `reset-admin-password -list` (below) shows the accounts of
    the configuration that is actually in effect — faster than guessing.
 2. **The username** (the wizard lets you choose it; it is not always `admin`).
-3. **The password.** Re-running the wizard does **not** silently rewrite the
-   password of an account that already exists (otherwise every restart would
-   revert a password you changed in the UI). Use the recovery command instead.
+3. **The password.** Before v0.6.1 the wizard silently ignored the new password
+   for an account that already existed (it was there to stop a restart from
+   reverting a password changed in the UI). Now submitting the wizard counts as
+   an explicit credential decision: it sets the designated administrator password
+   and logs `setup: designated admin password set by the setup wizard`. A plain
+   **restart** still never touches the password. If you cannot log in, use the
+   recovery command below.
 
 ### Locked out: resetting the administrator password
 
@@ -85,18 +129,39 @@ write to some other database:
 
 ### Where do the logs go?
 
-The built-in default is `logging.output: stdout`, so an unpack-and-run archive
-writes **no log file** (container deployments collect stdout). To get a file:
+The built-in default writes to the console **and** a file (`logging.output: both`):
+a foreground run shows what it is doing, and the same records land in
+`./logs/ragflow-x-YYYYMMDD.log` (the directory is created when missing). Startup
+says which sinks are live:
 
-```bash
-RGX_LOG_OUTPUT=./logs/ragflow-x.log ./ragflow-x   # the directory must exist and be writable
+```json
+{"msg":"logging configured","console":true,"file":"./logs/ragflow-x.log"}
 ```
 
-or set `logging: { output: ./logs/ragflow-x.log }` in `config/config.yaml`. Files
-rotate daily (`ragflow-x-YYYYMMDD.log`) and by size (`.1`, `.2`, …). Once a file
-is configured, stdout is deliberately **not** mirrored, so the terminal goes
-quiet. Other knobs: `RGX_LOG_LEVEL`, `RGX_LOG_FORMAT`, `RGX_LOG_ROTATE_DAILY`,
-`RGX_LOG_MAX_SIZE_MB`, `RGX_LOG_MAX_BACKUPS`, `RGX_LOG_RETENTION_DAYS`.
+Four values for `logging.output`:
+
+| Value | Meaning |
+| --- | --- |
+| `both` (default) | console + rotating file |
+| `stdout` | console only (containers/collectors: `docker logs` reads it directly) |
+| `file` | rotating file only, at `logging.file` |
+| a path | only that file — the pre-0.6.1 form, still honoured |
+
+```bash
+RGX_LOG_FILE=/var/log/ragflow-x/ragflow-x.log ./ragflow-x   # move the file, keep both sinks
+RGX_LOG_OUTPUT=stdout ./ragflow-x                           # console only
+```
+
+Files rotate daily (`ragflow-x-YYYYMMDD.log`) and by size (`.1`, `.2`, …).
+stdout is deliberately **not** mirrored only when the setting asks for a file
+alone (`file`, or a bare path): a daemon whose stdout is redirected to a capture
+file would otherwise write bytes that rotation never sees.
+
+A log file that cannot be written (read-only directory, no permission) **never
+blocks startup**: the startup log reports `log file disabled` with the reason and
+records keep flowing to the console. Other knobs: `RGX_LOG_LEVEL`,
+`RGX_LOG_FORMAT`, `RGX_LOG_ROTATE_DAILY`, `RGX_LOG_MAX_SIZE_MB`,
+`RGX_LOG_MAX_BACKUPS`, `RGX_LOG_RETENTION_DAYS`.
 
 ## Sign in
 

@@ -17,11 +17,86 @@
   生成随机强密码，终端只打印一次）。它读服务端**同一份** `config/`（含加密的 `runtime.secrets.json`），
   所以不会写进另一个库；只重置已存在的账号、绝不创建，用户名拼错时把现有账号列出来。
   自助部署在没有这把钥匙时只有「删库重来」一条路（会丢掉所有数据），这是它的替代品。
-- **启动日志自报「日志写到哪」**：解压即跑时若仍用出厂 `logging.output: stdout`，启动日志会额外
-  打一行 `logging to stdout` + 如何改成落盘文件的 hint。
+- **出厂默认日志改成「控制台 + 轮转文件」两头写**：`logging.output` 现在有四个取值——
+  `both`（默认：控制台 + 文件）、`stdout`（只控制台）、`file`（只文件）、以及一个裸路径
+  （`0.6.1` 之前的写法，仍然指「只写这个文件」），文件路径由新增的 `logging.file`
+  （env `RGX_LOG_FILE`）给出。解压即跑时终端上能看见日志，同一批记录也落在
+  `./logs/ragflow-x-YYYYMMDD.log`（目录不存在会创建），启动日志自报去向
+  （`logging configured console=… file=…`）。只有当设置里点名「只要文件」时才不镜像 stdout——
+  否则守护进程把 stdout 重定向到采集文件时，那个文件会绕过轮转无限增长。
+  写不了文件（只读目录、没有权限）不再让进程起不来：降级为只写控制台并打一条
+  `log file disabled` 带上原因。容器契约不变（`docker/ragflow-x.yaml` 固定 `output: stdout`，
+  镜像内 `/app/logs` 也备好了，裸 `docker run` 两头都有）。
+- **发布包自带启动脚本：解压即可跑**。归档根目录新增 `start.sh`（linux/darwin，含 Git Bash）与
+  `start.cmd` / `start.ps1`（Windows）。它只做启动而不是第二套配置：建 `logs/`（`--sqlite` 另建
+  `data/`）、把 `--sqlite` 翻成**绝对路径** DSN、把日志文件钉在归档目录（`RGX_LOG_FILE`，不碰
+  两头写的默认值）、端口已被占用时拒绝启动（不让等待循环
+  把别人的 socket 当成「就绪」）、等到端口真正应答才打印 `http://localhost:<port>/`、
+  `--daemon` / `stop` / `status` 通过 `logs/ragflow-x.{pid,port}` 记住后台进程与端口、
+  没有配置文件时明确告知「将进入首次运行向导」、未知参数原样透传给服务端。
+  配套把「启动脚本必须活下来」写进发版门禁（四个平台归档缺脚本即构建失败，
+  `start.sh` 必须是 LF、`start.cmd` 必须是 CRLF），并让 CI 用桩二进制跑 33 条启动器断言。
 
 ### 修复
 
+- **表格文档（xlsx/csv/xls）传不进知识库**。数据集上传白名单只认 `txt/md/pdf/docx`，
+  上传 `xlsx` 直接回「document format must be txt, md, pdf or docx」，界面上文件选择框也把这些
+  文件灰掉了。可引擎本身完全能解析：同一份隐患台账在引擎侧解析出 117 个段落（HTML 表格），
+  网关另一条上传（对话附件）也早就放行——只有知识库这条路拦着，等于「表格类知识库根本建不起来」。
+  现在 `.xlsx/.csv/.xls` 允许上传，`accept` 同步放开，错误文案也列出新格式。
+- **创建模板失败的提示看不懂**。两种情形原来直接把内部术语丢给用户：请求模板没有的形态时回
+  `agent_dsl is required to instantiate an agent template`（`agent_dsl` 是模板包里的字段名，
+  不是用户能补的入参）；「自动创建知识库」建出空库后回引擎原文
+  `the dataset <32 位内部 id> doesn't own parsed file`。现在前者说「该模板无法以智能体形态实例化，
+  请选择对话或检索形态」，后者说「所选知识库还没有可检索内容，请先上传文档并等待解析完成」，
+  引擎原文作为 `(engine: …)` 尾巴保留供支持排障。
+- **`POST /datasets/:id/parse` 传空 `document_ids` 会报「引擎故障」**。引擎对空列表回
+  `code:102 document_ids is required`，而解析调用把所有引擎错误统一映射成
+  `502 ragflow parse documents failed`——参数没给被报成引擎挂了，界面上看就是「点了解析就报错」。
+  同一个数据集上的 `stop`/`status`/`delete` 早就在入口挡住空列表，只有 `parse` 漏了，
+  现在补上同一条守卫（`400 document_ids is required`，请求不进引擎）。
+- **能力体检把「切分方式不匹配」说成两件事，还先给了一个点不动的**。`general` 库缺
+  `citation_locator`（`policy`、`contract-compliance` 要求结构化切分）时，结论里同时出现
+  `apply_parse_profile`（真正能闭环的写入通道）和 `reconfigure_dataset`（引擎能配、向导没有通道），
+  面板按顺序渲染，于是唯一能点的按钮被压在一条没有按钮的修复下面，看起来像「给了按钮点了没用」。
+  现在服务端把这种情形标成 `reason: chunk_method_mismatch` 并只下发 `apply_parse_profile`
+  （目标档仍来自模板 `parse_intent`，已解析文档仍要求 `rewrite_existing` 确认）；探针读不到
+  当前切分方式时不猜，保持 `reconfigure_dataset` 的人工通道。
+- **点了「开启下推并回填」之后界面会自己拆自己的台**。元数据回填是引擎侧的异步任务
+  （实测 15–90 秒才落地），而向导写完立刻复检：读到的还是回填前的文档，结论依旧是
+  `repairable` + 同一条修复，于是「修复成功」的提示与「仍然可修复」的结论同时挂在屏幕上。
+  现在下推通道**不立刻复检**（`repairPlan.postRepairStep`），保留点击前的结论并标注
+  「结论是开启下推之前测的，回填完成后请重新体检」；同步写入的 `parse-profile` 通道不变。
+  `useScenarioWizard` 里的两条写入副作用随之抽成 `wizard/useRepairActions.ts`
+  （向导 hook 已顶到 400 行上限）。
+- **场景模板向导的「应用修复」会修到别的东西上去（同族缺陷，一次清完）**。
+  上一条修好了「请求形状」，把同一面板的其它修复动作逐个验证后，又发现四处：
+  1. 选修复用的是 `repairs[0]` 兜底，于是「只是元数据没就绪」的库（唯一修复项是
+     `enable_pushdown_and_sync_meta`）被拿去做切分方式重写：**操作者只要开元数据下推，
+     结果全部文档被重新解析**。现在按 `action` 决定写入通道（`POST …/parse-profile` /
+     `PUT /datasets/:id` / 无通道），逐条渲染，向导做不了的一律不给按钮；
+  2. 打开下推走 `PUT /datasets/:id`，命中审批策略时回 **202 + 审批单**（axios 视为成功），
+     界面会报「已开启下推」而实际什么都没写。现在把这种响应识别为「已提交审批（工单号）」；
+  3. 目标切分方式在服务端未给出时兜底成 `naive`——对 `book` 模板是又一次猜错。
+     现在兜底为空并禁用按钮，提示手工调整；
+  4. 体检结论会「活过」让它失效的操作：改了知识库绑定或切换应用类型后仍显示旧结论
+     （不同 `app_type` 的必备能力不同）。现在两处都作废结论并要求重跑。
+  另外 `blocked`（引擎明确不支持）此前只是一枚徽章，向导照样允许创建出必然不可用的应用
+  （doc/276 §6.5 写的是「阻断实例化」）。现在创建前拦截并列出具体库与能力；
+  `POST …/instantiate` 服务端仍不拒绝，绕过界面直接调 API 依然能建，属未完成项。
+- **场景模板向导的「应用修复」按钮在真实数据集上必然失败**：能力体检判定
+  `apply_parse_profile` 可修复（模板要 `book`，库是 `general`），点下去却回
+  `40915 dataset already has parsed documents; set rewrite_existing=true`。两个缺陷叠在一起：
+  1. 前端从不发 `rewrite_existing`。而「切分方式不对」的库**必然**已经解析过文档——
+     可修复项只在有内容时才成立，所以这条修复路径 100% 撞 40915；
+  2. 前端把目标切分方式猜成 `naive`（探针证据里读不到 `chunk_method` 就默认），
+     即便写成功也修不到模板要的 `book`。
+  现在目标档由服务端给出（`repair.chunk_method`，来自模板 `parse_intent`），
+  同时给出 `repair.requires_reparse` 与 `document_count`/`parsed_count`；
+  向导对「已解析 N 篇将被重新解析」单独要求一次显式确认（与「共享库影响」的确认分开，
+  两次不同的破坏性写入不能共用一个勾），提交后按 `reparse_triggered` 提示「重新解析已提交，
+  完成后再体检」而不是假装修复完成。补齐写入通道的测试（拒绝→不写任何东西、
+  确认→写档并只触发一次重解析、空库不需要确认、目标档必须在可写词表内）。
 - **向导重跑改不掉已存在管理员的密码（静默失败）**：`buildEngine` 里的 `BootstrapAdmin` 幂等且
   故意不碰已存在账号的密码（否则每次重启都会把界面上改过的密码打回去），于是向导接受了一个
   新密码却什么都没改，操作者拿刚输入的密码登不进去。现在 `Apply` 在建成引擎后显式
@@ -43,6 +118,34 @@
   引擎探测失败也带 `ragflow_error`，向导按枚举给出可执行的下一步。实测：
   `FATAL: database "rgx_missing_db" does not exist (SQLSTATE 3D000)` → 「先建库或改用已存在的库名」。
   SQLite 探测额外用 `BEGIN IMMEDIATE` 验证可写（只读挂载以前只会在迁移阶段报一句难懂的错误）。
+- **容器在首次运行（向导态）一直被标成 `unhealthy`，且 `docker run` 不给配置就直接退出**。
+  `HEALTHCHECK` 探的是 `/api/v1/readyz`，而 `healthz`/`readyz` 只注册在完整路由上：容器落在
+  bootstrap 路由时探活 404 → `docker ps` 显示 `unhealthy`、`docker compose up --wait` 直接失败，
+  可服务的却是完全正常的向导页。现在 bootstrap 路由也应答这两个探针（`readyz` 返回
+  `{"status":"ready","setup_required":true}`，向导是受支持的状态而不是降级）。另外镜像默认
+  `CMD` 指向 `/app/config/config.yaml`（一个空的 `VOLUME`），没挂配置时二进制直接
+  `load config failed` 退出——新增 `docker/entrypoint.sh`：有 `/app/config/config.yaml` 就用它，
+  没有就打三行提示后按内置默认启动（进向导），并把 `reset-admin-password`/`-flag` 原样透传；
+  `.dockerignore` 补上 `tmp`/`test-results`/`localenv`/`*.exe`（构建上下文从 993 MB 降到源码量级）。
+  镜像侧另有可复跑的验收脚本 `docker/verify-image.sh`（构建 → 元数据 → 裸 `docker run` 进向导 →
+  `reset-admin-password` 可达 → Compose 到 `mode=engine`，26 条断言；`SKIP_BUILD=1 IMAGE=…` 可验
+  已发布 tag）；Git Bash 下脚本会自己带上 `MSYS_NO_PATHCONV=1` 重跑，免得路径翻译把桩引擎
+  挂成不存在的目录、让人误判「镜像坏了」）。Compose 把 `GOPROXY` 透传成构建参数——
+  `proxy.golang.org` 不可达时不再只能失败在 `go mod download`。
+  `docker/Dockerfile` 的两个构建阶段改为 `--platform=$BUILDPLATFORM` 并只对 Go 编译做
+  `GOOS/GOARCH` 重定向（`ARG TARGETOS TARGETARCH`）：arm64 镜像不再让 `npm ci` 跑在 QEMU 上，
+  实测 `--platform linux/arm64` 的构建 40s 完成、产物为 `aarch64` ELF。镜像发布随之改为默认开启
+  （`PUSH_IMAGE != 'false'`）：docker job 用工作流 token 推 `ghcr.io`，`release` job 只 `needs: build`，
+  所以推送失败既不会挡发版，也会把「Manage Actions access 或 GHCR_TOKEN」两条补救写在日志里。
+- **首启向导的「只建管理员」这一步在 bootstrap 路由上是 404**：向导原本用
+  `configured && db_up` 决定是否只问管理员——但库可连、引擎还没配好时服务端仍在 bootstrap
+  路由上，而 `POST /system/setup/admin` 只存在于完整路由，于是「创建并完成初始化」点了没反应，
+  控制台只有一条 `Failed to load resource: 404`。这正是启动器 `./start.sh --sqlite` 试跑会
+  落到的状态。现在 `Status` 明确回报 `mode: "wizard" | "engine"`，向导据此决定展示哪半张表单
+  （bootstrap 态给完整表单，走 `apply` 一次建库+引擎+管理员）；同时 bootstrap 路由对
+  `/system/setup/admin` 回 `409/40009` 并说明「请提交完整表单」，不再是一个死掉的 404。
+  实测（嵌前端二进制 + 桩引擎）：启动器起服务 → 向导填 SQLite/引擎/管理员 → 测试连接 →
+  应用配置 → 用该账号登录进入仪表板，控制台零错误。
 - **能力检查证据探测类报错不再污染 stderr**：`db.OpenQuiet` 供连通性探测使用，探测结果通过
   `Status` 上报，避免首次运行先看到一段 ANSI 红色驱动报错再看到向导。
 - **场景模板向导：已满足的能力要求被渲染成「阻断」红标**。`DatasetVerdictCard` 把
@@ -51,6 +154,31 @@
   于是体检结论卡上「已满足」的每一行都显示成红色阻断。新增语义正确的
   `requirementBadgeState()`（满足 → `satisfied`，否则 `blocked`），并补 3 例单测锁住这个
   映射，防止再次把等级和状态混用。
+- **能力体检把未翻译的 i18n key 直接印在界面上**：`StepKnowledge` 用
+  `t('scenarioTemplates.capability.name.'+capability, { defaultValue })` 取能力名，而字典里只有
+  探针词表（`chunk_method`/`embedding`/…），**没有**模板可以要求的闭集（`vector`/
+  `metadata_filter`/`citation_locator`/…）。两处叠加：字典缺 key，且 `defaultValue` 是 i18next
+  的写法——本项目的 provider 是 `ra-i18n-polyglot`，它读 `_`，于是 fallback 静默失效、屏幕上
+  出现整条 `scenarioTemplates.capability.name.citation_locator`（还是红色阻断标，读起来像报错）。
+  修正三件事：①补齐两种词表（含 `reason` 枚举 `below_min_level`/`metadata_not_ready`/
+  `capability_not_supported`）的中英文案；②新增 `capabilityLabels.ts`，用 `translateOr()`
+  （`_` + 空串/回显 key 双重兜底）统一取标签，缺失时退化成 `metadata filter` 而不是整条 key，
+  `StepKnowledge`/`StepVerify` 的四处调用改用它的 `capabilityName/Role/Verdict/Reason`；
+  ③`capabilityLabels.test.ts` 13 例守住：读取 Go 源码比对闭集（后端加能力而前端没加标签就红）、
+  中英双语全量覆盖、以及用**真实** `i18nProvider` 断言 `citation_locator` → 引用定位、
+  `metadata_filter` → 元数据过滤、未知能力 → `hyper custom probe` 且不含 `scenarioTemplates`。
+- **Windows 上调度类单测偶发红：幂等键取时间戳，而 Windows 的 `time.Now().UnixNano()` 会重复**。
+  `internal/service` 的 scheduled reconcile 用 `"ragflow_reconcile:"+UnixNano()` 当作业表去重键，
+  而 Windows 的墙上时钟粒度很粗：实测**背靠背 2000 次调用返回同一个纳秒值**（Linux 每次 syscall
+  都进，所以只在 Windows 复现）。于是「worker 在跑本轮时先排下一轮」这句话里的第二次插入被判成
+  重复插入（`ON CONFLICT (key) DO NOTHING` → `RowsAffected=0`），`Enqueue` 返回 `false`，worker
+  按「排不上下一轮」提前返回，连带跳过 stale run 回收——表现为
+  `TestScheduledResourceSyncWorkerArmsNextRunBeforeExecution` /
+  `TestScheduledWorkerRecoversStaleRunBeforeActiveCheck` 约 1/6 概率红，而失败信息看起来像时序问题。
+  改为 `id.New()`（去重语义不变，唯一性不再依赖时钟精度），并新增
+  `TestScheduleReconcileArmsConsecutiveCyclesWithoutClockResolution`：不 sleep 连排三轮，
+  旧代码在 Windows 上稳定红、新代码稳定绿。验证：三个用例 `-count=8` × 5 轮全绿，
+  `go test ./internal/service -shuffle=on` 全绿。
 
 ## [0.6.0] - 2026-11-15
 

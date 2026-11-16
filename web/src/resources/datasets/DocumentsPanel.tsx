@@ -504,7 +504,7 @@ export const DocumentsPanel = () => {
               {t("datasets.upload")}
               <Input
                 type="file"
-                accept=".txt,.md,.pdf,.docx"
+                accept=".txt,.md,.pdf,.docx,.csv,.xls,.xlsx"
                 className="hidden"
                 disabled={busy}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => {

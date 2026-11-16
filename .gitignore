@@ -89,7 +89,16 @@ tmp/
 # file is reviewed for release (see doc/126 pre-release review report).
 # Do NOT add these back in bulk; whitelist individual files after review.
 /doc/*
-/test/
+# `/test/*` (not `/test/`) so the reusable regression harness below can be
+# re-included: an excluded directory cannot have tracked children.
+/test/*
+# Exception (v0.6.1): the scenario-template end-to-end harness is part of the
+# delivery — it is how "download it and it works" is proven before a release.
+# The corpora it consumes (test/*-docs) stay local-only.
+!/test/e2e/
+# Run state and pycache are per-machine; the evidence file is the deliverable.
+/test/e2e/**/out/state-*.json
+__pycache__/
 # Exception (v0.5.0): the user-facing documentation set under doc/user/ is part
 # of the release (README links into it) and is tracked. Everything else under
 # doc/ (develop/, blog/, performance/, VIDEOS) stays local-only.
