@@ -123,10 +123,15 @@ type Runtime struct {
 }
 
 // Logging holds structured logger rotation and retention settings.
+//
+// OutputPath names the sinks: "both" (default: console + rotating file),
+// "stdout" (console only), "file" (rotating file only at FilePath), or a bare
+// path (legacy file-only form kept for pre-0.6.1 configs).
 type Logging struct {
 	Level          string `yaml:"level"`
 	Format         string `yaml:"format"`
 	OutputPath     string `yaml:"output"`
+	FilePath       string `yaml:"file"`
 	RotateDaily    bool   `yaml:"rotate_daily"`
 	RotationSizeMB int64  `yaml:"max_size_mb"`
 	RotationCount  uint   `yaml:"max_backups"`
@@ -523,7 +528,7 @@ func defaults() *Config {
 		// loopback placeholder keeps internal network topology out of the
 		// committed source (doc/118 F-08).
 		RAGFlow: RAGFlow{Provider: "http", BaseURL: "http://127.0.0.1:8001", Timeout: 30, MaxConns: 20, AutoRegister: true, TaskPollSeconds: 15, RetryMaxRetries: 3, RetryBackoffMs: 100},
-		Logging: Logging{Level: "info", Format: "json", OutputPath: "stdout", RotateDaily: true, RotationCount: 7},
+		Logging: Logging{Level: "info", Format: "json", OutputPath: "both", FilePath: "./logs/ragflow-x.log", RotateDaily: true, RotationCount: 7},
 		Setup:   Setup{Enabled: true, SecretsFile: "./config/runtime.secrets.json", RSAKeyPath: "./config/rsa_setup.pem", RateLimitPerMin: 10},
 		Gateway: Gateway{NonStreamTimeoutSec: 120, StreamHeaderTimeoutSec: 30, StreamTimeoutSec: 0, MaxConns: 20, RateLimitPerMin: 120},
 		Redis:   Redis{Addr: "localhost:6379", DB: 0, PoolSize: 10},
@@ -646,6 +651,7 @@ func applyEnv(cfg *Config) {
 	setStr(&cfg.Logging.Level, "RGX_LOG_LEVEL")
 	setStr(&cfg.Logging.Format, "RGX_LOG_FORMAT")
 	setStr(&cfg.Logging.OutputPath, "RGX_LOG_OUTPUT")
+	setStr(&cfg.Logging.FilePath, "RGX_LOG_FILE")
 	setBool(&cfg.Logging.RotateDaily, "RGX_LOG_ROTATE_DAILY")
 	setInt64(&cfg.Logging.RotationSizeMB, "RGX_LOG_MAX_SIZE_MB")
 	setUint(&cfg.Logging.RotationCount, "RGX_LOG_MAX_BACKUPS")

@@ -9,12 +9,12 @@
 #   1. build job: cross-compile Go binaries (linux/amd64, linux/arm64, darwin/amd64,
 #      windows/amd64) with the release version stamped into main.version, build the
 #      frontend, package everything into tarballs with SHA256SUMS
-#   2. docker job (opt-in): build & push the multi-arch image to ghcr.io. It only
-#      runs when the repository variable PUSH_IMAGE is "true"; until the registry
-#      path is settled, releases ship binary archives only and the release notes
-#      omit the `docker pull` line so they cannot advertise an image that does not
-#      exist. `release` does not `needs` this job, so skipping it never blocks a
-#      release.
+#   2. docker job (on unless PUSH_IMAGE is "false"): build & push the multi-arch
+#      image to ghcr.io with the workflow token. Only the Go compile is retargeted
+#      per architecture, so the arm64 leg does not pay for `npm ci` under QEMU.
+#      `release` does not `needs` this job, so a refused push never blocks a
+#      release; the release notes only advertise `docker pull` when the push was
+#      attempted, and `PUSH_IMAGE=false` drops both the push and the note.
 #   3. release job: download artifacts, verify SHA256 checksums (integrity gate),
 #      render release notes from git history, create the GitHub Release and upload
 
@@ -136,12 +136,20 @@ jobs:
           # known-upstream-issue ledger travel with the binaries, not just the
           # release page.
           cp ../CHANGELOG.md bundle/
+          # Launchers ship at the archive root so "download and run" is one command:
+          # ./start.sh (linux/darwin), or start.cmd / start.ps1 (Windows).
+          cp ../scripts/release/start.sh bundle/ && chmod +x bundle/start.sh
 
           # Package each binary with the shared layout
           for f in ragflow-x-*; do
             case "$f" in
               *.exe)
                 rm -rf stage; cp -r bundle stage; mv "$f" stage/ragflow-x.exe
+                # cmd.exe and PowerShell want CRLF; start.sh must keep LF for bash,
+                # so only the two Windows launchers are converted here.
+                for side in start.ps1 start.cmd; do
+                  sed 's/$/\r/' "../scripts/release/$side" >"stage/$side"
+                done
                 ( cd stage && zip -qr "../ragflow-x-${TAG}-windows-amd64.zip" . )
                 ;;
               *)
@@ -173,11 +181,28 @@ jobs:
               ragflow-x-"${TAG}"-src.tar.gz|ragflow-x-"${TAG}"-web.tar.gz) continue ;;
             esac
             listing=$(tar tzf "$pkgname" 2>/dev/null || unzip -Z1 "$pkgname")
-            for required in "config/config.example.yaml" "docker/docker-compose.yml" "README.md"; do
+            case "$pkgname" in
+              *-windows-amd64.zip) required_list="config/config.example.yaml docker/docker-compose.yml README.md start.ps1 start.cmd" ;;
+              *) required_list="config/config.example.yaml docker/docker-compose.yml README.md start.sh" ;;
+            esac
+            for required in $required_list; do
               echo "$listing" | grep -Eq "(^|/)${required}$" || {
                 echo "::error::${pkgname} is missing ${required}"; exit 1;
               }
             done
+            # start.sh must stay LF: a CRLF bash script dies with a quoting error.
+            # (nested if, not 'cmd && { exit; }': set -e would trip on the good case)
+            if tar tzf "$pkgname" >/dev/null 2>&1; then
+              if tar xzf "$pkgname" -O ./start.sh | head -1 | grep -q $'\r'; then
+                echo "::error::${pkgname} has CRLF in start.sh"; exit 1;
+              fi
+            fi
+            # ... and start.cmd must not be LF-only, cmd.exe mis-parses those.
+            if echo "$listing" | grep -qx "start.cmd"; then
+              if ! unzip -p "$pkgname" start.cmd | head -1 | grep -q $'\r'; then
+                echo "::error::${pkgname} has LF-only start.cmd"; exit 1;
+              fi
+            fi
           done
 
       - name: Upload release artifacts
@@ -192,10 +217,12 @@ jobs:
 
   docker:
     needs: build
-    # Opt-in: binary archives are the supported install path until an image
-    # registry is available. Set the PUSH_IMAGE repository variable to "true" to
-    # re-enable publishing; nothing else in this workflow has to change.
-    if: vars.PUSH_IMAGE == 'true'
+    # Images are published by default now that the container package grants
+    # Actions access, so the token in GITHUB_TOKEN is enough. This leg is soft by
+    # design: it runs after the artifacts are published (release depends on build
+    # only), and a refusal is turned into the exact remedy below. Set the
+    # PUSH_IMAGE repository variable to "false" to skip the push entirely.
+    if: vars.PUSH_IMAGE != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -331,7 +358,7 @@ jobs:
           UPSTREAM_BLOCK="$(changelog_block 'Known upstream issues (RAGFlow v1.0.0)')"
           # The image only exists when the docker leg ran (see that job's `if:`);
           # advertising it otherwise sends users to a 404 on the registry.
-          PUSH_IMAGE="${{ vars.PUSH_IMAGE == 'true' }}"
+          PUSH_IMAGE="${{ vars.PUSH_IMAGE != 'false' }}"
 
           {
             echo "## ragflow-x ${TAG}"
@@ -371,12 +398,14 @@ jobs:
             echo "### 安装"
             echo
             echo '```bash'
-            echo "# Linux (amd64) — binary ships with the UI embedded; config is included"
-            echo "tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz"
-            echo "cp config/config.example.yaml config/config.yaml && ./ragflow-x"
+            echo "# Linux (amd64) — binary ships with the UI embedded; start.sh is in the archive"
+            echo "mkdir -p ragflow-x && tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz -C ragflow-x && cd ragflow-x"
+            echo "./start.sh --sqlite --daemon   # 首次试跑：SQLite + 后台，打印 URL 即可打开"
+            echo "./start.sh                     # 有 config/config.yaml 时前台启动"
+            echo "./start.sh status | stop       # 查看 / 停止后台进程"
             echo
-            echo "# Windows (amd64) — 解压后直接双击，或"
-            echo "ragflow-x.exe"
+            echo "# Windows (amd64) — 解压到独立目录后双击 start.cmd（前台），或"
+            echo "start.cmd --sqlite -Daemon     # 后台启动，等价于 start.ps1 -Sqlite -Daemon"
             echo "# 打开 http://localhost:9191/ ：无可用数据库时进入配置向导，向导完成后原地切换"
             echo
             echo '```'

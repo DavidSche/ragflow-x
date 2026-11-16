@@ -38,3 +38,13 @@ Thumbs.db
 # Docs and scripts (keep the server image lean; config.example is copied explicitly)
 doc
 scripts
+promo
+
+# Local scratch space. `tmp` holds probe binaries and downloaded archives,
+# `test-results` holds playwright/vitest output, `localenv` the 151 test
+# environment. None of it is compiled into the server, and together they made
+# the build context 993 MB (transferring it cost more than the Go build).
+tmp
+test-results
+localenv
+*.exe

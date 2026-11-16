@@ -45,6 +45,33 @@ jobs:
           bash scripts/secret-scan.sh --all
 
   # ------------------------------------------------------------------
+  # Launcher — scripts/release/start.sh is the first thing a download-and-run
+  # user touches ("tar xzf && ./start.sh"), so its promises are tested here:
+  # directory creation, absolute sqlite paths, port memory for status/stop,
+  # refusal on a busy port, config discovery, flag passthrough. Windows has no
+  # runner for start.ps1; the shared parts are kept in lockstep by hand and by
+  # the packaging guard in release.yml (CRLF for .cmd/.ps1, LF for .sh).
+  # ------------------------------------------------------------------
+  launcher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run release launcher tests
+        shell: bash
+        run: |
+          bash scripts/release/test-start.sh
+
+      # Container side of the same startup contract (no Docker needed): a mounted
+      # /app/config/config.yaml must be used, a missing one must still start the
+      # server, and `reset-admin-password` must reach the binary untouched.
+      - name: Run image entrypoint tests
+        shell: bash
+        run: |
+          sh docker/test-entrypoint.sh
+
+  # ------------------------------------------------------------------
   # Go Lint — golangci-lint
   # ------------------------------------------------------------------
   go-lint:

@@ -4,7 +4,10 @@
 # ---- frontend stage (first: no dependency on the Go stages) ----
 # Produces the Vite production bundle that gets embedded into the Go binary
 # via internal/webfs (go:embed) with the webfs_embed build tag.
-FROM node:22-alpine AS web
+# Both build stages run on the builder's own platform ($BUILDPLATFORM) and only
+# the Go compile is retargeted: `npm ci` under QEMU emulation is the difference
+# between a 3-minute and a 30-minute arm64 leg.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 # `npm ci` runs the `postinstall: patch-package` hook, so web/patches must be
@@ -20,11 +23,16 @@ COPY web/ ./
 RUN npm run build
 
 # ---- build stage ----
-FROM golang:1.25-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS build
 WORKDIR /src
 
 # Release version stamped into the binary (set by release.yml / docker build --build-arg).
 ARG VERSION=dev
+
+# Target platform, filled in by buildx for multi-arch builds and defaulted for a
+# plain `docker build`.
+ARG TARGETOS
+ARG TARGETARCH
 
 # Module proxy. Defaults to the upstream one, which is what CI uses; networks
 # that cannot reach proxy.golang.org (mainland China, some corp egress) build
@@ -43,7 +51,8 @@ COPY . .
 # image serves API + UI from the single binary.
 COPY --from=web /web/dist ./internal/webfs/dist
 # CGO disabled + linux -> fully static binary, runs in the slim alpine runtime.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -tags=webfs_embed \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -tags=webfs_embed \
     -ldflags="-s -w -X main.version=${VERSION}" -o /out/ragflow-x ./cmd/server
 
 # ---- runtime stage ----
@@ -56,8 +65,19 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
 COPY --from=build /out/ragflow-x /usr/local/bin/ragflow-x
+# Entrypoint decides whether a config was mounted. It is deliberately NOT the
+# archive launcher (scripts/release/start.sh): inside a container the binary must
+# stay PID 1 for signal handling, port-in-use refusal would turn a restart into a
+# crash loop, and pid/port files have no meaning. Archives and images are two
+# different launch contracts.
+COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Shipped as a reference; real configs are mounted read-only in compose.
 COPY config/config.example.yaml /app/config.example.yaml
+# Where the built-in "both" default puts its rotating file. Compose pins
+# `output: stdout` (the container log transport); a bare `docker run` keeps the
+# console stream AND a file here, so both contracts work out of the box.
+RUN mkdir -p /app/logs
 
 ENV RGX_MODE=release \
     RGX_DATA_DIR=/app/data \
@@ -73,5 +93,8 @@ VOLUME ["/app/data", "/app/secrets", "/app/config"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 \
   CMD wget -qO- http://127.0.0.1:9191/api/v1/readyz > /dev/null 2>&1 || exit 1
 
-ENTRYPOINT ["ragflow-x"]
-CMD ["-config", "/app/config/config.yaml"]
+# No default CMD: the entrypoint adds `-config /app/config/config.yaml` only when
+# that file exists (compose mounts it; a bare `docker run` does not) and passes
+# any explicit arguments straight through.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD []

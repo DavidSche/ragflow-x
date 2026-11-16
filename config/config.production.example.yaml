@@ -22,7 +22,11 @@ app:
 logging:
   level: info            # debug | info | warn | error
   format: json           # json | console
-  output: ./logs/ragflow-x.log   # file path -> daily/size rotation; stdout = no rotation
+  # both (default) = console + rotating file; stdout = console only (containers,
+  # collectors); file = rotating file only; a bare path = that file only (legacy).
+  # An unwritable log file degrades to console-only instead of blocking startup.
+  output: both
+  file: ./logs/ragflow-x.log     # rotating file for both/file (env RGX_LOG_FILE)
   rotate_daily: true     # name files by date: ragflow-x-20260820.log
   max_size_mb: 50        # rotate by size per file (0 disables)
   max_backups: 7         # keep this many rotated files

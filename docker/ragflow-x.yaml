@@ -21,6 +21,9 @@ app:
 logging:
   level: info
   format: json
+  # Containers log to stdout: docker/k8s collect the stream, and a file inside a
+  # read-only or throwaway container filesystem is a log nobody can read. For a
+  # mounted volume use output: both + file: /app/logs/ragflow-x.log.
   output: stdout
   rotate_daily: true
   max_size_mb: 0

@@ -2,6 +2,18 @@ package config
 
 import "testing"
 
+// The shipped default writes to the console *and* a rotating file: an
+// unpack-and-run operator sees the log stream and still keeps a file.
+func TestDefaults_LoggingWritesConsoleAndFile(t *testing.T) {
+	cfg := defaults()
+	if cfg.Logging.OutputPath != "both" {
+		t.Fatalf("default logging output must be both, got %q", cfg.Logging.OutputPath)
+	}
+	if cfg.Logging.FilePath != "./logs/ragflow-x.log" {
+		t.Fatalf("default logging file must be ./logs/ragflow-x.log, got %q", cfg.Logging.FilePath)
+	}
+}
+
 func TestDefaults_ServerPort(t *testing.T) {
 	cfg := defaults()
 	if cfg.Server.Port != 9191 {
