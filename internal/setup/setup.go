@@ -399,6 +399,22 @@ func (m *Manager) Apply(ctx context.Context, req ApplyRequest) error {
 	}
 	m.closer = closer
 	m.secrets = sec
+
+	// buildEngine calls BootstrapAdmin, which is idempotent and deliberately does
+	// not touch an existing account's password (otherwise every restart would
+	// revert a password the operator changed in the UI). That left a silent trap:
+	// re-running the wizard with a new admin password changed nothing and the
+	// operator could not sign in with the password they had just typed. Applying
+	// the wizard IS an explicit credential decision, so set it here.
+	if sec.Admin != nil && strings.TrimSpace(sec.Admin.Username) != "" && m.svc != nil {
+		if err := m.svc.ResetUserPassword(ctx, sec.Admin.Username, sec.Admin.Password); err != nil {
+			logger.Warn("setup: could not update the designated admin password",
+				"username", sec.Admin.Username, "err", err)
+		} else {
+			logger.Info("setup: designated admin password set by the setup wizard",
+				"username", sec.Admin.Username)
+		}
+	}
 	return nil
 }
 

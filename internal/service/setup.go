@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/password"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 )
 
@@ -60,6 +61,36 @@ func (s *Service) CreateFirstAdmin(ctx context.Context, username, secret string)
 		return httperr.New(409, 40901, "system already initialized")
 	}
 	return s.BootstrapAdmin(ctx, username, secret)
+}
+
+// ResetUserPassword overwrites the password of an existing account.
+//
+// This is deliberately NOT an HTTP surface: it exists for two trusted,
+// out-of-band callers — the first-run wizard (an operator is standing in front
+// of the server, holding the setup RSA workflow) and the
+// `ragflow-x reset-admin-password` recovery command. Callers must check the
+// account exists first; this only writes.
+func (s *Service) ResetUserPassword(ctx context.Context, username, plain string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return httperr.BadRequest(40001, "username is required")
+	}
+	if len(plain) < 8 {
+		return httperr.BadRequest(40002, "password must be at least 8 characters")
+	}
+	u, err := s.Store.GetUserByUsername(ctx, username)
+	if err != nil {
+		return err
+	}
+	if u == nil {
+		return httperr.BadRequest(40004, "account does not exist")
+	}
+	hash, err := password.Hash(plain)
+	if err != nil {
+		return err
+	}
+	u.PasswordHash = hash
+	return s.Store.UpdateUser(ctx, u)
 }
 
 // PreflightResult reports whether a proposed engine connection works without
