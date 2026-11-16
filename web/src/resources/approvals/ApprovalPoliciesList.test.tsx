@@ -214,7 +214,7 @@ describe("PolicyDialog", () => {
 
     const valueSelect = screen.getByLabelText("approvals.policies.approver_value");
     expect(valueSelect).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("approvals.policies.approver_type"), {
+    fireEvent.change(screen.getByLabelText("approvals.policies.approver_type_label"), {
       target: { value: "role" },
     });
     expect((valueSelect as HTMLSelectElement).value).not.toBe("user-1");
