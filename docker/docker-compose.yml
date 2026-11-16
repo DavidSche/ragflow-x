@@ -37,6 +37,12 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      # Module proxy for the Go build. Override in docker/.env when the default
+      # proxy.golang.org is unreachable (mainland China, some corp egress):
+      #   GOPROXY=https://goproxy.cn,direct
+      # The release job builds the image through release.yml with the default.
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
     restart: unless-stopped
     depends_on:
       postgres:

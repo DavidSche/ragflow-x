@@ -140,18 +140,48 @@ per-capability view is served at runtime by `GET /api/v1/system/capabilities`
 
 ### Run a release archive (recommended, UI included)
 
-**v0.5.3 ships as release archives only — no container image is published yet.** Every release
+**Releases ship as archives only — no container image is published yet.** Every release
 binary embeds the frontend build, so API and UI come out of one file:
 
 ```bash
 # unpack ragflow-x-<version>-<os>-<arch>.tar.gz / .zip, then
+./start.sh --sqlite --daemon    # try it on SQLite, prints the URL once it listens
+./start.sh                      # foreground, using config/config.yaml if present
+./start.sh stop                 # stop the background process ("status" to inspect)
+```
+
+On Windows the archive carries the same launcher for PowerShell / cmd:
+
+```
+start.cmd --sqlite -Daemon      :: or start.ps1 -Sqlite -Daemon
+start.cmd                       :: double-click friendly: foreground run
+start.cmd stop                  :: stop the background process
+```
+
+The launcher is a thin wrapper, not a second configuration system: it creates
+`logs/` (and `data/` for `--sqlite`), refuses to start when the port is already
+answering, waits until the port really opens before printing
+`http://localhost:9191/`, and says out loud when no config file exists — which is
+exactly the case where the server boots the first-run setup wizard. It also pins
+the log file next to the launcher: the default writes to the console **and**
+`logs/ragflow-x-YYYYMMDD.log`, so a foreground run shows what it is doing and the
+same records survive the terminal (`logging.output: stdout` if you want no file).
+
+The `--sqlite` trial still needs a RAGFlow engine: the wizard asks for its
+`base_url` + `api_key` (that is the only thing that cannot be made up locally),
+then creates the first administrator and swaps the full router in place — no
+restart, no file to edit.
+
+Without the launcher (one binary, one config file):
+
+```bash
 cp config/config.example.yaml config/config.yaml   # Windows: copy
 ./ragflow-x                 # Windows: ragflow-x.exe
 ```
 
 Open `http://localhost:9191/`. The server reads `config/config.yaml` (or
-`config.yaml`) next to the binary without any flag; pass `-config <path>` to use
-another file.
+`config.yaml`) from the working directory without any flag — run it from the
+directory you unpacked into — and `-config <path>` points it somewhere else.
 
 If the database in your config is not reachable yet, the server boots the
 first-run setup wizard instead of failing: the same URL serves the UI, the
@@ -187,10 +217,33 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-When an image registry is available again, the release workflow can publish
-multi-arch images by setting the repository variable `PUSH_IMAGE=true`; the
-`release.yml` docker job is opt-in for exactly that reason. Until then, the
-release archive above is the supported install path.
+The image and the archive are two different launch contracts, on purpose: in a
+container the binary stays PID 1 (signals), so the image ships a small
+`docker-entrypoint.sh` instead of the archive launcher — it uses
+`/app/config/config.yaml` when you mount one and otherwise starts on the built-in
+defaults, which serves the first-run setup wizard and says so in the log. That
+way `docker run --rm <image>` is usable too (no `/app/config` mount, no instant
+"load config failed"), and `docker run --rm <image> reset-admin-password -list`
+still reaches the recovery subcommand unchanged. `/api/v1/healthz` and
+`/api/v1/readyz` answer during the wizard as well, so the container's
+HEALTHCHECK reports `healthy` while it waits for the operator.
+
+Both paths are checked from a shell, not from memory — `bash docker/verify-image.sh`
+builds the image and asserts the contract above (entrypoint, empty `CMD`,
+HEALTHCHECK, bare run, `mode=wizard`, the recovery subcommand, and a Compose
+stack that reaches `mode=engine`); against an already published tag, run
+`SKIP_BUILD=1 IMAGE=ghcr.io/<owner>/<repo>:v0.6.1 bash docker/verify-image.sh`.
+If `proxy.golang.org` is unreachable, build with `GOPROXY=https://goproxy.cn,direct`
+(set it in `docker/.env` or pass it as a build arg); the Compose file forwards it.
+
+Publishing is on by default: the `release.yml` docker job pushes multi-arch
+(`amd64`/`arm64`) images to `ghcr.io/<owner>/<repo>` with the workflow token — no
+Docker Hub credentials needed. Set the repository variable `PUSH_IMAGE=false` to
+skip it, and note that a refused push never blocks the release itself (whether it
+fails, the artifacts are already published and the log spells out the remedy).
+Only the Go compile is retargeted per architecture, so the arm64 leg is not paying
+for `npm ci` under emulation. The release archive above remains the supported
+install path.
 
 ## User documentation
 

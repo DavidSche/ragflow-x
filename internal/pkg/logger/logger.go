@@ -7,11 +7,22 @@
 // "app-20260820.log" and appends ".1", ".2" suffixes when multiple files
 // are produced within a single day by size-based rotation.
 //
-// When OutputPath is a file, log records go ONLY to the rotating file — stdout
-// is not mirrored. Mirroring to stdout would bypass rotation whenever the
-// process runs as a daemon with stdout redirected to a capture file (e.g.
-// logs/server.out.log), letting that file grow unbounded. Use `output: stdout`
-// instead when console/collector logging is wanted.
+// Records go where the output setting says (see Resolve):
+//
+//	both        console and rotating file — the built-in default
+//	stdout      console only
+//	file        rotating file only, at Config.FilePath
+//	<path>      rotating file only at that path (pre-0.6.1 config style)
+//
+// The default is deliberately both: an unpack-and-run archive gets its log on
+// the terminal *and* a dated file that survives the terminal, which is the whole
+// point of shipping a log story. When the setting names a file only, stdout is
+// NOT mirrored — a daemon whose stdout is redirected to a capture file would
+// otherwise write unbounded bytes into a file that rotation knows nothing about.
+//
+// A log file that cannot be opened never stops the process: the console half
+// keeps the records and Destination() reports why (a service that refuses to
+// boot because ./logs is missing is a worse failure than a missing log file).
 package logger
 
 import (
@@ -33,14 +44,24 @@ const pruneInterval = time.Minute
 var (
 	globalLogger *slog.Logger
 	globalCloser io.Closer
+	globalDest   Dest
 	mu           sync.Mutex
+)
+
+const (
+	// DefaultOutput is "both": console and a rotating file.
+	DefaultOutput = "both"
+	// DefaultFilePath is where the rotating file lives when the config does not
+	// name a path (relative to the process working directory).
+	DefaultFilePath = "./logs/ragflow-x.log"
 )
 
 // Config controls logger initialization.
 type Config struct {
 	Level         string // debug | info | warn | error
 	Format        string // json | console
-	OutputPath    string // "stdout" or a file path such as ./logs/ragflow-x.log
+	OutputPath    string // both (default) | stdout | file | a file path (legacy)
+	FilePath      string // rotating file path for "file"/"both"; DefaultFilePath when empty
 	RotateDaily   bool   // rotate once per day; the active file name carries the date
 	RotationSize  int64  // maximum bytes per file before size rotation; 0 disables
 	RotationCount uint   // maximum backup files to keep; 0 falls back to age retention
@@ -48,12 +69,44 @@ type Config struct {
 	Service       string // value placed on the "service" structured field
 }
 
+// Dest is the resolved set of log sinks.
+type Dest struct {
+	Console   bool   // records also go to stdout
+	File      string // rotating file path; empty when file output is off
+	Legacy    bool   // the setting was a bare path rather than a keyword
+	FileError string // why a requested file is unavailable (startup reports it)
+}
+
+// Resolve maps the output setting onto the sinks it names.
+//
+// Keywords are case-insensitive: "both"/"" (defaults), "stdout" (or "console"),
+// "file". Anything else is treated as a file path — the pre-0.6.1 meaning of the
+// field, kept so existing YAML does not silently switch to console logging.
+func Resolve(outputPath, filePath string) Dest {
+	out := strings.TrimSpace(outputPath)
+	file := strings.TrimSpace(filePath)
+	if file == "" {
+		file = DefaultFilePath
+	}
+	switch strings.ToLower(out) {
+	case "", "both", "console+file", "file+console":
+		return Dest{Console: true, File: file}
+	case "stdout", "console":
+		return Dest{Console: true}
+	case "file":
+		return Dest{File: file}
+	default:
+		return Dest{File: out, Legacy: true}
+	}
+}
+
 // DefaultConfig returns the default logger configuration.
 func DefaultConfig() *Config {
 	return &Config{
 		Level:         "info",
 		Format:        "json",
-		OutputPath:    "stdout",
+		OutputPath:    DefaultOutput,
+		FilePath:      DefaultFilePath,
 		RotateDaily:   true,
 		RotationCount: 7,
 	}
@@ -67,8 +120,11 @@ func normalizeConfig(cfg *Config) *Config {
 	if out.Format == "" {
 		out.Format = "json"
 	}
-	if out.OutputPath == "" {
-		out.OutputPath = "stdout"
+	if strings.TrimSpace(out.OutputPath) == "" {
+		out.OutputPath = DefaultOutput
+	}
+	if strings.TrimSpace(out.FilePath) == "" {
+		out.FilePath = DefaultFilePath
 	}
 	if out.RotationCount == 0 && out.RetentionDays <= 0 {
 		out.RotationCount = 7
@@ -76,9 +132,11 @@ func normalizeConfig(cfg *Config) *Config {
 	return &out
 }
 
-// Init initializes the global logger. If OutputPath is "stdout" or empty,
-// logs are written to stdout only. Otherwise logs are written to stdout and
-// a rotating file. It is safe to call Init multiple times.
+// Init initializes the global logger from cfg (see Resolve for where records
+// land). It is safe to call Init multiple times.
+//
+// A file that cannot be opened is reported through Destination().FileError
+// instead of failing the call: the process keeps logging to the console.
 func Init(cfg *Config) error {
 	Close()
 
@@ -88,9 +146,13 @@ func Init(cfg *Config) error {
 		cfg = normalizeConfig(cfg)
 	}
 
-	writer, closer, err := buildWriter(cfg)
+	dest := Resolve(cfg.OutputPath, cfg.FilePath)
+	writer, closer, err := buildWriter(cfg, dest)
 	if err != nil {
-		return err
+		dest.Console = true
+		dest.FileError = err.Error()
+		dest.File = ""
+		writer, closer = os.Stdout, nil
 	}
 
 	opts := &slog.HandlerOptions{Level: parseLevel(cfg.Level), AddSource: true}
@@ -110,19 +172,40 @@ func Init(cfg *Config) error {
 	mu.Lock()
 	globalLogger = logger
 	globalCloser = closer
+	globalDest = dest
 	mu.Unlock()
 	return nil
 }
 
-func buildWriter(cfg *Config) (io.Writer, io.Closer, error) {
-	if cfg.OutputPath == "" || cfg.OutputPath == "stdout" {
+func buildWriter(cfg *Config, dest Dest) (io.Writer, io.Closer, error) {
+	var file io.Writer
+	var closer io.Closer
+	if dest.File != "" {
+		rw, err := newRotatingWriter(cfg, dest.File)
+		if err != nil {
+			return nil, nil, err
+		}
+		file, closer = rw, rw
+	}
+	switch {
+	case file != nil && dest.Console:
+		// File first: slog ignores Write errors, so a console that is gone (closed
+		// pipe, full capture file) must not cost us the rotated record.
+		return io.MultiWriter(file, os.Stdout), closer, nil
+	case file != nil:
+		return file, closer, nil
+	default:
 		return os.Stdout, nil, nil
 	}
-	rw, err := newRotatingWriter(cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	return rw, rw, nil
+}
+
+// Destination reports where the process is actually logging, including the reason
+// a requested file is unavailable (FileError), so startup can say it out loud
+// instead of leaving the operator to wonder where the file went.
+func Destination() Dest {
+	mu.Lock()
+	defer mu.Unlock()
+	return globalDest
 }
 
 func parseLevel(level string) slog.Level {
@@ -162,8 +245,8 @@ type rotatingWriter struct {
 	closeOnce sync.Once
 }
 
-func newRotatingWriter(cfg *Config) (*rotatingWriter, error) {
-	pattern, glob, err := rotatePattern(cfg.OutputPath)
+func newRotatingWriter(cfg *Config, path string) (*rotatingWriter, error) {
+	pattern, glob, err := rotatePattern(path)
 	if err != nil {
 		return nil, err
 	}

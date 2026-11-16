@@ -42,16 +42,21 @@ func main() {
 	// Say out loud which config the process actually read. A release archive
 	// dropped next to an ignored config file used to start on the built-in
 	// defaults without a word, which is indistinguishable from "config broken".
+	// Say where the records actually go. The default writes to the console *and* a
+	// rotating file, so "no file appeared" and "the terminal is quiet" both need a
+	// one-line answer; an unopenable file degrades to console instead of refusing
+	// to start, and the operator has to hear about that too.
+	dest := logger.Destination()
+	logger.Info("logging configured", "console", dest.Console, "file", dest.File)
+	if dest.FileError != "" {
+		logger.Warn("log file disabled",
+			"err", dest.FileError,
+			"hint", "point RGX_LOG_FILE at a writable path, or set RGX_LOG_OUTPUT=stdout to log to the console only")
+	}
+
 	if cfgPath == "" {
 		logger.Info("no config file found, using built-in defaults",
 			"hint", "pass -config <path> or create config/config.yaml next to the binary")
-		// An unpack-and-run archive writes no log file: the default is stdout so
-		// containers keep working, but an operator who later has to send logs in
-		// should not have to discover the env var by reading the source.
-		if cfg.Logging.OutputPath == "" || cfg.Logging.OutputPath == "stdout" {
-			logger.Info("logging to stdout",
-				"hint", "set RGX_LOG_OUTPUT=./logs/ragflow-x.log (or logging.output in YAML) to write a rotating file instead")
-		}
 	} else {
 		logger.Info("config loaded", "path", cfgPath)
 	}
@@ -153,6 +158,7 @@ func setupLogger(cfg *config.Config) {
 		Level:         cfg.Logging.Level,
 		Format:        cfg.Logging.Format,
 		OutputPath:    cfg.Logging.OutputPath,
+		FilePath:      cfg.Logging.FilePath,
 		RotateDaily:   cfg.Logging.RotateDaily,
 		RotationSize:  sizeMB,
 		RotationCount: cfg.Logging.RotationCount,

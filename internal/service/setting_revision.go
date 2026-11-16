@@ -21,6 +21,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/pkg/crypto"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"gorm.io/gorm"
 )
 
@@ -332,11 +333,21 @@ func defaultSystemSettingsSnapshot() map[string]interface{} {
 	}
 }
 
+// effectiveLogPath reports the file the process actually writes, or the console
+// marker when file output is off, so the settings snapshot never advertises a path
+// that nothing writes to.
+func effectiveLogPath(cfg config.Config) string {
+	if dest := logger.Resolve(cfg.Logging.OutputPath, cfg.Logging.FilePath); dest.File != "" {
+		return dest.File
+	}
+	return "stdout"
+}
+
 func systemSettingsSnapshotFromConfig(cfg config.Config) map[string]interface{} {
 	snapshot := defaultSystemSettingsSnapshot()
 	groups := snapshot["groups"].(map[string]interface{})
 	groups["server"] = map[string]interface{}{
-		"port": cfg.Server.Port, "data_dir": cfg.App.DataDir, "log_path": cfg.Logging.OutputPath,
+		"port": cfg.Server.Port, "data_dir": cfg.App.DataDir, "log_path": effectiveLogPath(cfg),
 	}
 	groups["gateway"] = map[string]interface{}{
 		"non_stream_timeout_sec":    cfg.Gateway.NonStreamTimeoutSec,
