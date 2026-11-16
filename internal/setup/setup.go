@@ -90,7 +90,14 @@ type Status struct {
 	DBError      string `json:"db_error,omitempty"`
 	DBHint       string `json:"db_hint,omitempty"`
 	RAGFlowError string `json:"ragflow_error,omitempty"`
+	// Mode says which wizard step is valid: this router is the bootstrap one, so
+	// the admin-only step (POST /system/setup/admin, main router only) would 404.
+	Mode string `json:"mode"`
 }
+
+// SetupModeWizard is reported while only this bootstrap router serves the
+// request; the admin-only wizard step asks the full router instead.
+const SetupModeWizard = "wizard"
 
 // Probe hint keys: a stable enum the UI maps to a sentence, so the guidance can
 // be translated without the backend learning any language.
@@ -225,7 +232,10 @@ func (m *Manager) BootstrapEnvAdmin(ctx context.Context, username, pass string) 
 // Status reports configuration and dependency reachability.
 func (m *Manager) Status(ctx context.Context) (*Status, error) {
 	if m.secrets == nil {
-		return &Status{}, nil
+		// The most common first run: nothing stored yet. The mode still has to be
+		// reported, or the SPA falls back to guessing and offers the admin-only
+		// step that this router cannot serve.
+		return &Status{Mode: SetupModeWizard}, nil
 	}
 	dbc := mergeDB(m.cfg, m.secrets)
 	rgCfg := mergeRAGFlow(m.cfg, m.secrets)
@@ -233,6 +243,9 @@ func (m *Manager) Status(ctx context.Context) (*Status, error) {
 	res := &Status{Configured: true}
 	probeDB(ctx, dbc, res)
 	probeRAGFlow(ctx, rgCfg, res)
+	// This manager only ever serves requests through bootstrapRouter: the full
+	// application router answers /system/setup/* from service.SetupStatus.
+	res.Mode = SetupModeWizard
 	return res, nil
 }
 
@@ -311,7 +324,7 @@ func (m *Manager) Preflight(ctx context.Context, req ApplyRequest) (*Status, err
 	if err != nil {
 		return nil, err
 	}
-	res := &Status{Configured: true}
+	res := &Status{Configured: true, Mode: SetupModeWizard}
 	probeDB(ctx, dec.DB, res)
 	probeRAGFlow(ctx, dec.RG, res)
 	return res, nil
