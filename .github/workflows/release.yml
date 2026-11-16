@@ -371,6 +371,10 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ needs.build.outputs.tag }}"
+          # Assets are named with the bare version (`ragflow-x-0.6.1-linux-amd64.tar.gz`);
+          # the tag carries the `v`. Using TAG in the install block published
+          # `tar xzf ragflow-x-v0.6.1-linux-amd64.tar.gz`, which 404s on copy-paste.
+          VER="${TAG#v}"
           PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
           # Pull the engine-support and upstream-issue blocks straight out of
@@ -431,7 +435,7 @@ jobs:
             echo
             echo '```bash'
             echo "# Linux (amd64) — binary ships with the UI embedded; start.sh is in the archive"
-            echo "mkdir -p ragflow-x && tar xzf ragflow-x-${TAG}-linux-amd64.tar.gz -C ragflow-x && cd ragflow-x"
+            echo "mkdir -p ragflow-x && tar xzf ragflow-x-${VER}-linux-amd64.tar.gz -C ragflow-x && cd ragflow-x"
             echo "./start.sh --sqlite --daemon   # 首次试跑：SQLite + 后台，打印 URL 即可打开"
             echo "./start.sh                     # 有 config/config.yaml 时前台启动"
             echo "./start.sh status | stop       # 查看 / 停止后台进程"
@@ -465,6 +469,26 @@ jobs:
             echo "_本说明由 GitHub Actions 自动生成（release.yml）。资产清单见下方 Assets。_"
           } > release-notes.md
           cat release-notes.md
+
+      # The notes are copy-paste instructions, so a filename that does not exist in
+      # artifacts/dist is a defect, not a typo: assert every archive the notes name
+      # is really attached (this is how the v-prefixed `ragflow-x-v0.6.1-…tar.gz`
+      # slipped out).
+      - name: Verify the notes only name assets that exist
+        run: |
+          set -euo pipefail
+          # A leading `v` is exactly the mistake to catch, so do not anchor on a digit.
+          named=$(grep -oE 'ragflow-x-[A-Za-z0-9][A-Za-z0-9._-]*\.(tar\.gz|zip)' release-notes.md | sort -u || true)
+          [ -n "$named" ] || { echo "::error::release notes name no archive at all"; exit 1; }
+          missing=0
+          while IFS= read -r f; do
+            if [ ! -f "artifacts/dist/$f" ]; then
+              echo "::error::release notes name '$f' but artifacts/dist has no such file"
+              ls -1 artifacts/dist
+              missing=1
+            fi
+          done <<< "$named"
+          exit "$missing"
 
       - name: Create GitHub Release and upload artifacts
         run: |
