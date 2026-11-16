@@ -13,6 +13,7 @@
 ### 修复
 
 - **发版说明只在镜像真的推送成功后才写 `docker pull`**。以前按「尝试过推送」渲染：`v0.6.1` 首轮 ghcr 拒绝写权限（`denied: permission_denied: write_package`），发版页却在随后约 40 分钟里继续告诉用户去 `docker pull` 一个 404。现在 docker 作业导出`pushed`，`release` 作业以 `needs: [build, docker]` + `!cancelled()` 读取它：推送失败或 `PUSH_IMAGE=false` 时正文写「本版本不提供容器镜像」。副作用要记住：只重跑失败作业能救镜像、救不了正文（正文由 `release` 作业渲染），补正文要重跑整个工作流（发版步骤是幂等的）。
+- **发版说明里的安装命令文件名错了**：正文用 tag（`v0.6.1`）拼资产名，生成 `tar xzf ragflow-x-v0.6.1-linux-amd64.tar.gz`，而资产叫 `ragflow-x-0.6.1-linux-amd64.tar.gz`，复制粘贴必 404。改用裸版本拼名，并加一道 CI 断言：正文里点名的每个归档都必须在 `artifacts/dist` 里真的存在，否则发版直接红——这类错误以前只能等用户踩。
 
 ## [0.6.1] - 2026-11-16
 
