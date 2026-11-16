@@ -108,6 +108,33 @@ export function rangeVal(raw: string, fallback: number): number {
   return Number.isNaN(n) ? fallback : Math.max(0, Math.min(100000, n));
 }
 
+/**
+ * Translate the engine-side `dataset_ids` a chat record carries back into
+ * workspace dataset names.
+ *
+ * The column used to print the raw value, so a bound assistant read
+ * `65057e70b59f47f995b634bd8b5617ab` — unusable when you need to know which
+ * knowledge base answers a question. Unknown ids are kept verbatim so a stale
+ * binding is visible instead of silently dropped.
+ */
+export function datasetIdLabel(
+  raw: string | undefined,
+  datasets: DatasetLike[] | undefined,
+  fallback = "-",
+): string {
+  const ids = (raw ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (ids.length === 0) return fallback;
+  const byEngineId = new Map<string, string>();
+  for (const dataset of datasets ?? []) {
+    if (dataset.ragflow_dataset_id) byEngineId.set(dataset.ragflow_dataset_id, dataset.name);
+    byEngineId.set(dataset.id, dataset.name);
+  }
+  return ids.map((id) => byEngineId.get(id) ?? id).join(", ");
+}
+
 export function datasetOptions(datasets: DatasetLike[] | undefined) {
   return { values: datasets ?? [], mapId: (d: DatasetLike) => d.ragflow_dataset_id || d.id };
 }
