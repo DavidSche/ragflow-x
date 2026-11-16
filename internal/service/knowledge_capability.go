@@ -93,6 +93,16 @@ type CapabilityRepair struct {
 	// (doc/282 §6). Only genuinely executable repairs carry a hint; advisory
 	// actions leave it empty rather than promising a fake channel.
 	Endpoint string `json:"endpoint,omitempty"`
+	// ChunkMethod is the target parse profile for `apply_parse_profile`. The
+	// server decides it from parse_intent; the wizard must not re-derive it
+	// from prose (it used to fall back to `naive` and repair towards the wrong
+	// method, doc/285 §4).
+	ChunkMethod string `json:"chunk_method,omitempty"`
+	// RequiresReparse mirrors the 40915 precondition on the write channel: the
+	// dataset already has parsed documents, so applying the profile re-parses
+	// them and the operator has to confirm that explicitly. Computed here so
+	// the rule exists once, not twice.
+	RequiresReparse bool `json:"requires_reparse,omitempty"`
 }
 
 // RequirementVerdict is the per-requirement outcome for one dataset.
@@ -107,15 +117,19 @@ type RequirementVerdict struct {
 
 // DatasetCapabilityVerdict is the per-dataset verdict.
 type DatasetCapabilityVerdict struct {
-	Role         string               `json:"role"`
-	DatasetID    string               `json:"dataset_id"`
-	Verdict      string               `json:"verdict"`
-	Aggregate    string               `json:"aggregate,omitempty"`
-	ProbeStatus  string               `json:"probe_status"`
-	Requirements []RequirementVerdict `json:"requirements"`
-	Capabilities []CapabilityEvidence `json:"capabilities"`
-	Repairs      []CapabilityRepair   `json:"repairs"`
-	SharedUsage  DatasetSharedUsage   `json:"shared_usage"`
+	Role      string `json:"role"`
+	DatasetID string `json:"dataset_id"`
+	// DocumentCount/ParsedCount let the repair UI say how much work a re-parse
+	// costs ("3 of 5 documents already parsed") instead of a blind warning.
+	DocumentCount int                  `json:"document_count"`
+	ParsedCount   int                  `json:"parsed_count"`
+	Verdict       string               `json:"verdict"`
+	Aggregate     string               `json:"aggregate,omitempty"`
+	ProbeStatus   string               `json:"probe_status"`
+	Requirements  []RequirementVerdict `json:"requirements"`
+	Capabilities  []CapabilityEvidence `json:"capabilities"`
+	Repairs       []CapabilityRepair   `json:"repairs"`
+	SharedUsage   DatasetSharedUsage   `json:"shared_usage"`
 }
 
 // CapabilityCheckView is the aggregate response of the check endpoint.
@@ -509,6 +523,7 @@ func (s *Service) graphEvidence(ctx context.Context, link *model.DatasetLink, pa
 func EvaluateRequirements(knowledge *ScenarioTemplateKnowledge, role string, profile DatasetCapabilityProfile) DatasetCapabilityVerdict {
 	verdict := DatasetCapabilityVerdict{
 		Role: role, DatasetID: profile.DatasetID, ProbeStatus: CapabilityProbeSuccess,
+		DocumentCount: profile.DocumentCount, ParsedCount: profile.ParsedCount,
 		Capabilities: profile.Capabilities, SharedUsage: profile.SharedUsage,
 		Repairs: []CapabilityRepair{},
 	}
@@ -539,6 +554,14 @@ func EvaluateRequirements(knowledge *ScenarioTemplateKnowledge, role string, pro
 					Action: "remove_requirement", Severity: CapabilityVerdictBlocked,
 					Reason: "engine does not support " + requirement.Capability + " in this deployment",
 				})
+			} else if requirement.Capability == "citation_locator" && profile.ChunkMethod != "" {
+				// citation_locator is not a separate switch: it is `configured` for
+				// book/paper chunking and absent otherwise, so the only lever is the
+				// chunk-method rewrite that chunkMethodRepairs() below already emits.
+				// Adding reconfigure_dataset here offered a second, undrivable repair
+				// for the same gap — the wizard rendered it first, without a button,
+				// hiding the one repair that actually closes it (E2E 2026-11-16).
+				item.Reason = "chunk_method_mismatch"
 			} else if requirement.Capability == "metadata_filter" || requirement.Capability == "metadata_filter_pushdown" {
 				item.Reason = "metadata_not_ready"
 				verdict.Repairs = append(verdict.Repairs, CapabilityRepair{
@@ -623,7 +646,12 @@ func (k ScenarioTemplateKnowledge) chunkMethodRepairs(role string, profile *Data
 		Action: "apply_parse_profile", Severity: CapabilityVerdictRepairable,
 		Reason: "chunk_method is " + profile.ChunkMethod + ", template expects " + wanted,
 		// The dedicated parse-profile endpoint applies chunk_method + reparse.
-		Endpoint: "POST /api/v1/datasets/" + profile.DatasetID + "/parse-profile",
+		Endpoint:    "POST /api/v1/datasets/" + profile.DatasetID + "/parse-profile",
+		ChunkMethod: wanted,
+		// Parsed documents make the write destructive (old chunks replaced), so
+		// the caller must pass rewrite_existing=true — the endpoint answers
+		// 40915 otherwise, which is exactly what a repair click used to hit.
+		RequiresReparse: profile.ParsedCount > 0,
 	}}
 }
 

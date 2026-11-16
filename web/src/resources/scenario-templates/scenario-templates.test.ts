@@ -193,6 +193,7 @@ describe("scenario template single source of truth", () => {
       "wizard/StepApplication.tsx",
       "wizard/StepVerify.tsx",
       "wizard/CapabilityBadge.tsx",
+      "wizard/useRepairActions.ts",
     ].forEach((file) => {
       const lines = read(file).split("\n").length;
       expect(lines, `${file} has ${lines} lines`).toBeLessThanOrEqual(400);

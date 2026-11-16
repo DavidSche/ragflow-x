@@ -210,9 +210,12 @@ func (s *Service) InstantiateScenarioTemplate(
 	}
 	if len(dsl) == 0 {
 		// A template without an agent DSL cannot instantiate an agent. Fail loudly
-		// instead of creating an empty canvas nobody asked for.
+		// instead of creating an empty canvas nobody asked for, and say it in the
+		// operator's words: `agent_dsl` is our JSON field name, not something a
+		// tenant admin who picked "智能体" in the wizard can act on (doc/286 §3).
 		s.failInstantiation(ctx, tenantID, instance.ID)
-		return nil, httperr.BadRequest(40085, "agent_dsl is required to instantiate an agent template")
+		return nil, httperr.BadRequest(40085,
+			"this template cannot be instantiated as an agent: it ships no agent canvas, please choose the chat or search form")
 	}
 	if err := validateCanvasDSLValue(dsl); err != nil {
 		s.failInstantiation(ctx, tenantID, instance.ID)

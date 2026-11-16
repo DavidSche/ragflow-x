@@ -4,7 +4,6 @@ import { ApiError } from "@/lib/api";
 import { datasetOptions } from "@/resources/chats/chat-types";
 import type { DatasetLike } from "@/resources/chats/chat-types";
 import {
-  applyDatasetParseProfile,
   checkScenarioTemplateCapabilities,
   fetchScenarioSkeletonCatalogSafe,
   fetchScenarioTemplateCatalog,
@@ -15,6 +14,8 @@ import {
   type ScenarioSkeleton,
   type ScenarioTemplateView,
 } from "../scenario-templates";
+import type { PushdownRequest, RepairRequest } from "./repairPlan";
+import { useRepairActions } from "./useRepairActions";
 import type { CapabilityCheckView, DatasetCapabilityView, WizardSelection } from "./types";
 
 const SUGGESTED_ROLE = "primary";
@@ -28,6 +29,13 @@ export interface ScenarioWizardApi {
   mapDatasetId: (dataset: DatasetLike) => string;
   isChecking: boolean;
   capabilityCheck: CapabilityCheckView | null;
+  /**
+   * A pushdown repair only *starts* an asynchronous metadata backfill, so the
+   * conclusion kept here predates it. The wizard asks for an explicit re-check
+   * instead of re-probing immediately and contradicting its own success message
+   * (`postRepairStep` in ./repairPlan).
+   */
+  checkStale: boolean;
   capabilityError: string;
   skeletons: ScenarioSkeleton[];
   skeletonState: "idle" | "loading" | "ready" | "degraded" | "error";
@@ -44,7 +52,8 @@ export interface ScenarioWizardApi {
   toggleDataset: (datasetId: string) => void;
   reloadCatalog: () => void;
   runCapabilityCheck: () => Promise<void>;
-  repairDataset: (datasetId: string, chunkMethod: string, acknowledgeSharedImpact: boolean) => Promise<void>;
+  repairDataset: (datasetId: string, body: RepairRequest) => Promise<void>;
+  repairDatasetPushdown: (datasetId: string, body: PushdownRequest) => Promise<void>;
   loadSkeletons: () => Promise<void>;
   importSkeleton: (skeletonId: string) => Promise<void>;
   createApplication: () => Promise<void>;
@@ -113,6 +122,33 @@ export function useScenarioWizard(): ScenarioWizardApi {
     }
   }, [projects, selection.projectId]);
 
+  const runCapabilityCheck = useCallback(async () => {
+    const template = selection.template;
+    if (!template) return;
+    setChecking(true);
+    setCapabilityError("");
+    try {
+      const response = await checkScenarioTemplateCapabilities(template.id, {
+        app_type: selection.appType,
+        datasets: selection.datasetIds.map((datasetId) => ({
+          role: SUGGESTED_ROLE,
+          dataset_id: datasetId,
+        })),
+      });
+      setCapabilityCheck(decorateCapabilityCheck(response, datasetValues));
+      clearStale();
+    } catch (error) {
+      setCapabilityCheck(null);
+      setCapabilityError(
+        error instanceof ApiError ? error.displayMessage : t("scenarioTemplates.wizard.capabilityCheckFailed"),
+      );
+    } finally {
+      setChecking(false);
+    }
+  }, [datasetValues, selection.appType, selection.datasetIds, selection.template, t]);
+
+  const { checkStale, clearStale, repairDataset, repairDatasetPushdown } = useRepairActions(runCapabilityCheck);
+
   const selectTemplate = useCallback((item: ScenarioTemplateView) => {
     setSelection((prev) => ({
       ...prev,
@@ -134,51 +170,13 @@ export function useScenarioWizard(): ScenarioWizardApi {
         ? prev.datasetIds.filter((id) => id !== datasetId)
         : [...prev.datasetIds, datasetId],
     }));
-  }, []);
+    // The verdict belongs to the binding it was produced for. Keeping it after
+    // the binding changed shows a conclusion about datasets that are no longer
+    // selected (and the create gate would read it).
+    setCapabilityCheck(null);
+    clearStale();
+  }, [clearStale]);
 
-  const runCapabilityCheck = useCallback(async () => {
-    const template = selection.template;
-    if (!template) return;
-    setChecking(true);
-    setCapabilityError("");
-    try {
-      const response = await checkScenarioTemplateCapabilities(template.id, {
-        app_type: selection.appType,
-        datasets: selection.datasetIds.map((datasetId) => ({
-          role: SUGGESTED_ROLE,
-          dataset_id: datasetId,
-        })),
-      });
-      setCapabilityCheck(decorateCapabilityCheck(response, datasetValues));
-    } catch (error) {
-      setCapabilityCheck(null);
-      setCapabilityError(
-        error instanceof ApiError ? error.displayMessage : t("scenarioTemplates.wizard.capabilityCheckFailed"),
-      );
-    } finally {
-      setChecking(false);
-    }
-  }, [datasetValues, selection.appType, selection.datasetIds, selection.template, t]);
-
-  const repairDataset = useCallback(
-    async (datasetId: string, chunkMethod: string, acknowledgeSharedImpact: boolean) => {
-      try {
-        await applyDatasetParseProfile(datasetId, {
-          chunk_method: chunkMethod,
-          acknowledge_shared_impact: acknowledgeSharedImpact,
-        });
-        // A successful write is not a passed check: the panel must be re-probed.
-        notify(t("scenarioTemplates.wizard.repairApplied"), { type: "info" });
-        await runCapabilityCheck();
-      } catch (error) {
-        notify(
-          error instanceof ApiError ? error.displayMessage : t("scenarioTemplates.wizard.repairFailed"),
-          { type: "error" },
-        );
-      }
-    },
-    [notify, runCapabilityCheck, t],
-  );
 
   const loadSkeletons = useCallback(async () => {
     setSkeletonState("loading");
@@ -302,15 +300,23 @@ export function useScenarioWizard(): ScenarioWizardApi {
     canManageChat: canManageChat !== false,
     canStartTrialRun: canStartTrialRun !== false,
     selectedDatasetNames,
-    setAppType: (value) => setSelection((prev) => ({ ...prev, appType: value, modelId: "" })),
+    // Requirements differ per app type, so a chat verdict must not survive a
+    // switch to agent.
+    setAppType: (value) => {
+      setSelection((prev) => ({ ...prev, appType: value, modelId: "" }));
+      setCapabilityCheck(null);
+      clearStale();
+    },
     setName: (value) => setSelection((prev) => ({ ...prev, name: value })),
     setProjectId: (value) => setSelection((prev) => ({ ...prev, projectId: value })),
     setModelId: (value) => setSelection((prev) => ({ ...prev, modelId: value })),
     selectTemplate,
     toggleDataset,
+    checkStale,
     reloadCatalog: () => setReloadKey((value) => value + 1),
     runCapabilityCheck,
     repairDataset,
+    repairDatasetPushdown,
     loadSkeletons,
     importSkeleton,
     createApplication,

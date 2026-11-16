@@ -85,12 +85,53 @@ func TestEvaluateRequirementsChunkMethodMismatchIsRepairable(t *testing.T) {
 	}
 	hasParseRepair := false
 	for _, repair := range verdict.Repairs {
-		if repair.Action == "apply_parse_profile" {
-			hasParseRepair = true
+		if repair.Action != "apply_parse_profile" {
+			continue
+		}
+		hasParseRepair = true
+		// The wizard used to re-derive the target method from prose and fall
+		// back to `naive`, repairing towards the wrong profile; the server now
+		// names it (doc/285 §4).
+		if repair.ChunkMethod != "book" {
+			t.Fatalf("repair must name the template's chunk method, got %q", repair.ChunkMethod)
+		}
+		// Nothing parsed yet -> the write is not destructive.
+		if repair.RequiresReparse {
+			t.Fatalf("empty-history dataset must not claim a re-parse, got %+v", repair)
 		}
 	}
 	if !hasParseRepair {
 		t.Fatalf("expected an apply_parse_profile repair, got %+v", verdict.Repairs)
+	}
+}
+
+// TestEvaluateRequirementsParseRepairFlagsReparse pins the precondition of the
+// write channel: `ApplyParseProfile` answers 40915 when documents are already
+// parsed, so the check response has to say so up front — otherwise the wizard
+// offers a repair button that cannot succeed (doc/285 §2).
+func TestEvaluateRequirementsParseRepairFlagsReparse(t *testing.T) {
+	contract := &ScenarioTemplateKnowledge{
+		Datasets: []ScenarioKnowledgeDataset{{
+			Role:        scenarioDatasetRolePrimary,
+			ParseIntent: &ScenarioParseIntent{Mode: model.ParseModeBuiltin, ChunkMethod: "book"},
+		}},
+	}
+	profile := DatasetCapabilityProfile{
+		DatasetID: "ds-parsed", ChunkMethod: "general", DocumentCount: 5, ParsedCount: 3,
+	}
+	verdict := EvaluateRequirements(contract, scenarioDatasetRolePrimary, profile)
+	if verdict.DocumentCount != 5 || verdict.ParsedCount != 3 {
+		t.Fatalf("verdict must expose the counts the repair copy needs, got %d/%d",
+			verdict.DocumentCount, verdict.ParsedCount)
+	}
+	var repair CapabilityRepair
+	for _, item := range verdict.Repairs {
+		if item.Action == "apply_parse_profile" {
+			repair = item
+		}
+	}
+	if !repair.RequiresReparse {
+		t.Fatalf("parsed documents must flag requires_reparse, got %+v", repair)
 	}
 }
 

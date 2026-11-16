@@ -22,16 +22,20 @@ func TestUpstreamWriteFailureSurfacesEngineReason(t *testing.T) {
 		check func(*testing.T, error)
 	}{
 		{
+			// The engine's sentence stays in parentheses so support can correlate
+			// it, but the operator reads the instruction first (doc/286 §4).
 			name: "dataset model misconfiguration",
 			err:  &ragflow.Error{HTTPStatus: 200, Code: 500, Message: `model configuration unavailable: model "0" has no saved model row`},
 			code: 40085,
-			want: "ragflow rejected dataset creation: model configuration unavailable",
+			want: "ragflow rejected dataset creation: the workspace has no usable chat model for this action: " +
+				"set the default chat model, then retry (engine: model configuration unavailable",
 		},
 		{
 			name: "chat over unparsed dataset",
 			err:  &ragflow.Error{HTTPStatus: 200, Code: 102, Message: "the dataset db0 doesn't own parsed file"},
 			code: 40085,
-			want: "ragflow rejected chat creation: the dataset db0 doesn't own parsed file",
+			want: "ragflow rejected chat creation: the selected knowledge base has no parsed content yet: " +
+				"upload documents, wait for parsing to finish, then instantiate again (engine: the dataset db0 doesn't own parsed file)",
 		},
 		{
 			name: "transport failure stays a gateway error",

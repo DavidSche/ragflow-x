@@ -28,6 +28,12 @@ export interface CapabilityRepairView {
   action: string;
   reason: string;
   severity: string;
+  /** Machine-readable exec path, when the repair has one (doc/282 §6). */
+  endpoint?: string;
+  /** Target parse profile for `apply_parse_profile` (doc/285 §4). */
+  chunk_method?: string;
+  /** The write re-parses existing documents and needs explicit consent (40915). */
+  requires_reparse?: boolean;
 }
 
 export interface SharedUsageView {
@@ -40,6 +46,9 @@ export interface SharedUsageView {
 export interface DatasetCapabilityView {
   role: string;
   dataset_id: string;
+  /** Documents in the dataset, and how many already have chunks. */
+  document_count?: number;
+  parsed_count?: number;
   verdict: CapabilityState | string;
   aggregate?: string;
   probe_status: string;
