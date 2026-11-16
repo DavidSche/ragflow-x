@@ -19,6 +19,7 @@ private data centers.
 | Built-in permission matrix | [zh-CN/permission-matrix.md](./zh-CN/permission-matrix.md) | [en/permission-matrix.md](./en/permission-matrix.md) |
 | Operations and failure drill SOP | [zh-CN/operations-runbook-and-failure-drill-sop.md](./zh-CN/operations-runbook-and-failure-drill-sop.md) | [en/operations-runbook-and-failure-drill-sop.md](./en/operations-runbook-and-failure-drill-sop.md) |
 | Audit-chain backup and repair SOP | [zh-CN/audit-chain-backup-and-repair-sop.md](./zh-CN/audit-chain-backup-and-repair-sop.md) | [en/audit-chain-backup-and-repair-sop.md](./en/audit-chain-backup-and-repair-sop.md) |
+| Scenario template best practices | [zh-CN/scenario-template-best-practices.md](./zh-CN/scenario-template-best-practices.md) | [en/scenario-template-best-practices.md](./en/scenario-template-best-practices.md) |
 
 **Install path for v0.5.3:** release binary archives only (the frontend is
 embedded). No container image is published for this version — `docker/` still
