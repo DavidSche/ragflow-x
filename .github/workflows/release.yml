@@ -12,9 +12,15 @@
 #   2. docker job (on unless PUSH_IMAGE is "false"): build & push the multi-arch
 #      image to ghcr.io with the workflow token. Only the Go compile is retargeted
 #      per architecture, so the arm64 leg does not pay for `npm ci` under QEMU.
-#      `release` does not `needs` this job, so a refused push never blocks a
-#      release; the release notes only advertise `docker pull` when the push was
-#      attempted, and `PUSH_IMAGE=false` drops both the push and the note.
+#      `release` runs with `if: always()` on `needs: [build, docker]` instead of
+#      `needs: build`, so a refused push never blocks a release; the notes
+#      advertise `docker pull` only when the push actually succeeded
+#      (`needs.docker.outputs.pushed`), and `PUSH_IMAGE=false` drops both the push
+#      and the note. "Attempted" is not good enough: v0.6.1 shipped a page that
+#      said `docker pull …:v0.6.1` while the registry still answered 404.
+#      Consequence: after a failed push, retrying only the failed job solves the
+#      image but not the page - re-run the whole workflow so the notes refresh
+#      (the release step is idempotent).
 #   3. release job: download artifacts, verify SHA256 checksums (integrity gate),
 #      render release notes from git history, create the GitHub Release and upload
 
@@ -228,6 +234,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      # Consumed by `release` to decide whether the notes may advertise the image.
+      pushed: ${{ steps.published.outputs.pushed }}
     steps:
       - uses: actions/checkout@v7
 
@@ -285,6 +294,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Record the outcome before the refusal step can end the job, so the notes
+      # job reads a fact ("is the image pullable?") instead of an intention.
+      - name: Record whether the image was published
+        id: published
+        run: |
+          if [ "${{ steps.buildpush.outcome }}" = "success" ]; then
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+            echo "image published: yes"
+          else
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            echo "image published: no (outcome=${{ steps.buildpush.outcome }})"
+          fi
+
       # A raw `denied: permission_denied: write_package` gives an operator
       # nothing to act on, and this job is the last leg of a release that has
       # already published its artifacts. Turn it into the two real remedies.
@@ -304,12 +326,20 @@ jobs:
                -> "Manage Actions access" -> add repository ${GITHUB_REPOSITORY} with role Write;
             2. or add a GHCR_TOKEN repository secret holding a classic PAT with write:packages.
 
-          Then re-run this workflow: Actions -> Release -> Run workflow (version=${GITHUB_REF_NAME:-see tag}).
+          Then re-run the whole workflow: Actions -> Release -> Run workflow
+          (version=${GITHUB_REF_NAME:-see tag}). Re-running only the failed jobs
+          publishes the image but leaves the release page claiming no image exists,
+          because the notes are rendered by the release job.
           MSG
           exit 1
 
   release:
-    needs: build
+    # `docker` is in `needs` only to read `outputs.pushed`; `always()` keeps a
+    # refused push from blocking the release, and the guard keeps a failed build
+    # from publishing half a release.
+    needs: [build, docker]
+    # `!cancelled()` (not `always()`) so a cancelled run cannot publish anything.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -356,9 +386,11 @@ jobs:
           }
           SUPPORTED_BLOCK="$(changelog_block 'Supported engine versions')"
           UPSTREAM_BLOCK="$(changelog_block 'Known upstream issues (RAGFlow v1.0.0)')"
-          # The image only exists when the docker leg ran (see that job's `if:`);
-          # advertising it otherwise sends users to a 404 on the registry.
-          PUSH_IMAGE="${{ vars.PUSH_IMAGE != 'false' }}"
+          # The image only exists when the docker leg both ran and pushed; the
+          # `if:` on that job covers PUSH_IMAGE=false, `outputs.pushed` covers a
+          # refusal/registry outage. Advertising on "was attempted" sends users to
+          # a 404 on the registry, which is what v0.6.1's page did for 40 minutes.
+          IMAGE_PUSHED="${{ needs.docker.outputs.pushed }}"
 
           {
             echo "## ragflow-x ${TAG}"
@@ -409,7 +441,7 @@ jobs:
             echo "# 打开 http://localhost:9191/ ：无可用数据库时进入配置向导，向导完成后原地切换"
             echo
             echo '```'
-            if [ "${PUSH_IMAGE}" = "true" ]; then
+            if [ "${IMAGE_PUSHED}" = "true" ]; then
               echo
               echo "容器镜像："
               echo

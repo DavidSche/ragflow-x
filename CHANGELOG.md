@@ -10,7 +10,9 @@
 
 ## [Unreleased]
 
-下一版本待登记。
+### 修复
+
+- **发版说明只在镜像真的推送成功后才写 `docker pull`**。以前按「尝试过推送」渲染：`v0.6.1` 首轮 ghcr 拒绝写权限（`denied: permission_denied: write_package`），发版页却在随后约 40 分钟里继续告诉用户去 `docker pull` 一个 404。现在 docker 作业导出`pushed`，`release` 作业以 `needs: [build, docker]` + `!cancelled()` 读取它：推送失败或 `PUSH_IMAGE=false` 时正文写「本版本不提供容器镜像」。副作用要记住：只重跑失败作业能救镜像、救不了正文（正文由 `release` 作业渲染），补正文要重跑整个工作流（发版步骤是幂等的）。
 
 ## [0.6.1] - 2026-11-16
 
