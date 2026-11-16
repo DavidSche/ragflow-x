@@ -8,6 +8,8 @@
 #
 #   bash docker/verify-image.sh                                  # build + verify
 #   IMAGE=ghcr.io/owner/repo:v0.6.1 SKIP_BUILD=1 bash docker/verify-image.sh
+#                                                               # (VERSION follows the tag)
+#   VERSION=v1.0.0 bash docker/verify-image.sh                    # build stamping v1.0.0
 #   GOPROXY_ARG=https://goproxy.cn,direct bash docker/verify-image.sh
 #
 # Requires: docker (with compose), python3 nowhere — the stub engine runs in a
@@ -31,7 +33,20 @@ esac
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE="${IMAGE:-ragflow-x:verify}"
 HOSTPORT="${HOSTPORT:-9931}"
-VERSION="${VERSION:-v0.0.0-verify}"
+VERSION="${VERSION:-}"
+# Against a published image the stamp is already inside the binary, so demanding a
+# hand-set VERSION only produces a false FAIL (`missing ["version":"v0.0.0-verify"]`
+# while the image correctly reports its own tag). Read it off the tag instead; an
+# explicit VERSION still wins, which is what a local build needs.
+if [ -z "$VERSION" ]; then
+	case "$IMAGE" in
+	*:*) VERSION="${IMAGE##*:}" ;;
+	*) VERSION="latest" ;;
+	esac
+	case "$VERSION" in
+	*digest*) VERSION="latest" ;;
+	esac
+fi
 GOARG="${GOPROXY_ARG:-https://proxy.golang.org,direct}"
 FAILED=0
 WORK=$(mktemp -d)
