@@ -2,10 +2,26 @@ import { useMemo, useState } from "react";
 import { useTranslate } from "ra-core";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Database, Loader2, RefreshCw, Wrench } from "lucide-react";
+import { Database, Loader2, RefreshCw, Settings2, ShieldX, Wrench } from "lucide-react";
 import type { DatasetLike } from "@/resources/chats/chat-types";
 import { CapabilityBadge, requirementBadgeState } from "./CapabilityBadge";
-import type { DatasetCapabilityView } from "./types";
+import {
+  capabilityName,
+  capabilityReason,
+  capabilityRole,
+  capabilityVerdict,
+  translateOr,
+} from "./capabilityLabels";
+import {
+  buildPushdownRequest,
+  buildRepairRequest,
+  repairBlockers,
+  repairChannel,
+  repairReparseCount,
+  repairTargetMethod,
+} from "./repairPlan";
+import type { PushdownRequest, RepairRequest } from "./repairPlan";
+import type { CapabilityRepairView, DatasetCapabilityView } from "./types";
 import type { ScenarioWizardApi } from "./useScenarioWizard";
 
 interface StepKnowledgeProps {
@@ -22,7 +38,11 @@ interface StepKnowledgeProps {
 export function StepKnowledge({ wizard }: StepKnowledgeProps) {
   const t = useTranslate();
   const template = wizard.selection.template;
+  // Two different consents: the shared-dataset impact (40917) and the re-parse
+  // of already-parsed documents (40915). Collapsing them would let one checkbox
+  // authorise two different destructive writes.
   const [acknowledged, setAcknowledged] = useState<Record<string, boolean>>({});
+  const [reparseAcknowledged, setReparseAcknowledged] = useState<Record<string, boolean>>({});
 
   const checkedIds = useMemo(
     () => new Set((wizard.capabilityCheck?.datasets ?? []).map((item) => item.dataset_id)),
@@ -89,15 +109,18 @@ export function StepKnowledge({ wizard }: StepKnowledgeProps) {
                 <h2 className="font-medium">{t("scenarioTemplates.wizard.checkTitle")}</h2>
                 <CapabilityBadge
                   state={wizard.capabilityCheck.verdict}
-                  label={t(`scenarioTemplates.capability.verdict.${wizard.capabilityCheck.verdict}` as const, {
-                    defaultValue: wizard.capabilityCheck.verdict,
-                  })}
+                  label={capabilityVerdict(t, wizard.capabilityCheck.verdict)}
                 />
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 {t("scenarioTemplates.wizard.probeStatus", { status: wizard.capabilityCheck.probe_status })}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">{t("scenarioTemplates.wizard.retrievalOnlyHint")}</p>
+              {wizard.checkStale ? (
+                <p className="mt-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-700" role="status">
+                  {t("scenarioTemplates.wizard.checkStaleBackfill")}
+                </p>
+              ) : null}
             </div>
             {wizard.capabilityCheck.datasets.map((row) => (
               <DatasetVerdictCard
@@ -105,10 +128,13 @@ export function StepKnowledge({ wizard }: StepKnowledgeProps) {
                 row={row}
                 checked={checkedIds.has(row.dataset_id)}
                 acknowledged={acknowledged[row.dataset_id] ?? false}
+                reparseAcknowledged={reparseAcknowledged[row.dataset_id] ?? false}
                 onAcknowledge={(value) => setAcknowledged((prev) => ({ ...prev, [row.dataset_id]: value }))}
-                onRepair={(chunkMethod) =>
-                  void wizard.repairDataset(row.dataset_id, chunkMethod, acknowledged[row.dataset_id] ?? false)
+                onReparseAcknowledge={(value) =>
+                  setReparseAcknowledged((prev) => ({ ...prev, [row.dataset_id]: value }))
                 }
+                onRepair={(body) => void wizard.repairDataset(row.dataset_id, body)}
+                onRepairPushdown={(body) => void wizard.repairDatasetPushdown(row.dataset_id, body)}
               />
             ))}
           </>
@@ -126,20 +152,31 @@ interface DatasetVerdictCardProps {
   row: DatasetCapabilityView;
   checked: boolean;
   acknowledged: boolean;
+  reparseAcknowledged: boolean;
   onAcknowledge: (value: boolean) => void;
-  onRepair: (chunkMethod: string) => void;
+  onReparseAcknowledge: (value: boolean) => void;
+  onRepair: (body: RepairRequest) => void;
+  onRepairPushdown: (body: PushdownRequest) => void;
 }
 
-function DatasetVerdictCard({ row, checked, acknowledged, onAcknowledge, onRepair }: DatasetVerdictCardProps) {
+function DatasetVerdictCard({
+  row,
+  checked,
+  acknowledged,
+  reparseAcknowledged,
+  onAcknowledge,
+  onReparseAcknowledge,
+  onRepair,
+  onRepairPushdown,
+}: DatasetVerdictCardProps) {
   const t = useTranslate();
   const shared = row.shared_usage?.count ?? 0;
-  const repair = row.repairs.find((item) => item.action === "apply_parse_profile") ?? row.repairs[0];
-  const chunkMethod = suggestedChunkMethod(row);
+  const confirmation = { acknowledgeSharedImpact: acknowledged, reparseAcknowledged };
   return (
     <article className="rounded border p-4 text-sm">
       <header className="flex flex-wrap items-center gap-2">
         <h3 className="font-medium">{row.dataset_name ?? row.dataset_id}</h3>
-        <CapabilityBadge state={row.verdict} label={t("scenarioTemplates.capability.role." + row.role, { defaultValue: row.role })} />
+        <CapabilityBadge state={row.verdict} label={capabilityRole(t, row.role)} />
         {!checked ? (
           <span className="text-[11px] text-muted-foreground">{t("scenarioTemplates.wizard.unchecked")}</span>
         ) : null}
@@ -149,14 +186,12 @@ function DatasetVerdictCard({ row, checked, acknowledged, onAcknowledge, onRepai
           <li key={requirement.capability} className="flex flex-wrap items-center gap-2 text-xs">
             <CapabilityBadge
               state={requirementBadgeState(requirement)}
-              label={t(`scenarioTemplates.capability.name.${requirement.capability}`, {
-                defaultValue: requirement.capability,
-              })}
+              label={capabilityName(t, requirement.capability)}
               detail={`${requirement.min_level} → ${requirement.achieved}`}
             />
             <span className="text-muted-foreground">
               {requirement.min_level} → {requirement.achieved}
-              {requirement.reason ? ` · ${requirement.reason}` : ""}
+              {requirement.reason ? ` · ${capabilityReason(t, requirement.reason)}` : ""}
             </span>
           </li>
         ))}
@@ -174,58 +209,148 @@ function DatasetVerdictCard({ row, checked, acknowledged, onAcknowledge, onRepai
           ))}
         </ul>
       </details>
-      {repair ? (
-        <div className="mt-3 rounded bg-muted/40 p-2">
-          <p className="flex items-center gap-1 text-xs font-medium">
-            <Wrench className="size-3" aria-hidden="true" />
-            {t("scenarioTemplates.wizard.repairAction", { action: repair.action })}
+      {shared > 0 ? (
+        <div className="mt-3 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+          <p className="font-medium text-amber-700">
+            {t("scenarioTemplates.wizard.sharedWarning", { count: shared })}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">{repair.reason}</p>
-          {shared > 0 ? (
-            <div className="mt-2 text-xs">
-              <p className="font-medium text-amber-700">
-                {t("scenarioTemplates.wizard.sharedWarning", { count: shared })}
-              </p>
-              <ul className="mt-1 list-disc pl-4 text-muted-foreground">
-                {(row.shared_usage.chat_ids ?? []).map((id) => (
-                  <li key={`chat-${id}`}>{t("scenarioTemplates.wizard.sharedChat", { id })}</li>
-                ))}
-                {(row.shared_usage.search_ids ?? []).map((id) => (
-                  <li key={`search-${id}`}>{t("scenarioTemplates.wizard.sharedSearch", { id })}</li>
-                ))}
-              </ul>
-              <label className="mt-1 flex items-center gap-2">
-                <input type="checkbox" checked={acknowledged} onChange={(event) => onAcknowledge(event.target.checked)} />
-                {t("scenarioTemplates.wizard.sharedAcknowledge")}
-              </label>
-            </div>
-          ) : null}
-          <Button
-            className="mt-2"
-            size="sm"
-            variant="outline"
-            disabled={shared > 0 && !acknowledged}
-            onClick={() => onRepair(chunkMethod)}
-          >
-            {t("scenarioTemplates.wizard.repairApply")}
-          </Button>
+          <ul className="mt-1 list-disc pl-4 text-muted-foreground">
+            {(row.shared_usage.chat_ids ?? []).map((id) => (
+              <li key={`chat-${id}`}>{t("scenarioTemplates.wizard.sharedChat", { id })}</li>
+            ))}
+            {(row.shared_usage.search_ids ?? []).map((id) => (
+              <li key={`search-${id}`}>{t("scenarioTemplates.wizard.sharedSearch", { id })}</li>
+            ))}
+          </ul>
+          <label className="mt-1 flex items-center gap-2">
+            <input type="checkbox" checked={acknowledged} onChange={(event) => onAcknowledge(event.target.checked)} />
+            {t("scenarioTemplates.wizard.sharedAcknowledge")}
+          </label>
+        </div>
+      ) : null}
+      {row.repairs.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {row.repairs.map((repair) => (
+            <RepairRow
+              key={repair.action}
+              row={row}
+              repair={repair}
+              confirmation={confirmation}
+              reparseAcknowledged={reparseAcknowledged}
+              onReparseAcknowledge={onReparseAcknowledge}
+              onRepair={onRepair}
+              onRepairPushdown={onRepairPushdown}
+            />
+          ))}
         </div>
       ) : null}
     </article>
   );
 }
 
+interface RepairRowProps {
+  row: DatasetCapabilityView;
+  repair: CapabilityRepairView;
+  confirmation: { acknowledgeSharedImpact: boolean; reparseAcknowledged: boolean };
+  reparseAcknowledged: boolean;
+  onReparseAcknowledge: (value: boolean) => void;
+  onRepair: (body: RepairRequest) => void;
+  onRepairPushdown: (body: PushdownRequest) => void;
+}
+
 /**
- * The repair writes a chunk method. Prefer the method the probe already reported
- * for `chunk_method`; fall back to `naive` only when the evidence carries none —
- * the wizard never invents a method the backend did not describe.
+ * One repair, one channel. The action id decides what the button writes, so a
+ * dataset whose only gap is metadata (`enable_pushdown_and_sync_meta`) can never
+ * reach the parse-profile writer, and a repair the wizard cannot drive
+ * (`reconfigure_dataset`, `remove_requirement`) gets no button at all —
+ * doc/285 §10.
  */
-export function suggestedChunkMethod(row: DatasetCapabilityView): string {
-  const evidence = row.capabilities.find((item) => item.capability === "chunk_method");
-  const reported = (evidence?.note ?? "").match(/chunk_method=([a-z_]+)/)?.[1];
-  if (reported) return reported;
-  const achieved = row.requirements.find((item) => item.capability === "chunk_method")?.achieved;
-  return achieved && achieved !== "none" ? achieved : "naive";
+function RepairRow({
+  row,
+  repair,
+  confirmation,
+  reparseAcknowledged,
+  onReparseAcknowledge,
+  onRepair,
+  onRepairPushdown,
+}: RepairRowProps) {
+  const t = useTranslate();
+  const channel = repairChannel(repair);
+  const label = translateOr(t, `scenarioTemplates.wizard.repairAction.${repair.action}`, repair.action);
+  const target = channel === "parse_profile" ? repairTargetMethod(repair, row) : "";
+  const reparseCount = channel === "parse_profile" ? repairReparseCount(repair, row) : 0;
+  const blockers = repairBlockers(row, repair, confirmation);
+  const heading = (
+    <p className="flex items-center gap-1 text-xs font-medium">
+      {channel === "blocked" ? (
+        <ShieldX className="size-3" aria-hidden="true" />
+      ) : channel === "manual" ? (
+        <Settings2 className="size-3" aria-hidden="true" />
+      ) : (
+        <Wrench className="size-3" aria-hidden="true" />
+      )}
+      {t("scenarioTemplates.wizard.repairActionLabel")} {label}
+    </p>
+  );
+  const reason = repair.reason ? (
+    <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+      {t("scenarioTemplates.wizard.repairReasonCaption")} {repair.reason}
+    </p>
+  ) : null;
+
+  if (channel === "blocked" || channel === "manual") {
+    return (
+      <div className="rounded bg-muted/40 p-2">
+        {heading}
+        <p className="mt-1 text-xs text-muted-foreground">
+          {channel === "blocked"
+            ? t("scenarioTemplates.wizard.repairBlockedHint")
+            : t("scenarioTemplates.wizard.repairManualHint")}
+        </p>
+        {reason}
+      </div>
+    );
+  }
+
+  const applying =
+    channel === "parse_profile"
+      ? () => onRepair(buildRepairRequest(row, repair, confirmation))
+      : () => onRepairPushdown(buildPushdownRequest(row, confirmation));
+  let hint = t("scenarioTemplates.wizard.repairPushdownHint");
+  if (channel === "parse_profile") {
+    if (target === "") hint = t("scenarioTemplates.wizard.repairTargetUnknown");
+    else if (reparseCount > 0) hint = t("scenarioTemplates.wizard.repairParseHint", { method: target, count: reparseCount });
+    else hint = t("scenarioTemplates.wizard.repairParseHintEmpty", { method: target });
+  }
+
+  return (
+    <div className="rounded bg-muted/40 p-2">
+      {heading}
+      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+      {reason}
+      {channel === "parse_profile" && reparseCount > 0 ? (
+        <div className="mt-2 text-xs">
+          <p className="font-medium text-amber-700">
+            {t("scenarioTemplates.wizard.repairReparseWarning", { count: reparseCount })}
+          </p>
+          <label className="mt-1 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={reparseAcknowledged}
+              onChange={(event) => onReparseAcknowledge(event.target.checked)}
+            />
+            {t("scenarioTemplates.wizard.repairReparseAcknowledge", { count: reparseCount })}
+          </label>
+        </div>
+      ) : null}
+      <Button className="mt-2" size="sm" variant="outline" disabled={blockers.length > 0} onClick={applying}>
+        {channel === "parse_profile"
+          ? t("scenarioTemplates.wizard.repairApply")
+          : t("scenarioTemplates.wizard.repairPushdownApply")}
+        {target ? <span className="ml-1 font-mono text-[10px] text-muted-foreground">{target}</span> : null}
+      </Button>
+    </div>
+  );
 }
 
 function SkeletonPanel({ wizard }: { wizard: ScenarioWizardApi }) {

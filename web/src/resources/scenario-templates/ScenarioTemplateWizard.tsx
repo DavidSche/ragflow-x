@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, ArrowRight, LayoutTemplate, Loader2 } from "lucide-react";
 import { StepApplication } from "./wizard/StepApplication";
+import { createBlockers } from "./wizard/gates";
 import { StepKnowledge } from "./wizard/StepKnowledge";
 import { StepScenario } from "./wizard/StepScenario";
 import { StepVerify } from "./wizard/StepVerify";
@@ -31,9 +32,17 @@ export const ScenarioTemplateWizard = () => {
   );
 
   const template = wizard.selection.template;
+  // `blocked` means the engine cannot provide a required capability at all
+  // (doc/276 §6.5: "阻断实例化"), so creation stops here with the reason shown
+  // rather than producing an application that cannot work.
+  const blockers = createBlockers(wizard.capabilityCheck);
   const canAdvance = Boolean(template && wizard.selection.name.trim());
   const canCreate = Boolean(
-    canAdvance && wizard.selection.projectId.trim() && wizard.selection.datasetIds.length > 0 && !wizard.saving,
+    canAdvance &&
+      wizard.selection.projectId.trim() &&
+      wizard.selection.datasetIds.length > 0 &&
+      !wizard.saving &&
+      blockers.length === 0,
   );
 
   return (
@@ -77,6 +86,11 @@ export const ScenarioTemplateWizard = () => {
             : t("scenarioTemplates.wizard.pickFirst")}
         </div>
         <div className="flex items-center gap-2">
+          {blockers.length > 0 ? (
+            <span className="text-xs text-destructive">
+              {t("scenarioTemplates.wizard.createBlocked", { count: blockers.length })}
+            </span>
+          ) : null}
           <Button
             variant="outline"
             disabled={step === 0 || wizard.saving}

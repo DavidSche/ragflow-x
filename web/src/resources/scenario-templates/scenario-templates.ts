@@ -1,4 +1,5 @@
 import { api } from "../../lib/api";
+import { approvalHoldFromResponse, type ApprovalHold } from "../../lib/approval-hold";
 
 /**
  * Scenario template catalog.
@@ -287,7 +288,16 @@ export interface CapabilityCheckResponse {
       reason?: string;
     }[];
     capabilities: { capability: string; status: string; source: string; note?: string }[];
-    repairs: { action: string; reason: string; severity: string }[];
+    repairs: {
+      action: string;
+      reason: string;
+      severity: string;
+      endpoint?: string;
+      chunk_method?: string;
+      requires_reparse?: boolean;
+    }[];
+    document_count?: number;
+    parsed_count?: number;
     shared_usage: {
       count: number;
       chat_ids?: string[];
@@ -316,10 +326,20 @@ export interface ParseProfileResponse {
   reparse_triggered?: boolean;
 }
 
+/** Outcome of a repair write: applied, or held for approval (HTTP 202). */
+export type RepairWriteResult<T> =
+  | { state: "applied"; data: T }
+  | { state: "pending_approval"; hold: ApprovalHold };
+
 /**
  * `POST /datasets/:id/parse-profile` — the only write channel for the
  * `apply_parse_profile` repair. `acknowledge_shared_impact` must be the user's
  * explicit choice; the wizard never sets it on their behalf.
+ *
+ * Like `PUT /datasets/:id` this endpoint can be held by an approval policy and
+ * then answers **202 with an approval payload instead of the profile**; reading
+ * `data.reparse_triggered` off that would silently drop the "already queued"
+ * message (doc/285 §10.2).
  */
 export async function applyDatasetParseProfile(
   datasetId: string,
@@ -329,12 +349,38 @@ export async function applyDatasetParseProfile(
     rewrite_existing?: boolean;
     acknowledge_shared_impact?: boolean;
   },
-): Promise<ParseProfileResponse> {
+): Promise<RepairWriteResult<ParseProfileResponse>> {
   const res = await api.post<{ code: number; data: ParseProfileResponse }>(
     `/datasets/${datasetId}/parse-profile`,
     body,
   );
-  return res.data.data;
+  const hold = approvalHoldFromResponse(res);
+  if (hold) return { state: "pending_approval", hold };
+  return { state: "applied", data: res.data.data };
+}
+
+/** Result of the `enable_pushdown_and_sync_meta` repair channel. */
+export type PushdownRepairResult =
+  | { state: "applied" }
+  | { state: "pending_approval"; hold: ApprovalHold };
+
+/**
+ * `PUT /datasets/:id` — the only write channel for `enable_pushdown_and_sync_
+ * meta` (`pushdown_enabled`, doc/276 §7.4).
+ *
+ * An approval policy makes this endpoint answer **202 with `code: 0` and an
+ * approval payload instead of the dataset** — axios sees a success, so a naive
+ * caller reports "已开启下推" while nothing has been written yet. The hold is
+ * therefore detected here and surfaced as its own state.
+ */
+export async function updateDatasetPushdown(
+  datasetId: string,
+  body: { pushdown_enabled: boolean; acknowledge_shared_impact?: boolean },
+): Promise<PushdownRepairResult> {
+  const res = await api.put<{ code: number; data: unknown }>(`/datasets/${datasetId}`, body);
+  const hold = approvalHoldFromResponse(res);
+  if (hold) return { state: "pending_approval", hold };
+  return { state: "applied" };
 }
 
 /** `GET /scenario-template-skeletons` — read-only upstream mirror (doc/276 §8.4). */

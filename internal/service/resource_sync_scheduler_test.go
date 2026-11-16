@@ -271,3 +271,53 @@ func TestScheduledWorkerSkipsWhenEitherSwitchIsDisabled(t *testing.T) {
 		t.Fatalf("scheduled job must not reschedule: %+v err=%v", next, err)
 	}
 }
+
+// The worker arms the next cycle from inside the current one, so consecutive
+// arming calls land within the same clock tick. The ledger deduplicates on
+// `key`, and Windows repeats `time.Now().UnixNano()` between back-to-back calls
+// (measured on the 4.151 box: 2000 of 2000 pairs identical). A timestamp key
+// therefore swallowed the next insert, `Enqueue` reported "not inserted", and the
+// worker returned before recovering stale runs — a silent Windows-only flake
+// that Linux never reproduces because its nanosecond clock advances between two
+// syscalls.
+func TestScheduleReconcileArmsConsecutiveCyclesWithoutClockResolution(t *testing.T) {
+	svc := newAuthzSvc(t)
+	svc.SetupWorker(DefaultWorkerConfig())
+	ctx := context.Background()
+	tenant, err := svc.CreateTenant(ctx, "Sync Two Cycles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	enableResourceSyncForTest(t, svc, tenant.ID)
+
+	// Settle the armed cycle, so the only thing left that can stop the next insert
+	// is the idempotency key itself. Other kinds (outbox, retention, ...) are due
+	// immediately and sort first by run_after, hence the drain loop.
+	settleCycle := func() {
+		for drained := 0; drained < 64; drained++ {
+			claimed, err := svc.Store.ClaimJobs(ctx, 1, time.Now().UTC().Add(2*time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(claimed) == 0 {
+				t.Fatal("no claimable job: the reconcile cycle was never armed")
+			}
+			if err := svc.Store.CompleteJob(ctx, claimed[0].ID, 1, "{}"); err != nil {
+				t.Fatal(err)
+			}
+			if claimed[0].Kind == model.JobKindRAGFlowReconcile {
+				return
+			}
+		}
+		t.Fatal("reconcile cycle never became claimable")
+	}
+	settleCycle()
+
+	for cycle := 0; cycle < 3; cycle++ {
+		armed, err := svc.ScheduleResourceSyncReconcile(ctx, "")
+		if err != nil || !armed {
+			t.Fatalf("cycle %d: armed=%v err=%v (the idempotency key collided)", cycle, armed, err)
+		}
+		settleCycle()
+	}
+}

@@ -1,6 +1,8 @@
 import { useTranslate } from "ra-core";
 import { ClipboardCheck, ShieldAlert } from "lucide-react";
 import { CapabilityBadge } from "./CapabilityBadge";
+import { capabilityName, capabilityVerdict } from "./capabilityLabels";
+import { createBlockers } from "./gates";
 import type { ScenarioWizardApi } from "./useScenarioWizard";
 
 interface StepVerifyProps {
@@ -19,6 +21,9 @@ export function StepVerify({ wizard }: StepVerifyProps) {
   if (!template) return null;
   const gate = template.evalGate;
   const gateBlocked = gate.required && !gate.passed;
+  // Hard capability gaps refuse creation (doc/276 §6.5); the reason is listed
+  // here so the disabled button at the bottom is never unexplained.
+  const blockers = createBlockers(wizard.capabilityCheck);
 
   return (
     <section className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
@@ -77,14 +82,31 @@ export function StepVerify({ wizard }: StepVerifyProps) {
           {wizard.capabilityCheck ? (
             <p className="mt-2 text-xs text-muted-foreground">
               {t("scenarioTemplates.wizard.checkSummary", {
-                verdict: t(`scenarioTemplates.capability.verdict.${wizard.capabilityCheck.verdict}`, {
-                  defaultValue: wizard.capabilityCheck.verdict,
-                }),
+                verdict: capabilityVerdict(t, wizard.capabilityCheck.verdict),
                 status: wizard.capabilityCheck.probe_status,
               })}
             </p>
           ) : null}
         </div>
+
+        {blockers.length > 0 ? (
+          <div className="rounded border border-destructive/40 bg-destructive/5 p-3 text-xs" role="alert">
+            <p className="font-medium text-destructive">
+              {t("scenarioTemplates.wizard.createBlocked", { count: blockers.length })}
+            </p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {blockers.map((blocker) => (
+                <li key={`${blocker.datasetId}-${blocker.capability}`}>
+                  {t("scenarioTemplates.wizard.createBlockedItem", {
+                    dataset: blocker.datasetName,
+                    capability: capabilityName(t, blocker.capability),
+                  })}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-muted-foreground">{t("scenarioTemplates.wizard.createBlockedHint")}</p>
+          </div>
+        ) : null}
 
         {gateBlocked ? (
           <div className="flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/5 p-3 text-xs">

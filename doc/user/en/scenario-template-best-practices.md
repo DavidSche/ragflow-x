@@ -1,207 +1,227 @@
-# Scenario Template Best Practices
+# Scenario Templates: A Hands-On Guide
 
-> Applies to: RAGFlow-X v0.6.0 ・ Verified: 2026-11-16 ・ Environment: 4.151 (`192.168.4.151:19193`, real data kept for re-verification)
+> Applies to RAGFlow-X v0.6.1｜UI language: English｜Who this is for: workspace admins (`tenant_admin`) and
+> build teams with the "authoring" permission
 
-This guide is for workspace admins (`tenant_admin`) and application builders who already manage
-knowledge bases and conversational apps in RAGFlow-X. It answers three questions: **which scenario
-template to pick, how to drive it, and what “production-ready” actually means after rollout**. Every
-flow below was exercised against the 4.151 environment with two real cases (enterprise Q&A and
-contract compliance); the structures, error messages, and data ids cited in this document can be
-re-verified.
-
-## Table of contents
-
-1. [Concept map: template, catalog, fork, capability, instance](#1-concept-map-template-catalog-fork-capability-instance)
-2. [Five core best practices (quick reference)](#2-five-core-best-practices-quick-reference)
-3. [Case A: Enterprise Q&A — the fast-start path](#3-case-a-enterprise-qa--the-fast-start-path)
-4. [Case B: Contract compliance — the high-barrier path and how to close the gaps](#4-case-b-contract-compliance--the-high-barrier-path-and-how-to-close-the-gaps)
-5. [Pitfalls and how to avoid them (verified)](#5-pitfalls-and-how-to-avoid-them-verified)
-6. [How to read a capability probe](#6-how-to-read-a-capability-probe)
-7. [Operations and keeping verification data](#7-operations-and-keeping-verification-data)
-8. [API quick reference](#8-api-quick-reference)
-9. [Changelog](#9-changelog)
+This guide only covers **where to click, what you will see, and what to do about it**. It does not explain
+internals and does not require calling the API; every button and badge name below is the real UI text,
+and §9 maps the technical vocabulary onto it. Following it end to end takes about ten minutes and leaves you
+with an assistant that answers questions.
 
 ---
 
-## 1. Concept map: template, catalog, fork, capability, instance
+## 0. At a glance: the eight things you actually do
 
-Keep this path in mind — every best practice below builds on it:
-
-```
-Platform catalog (published built-in baselines, 9 scenarios)
-        │  fork (a WORKSPACE action, not a platform action)
-        ▼
-Workspace copy  ← platform baselines are immutable; the copy belongs to the workspace and can evolve
-        │  capability-check (is my knowledge base qualified? what is missing?)
-        ▼
-Probe verdict (repairable / all_required_unsatisfied …)
-        │  instantiate (bind / auto-create datasets, produce conversational app instances)
-        ▼
-Instance (chat, …) + template health board (activity, eval return rate)
-```
-
-Four verified facts to remember:
-
-- **Fork is a “workspace” action.** If a platform admin forks an in-catalog template it is rejected
-  (`400/40108`); the workspace admin forks within their own workspace. A brand-new workspace owns 0
-  template rows; templates are visible through a **catalog** that merges platform baselines with
-  workspace copies.
-- **Forking means “taking over” locally**: after a fork, the merged catalog shows the workspace copy
-  (`source=copy`) in place of the platform baseline row. Edits on the copy no longer affect the
-  platform baseline.
-- **Capability probe** (`capability-check`) maps “knowledge base + app type” onto a capability set and
-  reports an achieved level per capability: `operational` / `configured` / `unknown` (and higher once
-  verified). The probe **requires ≥1 bound dataset** (an empty array returns `400/40105`), so the real
-  order is “build a content-first knowledge base, then probe”.
-- **Instantiation** (`instantiate`) is idempotent via `Idempotency-Key`: replaying the same key never
-  duplicates an instance, which enables safe retry / resume.
-
-## 2. Five core best practices (quick reference)
-
-| # | Rule | In one line |
-|---|---|---|
-| 1 | **Content first** | Build and parse the real knowledge base before instantiating; instantiating an empty base is rejected upstream (§5-#3) |
-| 2 | **Probe before you commit** | Run `capability-check` every time you change the base or the app type — let the system name the gap instead of guessing |
-| 3 | **Idempotency-key discipline** | Always send an `Idempotency-Key`; on failure retry with the **same** key and never duplicate instances |
-| 4 | **Iterate on the copy** | Fork your own copy on top of the production baseline; keep the baseline as the platform-controlled golden version |
-| 5 | **Keep the evidence** | Completed instances, the real Q&A you run against them, and health-board metrics are the proof of “usable” — keep them for re-verification (§7) |
-
-## 3. Case A: Enterprise Q&A — the fast-start path
-
-**Scenario**: a company turns its expense / travel policy into a conversational assistant for employees
-(“May I reimburse a first-class high-speed-rail ticket?”). Chosen template: `enterprise-qa` (chat,
-retrieval, book-style Q&A; low bar — core requirement is `vector=operational`) — the canonical
-fast-start template.
-
-**Verified steps and results** (4.151, workspace “最佳实践演示工作区-BP”):
-
-| Step | Action | Verified result |
-|---|---|---|
-| 1 | Workspace admin logs in, locates the template in the catalog, forks `enterprise-qa` | `200`, copy `f9d4f73bd4d54889afe3b4290b618600`, `source=copy`, derived from baseline `af59830768a647febbda47fcac57be8b` |
-| 2 | Create dataset “BP-企业知识问答-知识库”, upload 《报销与差旅实务.md》 (standards/invoices/deadlines/flow) | dataset `776916e38dee4d84a875f62bd3deea58`, document `b0830dd6faf84b3b93242aa60e12721f`, **chunks=4** after parse |
-| 3 | `capability-check` (app_type=chat, bind that base) | `200/0`, `verdict=repairable`; `vector=operational ✓`; `metadata_filter=configured` (no meta_fields yet) |
-| 4 | `instantiate` (chat, bind prepared base, carry `Idempotency-Key`) | `200/0`, `instantiation_state=completed`, instance `1758890c698a4aabb5931408e5a3c415`, upstream chat `3a6a…` active |
-| 5 | Template `health` board | `200/0`, 7-day window, metrics in §7 |
-
-**Points**:
-
-- **Do not treat “verdict=repairable” as failure.** It means the base is a step short of carrying the
-  template fully. In step 3 `vector` already passed; the only gap was an enhancement capability
-  (metadata filtering) — instantiating is perfectly normal (verified `completed`).
-- `instantiate` returns the **upstream chat app id + idempotency result**; you bind the local dataset
-  id (`776916e38…`), and the underlying RAGFlow dataset is wired automatically — no need to create the
-  app upstream yourself.
-- To reach `metadata_filter=ready`, maintain `meta_fields` on documents (e.g. department, year) and
-  re-probe. Optional depth, not a blocker.
-
-## 4. Case B: Contract compliance — the high-barrier path and how to close the gaps
-
-**Scenario**: legal/procurement turns contract clauses into a compliance Q&A (“What is the penalty
-cap?”) that must **cite source text** and filter by metadata. Chosen template: `contract-compliance`
-(chat/agent, `citation-strict`). It is the high-barrier template: on top of `vector` it requires
-`citation_locator=configured` and `metadata_filter=ready`.
-
-**Verified steps and results** (content-first as well; corpus 《采购合同条款合集.md》 — payment /
-breach / IP & confidentiality / dispute resolution):
-
-| Step | Action | Verified result |
-|---|---|---|
-| 1 | Fork `contract-compliance` | `200`, copy `e841d543562d41da8dbda7e3af6766d9`, `source=copy` |
-| 2 | Create “BP-合同与合规-知识库” + upload + parse | dataset `e29c8139855e435f8e9fbe7a79835153`, document `5f01f9049af241e58d4329a62b7cf281`, **chunks=4** |
-| 3 | `capability-check` (chat, bind that base) | `200/0`, `verdict=repairable`, `aggregate=all_required_unsatisfied`:<br>· `vector` `operational ✓` (satisfied=true)<br>· `citation_locator` **`unknown`, `satisfied=false`, `reason=below_min_level`** (needs `configured`)<br>· `metadata_filter` `configured` vs required `ready` → `metadata_not_ready` |
-| 4 | `instantiate` (chat, bind prepared base, with key) | `200/0`, `completed`, instance `8b82e547e5fe47ebac94f24007323a7a`, upstream chat `a4f6…` active (prompt injected with compliance semantics) |
-
-**Points**:
-
-- For high-barrier templates the probe is **not a pass/fail gate but an actionable gap list**: it
-  states precisely that `citation_locator` is missing (“no citation anchor established”) and that
-  `metadata_filter` is not ready. Close them as follows:
-  1. **Citation locator**: add locatable anchors (clause numbers, section ids) when documents are
-     parsed/ingested so retrieval can return to the source position; re-probe → `configured`.
-  2. **Metadata readiness**: maintain `meta_fields` on documents (contract number, counterparty,
-     amount band, signing date); re-probe → `ready`.
-- Even with the gaps open and `verdict=repairable`, instantiation still **completes** (verified) — the
-  system allows “ship with gaps + track on the board” rather than hard-blocking. Combine with the §7
-  board for ongoing measurement.
-- `contract-compliance` injects compliance-aware prompt semantics (verified: the generated chat’s
-  `prompt_config.empty_response` reads “未找到对应条款，不能进行合规判断…” — i.e., refuse to judge
-  without supporting clauses). **That is part of the template’s delivered value**: not just RAG, but
-  scenario-shaped behavior.
-
-## 5. Pitfalls and how to avoid them (verified)
-
-| # | Symptom (verified error) | Cause | Avoid |
+| # | Where | What | You know it worked when |
 |---|---|---|---|
-| ① | Platform admin fork → `400/40108` | fork is a workspace action | fork within your workspace as workspace admin |
-| ② | `capability-check` with empty `datasets` → `400/40105` | probe needs ≥1 (role, dataset_id) | content first; send `[{role:"primary", dataset_id}]` |
-| ③ | Instantiating an empty base → `40085`: `ragflow rejected chat creation: the dataset <id> doesn't own parsed file` | upstream RAGFlow requires the chat-bound base to hold parsed files | upload → parse (wait for `chunk_count>0`) → instantiate; bind the ready base with `create_missing_datasets=false` |
-| ④ | Parse endpoint intermittently `502/50203` (`ragflow parse documents failed`) | upstream parses async and the endpoint replies early | **do not trust a single status**: poll `GET /datasets/:id/documents` and rely on `chunk_count` (verified: chunks=4 arrived within ~5s despite the 502) |
+| 1 | Left nav → "Dataset" | Create a dataset, upload a document | the document is listed |
+| 2 | Dataset → document panel | Select the document → "Parse selected" | the "Chunks" column goes from 0 to >0 |
+| 3 | Left nav → "Scenario template" | Pick the scenario that matches the job | the card is highlighted with its description |
+| 4 | Wizard step 2 "Knowledge and capability check" | Tick the dataset → "Run capability check" | the capability result panel appears, one badge per dataset |
+| 5 | Same step | If a repairable item shows up, repair it (§4) | re-run the check: badge turns "Verified", or stays amber with an explanation |
+| 6 | Wizard step 3 "App shape and settings" | Name the app, pick the project, optionally pick a model | "Next" becomes clickable |
+| 7 | Wizard step 4 "Verify and create" | Review the trial questions and checklist → "Create app" | "App created."; you land on the app |
+| 8 | App detail / "Practice run" | Ask one of the trial questions | it answers, and the citation opens the source passage |
 
-## 6. How to read a capability probe
+Steps 1–2 matter most: **the capability check only answers "is my dataset good enough", it never fills the
+dataset for you.** With an empty dataset nothing further works.
 
-Key fields of the probe response (verified values above):
+---
 
-- `verdict`: template-level conclusion. `repairable` = unmet but fixable; `ok` = fully met;
-  `unimplemented` = a hard gap unreachable in this environment.
-- `aggregate`: `all_required_unsatisfied` = the required set is not simultaneously satisfied (**read
-  `requirements[]` item by item — do not stop at this field**).
-- `requirements[]`: one line per required capability = `{capability, min_level, achieved, satisfied,
-  reason?}`. `satisfied=false` plus the `reason` tells you what is missing (`below_min_level`,
-  `metadata_not_ready`, …).
-- `capabilities[]`: observable capabilities, their source (`src`) and notes (`note`), e.g.
-  `metadata_filter src=document.meta_fields note=no document carries meta_fields`.
+## 1. Start with a dataset that has content
 
-**Reading rule**: first look for any `reason` — the system has already translated the gap into plain
-guidance; fix it. `verdict=repairable` does not mean unusable; combine with the §7 board to decide
-“fix before ship” vs “ship with gaps + measure”.
+1. Left nav → "Dataset" → create one with a name you will recognise later (e.g. "Expense & travel policy").
+2. Open it → document panel → "Upload document". md/pdf/docx/txt all work.
+3. Select the uploaded document → "Parse selected".
+4. Wait until the parse status stops changing, then confirm the **"Chunks" column is greater than 0**.
 
-## 7. Operations and keeping verification data
+**Why the chunk count is the number to watch**: a template creates a chat/search application, and that
+application answers by retrieving chunks. With zero chunks the create step is rejected by the engine
+(the error mentions `doesn't own parsed file`). The chunk column is also the only reliable progress signal
+during a later repair.
 
-### 7.1 Template health board
-Template `health` returns 7-day-window metrics (verified): `first_run_completion_rate` (share of
-instances producing ≥1 answer within 24h), `app_active_7d` (7-day active share), `eval_return_rate` /
-`eval_*` (retrieval-only, not answer-accuracy). **Measure “completed” and “actually used” separately**
-— `completed` is only the start; the board is the proof of usable.
+Parsing is asynchronous and an occasional parse error toast is normal. **Do not trust a single status read**:
+refresh the document list — if chunks are above 0, the parse succeeded.
 
-### 7.2 Orphans and real hygiene
-The built-in `instantiation_orphan_reconcile` resident worker (v0.6.0+) reclaims resources left behind
-by interrupted instantiations. Do not hand-script cleanup of failed leftovers; rely on the worker and
-audit the audit chain.
+---
 
-### 7.3 4.151 verification data (kept for re-verification)
-Full data chain of this guide’s cases (environment `192.168.4.151:19193`, workspace admin `bp-admin`):
+## 2. Pick a scenario
 
-| Belongs to | Id |
-|---|---|
-| Workspace (最佳实践演示工作区-BP) | tenant `6959642db90443d2a1dfe167c6f1aa4d` |
-| Project (最佳实践项目) | `721f1fbf0f084372b6ba4d107896f446` |
-| Case A fork / dataset / doc / instance | fork `f9d4f73bd4d54889afe3b4290b618600` · dataset `776916e38dee4d84a875f62bd3deea58` · doc `b0830dd6faf84b3b93242aa60e12721f` (4 chunks) · instance `1758890c698a4aabb5931408e5a3c415` |
-| Case B fork / dataset / doc / instance | fork `e841d543562d41da8dbda7e3af6766d9` · dataset `e29c8139855e435f8e9fbe7a79835153` · doc `5f01f9049af241e58d4329a62b7cf281` (4 chunks) · instance `8b82e547e5fe47ebac94f24007323a7a` |
+"Scenario template" in the left nav *is* the wizard; the first screen is the scenario card list.
 
-> Note: the `health` board’s `instances` count includes every instantiation attempt during the run
-> period (early failed attempts included); completed instances are the ids above.
+Answer two questions before picking:
 
-**Suggested re-verification**: ① converse with the Case A/B instances and check answers/citations;
-② for Case B add `citation_locator`/`meta_fields` and re-probe to observe
-`citation_locator unknown→configured` and `metadata_filter configured→ready`; ③ watch
-`first_run_completion_rate` move from 0.
+- **Do I want question answering, or retrieval/review?** Each card lists the app shapes it supports
+  (chat / search / assistant). Unsupported shapes cannot be selected in step 3, and the UI says why.
+- **Can my dataset meet its requirements?** Step 4 answers that, but the sample questions on the card are
+  a quick check that the scenario really matches your job.
 
-## 8. API quick reference
+Picking wrong only costs a re-selection; it does not pollute data. Built-in platform templates are
+**usable as they are** — you do not have to copy them into your workspace first. Copying only matters when
+you want to change the template's own prompts/parameters, which is a platform-admin task outside this guide.
 
-```
-POST /api/v1/scenario-template-assets/:id/fork                    JSON, no body (workspace admin)
-POST /api/v1/scenario-template-assets/:id/capability-check         {app_type, datasets:[{role,dataset_id}]}
-POST /api/v1/scenario-template-assets/:id/instantiate              {app_type,name,project_id,dataset_ids|create_missing_datasets,...} + Idempotency-Key
-GET  /api/v1/scenario-template-assets/:id/health                   7-day template health board
-```
+---
 
-- `instantiate` is idempotent: `Idempotency-Key` is required; replaying the same key returns the
-  existing result and never creates a duplicate instance.
-- Bind a ready base with `dataset_ids:[...]` + `create_missing_datasets:false`; auto-create with
-  `create_missing_datasets:true` (mind §5-#3: an empty base is rejected upstream).
+## 3. Step 2: bind a dataset and run the capability check
 
-## 9. Changelog
+1. Under "Bind datasets", tick the dataset from §1 (at least one).
+2. Click "Run capability check".
+3. The capability result panel appears on the right, one card per dataset, with a badge per capability.
 
-| Date | Version | Note |
+**The four badges mean exactly this**:
+
+| Badge | Meaning | What to do |
 |---|---|---|
-| 2026-11-16 | v0.6.0 | First edition; built on the 4.151-verified Cases A/B, four verified pitfalls, and the retained verification data catalogue |
+| Verified | the capability is ready | nothing |
+| Repairable | close; the wizard can fix it here | repair it (§4), then re-run the check |
+| Unverified | probing was limited (permissions or endpoint unavailable) — **not a pass** | ask an admin about permissions, or try another dataset |
+| Blocked | this deployment **cannot** provide it | pick another template, or an engine that supports it; no setting fixes it |
+
+Three reading rules that prevent most misjudgements:
+
+- **"Repairable" is not a failure**: the template wants one level more than your dataset has, and there is
+  usually a repair button right there.
+- **"Unverified" does not mean "passed"**: when the system cannot obtain evidence it will not declare success
+  for you. It also does not stop you from creating — but do not be surprised later.
+- **Read the line with text, not just the badge**: `minimum level → actual level` plus a system note tells you
+  what is missing, which is more specific than the badge.
+
+Changing the binding (ticking a different dataset) or changing the app shape **voids the result** — the panel
+returns to "no check yet" and you must click "Run capability check" again. Different app shapes require
+different capabilities.
+
+---
+
+## 4. What "Apply repair" actually changes
+
+Each repairable item has its own button, and the line next to it names the value it is about to write
+(e.g. "switch the chunking method to book and re-parse 12 document(s)"). Know which kind you are clicking:
+
+| Repair item (UI text) | What it touches | What you must confirm first |
+|---|---|---|
+| Switch to the chunking this template requires | the dataset's **chunking method**, and **re-parses existing documents** | already-parsed documents are re-parsed under the new chunking; old chunks are replaced |
+| Turn on metadata-filter pushdown and backfill metadata (button: "Turn on and backfill") | the dataset's **pushdown switch**, and starts metadata backfill | the backfill is asynchronous; the check only turns green afterwards |
+| Adjust this dataset's parse / retrieval configuration | nothing — the wizard only gives guidance; you change it in the dataset settings | come back and re-run the check |
+| This capability is not available in this deployment | nothing — it is an engine ceiling | pick another template or engine |
+
+### Two checkboxes, deliberately separate
+
+If **other applications are already using this dataset**, the panel first lists them and asks you to tick
+"I understand the shared impact". If the repair will **re-parse existing documents**, it asks separately for
+"I understand these N document(s) will be re-parsed".
+
+The two are intentionally not one checkbox: a single tick must not authorise two different destructive writes.
+
+### Why it is often still amber right after clicking
+
+Because both follow-up jobs are asynchronous:
+
+- **Re-parse**: a successful submit only means the job is queued. The UI says "Re-parse submitted; run the
+  check again after parsing finishes". Running the check immediately usually reads "syncing" — that is not a
+  failed repair.
+- **Metadata backfill**: same story; the badge only moves to "Verified" once the backfill completes.
+
+The correct rhythm is: **repair → read the toast → wait (watch the chunk count / metadata back in the dataset)
+→ run the capability check again**.
+
+If the workspace has an approval policy, the repair is submitted for approval first. The UI then says
+"Submitted for approval (ticket …)", *not* "done" — re-run the check once it is approved and applied.
+
+### Why the button is greyed out
+
+Three common reasons, all fixable from the panel:
+
+- "I understand the shared impact" is not ticked (other applications use the dataset);
+- "I understand these N document(s) will be re-parsed" is not ticked (the dataset has parsed content);
+- the note says the server named no target chunking method — change the chunking method in the dataset
+  settings yourself and re-run the check (the wizard would rather write nothing than guess).
+
+---
+
+## 5. Step 3: app shape and configuration
+
+- **Application name**: becomes the app name and is searchable afterwards.
+- **Project**: required; preselected when you only have one.
+- **App shape**: only the shapes the template supports can be chosen; the UI explains the rest.
+- **Default model**: leave empty to use the tenant default from Settings → Default models; fill it in only to
+  override for this app.
+- The system prompt and retrieval parameters below come from the template and are read-only here —
+  **do not expect to change wording in this step**. After creation, edit them in the application's own settings.
+
+---
+
+## 6. Step 4: verify and create
+
+This screen gathers the human-readable checks:
+
+- **Trial questions**: the template's own questions; one trial run is started automatically after creation
+  (retrieval only, not counted against the publish gate).
+- **Publish checklist / permission advice / expected outcome**: what this scenario should look like in
+  production, and who should get access.
+- **Publish gate**: whether the template requires a passing evaluation before publishing new template
+  versions (affects template authoring only, not creating applications).
+
+Click "Create app". Three outcomes:
+
+| Outcome | Meaning | Next |
+|---|---|---|
+| lands on the app / trial run | created | ask a trial question, open the citation |
+| "App created." but the trial run fails | the app exists; the trial run is a bonus step | ask a question in the app manually — the app is fine |
+| "N dataset(s) have a hard capability gap; creation is blocked" | one dataset has a "blocked" gap | pick another template, or unbind that dataset and re-run the check |
+
+---
+
+## 7. After go-live: confirm it really works
+
+A successful create only proves resources exist. Three checks:
+
+1. **Ask a real question**: use your business wording (not the template's sample), verify the answer comes
+   from your documents and the citation opens the source. If it fails, first check whether the question is
+   outside what your documents cover.
+2. **Look at "Practice run" and the Q&A history**: each create starts one trial run automatically, and real
+   conversations show up there too. "There is history" is closer to usable than "created".
+3. **Keep the capability gap on your todo list**: shipping with a gap is allowed ("repairable" does not block
+   creation), but an unclosed gap is exactly why some future question will go unanswered — especially
+   "metadata filter" style capabilities (filtering by department/year/contract number). Template-level health
+   metrics (first-run completion rate, 7-day active) are currently read by platform staff through the
+   operations API and are not in the UI, so for day-to-day purposes judge by "is anyone actually using it".
+
+---
+
+## 8. Troubleshooting (search by what you see)
+
+| What you see | Why | What to do |
+|---|---|---|
+| "No template in this workspace yet" | templates are per workspace and yours has none published | ask a platform admin to publish templates there, or use a workspace that has them |
+| the capability check spins / fails | the probe cannot reach the engine, or the engine is down | retry later; if it persists ask an admin about the engine — do not read it as "my dataset is bad" |
+| an "Unverified" badge | no evidence obtainable (permissions or endpoint) | ask an admin for permissions, or use a dataset you have access to |
+| the repair button is greyed out | a confirmation is missing, or no target value exists | see "Why the button is greyed out" in §4 |
+| still "Repairable" after repairing | re-parse or metadata backfill still running | wait (watch chunks/metadata), then re-run the check; do not click repeatedly |
+| "Submitted for approval (ticket …)" | the workspace has an approval policy | have the approver approve it, then re-run the check |
+| create fails with `doesn't own parsed file` | the bound dataset has no parsed content | back to §1: upload and "Parse selected" until chunks > 0 |
+| a parse error toast appeared but documents look fine | parsing is a batch job; status can fall back early | trust the chunk column > 0; no need to re-upload |
+| "… creation is blocked" | a bound dataset has a "blocked" gap | pick another template, or unbind that dataset |
+| you want to change the template's prompt/parameters | built-in templates belong to the platform | ask a platform admin; the hands-on path here never needs it |
+
+---
+
+## 9. Vocabulary: technical docs ↔ the UI
+
+| Elsewhere | Here / in the UI |
+|---|---|
+| capability-check / probe | "Run capability check" |
+| requirement | a capability line in the result card (vector, metadata filter, citation locator, …) |
+| verdict `satisfied` | badge "Verified" / verdict "passed" |
+| verdict `repairable` | badge "Repairable" |
+| verdict `probe_limited` | badge "Unverified" (**not** a pass) |
+| verdict `blocked` | badge "Blocked" (no setting fixes it) |
+| `apply_parse_profile` | repair item "Switch to the chunking this template requires" |
+| `enable_pushdown_and_sync_meta` | repair item "Turn on metadata-filter pushdown and backfill metadata" |
+| `reconfigure_dataset` | repair item "Adjust this dataset's parse / retrieval configuration" (manual) |
+| `instantiate` | "Create app" |
+| fork / baseline copy | taking a platform template over to change its content; **not needed for normal use**, and not part of this guide |
+| eval gate | step 4 "Publish gate" (affects publishing new template versions only) |
+
+When you need to work through the API (bulk dataset creation, pipelines), read the operations runbook and the
+API reference instead. This guide deliberately stays on the UI path: anything the UI does not show is what
+people most often get wrong.
