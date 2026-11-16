@@ -35,8 +35,28 @@ let identityCache: MePayload | null | undefined;
 let identityCacheAt = 0;
 const IDENTITY_CACHE_TTL_MS = 30_000;
 
+// setupIncomplete reports whether this instance still has no engine, i.e. the
+// first-run wizard is showing. There is no user table and no session in that
+// state, so /auth/me and /permissions can only fail: skip them instead of
+// painting red 404s under the wizard. The answer is memoized for the page load.
+let setupState: Promise<boolean> | undefined;
+function setupIncomplete(): Promise<boolean> {
+  if (!setupState) {
+    setupState = api
+      .get<Envelope<{ initialized: boolean }>>("/system/setup/status")
+      .then((r) => r.data?.data?.initialized === false)
+      .catch(() => false);
+  }
+  return setupState;
+}
+
 async function checkIdentity(): Promise<MePayload | null> {
   if (identityCache !== undefined && Date.now() - identityCacheAt < IDENTITY_CACHE_TTL_MS) return identityCache;
+  if (await setupIncomplete()) {
+    identityCache = null;
+    identityCacheAt = Date.now();
+    return null;
+  }
   try {
     const res = await api.get<Envelope<MePayload>>("/auth/me");
     identityCache = res.data.code === 0 ? res.data.data : null;
@@ -119,6 +139,9 @@ export const authProvider: AuthProvider = {
       throw new ApiError(res.status ?? 200, res.data.code, res.data.message || "登录失败", res.data.trace_id);
     }
     identityCache = undefined;
+    // A completed login proves the engine is up: drop the cached "wizard is
+    // showing" answer so the next navigation checks the real session.
+    setupState = Promise.resolve(false);
     return Promise.resolve();
   },
   logout: () => {
@@ -132,10 +155,17 @@ export const authProvider: AuthProvider = {
     }
     return Promise.resolve();
   },
-  checkAuth: () =>
-    api.get("/auth/me").then(() => undefined).catch(() => {
-      throw new Error("unauthenticated");
-    }),
+  // checkAuth runs on every page load. Ask the setup endpoint first: on a
+  // first-run instance there is no session table yet, so /auth/me can only
+  // answer 401 and the browser console fills with a red 404/401 before the
+  // wizard has drawn a single field. When setup is incomplete we are
+  // unauthenticated by definition and skip the call entirely.
+  checkAuth: async () => {
+    if (await setupIncomplete()) {
+      throw new Error("setup required");
+    }
+    await api.get("/auth/me");
+  },
   getPermissions: async () => {
     const me = await checkIdentity();
     return {

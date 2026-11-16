@@ -144,6 +144,12 @@ type Setup struct {
 	AdminUser       string `yaml:"admin_user"`
 	AdminPass       string `yaml:"admin_pass"`
 	RateLimitPerMin int    `yaml:"rate_limit_per_min"`
+	// ConfigFile records the YAML file the process actually read (empty when it
+	// fell back to built-in defaults). It is not a configuration key: the setup
+	// manager uses it to tell "operator configured nothing" apart from "operator
+	// pinned these exact values in a file", which is what decides whether a
+	// first boot probes the built-in placeholder database or opens the wizard.
+	ConfigFile string `yaml:"-"`
 }
 
 // Gateway holds outbound LLM request timeouts. Streaming responses can be

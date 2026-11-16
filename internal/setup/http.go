@@ -2,6 +2,7 @@ package setup
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +48,17 @@ func (m *Manager) bootstrapRouter() http.Handler {
 	grp := r.Group("/api/v1/system/setup")
 	grp.GET("/status", m.httpStatus)
 	grp.GET("/public-key", m.httpPublicKey)
+	// The bundled SPA is the login page even in wizard mode, and it reads these
+	// three endpoints before it can decide what to render. Leaving them out made
+	// a first run log 404s (/branding/public, /auth/oidc/status, /auth/logout)
+	// and a "logout request failed" warning on a screen that had no error at all.
+	// They are read-only or idempotent, so the bootstrap router can answer them
+	// without a database: there is no tenant, no IdP and no session yet.
+	r.GET("/api/v1/branding/public", m.httpBrandingPublic)
+	r.GET("/api/v1/auth/oidc/status", func(c *gin.Context) {
+		ok(c, gin.H{"enabled": false, "login_path": "/api/v1/auth/oidc/start"})
+	})
+	r.POST("/api/v1/auth/logout", func(c *gin.Context) { ok(c, nil) })
 	limiter := ratelimit.NewMemory()
 	limit := int64(m.cfg.Setup.RateLimitPerMin)
 	if limit <= 0 {
@@ -70,6 +82,18 @@ func (m *Manager) httpStatus(c *gin.Context) {
 
 func (m *Manager) httpPublicKey(c *gin.Context) {
 	ok(c, gin.H{"public_key": m.PublicKeyPEM()})
+}
+
+// httpBrandingPublic serves the platform name while no database exists yet. The
+// configured brand lives in system settings, which needs a database; the app name
+// from the config is what a first-run operator should see. The real branding
+// replaces it the moment the engine swaps in.
+func (m *Manager) httpBrandingPublic(c *gin.Context) {
+	name := strings.TrimSpace(m.cfg.App.Name)
+	if name == "" {
+		name = "RAGFlow-X"
+	}
+	ok(c, gin.H{"name": name, "logo": ""})
 }
 
 func (m *Manager) httpPreflight(c *gin.Context) {

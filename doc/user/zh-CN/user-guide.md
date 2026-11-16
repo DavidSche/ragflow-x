@@ -39,6 +39,20 @@ cp config/config.example.yaml config/config.yaml   # Windows: copy
 向导提交成功后原地切换为完整路由，不需要重启。要指定别的配置文件用 `-config <路径>`。
 需要镜像时可自行从源码构建（`cd docker && docker compose up -d --build`），镜像仓库打通后本平台会恢复推送。
 
+### 首次运行的向导：连不上库时先看它给出的原因
+
+向导的「测试连接」失败时会同时给你三样东西：一条可执行的提示、数据库驱动返回的原文、以及下一步该改哪一栏。
+两处最常见：
+
+| 提示 | 含义 | 怎么办 |
+|---|---|---|
+| `database_missing` | 库能连，但目标数据库还没建（`SQLSTATE 3D000`） | 先在 PostgreSQL 里建库（`CREATE DATABASE ragflow_x OWNER <user>;`），或把「数据库名」改成已存在的库。向导**不会**替你建库 |
+| `not_writable` | SQLite 数据库文件不可写（只读挂载、root 属主、相对路径指错目录） | 把 DSN 改成**绝对路径**（如 `/data/ragflow-x/ragflow-x.db`），并让运行账号对该目录有写权限 |
+
+其余两类：`auth_failed` 是用户名/密码不对（用同一组凭据执行一次 `psql` 验证再填）；`unreachable` 是地址/端口不通（`pg_hba.conf` 的 `listen_addresses`、防火墙、容器端口映射都算）。
+SQLite 路径适合「先试一下产品」：填一个可写 DSN、「引擎地址」仍指向一个可访问的 RAGFlow 即可，不需要装 PostgreSQL。
+数据库确认可连后仍需一个可达的 **RAGFlow 引擎**（`base_url` + `api_key`），引擎探测失败会单独标「引擎不可达」并附原始错误。
+
 1. 打开 `http://<host>:5173/`（开发环境）或 `http://<host>:9191/`（发布包）。
 2. 输入管理员分配的用户名和密码，点击 **登录**。
 3. 进入仪表板后，先确认 **RAGFlow 引擎**、**DB**、**Redis**、**DocEngine** 状态。

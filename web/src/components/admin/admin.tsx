@@ -13,7 +13,6 @@ import { NotFound } from "@/components/admin/not-found";
 import { Ready } from "@/components/admin/ready";
 import { ThemeProvider } from "@/components/admin/theme-provider";
 import { AuthCallback } from "@/components/admin/authentication";
-import { useEffect } from "react";
 
 const defaultStore = localStorageStore();
 
@@ -32,41 +31,26 @@ const AdminContext = (props: CoreAdminContextProps) => (
 /**
  * UI component for the Admin application.
  *
- * Wraps CoreAdminUI with theme provider and handles telemetry reporting.
- * Provides the main layout, login page, ready page, and authentication callback.
+ * Wraps CoreAdminUI with the theme provider and disables the kit's usage
+ * telemetry. RAGFlow-X is deployed inside customer intranets and air-gapped
+ * networks: a page-load beacon to a third-party host either leaks the deployment
+ * hostname to the internet or fails visibly in the browser console (it showed up
+ * as net::ERR_CONNECTION_CLOSED on the very first screen of a first run).
  *
  * @internal
  */
-const AdminUI = (props: CoreAdminUIProps) => {
-  const { disableTelemetry = false, ...rest } = props;
-
-  useEffect(() => {
-    if (
-      disableTelemetry ||
-      process.env.NODE_ENV !== "production" ||
-      typeof window === "undefined" ||
-      typeof window.location === "undefined" ||
-      typeof Image === "undefined"
-    ) {
-      return;
-    }
-    const img = new Image();
-    img.src = `https://shadcn-admin-kit-telemetry.marmelab.com/shadcn-admin-kit-telemetry?domain=${window.location.hostname}`;
-  }, [disableTelemetry]);
-
-  return (
-    <ThemeProvider>
-      <CoreAdminUI
-        layout={Layout}
-        loginPage={LoginPage}
-        ready={Ready}
-        authCallbackPage={AuthCallback}
-        disableTelemetry // Disable telemetry in CoreAdminUI to avoid double logging
-        {...rest}
-      />
-    </ThemeProvider>
-  );
-};
+const AdminUI = (props: CoreAdminUIProps) => (
+  <ThemeProvider>
+    <CoreAdminUI
+      layout={Layout}
+      loginPage={LoginPage}
+      ready={Ready}
+      authCallbackPage={AuthCallback}
+      {...props}
+      disableTelemetry
+    />
+  </ThemeProvider>
+);
 
 /**
  * Root component of a shadcn-admin-kit application.

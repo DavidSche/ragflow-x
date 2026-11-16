@@ -47,6 +47,10 @@ func main() {
 	} else {
 		logger.Info("config loaded", "path", cfgPath)
 	}
+	// Hand the provenance to the setup manager: it must not probe the built-in
+	// placeholder database on an unpack-and-run archive, but must honour the very
+	// same values when an operator wrote them into a file.
+	cfg.Setup.ConfigFile = cfgPath
 
 	var server *http.Server
 	mgr, err := setup.New(cfg, func(h http.Handler) error {
