@@ -782,6 +782,7 @@ const enMessages = {
     restore_failed: "Failed to restore session",
     new_context: "New context",
     unnamed_context: "Untitled conversation",
+    empty: "No messages yet. Ask a question and the answer will cite its sources.",
     empty_question: "What problem do you want to solve?",
     requestAssistant: {
       title: "This role cannot create assistants",
@@ -912,6 +913,7 @@ const enMessages = {
     route_workflow_risk: "Workflow risk upper bound",
     route_keywords: "Route keywords (comma separated)",
     route_examples: "Example questions (comma separated)",
+    run_failed: "The run failed. Try again.",
   },
   conversation: {
     export: "Export",
@@ -939,6 +941,12 @@ const enMessages = {
       "No matching content found. Try rephrasing or expanding the data scope.",
     timeout: "Request timed out, please retry",
     error: "Q&A failed, please retry",
+    failure: {
+      execution_unknown:
+        "Timed out waiting for the answer — nothing arrived. Please retry later.",
+      model_failure:
+        "The model call failed. Retry in a moment; contact your admin if it persists.",
+    },
     error_429: "Too many requests, please try again later",
     error_403:
       "Permission denied: your account cannot execute Q&A. Contact your admin.",
@@ -1141,6 +1149,8 @@ const enMessages = {
     aria_chat_list: "Chat list",
     aria_chat_table: "Chat data table",
     new_session: "New session",
+    name: "Name",
+    delete_fail: "Failed to delete",
   },
 
   // ─── Users ──────────────────────────────────────────────────────
@@ -1570,6 +1580,7 @@ const enMessages = {
     aria_tenant_list: "Workspace list",
     aria_tenant_table: "Workspace data table",
     aria_select_status: "Select status",
+    tenant_name: "Workspace",
   },
 
   // ─── Datasets ───────────────────────────────────────────────────
@@ -1912,6 +1923,7 @@ const enMessages = {
     members_remove_fail: "Remove failed",
     status_active: "Active",
     status_disabled: "Disabled",
+    aria_team_list: "Team list",
   },
 
   // ─── Roles ──────────────────────────────────────────────────────
@@ -2203,6 +2215,7 @@ const enMessages = {
     no_data: "No data to export",
     empty: "No usage records",
     empty_hint: "Usage data will appear here after API Keys are called.",
+    csv_header: "Date,Key ID,Input tokens,Output tokens,Requests,Estimated cost",
   },
 
   // ─── Branding ───────────────────────────────────────────────────
@@ -2391,6 +2404,7 @@ const enMessages = {
       invalid_payload: "Request payload must be valid JSON",
       failed: "Failed to submit approval",
       forbidden: "You do not have permission to create approvals",
+      model_name: "Model name",
     },
     status: {
       pending_approval: "Pending approval",
@@ -2458,6 +2472,7 @@ const enMessages = {
       updated: "Approval policy updated",
       save_fail: "Failed to save approval policy",
       version: "Version",
+      approver_type_label: "Approver type",
     },
   },
   assistant_release: {
@@ -2686,6 +2701,7 @@ const enMessages = {
     cancel: "Cancel run",
     cancel_success: "Run cancelled before dispatch (cancel_scope=x_scheduling_only)",
     cancel_failed: "Failed to cancel compilation run",
+    documents_required: "Select the documents to compile first",
   },
   memoryPolicy: {
     title: "Personal memory policies",
@@ -2830,7 +2846,7 @@ const enMessages = {
       baselineBadge: "Platform baseline v%{version}",
       baselineUpdate: "A newer baseline v%{version} exists; re-fork to compare.",
       project: "Project",
-      projectPlaceholder: "Project ID",
+      projectPlaceholder: "Select a project",
       modelHint: "Leave empty to use the tenant default model (Settings → Default models).",
       appTypeUnavailable: "This template cannot build this form yet. Pick another form, or import a template that ships a canvas.",
       bindDatasetsHint: "Pick at least one dataset, then run the capability check.",

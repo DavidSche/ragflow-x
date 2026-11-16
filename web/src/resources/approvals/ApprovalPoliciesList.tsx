@@ -439,7 +439,7 @@ const PolicyDialog = ({
                 {(step.approvers || []).map((approver, approverIndex) => (
                   <div key={approverIndex} className="grid gap-2 md:grid-cols-12">
             <Select
-              aria-label={t("approvals.policies.approver_type")}
+              aria-label={t("approvals.policies.approver_type_label")}
               value={approver.type}
                       onValueChange={(value) => setSteps((current) => updateStep(current, index, {
                         approvers: (step.approvers || []).map((item, itemIndex) =>
