@@ -488,6 +488,14 @@ func (h *Handler) ParseDocuments(c *gin.Context) {
 	datasetID := c.Param("id")
 	ctx := c.Request.Context()
 	userID := c.GetString(middleware.ContextUserID)
+	// The engine has no "parse everything" form: an empty list comes back as
+	// `code:102 document_ids is required`, which used to surface as
+	// `502 ragflow parse documents failed` — an outage message for a caller
+	// error. Same guard as stop/status/delete.
+	if len(req.DocumentIDs) == 0 {
+		response.Fail(c, 400, 40000, "document_ids is required")
+		return
+	}
 	if err := h.Service.Authorize(ctx, userID, "execute", "document"); err != nil {
 		response.Err(c, err)
 		return

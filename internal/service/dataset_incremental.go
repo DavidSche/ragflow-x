@@ -675,8 +675,17 @@ func validateDocumentUpload(name string, content []byte) error {
 	switch extension {
 	case ".txt", ".md", ".pdf", ".docx":
 		return nil
+	case ".csv", ".xls", ".xlsx":
+		// The engine parses spreadsheets natively (v1.0.0: 117 chunks with HTML
+		// tables from one 隐患台账.xlsx) and the evaluation path already scores
+		// xlsx/table locators, while `chat_upload.go` has always accepted these
+		// extensions. Refusing them only in the dataset path meant an operator
+		// could attach a table to a chat but not put it in a knowledge base
+		// (doc/251 §12.5 called this a gateway I/O gap; doc/286 §2 closes it).
+		return nil
 	default:
-		return httperr.BadRequest(40000, "document format must be txt, md, pdf or docx")
+		return httperr.BadRequest(40000,
+			"document format must be txt, md, pdf, docx, csv, xls or xlsx")
 	}
 }
 

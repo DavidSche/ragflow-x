@@ -1,0 +1,3019 @@
+{
+ "meta": {
+  "base": "http://192.168.4.151:19193/api/v1",
+  "tag": "20261117e",
+  "started_utc": "2026-11-16T11:58:46.548148+00:00",
+  "datasets": {
+   "eq": "9509f7f3a8bb42e0996fbb5f5b855fa5",
+   "policy": "dca7a44c86ac417980895510c91a4f25",
+   "training": "a88432876a2d49ba95b1a49eab5d9200",
+   "operations": "63189c4f24444b9a819bcf00345c54e3",
+   "customer-service": "8a61d25b0e474783802a989e5f65dcaa",
+   "product-manual": "e8b342a854284d538b31b1c2afe4832d",
+   "sales-support": "fb14ee2f1a5749a0aec3c69596390aa7",
+   "contract-compliance": "56a96b0b30d84513ba614e23a7e1680f",
+   "finance": "f6ea6425a4894a2497ba08df494e4297"
+  },
+  "runs": [
+   {
+    "run": 1,
+    "phase": "all",
+    "only": [],
+    "finished_utc": "2026-11-16T11:58:45.210801+00:00",
+    "fails": []
+   },
+   {
+    "run": 2,
+    "phase": "lanes",
+    "only": [],
+    "finished_utc": "2026-11-16T12:00:25.373226+00:00",
+    "fails": []
+   }
+  ],
+  "tenant_id": "7fa0a77b3c8b4a4fa543df21724c6d67",
+  "project_id": "ff17eac0f2824b399202684ba931c7c9",
+  "user": "e2e-admin",
+  "finished_utc": "2026-11-16T12:00:25.373226+00:00",
+  "fails": []
+ },
+ "steps": [
+  {
+   "lane": null,
+   "stage": "bootstrap",
+   "method": "POST",
+   "path": "/auth/login",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "workspace user e2e-admin (existing)"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 企业问答库 -> 9509f7f3a8bb42e0996fbb5f5b855fa5"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/9509f7f3a8bb42e0996fbb5f5b855fa5/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "中央企业安全生产监督管理办法.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/9509f7f3a8bb42e0996fbb5f5b855fa5/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "安全生产专项整治三年行动.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/9509f7f3a8bb42e0996fbb5f5b855fa5/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 2 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/9509f7f3a8bb42e0996fbb5f5b855fa5/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=47"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 政策法规库 -> dca7a44c86ac417980895510c91a4f25"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/dca7a44c86ac417980895510c91a4f25/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东省安全生产行政责任制.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/dca7a44c86ac417980895510c91a4f25/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东省安全生产工作任务分工.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/dca7a44c86ac417980895510c91a4f25/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "省属企业安全生产事故应急预案.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/dca7a44c86ac417980895510c91a4f25/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 3 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/dca7a44c86ac417980895510c91a4f25/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=93"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 培训赋能库 -> a88432876a2d49ba95b1a49eab5d9200"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/a88432876a2d49ba95b1a49eab5d9200/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东省属企业安全生产专家遴选调用办法（试行）.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/a88432876a2d49ba95b1a49eab5d9200/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东省属企业安全生产考核标准.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/a88432876a2d49ba95b1a49eab5d9200/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 2 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/a88432876a2d49ba95b1a49eab5d9200/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=21"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 运维应急库 -> 63189c4f24444b9a819bcf00345c54e3"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/63189c4f24444b9a819bcf00345c54e3/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "省属企业安全生产事故应急预案.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/63189c4f24444b9a819bcf00345c54e3/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东国投公司安全生产风险防控基本情况报告.docx"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/63189c4f24444b9a819bcf00345c54e3/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 2 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/63189c4f24444b9a819bcf00345c54e3/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=30"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 客服问答库 -> 8a61d25b0e474783802a989e5f65dcaa"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/8a61d25b0e474783802a989e5f65dcaa/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东省安全生产举报办法.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/8a61d25b0e474783802a989e5f65dcaa/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "2025年上半年国资委安全生产督导检查隐患台账_处理后.xlsx"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/8a61d25b0e474783802a989e5f65dcaa/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 2 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/8a61d25b0e474783802a989e5f65dcaa/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=126"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 产品手册库 -> e8b342a854284d538b31b1c2afe4832d"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/e8b342a854284d538b31b1c2afe4832d/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "南郊集团-山东大厦安全生产检查情况.docx"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/e8b342a854284d538b31b1c2afe4832d/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东健康集团安全风险管控工作总结.docx"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/e8b342a854284d538b31b1c2afe4832d/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 2 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/e8b342a854284d538b31b1c2afe4832d/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=8"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 销售支持库 -> fb14ee2f1a5749a0aec3c69596390aa7"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/fb14ee2f1a5749a0aec3c69596390aa7/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东农业集团关于安全生产风险防控工作情况.docx"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/fb14ee2f1a5749a0aec3c69596390aa7/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "南郊集团关于梳理安全生产风险点防控情况的报告.docx"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/fb14ee2f1a5749a0aec3c69596390aa7/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 2 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/fb14ee2f1a5749a0aec3c69596390aa7/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=6"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 合同合规库 -> 56a96b0b30d84513ba614e23a7e1680f"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/56a96b0b30d84513ba614e23a7e1680f/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "安全生产社会化服务机构管理办法.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/56a96b0b30d84513ba614e23a7e1680f/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "加强矿山安全生产工作的实施意见(不完整).md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/56a96b0b30d84513ba614e23a7e1680f/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 2 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/56a96b0b30d84513ba614e23a7e1680f/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=14"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "create 财务口径库 -> f6ea6425a4894a2497ba08df494e4297"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/f6ea6425a4894a2497ba08df494e4297/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东省属企业安全生产考核标准.md"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/f6ea6425a4894a2497ba08df494e4297/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东健康集团安全风险管控工作总结.docx"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "POST",
+   "path": "/datasets/f6ea6425a4894a2497ba08df494e4297/parse",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parse 2 docs"
+  },
+  {
+   "lane": null,
+   "stage": "dataset",
+   "method": "GET",
+   "path": "/datasets/f6ea6425a4894a2497ba08df494e4297/documents",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "parsed chunks=15"
+  },
+  {
+   "lane": null,
+   "stage": "catalog",
+   "method": "GET",
+   "path": "/scenario-template-catalog",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "catalog n=9"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=repairable row=repairable repairs=['apply_parse_profile']"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "repair",
+   "method": "POST",
+   "path": "/datasets/9509f7f3a8bb42e0996fbb5f5b855fa5/parse-profile",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "target=book got=book reparse=True"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=f0d0fff7c3ac408c8e7c30072d429836 chat=16840f36cc0b4b759ab1c6b18e4a983a search=None"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/16840f36cc0b4b759ab1c6b18e4a983a/sessions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "session=002de42e7b574a23a29c553f652a2547"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "中央企业依据风险程度分为几类？… answer=41c refs=8 keyword=三类:True 1.0s"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "第一类中央企业和涉矿中央企业集团总部应当配备什么… answer=231c refs=8 keyword=安全生产总监:True 3.3s"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "报销标准和截止时间是什么？… answer=209c refs=8 keyword=None:None 5.6s"
+  },
+  {
+   "lane": "enterprise-qa.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "enterprise-qa.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=9e7b8862628a47d6a8b60b668997e420 chat=None search=5fff9461aa2e4e0e82cf629b284bc779"
+  },
+  {
+   "lane": "enterprise-qa.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/5fff9461aa2e4e0e82cf629b284bc779/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "中央企业依据风险程度分为几类？… answer=96c refs=12 keyword=三类:True 1.4s"
+  },
+  {
+   "lane": "enterprise-qa.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/5fff9461aa2e4e0e82cf629b284bc779/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "报销标准和截止时间是什么？… answer=222c refs=12 keyword=None:None 1.5s"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=repairable row=repairable repairs=['apply_parse_profile']"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "repair",
+   "method": "POST",
+   "path": "/datasets/dca7a44c86ac417980895510c91a4f25/parse-profile",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "target=book got=book reparse=True"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=8b8112f68d98479495eba6681050b3fa chat=d0af4365711d4a80b8fd2e6ca1098bdf search=None"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/d0af4365711d4a80b8fd2e6ca1098bdf/sessions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "session=62cce1e0635c4172a2ddfcc3ab01b3fc"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "本省落实安全生产行政责任制应当坚持哪些原则？… answer=77c refs=6 keyword=谁主管谁负责:True 1.1s"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "安全生产工作实行什么制度？… answer=142c refs=6 keyword=一岗双责:True 1.8s"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "试用期考核标准是什么？… answer=28c refs=0 keyword=None:None 0.9s"
+  },
+  {
+   "lane": "policy.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "policy.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=11e4a85b7e04407ca94bff8a45c4ea3a chat=None search=f54b4d28b51d47f083f3d1e13bff3adb"
+  },
+  {
+   "lane": "policy.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/f54b4d28b51d47f083f3d1e13bff3adb/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "生产安全事故分为哪几级？… answer=220c refs=12 keyword=特别重大事故:True 1.5s"
+  },
+  {
+   "lane": "policy.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/f54b4d28b51d47f083f3d1e13bff3adb/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "试用期考核标准是什么？… answer=196c refs=12 keyword=None:None 1.4s"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=repairable row=repairable repairs=['apply_parse_profile']"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "repair",
+   "method": "POST",
+   "path": "/datasets/a88432876a2d49ba95b1a49eab5d9200/parse-profile",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "target=book got=book reparse=True"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=e96a6124516246d9a09747eda74652e1 chat=5d424e8e8eb8434eaca723aa50381615 search=None"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/5d424e8e8eb8434eaca723aa50381615/sessions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "session=358e20bba4824c6bbdbffd5595fa485b"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "专家年度调用时间原则上不超过多少天？… answer=25c refs=8 keyword=15:True 1.2s"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "专家遴选数量按什么标准掌握？… answer=32c refs=8 keyword=两倍:True 2.5s"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "第 1 个月的关键验收项是什么？… answer=304c refs=5 keyword=None:None 13.0s"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=repairable row=repairable repairs=['apply_parse_profile']"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "repair",
+   "method": "POST",
+   "path": "/datasets/63189c4f24444b9a819bcf00345c54e3/parse-profile",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "target=book got=book reparse=True"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=bbd01b6c835c49f39b8366ac3e60d315 chat=755a03646c41437c9950e8fa5b880717 search=None"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/755a03646c41437c9950e8fa5b880717/sessions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "session=bb9df7a2136a488484c461c56256320d"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "省属一级企业接到事发单位事故报告后多长时间内书面… answer=61c refs=6 keyword=半小时:True 2.3s"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "服务无响应的第一处理动作是什么？… answer=148c refs=1 keyword=None:None 7.0s"
+  },
+  {
+   "lane": "operations.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "operations.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=cc4b7e2e0ac8456faff7529a8764eaf2 chat=None search=50310fd52610457882600f4e580fb491"
+  },
+  {
+   "lane": "operations.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/50310fd52610457882600f4e580fb491/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "省属企业每年应开展什么活动？… answer=208c refs=12 keyword=演练:True 1.5s"
+  },
+  {
+   "lane": "operations.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/50310fd52610457882600f4e580fb491/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "服务无响应的第一处理动作是什么？… answer=178c refs=3 keyword=None:None 2.0s"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/948368015ce44b1880df75111b0adc55/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/948368015ce44b1880df75111b0adc55/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=fd85c1a7d6554209b35b64b1dc330996 chat=805ff81e66ca43ff960d7f818af2abb5 search=None"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/805ff81e66ca43ff960d7f818af2abb5/sessions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "session=5aafcf882fa84c778ae0b2b1d1bad067"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "安全生产举报工作所需经费如何保障？… answer=113c refs=8 keyword=财政预算:True 1.9s"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "7 天无理由退货条件是什么？… answer=103c refs=8 keyword=None:None 3.7s"
+  },
+  {
+   "lane": "customer-service.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/948368015ce44b1880df75111b0adc55/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "customer-service.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/948368015ce44b1880df75111b0adc55/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=5051b9c6806d49aca7ca45cf047e663f chat=None search=bd45be27455a4b488e267b31648c5e18"
+  },
+  {
+   "lane": "customer-service.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/bd45be27455a4b488e267b31648c5e18/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "县级以上应急管理部门承担举报工作的哪些环节？… answer=248c refs=7 keyword=核查:True 1.7s"
+  },
+  {
+   "lane": "customer-service.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/bd45be27455a4b488e267b31648c5e18/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "7 天无理由退货条件是什么？… answer=238c refs=12 keyword=None:None 1.9s"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/1d97e39ff06f489d92ffed47755b7bf1/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=repairable row=repairable repairs=['enable_pushdown_and_sync_meta', 'apply_parse_profile']"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "repair",
+   "method": "PUT",
+   "path": "/datasets/e8b342a854284d538b31b1c2afe4832d",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "pushdown enabled"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "repair",
+   "method": "POST",
+   "path": "/datasets/e8b342a854284d538b31b1c2afe4832d/parse-profile",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "target=book got=book reparse=True"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/1d97e39ff06f489d92ffed47755b7bf1/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/1d97e39ff06f489d92ffed47755b7bf1/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=9d94b1c0dd864e78a7dadd0fc22bd7af chat=None search=17b9ae71198440a6b73587c95cb0ead1"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/17b9ae71198440a6b73587c95cb0ead1/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东大厦排查出的燃气相关风险是什么？… answer=296c refs=8 keyword=燃气:True 3.0s"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/17b9ae71198440a6b73587c95cb0ead1/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东健康集团按什么原则管控风险？… answer=372c refs=8 keyword=分级管控:True 1.7s"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/17b9ae71198440a6b73587c95cb0ead1/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "E03 的官方处理步骤是什么？… answer=216c refs=4 keyword=None:None 1.6s"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/ba9fafbdbdd5495e843baf8d12922310/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/ba9fafbdbdd5495e843baf8d12922310/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=cd73d24e311d496285f3daf1927764fe chat=ec9ab3c493bb498f8ae746551f2b0f2a search=None"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/ec9ab3c493bb498f8ae746551f2b0f2a/sessions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "session=bf5af2ed1d054a9eb680c0f0eff4418e"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东农业集团聚焦哪些重点领域？… answer=39c refs=5 keyword=粮食加工:True 1.2s"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "南郊集团要求权属单位坚持什么理念？… answer=33c refs=4 keyword=人民至上:True 25.8s"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "产品的三个核心卖点是什么？… answer=66c refs=5 keyword=None:None 8.4s"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/82ed9da92133467fbcb212fd8653cab8/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=repairable row=repairable repairs=['enable_pushdown_and_sync_meta', 'apply_parse_profile']"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "repair",
+   "method": "PUT",
+   "path": "/datasets/56a96b0b30d84513ba614e23a7e1680f",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "pushdown enabled"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "repair",
+   "method": "POST",
+   "path": "/datasets/56a96b0b30d84513ba614e23a7e1680f/parse-profile",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "target=paper got=paper reparse=True"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/82ed9da92133467fbcb212fd8653cab8/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/82ed9da92133467fbcb212fd8653cab8/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=eb20a794399e44fe8ee90ddf8bbdc8d8 chat=64511f84511946c1a24669b8834cd740 search=None"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/64511f84511946c1a24669b8834cd740/sessions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "session=e614a0b2ba8849839ec06f4a1a7cb24f"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "社会化服务机构服务档案保管期限不得少于几年？… answer=57c refs=8 keyword=5年:True 1.0s"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "矿山企业主要负责人对所属矿山每季度至少开展几次重… answer=41c refs=5 keyword=每季度:True 1.8s"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "违约金上限的原文依据是什么？… answer=30c refs=0 keyword=None:None 1.3s"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=repairable row=repairable repairs=['enable_pushdown_and_sync_meta', 'apply_parse_profile']"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "repair",
+   "method": "PUT",
+   "path": "/datasets/f6ea6425a4894a2497ba08df494e4297",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "pushdown enabled"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "repair",
+   "method": "POST",
+   "path": "/datasets/f6ea6425a4894a2497ba08df494e4297/parse-profile",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "target=book got=book reparse=True"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=9c6762fbaba74ac18156ff636a2344d4 chat=e5c790cc29094b63a382e4115078e9b4 search=None"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/e5c790cc29094b63a382e4115078e9b4/sessions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "session=3e663f3b1bbf44b3bba9a092988d0e0d"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "一个考核年度内发生1起重大及以上事故扣至多少分？… answer=74c refs=5 keyword=80:True 1.2s"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "应收周转天数的口径是什么？… answer=24c refs=0 keyword=None:None 0.8s"
+  },
+  {
+   "lane": "finance.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/capability-check",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "finance.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/instantiate",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=False instance=71b92c44c8974f93a71c84f96e5565bd chat=None search=bda97a5f935748d0ac3345848fe50d49"
+  },
+  {
+   "lane": "finance.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/bda97a5f935748d0ac3345848fe50d49/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "山东健康集团如何管控风险？… answer=2192c refs=12 keyword=分级管控:True 4.9s"
+  },
+  {
+   "lane": "finance.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/bda97a5f935748d0ac3345848fe50d49/completion",
+   "run": 1,
+   "http": 200,
+   "code": 0,
+   "summary": "应收周转天数的口径是什么？… answer=194c refs=12 keyword=None:None 1.6s"
+  },
+  {
+   "lane": "neg.chat-on-search-only",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/1d97e39ff06f489d92ffed47755b7bf1/instantiate",
+   "run": 1,
+   "http": 400,
+   "code": 40085,
+   "summary": "chat on product-manual -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "neg.search-on-chat-only",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/82ed9da92133467fbcb212fd8653cab8/instantiate",
+   "run": 1,
+   "http": 400,
+   "code": 40085,
+   "summary": "search on contract-compliance -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "neg.search-on-chat-only-2",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/instantiate",
+   "run": 1,
+   "http": 400,
+   "code": 40085,
+   "summary": "search on training -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "neg.agent-without-canvas",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/instantiate",
+   "run": 1,
+   "http": 400,
+   "code": 40085,
+   "summary": "agent on training -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "neg.auto-datasets-empty-kb",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/instantiate",
+   "run": 1,
+   "http": 400,
+   "code": 40085,
+   "summary": "chat on enterprise-qa -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "assert",
+   "stage": "assert",
+   "method": "GET",
+   "path": "no-5xx",
+   "run": 1,
+   "http": 0,
+   "code": 0,
+   "summary": "5xx steps=0"
+  },
+  {
+   "lane": null,
+   "stage": "bootstrap",
+   "method": "POST",
+   "path": "/auth/login",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "workspace user e2e-admin (existing)"
+  },
+  {
+   "lane": null,
+   "stage": "catalog",
+   "method": "GET",
+   "path": "/scenario-template-catalog",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "catalog n=9"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=f0d0fff7c3ac408c8e7c30072d429836 chat=16840f36cc0b4b759ab1c6b18e4a983a search=None"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/16840f36cc0b4b759ab1c6b18e4a983a/sessions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "session=9ff04585ba324ac2bb3cf0280cee813f"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "中央企业依据风险程度分为几类？… answer=41c refs=8 keyword=三类:True 1.0s"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "第一类中央企业和涉矿中央企业集团总部应当配备什么… answer=239c refs=8 keyword=安全生产总监:True 5.5s"
+  },
+  {
+   "lane": "enterprise-qa.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "报销标准和截止时间是什么？… answer=119c refs=8 keyword=None:None 7.0s"
+  },
+  {
+   "lane": "enterprise-qa.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "enterprise-qa.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=9e7b8862628a47d6a8b60b668997e420 chat=None search=5fff9461aa2e4e0e82cf629b284bc779"
+  },
+  {
+   "lane": "enterprise-qa.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/5fff9461aa2e4e0e82cf629b284bc779/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "中央企业依据风险程度分为几类？… answer=94c refs=12 keyword=三类:True 1.3s"
+  },
+  {
+   "lane": "enterprise-qa.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/5fff9461aa2e4e0e82cf629b284bc779/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "报销标准和截止时间是什么？… answer=222c refs=12 keyword=None:None 1.5s"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=8b8112f68d98479495eba6681050b3fa chat=d0af4365711d4a80b8fd2e6ca1098bdf search=None"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/d0af4365711d4a80b8fd2e6ca1098bdf/sessions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "session=ef7330f33010452d828cc20ccd27deaf"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "本省落实安全生产行政责任制应当坚持哪些原则？… answer=100c refs=6 keyword=谁主管谁负责:True 2.2s"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "安全生产工作实行什么制度？… answer=167c refs=6 keyword=一岗双责:True 1.9s"
+  },
+  {
+   "lane": "policy.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "试用期考核标准是什么？… answer=28c refs=0 keyword=None:None 1.3s"
+  },
+  {
+   "lane": "policy.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "policy.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/82c10019030744ea915723bfb02475fa/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=11e4a85b7e04407ca94bff8a45c4ea3a chat=None search=f54b4d28b51d47f083f3d1e13bff3adb"
+  },
+  {
+   "lane": "policy.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/f54b4d28b51d47f083f3d1e13bff3adb/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "生产安全事故分为哪几级？… answer=180c refs=12 keyword=特别重大事故:True 2.1s"
+  },
+  {
+   "lane": "policy.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/f54b4d28b51d47f083f3d1e13bff3adb/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "试用期考核标准是什么？… answer=188c refs=12 keyword=None:None 1.4s"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=e96a6124516246d9a09747eda74652e1 chat=5d424e8e8eb8434eaca723aa50381615 search=None"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/5d424e8e8eb8434eaca723aa50381615/sessions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "session=d9eace10bd264dbb98f0a4d7fac2fc4a"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "专家年度调用时间原则上不超过多少天？… answer=25c refs=8 keyword=15:True 1.3s"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "专家遴选数量按什么标准掌握？… answer=32c refs=8 keyword=两倍:True 1.3s"
+  },
+  {
+   "lane": "training.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "第 1 个月的关键验收项是什么？… answer=227c refs=5 keyword=None:None 10.7s"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=bbd01b6c835c49f39b8366ac3e60d315 chat=755a03646c41437c9950e8fa5b880717 search=None"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/755a03646c41437c9950e8fa5b880717/sessions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "session=be1abd565d7b476d98ed28838d4740c7"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "省属一级企业接到事发单位事故报告后多长时间内书面… answer=61c refs=6 keyword=半小时:True 1.2s"
+  },
+  {
+   "lane": "operations.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "服务无响应的第一处理动作是什么？… answer=103c refs=1 keyword=None:None 5.7s"
+  },
+  {
+   "lane": "operations.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "operations.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/25c9a2d80d3f4dff930534d460a929a8/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=cc4b7e2e0ac8456faff7529a8764eaf2 chat=None search=50310fd52610457882600f4e580fb491"
+  },
+  {
+   "lane": "operations.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/50310fd52610457882600f4e580fb491/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "省属企业每年应开展什么活动？… answer=266c refs=12 keyword=演练:True 1.8s"
+  },
+  {
+   "lane": "operations.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/50310fd52610457882600f4e580fb491/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "服务无响应的第一处理动作是什么？… answer=296c refs=3 keyword=None:None 2.8s"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/948368015ce44b1880df75111b0adc55/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/948368015ce44b1880df75111b0adc55/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=fd85c1a7d6554209b35b64b1dc330996 chat=805ff81e66ca43ff960d7f818af2abb5 search=None"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/805ff81e66ca43ff960d7f818af2abb5/sessions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "session=d857d3a47d334e2599248a93df2058b0"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "安全生产举报工作所需经费如何保障？… answer=116c refs=8 keyword=财政预算:True 1.5s"
+  },
+  {
+   "lane": "customer-service.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "7 天无理由退货条件是什么？… answer=90c refs=8 keyword=None:None 2.8s"
+  },
+  {
+   "lane": "customer-service.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/948368015ce44b1880df75111b0adc55/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "customer-service.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/948368015ce44b1880df75111b0adc55/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=5051b9c6806d49aca7ca45cf047e663f chat=None search=bd45be27455a4b488e267b31648c5e18"
+  },
+  {
+   "lane": "customer-service.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/bd45be27455a4b488e267b31648c5e18/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "县级以上应急管理部门承担举报工作的哪些环节？… answer=206c refs=7 keyword=核查:True 1.7s"
+  },
+  {
+   "lane": "customer-service.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/bd45be27455a4b488e267b31648c5e18/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "7 天无理由退货条件是什么？… answer=166c refs=12 keyword=None:None 1.9s"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/1d97e39ff06f489d92ffed47755b7bf1/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/1d97e39ff06f489d92ffed47755b7bf1/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=9d94b1c0dd864e78a7dadd0fc22bd7af chat=None search=17b9ae71198440a6b73587c95cb0ead1"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/17b9ae71198440a6b73587c95cb0ead1/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "山东大厦排查出的燃气相关风险是什么？… answer=276c refs=8 keyword=燃气:True 3.4s"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/17b9ae71198440a6b73587c95cb0ead1/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "山东健康集团按什么原则管控风险？… answer=114c refs=8 keyword=分级管控:True 1.6s"
+  },
+  {
+   "lane": "product-manual.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/17b9ae71198440a6b73587c95cb0ead1/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "E03 的官方处理步骤是什么？… answer=278c refs=4 keyword=None:None 1.9s"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/ba9fafbdbdd5495e843baf8d12922310/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/ba9fafbdbdd5495e843baf8d12922310/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=cd73d24e311d496285f3daf1927764fe chat=ec9ab3c493bb498f8ae746551f2b0f2a search=None"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/ec9ab3c493bb498f8ae746551f2b0f2a/sessions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "session=8e2d33dd05d54337883d1a6a0078f6a3"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "山东农业集团聚焦哪些重点领域？… answer=50c refs=5 keyword=粮食加工:True 1.5s"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "南郊集团要求权属单位坚持什么理念？… answer=44c refs=4 keyword=人民至上:True 1.7s"
+  },
+  {
+   "lane": "sales-support.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "产品的三个核心卖点是什么？… answer=97c refs=5 keyword=None:None 13.0s"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/82ed9da92133467fbcb212fd8653cab8/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/82ed9da92133467fbcb212fd8653cab8/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=eb20a794399e44fe8ee90ddf8bbdc8d8 chat=64511f84511946c1a24669b8834cd740 search=None"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/64511f84511946c1a24669b8834cd740/sessions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "session=44605435b33242f78fdd11b88a4b80cb"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "社会化服务机构服务档案保管期限不得少于几年？… answer=42c refs=8 keyword=5年:True 1.0s"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "矿山企业主要负责人对所属矿山每季度至少开展几次重… answer=54c refs=5 keyword=每季度:True 2.5s"
+  },
+  {
+   "lane": "contract-compliance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "违约金上限的原文依据是什么？… answer=30c refs=0 keyword=None:None 0.8s"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=9c6762fbaba74ac18156ff636a2344d4 chat=e5c790cc29094b63a382e4115078e9b4 search=None"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chats/e5c790cc29094b63a382e4115078e9b4/sessions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "session=d66832ce9f254df0af78fd6b6996902d"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "一个考核年度内发生1起重大及以上事故扣至多少分？… answer=57c refs=5 keyword=80:True 2.0s"
+  },
+  {
+   "lane": "finance.chat",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/chat/completions",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "应收周转天数的口径是什么？… answer=24c refs=0 keyword=None:None 1.3s"
+  },
+  {
+   "lane": "finance.search",
+   "stage": "check",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/capability-check",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "verdict=satisfied row=satisfied repairs=[]"
+  },
+  {
+   "lane": "finance.search",
+   "stage": "instantiate",
+   "method": "POST",
+   "path": "/scenario-template-assets/7d0448db89a442a4a9a51fc8d0020632/instantiate",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "state=completed replayed=True instance=71b92c44c8974f93a71c84f96e5565bd chat=None search=bda97a5f935748d0ac3345848fe50d49"
+  },
+  {
+   "lane": "finance.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/bda97a5f935748d0ac3345848fe50d49/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "山东健康集团如何管控风险？… answer=2572c refs=12 keyword=分级管控:True 3.8s"
+  },
+  {
+   "lane": "finance.search",
+   "stage": "qa",
+   "method": "POST",
+   "path": "/search-apps/bda97a5f935748d0ac3345848fe50d49/completion",
+   "run": 2,
+   "http": 200,
+   "code": 0,
+   "summary": "应收周转天数的口径是什么？… answer=180c refs=12 keyword=None:None 1.5s"
+  },
+  {
+   "lane": "neg.chat-on-search-only",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/1d97e39ff06f489d92ffed47755b7bf1/instantiate",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "summary": "chat on product-manual -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "neg.search-on-chat-only",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/82ed9da92133467fbcb212fd8653cab8/instantiate",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "summary": "search on contract-compliance -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "neg.search-on-chat-only-2",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/instantiate",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "summary": "search on training -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "neg.agent-without-canvas",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/a1bd6e7d86474c6caff1147c164f6dba/instantiate",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "summary": "agent on training -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "neg.auto-datasets-empty-kb",
+   "stage": "negative",
+   "method": "POST",
+   "path": "/scenario-template-assets/af59830768a647febbda47fcac57be8b/instantiate",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "summary": "chat on enterprise-qa -> 400/40085 (want 4xx)"
+  },
+  {
+   "lane": "assert",
+   "stage": "assert",
+   "method": "GET",
+   "path": "no-5xx",
+   "run": 2,
+   "http": 0,
+   "code": 0,
+   "summary": "5xx steps=0"
+  }
+ ],
+ "lanes": {
+  "enterprise-qa.chat": {
+   "template": "enterprise-qa",
+   "app_type": "chat",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "dataset_writes": {
+    "target": "9509f7f3a8bb42e0996fbb5f5b855fa5",
+    "changed": {
+     "9509f7f3a8bb42e0996fbb5f5b855fa5": [
+      "general",
+      "book"
+     ]
+    }
+   },
+   "repairs_history": [
+    {
+     "run": 1,
+     "actions": [
+      "apply_parse_profile"
+     ]
+    }
+   ],
+   "check_after": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "f0d0fff7c3ac408c8e7c30072d429836",
+    "state": "completed"
+   },
+   "app_id": "16840f36cc0b4b759ab1c6b18e4a983a",
+   "qa": [
+    {
+     "q": "中央企业依据风险程度分为几类？",
+     "expect": "三类",
+     "hit": true,
+     "answer_len": 41,
+     "refs": 8,
+     "answer": "中央企业依据国务院国资委核定的主营业务和安全生产的风险程度分为三类 [ID:0]。",
+     "seconds": 1.0
+    },
+    {
+     "q": "第一类中央企业和涉矿中央企业集团总部应当配备什么？",
+     "expect": "安全生产总监",
+     "hit": true,
+     "answer_len": 239,
+     "refs": 8,
+     "answer": "结论：第一类中央企业和涉矿中央企业集团总部应当配备专职安全生产总监。\n\n依据：根据《中央企业安全生产监督管理办法》第八条规定，第一类中央企业、涉矿中央企业集团总部应配备专职安全生产总监 [ID:1]。\n\n执行步骤：企业应明确专职安全生产总监的任职资格与职责，将其纳入安全生产管理体系，并按照办法要求履行相关监督管理职责。\n\n注意事项：所属安全风险高的企业应全面推行专职安全生产总监制度 [ID:1]；同时，第一类企业还应设置负责安全生产监督管理工作的独立职能部门 [ID:0]。",
+     "seconds": 5.5
+    },
+    {
+     "q": "报销标准和截止时间是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 119,
+     "refs": 8,
+     "answer": "待确认：当前知识库中未包含任何关于“报销标准和截止时间”的信息 [ID:0][ID:1][ID:2][ID:3][ID:4][ID:5][ID:6][ID:7]。请提供相关制度文件或明确具体事项（如差旅报销、项目经费等），以便进一步查询。",
+     "seconds": 7.0
+    }
+   ]
+  },
+  "enterprise-qa.search": {
+   "template": "enterprise-qa",
+   "app_type": "search",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "9e7b8862628a47d6a8b60b668997e420",
+    "state": "completed"
+   },
+   "app_id": "5fff9461aa2e4e0e82cf629b284bc779",
+   "qa": [
+    {
+     "q": "中央企业依据风险程度分为几类？",
+     "expect": "三类",
+     "hit": true,
+     "answer_len": 94,
+     "refs": 12,
+     "answer": "根据知识库信息，中央企业依据国务院国资委核定的主营业务和安全生产的风险程度分为 **三类**。根据知识库信息，中央企业依据国务院国资委核定的主营业务和安全生产的风险程度分为 **三类**。",
+     "seconds": 1.3
+    },
+    {
+     "q": "报销标准和截止时间是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 222,
+     "refs": 12,
+     "answer": "根据现有知识库内容，未找到与“报销标准和截止时间”相关的信息。知识库中主要涉及**中央企业安全生产监督管理办法**和**安全生产专项整治三年行动**等内容，未提及报销相关事项。建议您提供更具体的背景或查阅相关财务制度文件。根据现有知识库内容，未找到与“报销标准和截止时间”相关的信息。知识库中主要涉及**中央企业安全生产监督管理办法**和**安全生产专项整治三年行动**等内容，未提及报销相关事项。建议您提供更具体的背景或查阅相关财务制度文件。",
+     "seconds": 1.5
+    }
+   ]
+  },
+  "policy.chat": {
+   "template": "policy",
+   "app_type": "chat",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "dataset_writes": {
+    "target": "dca7a44c86ac417980895510c91a4f25",
+    "changed": {
+     "dca7a44c86ac417980895510c91a4f25": [
+      "general",
+      "book"
+     ]
+    }
+   },
+   "repairs_history": [
+    {
+     "run": 1,
+     "actions": [
+      "apply_parse_profile"
+     ]
+    }
+   ],
+   "check_after": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "8b8112f68d98479495eba6681050b3fa",
+    "state": "completed"
+   },
+   "app_id": "d0af4365711d4a80b8fd2e6ca1098bdf",
+   "qa": [
+    {
+     "q": "本省落实安全生产行政责任制应当坚持哪些原则？",
+     "expect": "谁主管谁负责",
+     "hit": true,
+     "answer_len": 100,
+     "refs": 6,
+     "answer": "根据《山东省安全生产行政责任制规定》，本省落实安全生产行政责任制应当坚持“管行业必须管安全、管业务必须管安全、管生产经营必须管安全”和“谁主管谁负责、谁审批谁负责、谁监管谁负责”的原则 [ID:0]。",
+     "seconds": 2.2
+    },
+    {
+     "q": "安全生产工作实行什么制度？",
+     "expect": "一岗双责",
+     "hit": true,
+     "answer_len": 167,
+     "refs": 6,
+     "answer": "根据《山东省安全生产行政责任制规定》，安全生产工作实行一岗双责制度 [ID:0]。该制度明确：各级人民政府和有关部门、单位的主要负责人是本行政区域和本行业、领域安全生产的第一责任人，对安全生产工作承担全面领导责任；分管安全生产的负责人对安全生产工作承担重要领导责任；其他负责人对分管范围内的安全生产工作承担直接领导责任 [ID:0]。",
+     "seconds": 1.9
+    },
+    {
+     "q": "试用期考核标准是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 28,
+     "refs": 0,
+     "answer": "制度库未匹配该主题，请提供更完整的条款或联系合规负责人。",
+     "seconds": 1.3
+    }
+   ]
+  },
+  "policy.search": {
+   "template": "policy",
+   "app_type": "search",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "11e4a85b7e04407ca94bff8a45c4ea3a",
+    "state": "completed"
+   },
+   "app_id": "f54b4d28b51d47f083f3d1e13bff3adb",
+   "qa": [
+    {
+     "q": "生产安全事故分为哪几级？",
+     "expect": "特别重大事故",
+     "hit": true,
+     "answer_len": 180,
+     "refs": 12,
+     "answer": "根据知识库中的信息，生产安全事故一般分为**四级**：\n\n- 特别重大事故\n- 重大事故\n- 较大事故\n- 一般事故\n\n依据是国务院令第493号《生产安全事故报告和调查处理条例》。根据知识库中的信息，生产安全事故一般分为**四级**：\n\n- 特别重大事故\n- 重大事故\n- 较大事故\n- 一般事故\n\n依据是国务院令第493号《生产安全事故报告和调查处理条例》。",
+     "seconds": 2.1
+    },
+    {
+     "q": "试用期考核标准是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 188,
+     "refs": 12,
+     "answer": "很抱歉，根据现有知识库内容，未找到与“试用期考核标准”相关的信息。知识库主要涉及山东省安全生产工作任务分工等内容，与您的问题不匹配。建议您查阅相关人事管理制度或咨询所在单位的人力资源部门。很抱歉，根据现有知识库内容，未找到与“试用期考核标准”相关的信息。知识库主要涉及山东省安全生产工作任务分工等内容，与您的问题不匹配。建议您查阅相关人事管理制度或咨询所在单位的人力资源部门。",
+     "seconds": 1.4
+    }
+   ]
+  },
+  "training.chat": {
+   "template": "training",
+   "app_type": "chat",
+   "run": 2,
+   "renderable": [
+    "chat"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "dataset_writes": {
+    "target": "a88432876a2d49ba95b1a49eab5d9200",
+    "changed": {
+     "a88432876a2d49ba95b1a49eab5d9200": [
+      "general",
+      "book"
+     ]
+    }
+   },
+   "repairs_history": [
+    {
+     "run": 1,
+     "actions": [
+      "apply_parse_profile"
+     ]
+    }
+   ],
+   "check_after": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "e96a6124516246d9a09747eda74652e1",
+    "state": "completed"
+   },
+   "app_id": "5d424e8e8eb8434eaca723aa50381615",
+   "qa": [
+    {
+     "q": "专家年度调用时间原则上不超过多少天？",
+     "expect": "15",
+     "hit": true,
+     "answer_len": 25,
+     "refs": 8,
+     "answer": "专家年度调用时间原则上不超过15天 [ID:0]。",
+     "seconds": 1.3
+    },
+    {
+     "q": "专家遴选数量按什么标准掌握？",
+     "expect": "两倍",
+     "hit": true,
+     "answer_len": 32,
+     "refs": 8,
+     "answer": "专家遴选数量按重大检查活动实际使用数量的两倍掌握 [ID:0]。",
+     "seconds": 1.3
+    },
+    {
+     "q": "第 1 个月的关键验收项是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 227,
+     "refs": 5,
+     "answer": "第1个月的关键验收项包括：能够准确区分第一、二、三类企业及超一类企业的考核标准，并掌握各类别下一般事故与较大事故对应的扣分规则。例如，第一类企业发生造成1人死亡的一般事故应扣1分 [ID:1]；第二类企业同类事故扣1.5分 [ID:2]；第三类企业扣2分 [ID:3]；超一类企业则以1分为基数，再按年度系数折算 [ID:4]。同时，需理解瞒报、谎报等行为按高一等级扣分的规定 [ID:0]。完成一份事故案例判分练习，正确率达到80%以上，即为通过验收。",
+     "seconds": 10.7
+    }
+   ]
+  },
+  "operations.chat": {
+   "template": "operations",
+   "app_type": "chat",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "dataset_writes": {
+    "target": "63189c4f24444b9a819bcf00345c54e3",
+    "changed": {
+     "63189c4f24444b9a819bcf00345c54e3": [
+      "general",
+      "book"
+     ]
+    }
+   },
+   "repairs_history": [
+    {
+     "run": 1,
+     "actions": [
+      "apply_parse_profile"
+     ]
+    }
+   ],
+   "check_after": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "bbd01b6c835c49f39b8366ac3e60d315",
+    "state": "completed"
+   },
+   "app_id": "755a03646c41437c9950e8fa5b880717",
+   "qa": [
+    {
+     "q": "省属一级企业接到事发单位事故报告后多长时间内书面报送？",
+     "expect": "半小时",
+     "hit": true,
+     "answer_len": 61,
+     "refs": 6,
+     "answer": "省属一级企业接到事发单位事故报告后，应将事故基本情况在半小时内书面报省属企业生产安全事故应急领导小组办公室 [ID:0]。",
+     "seconds": 1.2
+    },
+    {
+     "q": "服务无响应的第一处理动作是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 103,
+     "refs": 1,
+     "answer": "根据知识库中的应急响应流程，服务无响应（视为事故/事件）的第一处理动作是：事发单位立即向当地人民政府报告，并同步开展先期处置 [ID:0]。此后再按流程启动应急预案、上报省政府并组织应急处置 [ID:0]。",
+     "seconds": 5.7
+    }
+   ]
+  },
+  "operations.search": {
+   "template": "operations",
+   "app_type": "search",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "cc4b7e2e0ac8456faff7529a8764eaf2",
+    "state": "completed"
+   },
+   "app_id": "50310fd52610457882600f4e580fb491",
+   "qa": [
+    {
+     "q": "省属企业每年应开展什么活动？",
+     "expect": "演练",
+     "hit": true,
+     "answer_len": 266,
+     "refs": 12,
+     "answer": "根据知识库中的《省属企业安全生产事故应急预案》，省属企业应组织开展**应急预案的宣传培训、演练和演习**，以提高干部职工自救、互救和应对各类事故的综合素质（见“省属企业职责”部分）。知识库中未明确提及“每年”的具体频次，但上述活动属于省属企业应持续开展的常规性工作。根据知识库中的《省属企业安全生产事故应急预案》，省属企业应组织开展**应急预案的宣传培训、演练和演习**，以提高干部职工自救、互救和应对各类事故的综合素质（见“省属企业职责”部分）。知识库中未明确提及“每年”的具体频次，但上述活动属于省属企业应持续开展的常规性工作。",
+     "seconds": 1.8
+    },
+    {
+     "q": "服务无响应的第一处理动作是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 296,
+     "refs": 3,
+     "answer": "根据提供的知识库，未找到关于“服务无响应”的第一处理动作的相关内容。\n\n知识库主要涉及**省属企业安全生产事故应急预案**和**山东国投公司安全生产风险防控**，其中提到的“应急响应”均针对生产安全事故、消防安全等场景，与“服务无响应”问题不匹配。\n\n建议参考相关IT服务管理规范或系统运维手册。根据提供的知识库，未找到关于“服务无响应”的第一处理动作的相关内容。\n\n知识库主要涉及**省属企业安全生产事故应急预案**和**山东国投公司安全生产风险防控**，其中提到的“应急响应”均针对生产安全事故、消防安全等场景，与“服务无响应”问题不匹配。\n\n建议参考相关IT服务管理规范或系统运维手册。",
+     "seconds": 2.8
+    }
+   ]
+  },
+  "customer-service.chat": {
+   "template": "customer-service",
+   "app_type": "chat",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "fd85c1a7d6554209b35b64b1dc330996",
+    "state": "completed"
+   },
+   "app_id": "805ff81e66ca43ff960d7f818af2abb5",
+   "qa": [
+    {
+     "q": "安全生产举报工作所需经费如何保障？",
+     "expect": "财政预算",
+     "hit": true,
+     "answer_len": 116,
+     "refs": 8,
+     "answer": "根据《山东省安全生产举报办法》，安全生产举报工作所需经费由县级以上人民政府保障，具体为：将安全生产举报受理、核查、奖励等所需工作经费纳入本级财政预算，并支持、督促负有安全生产监督管理职责的部门依法履行举报处理工作职责 [ID:0]。",
+     "seconds": 1.5
+    },
+    {
+     "q": "7 天无理由退货条件是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 90,
+     "refs": 8,
+     "answer": "抱歉，关于“7天无理由退货”的条件，当前知识库中暂无相关信息。建议您直接联系购买平台或商家，按其售后政策执行。如果您有其他关于安全生产举报的问题，我可以继续为您解答。 [ID:0]",
+     "seconds": 2.8
+    }
+   ]
+  },
+  "customer-service.search": {
+   "template": "customer-service",
+   "app_type": "search",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "5051b9c6806d49aca7ca45cf047e663f",
+    "state": "completed"
+   },
+   "app_id": "bd45be27455a4b488e267b31648c5e18",
+   "qa": [
+    {
+     "q": "县级以上应急管理部门承担举报工作的哪些环节？",
+     "expect": "核查",
+     "hit": true,
+     "answer_len": 206,
+     "refs": 7,
+     "answer": "根据《山东省安全生产举报办法》第四条，县级以上人民政府应急管理部门依法对本行政区域内的安全生产举报工作实施综合监督管理，并承担职责范围内安全生产举报的**受理、核查、奖励**以及有关的**监督管理工作**。根据《山东省安全生产举报办法》第四条，县级以上人民政府应急管理部门依法对本行政区域内的安全生产举报工作实施综合监督管理，并承担职责范围内安全生产举报的**受理、核查、奖励**以及有关的**监督管理工作**。",
+     "seconds": 1.7
+    },
+    {
+     "q": "7 天无理由退货条件是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 166,
+     "refs": 12,
+     "answer": "很抱歉，根据现有知识库内容，未找到与“7天无理由退货条件”相关的信息。知识库中目前仅包含2025年上半年国资委安全生产督导检查隐患台账相关内容，不涉及消费者退货政策。很抱歉，根据现有知识库内容，未找到与“7天无理由退货条件”相关的信息。知识库中目前仅包含2025年上半年国资委安全生产督导检查隐患台账相关内容，不涉及消费者退货政策。",
+     "seconds": 1.9
+    }
+   ]
+  },
+  "product-manual.search": {
+   "template": "product-manual",
+   "app_type": "search",
+   "run": 2,
+   "renderable": [
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "dataset_writes": {
+    "target": "e8b342a854284d538b31b1c2afe4832d",
+    "changed": {
+     "e8b342a854284d538b31b1c2afe4832d": [
+      "general",
+      "book"
+     ]
+    }
+   },
+   "repairs_history": [
+    {
+     "run": 1,
+     "actions": [
+      "enable_pushdown_and_sync_meta",
+      "apply_parse_profile"
+     ]
+    }
+   ],
+   "check_after": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "9d94b1c0dd864e78a7dadd0fc22bd7af",
+    "state": "completed"
+   },
+   "app_id": "17b9ae71198440a6b73587c95cb0ead1",
+   "qa": [
+    {
+     "q": "山东大厦排查出的燃气相关风险是什么？",
+     "expect": "燃气",
+     "hit": true,
+     "answer_len": 276,
+     "refs": 8,
+     "answer": "根据知识库中《南郊集团-山东大厦安全生产检查情况》相关内容，山东大厦排查出的燃气相关风险为：\n\n- **燃气管道、阀门、调压装置等设施易出现泄漏风险，遇明火极易引发燃爆事故。**\n\n此外，相关防控措施中提到要“规范燃气开关启闭操作，严禁违规改装燃气设施”，以防范燃气安全事故。根据知识库中《南郊集团-山东大厦安全生产检查情况》相关内容，山东大厦排查出的燃气相关风险为：\n\n- **燃气管道、阀门、调压装置等设施易出现泄漏风险，遇明火极易引发燃爆事故。**\n\n此外，相关防控措施中提到要“规范燃气开关启闭操作，严禁违规改装燃气设施”，以防范燃气安全事故。",
+     "seconds": 3.4
+    },
+    {
+     "q": "山东健康集团按什么原则管控风险？",
+     "expect": "分级管控",
+     "hit": true,
+     "answer_len": 114,
+     "refs": 8,
+     "answer": "根据知识库内容，山东健康集团按照 **“全面覆盖、精准辨识、分级管控、闭环整改”** 的原则开展安全风险管控工作。根据知识库内容，山东健康集团按照 **“全面覆盖、精准辨识、分级管控、闭环整改”** 的原则开展安全风险管控工作。",
+     "seconds": 1.6
+    },
+    {
+     "q": "E03 的官方处理步骤是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 278,
+     "refs": 4,
+     "answer": "根据现有知识库内容，未找到与“E03”相关的官方处理步骤。知识库中主要涉及山东健康集团、南郊集团等单位的安全生产风险管控、隐患排查、应急管理等内容，未提及“E03”这一编号或术语。\n\n如果您指的是某个设备故障代码、系统错误码或特定流程中的环节，请提供更多上下文，以便进一步查找。根据现有知识库内容，未找到与“E03”相关的官方处理步骤。知识库中主要涉及山东健康集团、南郊集团等单位的安全生产风险管控、隐患排查、应急管理等内容，未提及“E03”这一编号或术语。\n\n如果您指的是某个设备故障代码、系统错误码或特定流程中的环节，请提供更多上下文，以便进一步查找。",
+     "seconds": 1.9
+    }
+   ]
+  },
+  "sales-support.chat": {
+   "template": "sales-support",
+   "app_type": "chat",
+   "run": 2,
+   "renderable": [
+    "chat"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "cd73d24e311d496285f3daf1927764fe",
+    "state": "completed"
+   },
+   "app_id": "ec9ab3c493bb498f8ae746551f2b0f2a",
+   "qa": [
+    {
+     "q": "山东农业集团聚焦哪些重点领域？",
+     "expect": "粮食加工",
+     "hit": true,
+     "answer_len": 50,
+     "refs": 5,
+     "answer": "根据汇报文件，山东农业集团聚焦的重点领域包括：粮食加工、粮食仓储、核照辐射、农药生产等[ID:0]。",
+     "seconds": 1.5
+    },
+    {
+     "q": "南郊集团要求权属单位坚持什么理念？",
+     "expect": "人民至上",
+     "hit": true,
+     "answer_len": 44,
+     "refs": 4,
+     "answer": "根据南郊集团的报告，集团要求各权属单位必须坚持“人民至上、生命至上”的理念[ID:0]。",
+     "seconds": 1.7
+    },
+    {
+     "q": "产品的三个核心卖点是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 97,
+     "refs": 5,
+     "answer": "根据提供的知识库内容，目前仅有山东农业集团和南郊集团关于安全生产风险防控的汇报文件，未包含任何产品信息，因此无法提炼产品核心卖点。建 [ID:0]议您提供具体产品资料，以便我基于知识库为您总结。",
+     "seconds": 13.0
+    }
+   ]
+  },
+  "contract-compliance.chat": {
+   "template": "contract-compliance",
+   "app_type": "chat",
+   "run": 2,
+   "renderable": [
+    "chat"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "dataset_writes": {
+    "target": "56a96b0b30d84513ba614e23a7e1680f",
+    "changed": {
+     "56a96b0b30d84513ba614e23a7e1680f": [
+      "general",
+      "paper"
+     ]
+    }
+   },
+   "repairs_history": [
+    {
+     "run": 1,
+     "actions": [
+      "enable_pushdown_and_sync_meta",
+      "apply_parse_profile"
+     ]
+    }
+   ],
+   "check_after": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "eb20a794399e44fe8ee90ddf8bbdc8d8",
+    "state": "completed"
+   },
+   "app_id": "64511f84511946c1a24669b8834cd740",
+   "qa": [
+    {
+     "q": "社会化服务机构服务档案保管期限不得少于几年？",
+     "expect": "5年",
+     "hit": true,
+     "answer_len": 42,
+     "refs": 8,
+     "answer": "根据知识库规定，安全生产社会化服务机构的服务档案保管期限不得少于5年 [ID:0]。",
+     "seconds": 1.0
+    },
+    {
+     "q": "矿山企业主要负责人对所属矿山每季度至少开展几次重大事故隐患排查？",
+     "expect": "每季度",
+     "hit": true,
+     "answer_len": 54,
+     "refs": 5,
+     "answer": "根据知识库，矿山企业总部及上级企业主要负责人对所属矿山每季度至少开展1次重大事故隐患排查整治 [ID:0]。",
+     "seconds": 2.5
+    },
+    {
+     "q": "违约金上限的原文依据是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 30,
+     "refs": 0,
+     "answer": "未找到对应条款，不能进行合规判断，请补充合同资料或咨询法务。",
+     "seconds": 0.8
+    }
+   ]
+  },
+  "finance.chat": {
+   "template": "finance",
+   "app_type": "chat",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "dataset_writes": {
+    "target": "f6ea6425a4894a2497ba08df494e4297",
+    "changed": {
+     "f6ea6425a4894a2497ba08df494e4297": [
+      "general",
+      "book"
+     ]
+    }
+   },
+   "repairs_history": [
+    {
+     "run": 1,
+     "actions": [
+      "enable_pushdown_and_sync_meta",
+      "apply_parse_profile"
+     ]
+    }
+   ],
+   "check_after": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "9c6762fbaba74ac18156ff636a2344d4",
+    "state": "completed"
+   },
+   "app_id": "e5c790cc29094b63a382e4115078e9b4",
+   "qa": [
+    {
+     "q": "一个考核年度内发生1起重大及以上事故扣至多少分？",
+     "expect": "80",
+     "hit": true,
+     "answer_len": 57,
+     "refs": 5,
+     "answer": "一个考核年度内，发生1起重大及以上安全生产责任事故，扣至80分 [ID:0][ID:1][ID:2][ID:3]。",
+     "seconds": 2.0
+    },
+    {
+     "q": "应收周转天数的口径是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 24,
+     "refs": 0,
+     "answer": "未找到对应财务口径，请提供报表名称和期间后重试。",
+     "seconds": 1.3
+    }
+   ]
+  },
+  "finance.search": {
+   "template": "finance",
+   "app_type": "search",
+   "run": 2,
+   "renderable": [
+    "chat",
+    "search"
+   ],
+   "check_before": {
+    "verdict": "satisfied",
+    "repairs": []
+   },
+   "instance": {
+    "id": "71b92c44c8974f93a71c84f96e5565bd",
+    "state": "completed"
+   },
+   "app_id": "bda97a5f935748d0ac3345848fe50d49",
+   "qa": [
+    {
+     "q": "山东健康集团如何管控风险？",
+     "expect": "分级管控",
+     "hit": true,
+     "answer_len": 2572,
+     "refs": 12,
+     "answer": "根据知识库中的《山东健康集团安全风险管控工作总结》，山东健康集团的风险管控工作主要围绕“全面覆盖、精准辨识、分级管控、闭环整改”的原则展开，具体措施如下：\n\n## 一、总体管控机制\n- **拉网式排查**：对办公区域、生产车间、仓储物流、医疗养老、酒店商铺、建筑施工、物业租赁、特种设备等全场景、全环节开展风险排查。\n- **分级分类管控**：将风险点按重大、较大、一般、低风险四级划分，并建立风险台账，明确管控责任，落实防控措施。\n- **闭环管理**：严格执行“排查—登记—整改—复核—销号”全流程机制，并将安全管控纳入绩效评价。\n\n## 二、重点领域与单位管控措施\n| 单位 | 风险点数量 | 核心风险 | 管控举措 |\n|------|-----------|---------|---------|\n| 健康颐养公司 | 199处（重大7、较大19、一般76、低79） | 医疗质量、医疗废物、用电安全、特种设备、食品安全 | “四不两直”督导巡查，压实全员岗位责任，执行“排查—整改—复核”闭环治理 |\n| 新华医疗公司 | 199处（重大1、较大4、一般10、低184） | 高风险工艺、设备作业、特殊操作环节 | 落实工程技术、管理、个体防护、教育培训、应急处置五大措施；分级管控责任到人，信息化动态监管 |\n| 健康实业公司 | 80处（重大4、较大27、一般42、低7） | 施",
+     "seconds": 3.8
+    },
+    {
+     "q": "应收周转天数的口径是什么？",
+     "expect": null,
+     "hit": null,
+     "answer_len": 180,
+     "refs": 12,
+     "answer": "抱歉，根据现有知识库内容，未找到与“应收周转天数”相关的信息。知识库中目前仅包含《山东省属企业安全生产考核标准》相关内容，不涉及财务指标口径。建议您查阅财务管理制度或相关会计准则。抱歉，根据现有知识库内容，未找到与“应收周转天数”相关的信息。知识库中目前仅包含《山东省属企业安全生产考核标准》相关内容，不涉及财务指标口径。建议您查阅财务管理制度或相关会计准则。",
+     "seconds": 1.5
+    }
+   ]
+  }
+ },
+ "negatives": {
+  "neg.chat-on-search-only": {
+   "template": "product-manual",
+   "app_type": "chat",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "message": "scenario template does not support chat assistants"
+  },
+  "neg.search-on-chat-only": {
+   "template": "contract-compliance",
+   "app_type": "search",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "message": "scenario template does not support search applications"
+  },
+  "neg.search-on-chat-only-2": {
+   "template": "training",
+   "app_type": "search",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "message": "scenario template does not support search applications"
+  },
+  "neg.agent-without-canvas": {
+   "template": "training",
+   "app_type": "agent",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "message": "this template cannot be instantiated as an agent: it ships no agent canvas, please choose the chat or search form"
+  },
+  "neg.auto-datasets-empty-kb": {
+   "template": "enterprise-qa",
+   "app_type": "chat",
+   "run": 2,
+   "http": 400,
+   "code": 40085,
+   "message": "ragflow rejected chat creation: the selected knowledge base has no parsed content yet: upload documents, wait for parsing to finish, then instantiate again (engine: the dataset 184a175cf86f4258b466e71"
+  }
+ },
+ "env_notes": [],
+ "dataset_chunks": {
+  "企业问答库": 47,
+  "政策法规库": 93,
+  "培训赋能库": 21,
+  "运维应急库": 30,
+  "客服问答库": 126,
+  "产品手册库": 8,
+  "销售支持库": 6,
+  "合同合规库": 14,
+  "财务口径库": 15
+ }
+}

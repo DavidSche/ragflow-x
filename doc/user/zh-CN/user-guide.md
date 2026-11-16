@@ -25,10 +25,44 @@
 
 ## 快速上手
 
-### 安装方式（v0.5.3）
+### 安装方式
 
 本版本以 **release 二进制包** 交付，**暂不提供容器镜像**：下载 `ragflow-x-<版本>-<系统>-<架构>.tar.gz`
-（Windows 为 `.zip`），解压后前端已内嵌在二进制里，不需要另起静态服务。
+（Windows 为 `.zip`），解压后前端已内嵌在二进制里，不需要另起静态服务。**解压到一个独立目录再启动**：
+配置与日志都是按「当前目录」定位的，混在一堆文件里跑起来会找不到自己的配置。
+
+```bash
+mkdir -p ragflow-x && tar xzf ragflow-x-<版本>-linux-amd64.tar.gz -C ragflow-x && cd ragflow-x
+./start.sh --sqlite --daemon      # 先试一下：SQLite 落盘 data/，后台运行
+# 打印 ready: http://localhost:9191/ 后，浏览器打开即可
+./start.sh status                 # 看进程与端口
+./start.sh stop                   # 停后台进程
+```
+
+Windows 解压后：双击 `start.cmd`（前台运行），或 `start.cmd --sqlite -Daemon`（后台）。
+PowerShell 里等价写法是 `start.ps1 -Sqlite -Daemon`。
+
+启动脚本只负责「把启动这件事说明白」，不是第二套配置：
+
+| 用法 | 作用 |
+|---|---|
+| `./start.sh` | 前台启动，Ctrl-C 结束；有 `config/config.yaml` 就用它 |
+| `./start.sh --sqlite` | 用 SQLite 试跑：DSN 写成**绝对路径** `data/ragflow-x.db`（无配置文件时日志也写成绝对路径 `logs/ragflow-x.log`） |
+| `./start.sh --daemon` / `-d` | 后台启动。pid 在 `logs/ragflow-x.pid`，控制台输出在 `logs/console.out`，端口记在 `logs/ragflow-x.port` |
+| `./start.sh --port 8080` | 换端口（等价于 `RGX_PORT=8080`） |
+| `./start.sh --config /etc/ragflow-x/config.yaml` | 指定配置文件 |
+| `./start.sh stop` / `status` | 停掉后台进程 / 查进程与端口状态 |
+| `./start.sh -- -config x.yaml` | `--` 之后的参数原样交给二进制 |
+
+`--sqlite` 只是把数据库这一步省掉，产品本身仍然需要一台 RAGFlow 引擎：向导会问 `引擎地址` 与
+`引擎 API Key`（这两项没法在本地凭空造），然后创建首个管理员并原地换成完整路由——不用重启，
+也不用再编辑文件。
+
+它会替你避开两个常见坑：端口已被占用时**拒绝启动**（否则「等待端口就绪」会把别人的服务当成自己的），
+以及没有配置文件时明确打印「将进入首次运行向导」——而不是让人以为启动失败了。
+脚本自身依赖 bash；Windows 上 cmd.exe 与 PowerShell 需要 CRLF，归档里已经按平台处理好换行。
+
+不想用脚本也可以直接跑二进制（**一个脚本都不依赖**）：
 
 ```bash
 cp config/config.example.yaml config/config.yaml   # Windows: copy
@@ -63,8 +97,9 @@ SQLite 路径适合「先试一下产品」：填一个可写 DSN、「引擎地
    `./ragflow-x -config <某个 yaml>` 与向导写入的密文不是同一份时，登录查的是另一个库。
    用下面第 2 条的 `-list` 直接看当前配置下有哪些账号，比猜更快。
 2. **用户名是否就是你想的那个**（向导允许自定义，不一定是 `admin`）。
-3. **密码**。向导重复执行时，若账号已存在，**不会**悄悄改成你新填的密码（避免每次重启都覆盖你在界面上改过的密码）；
-   要改密码，用下面的恢复命令，而不是再跑一遍向导。
+3. **密码**。v0.6.1 之前，向导重复执行时对**已存在**的账号是静默忽略新密码的（当时为了不让重启覆盖界面上改过的密码）；
+   现在向导提交即视为一次显式凭据决定，会把指定管理员的密码改成你新填的值并打一条 `setup: designated admin
+   password set by the setup wizard` 日志。**进程重启**仍然不会改动密码。改不了或忘了密码，用下面的恢复命令。
 
 ### 忘了管理员密码 / 登录不进去怎么救
 
@@ -88,16 +123,35 @@ SQLite 路径适合「先试一下产品」：填一个可写 DSN、「引擎地
 
 ### 日志写到哪里
 
-出厂默认 `logging.output: stdout`，也就是**不写日志文件**（容器部署靠采集 stdout）。要落盘：
+出厂默认 **同时写控制台和文件**（`logging.output: both`）：前台运行时终端上能看见，
+同一批记录也落在 `./logs/ragflow-x-YYYYMMDD.log`（目录不存在会自动创建）。
+启动时日志会自报去向：
 
-```bash
-RGX_LOG_OUTPUT=./logs/ragflow-x.log ./ragflow-x     # 目录必须存在且可写
+```json
+{"msg":"logging configured","console":true,"file":"./logs/ragflow-x.log"}
 ```
 
-或在 `config/config.yaml` 里写 `logging: { output: ./logs/ragflow-x.log }`。
-按天切分为 `ragflow-x-YYYYMMDD.log`，超过 `logging.max_size_mb` 再切 `.1`、`.2`；
-**一旦指定了文件，stdout 就不再重复输出**（避免客户端无限增长）。其余可调项：
-`RGX_LOG_LEVEL`、`RGX_LOG_FORMAT`、`RGX_LOG_ROTATE_DAILY`、`RGX_LOG_MAX_SIZE_MB`、`RGX_LOG_MAX_BACKUPS`、`RGX_LOG_RETENTION_DAYS`。
+`logging.output` 的四个取值：
+
+| 取值 | 含义 |
+| --- | --- |
+| `both`（默认） | 控制台 + 轮转文件 |
+| `stdout` | 只写控制台（容器/采集器场景，`docker logs` 可直接读） |
+| `file` | 只写文件（路径见 `logging.file`） |
+| 一个路径 | 只写该文件（`0.6.1` 之前的写法，仍然有效） |
+
+```bash
+RGX_LOG_FILE=/var/log/ragflow-x/ragflow-x.log ./ragflow-x   # 只换文件路径，仍然两头都写
+RGX_LOG_OUTPUT=stdout ./ragflow-x                           # 只写控制台
+```
+
+按天切分为 `ragflow-x-YYYYMMDD.log`，超过 `logging.max_size_mb` 再切 `.1`、`.2`。
+**只有当设置里点名“只要文件”（`file` 或直接给路径）时，stdout 才不重复输出**——
+否则守护进程把 stdout 重定向到采集文件时，那个文件会绕过轮转无限增长。
+
+写不了文件（目录只读、没有权限）**不会让进程起不来**：启动日志会打一条
+`log file disabled` 说明原因，记录继续走控制台。其余可调项：`RGX_LOG_LEVEL`、`RGX_LOG_FORMAT`、
+`RGX_LOG_ROTATE_DAILY`、`RGX_LOG_MAX_SIZE_MB`、`RGX_LOG_MAX_BACKUPS`、`RGX_LOG_RETENTION_DAYS`。
 
 
 1. 打开 `http://<host>:5173/`（开发环境）或 `http://<host>:9191/`（发布包）。
