@@ -16,6 +16,7 @@ import {
 } from "../scenario-templates";
 import type { PushdownRequest, RepairRequest } from "./repairPlan";
 import { useRepairActions } from "./useRepairActions";
+import { projectChoices, type ProjectLike } from "./projectOptions";
 import type { CapabilityCheckView, DatasetCapabilityView, WizardSelection } from "./types";
 
 const SUGGESTED_ROLE = "primary";
@@ -26,6 +27,8 @@ export interface ScenarioWizardApi {
   catalogState: "loading" | "ready" | "error";
   datasetOptions: DatasetLike[];
   datasetValues: DatasetLike[];
+  /** Projects the caller may attach the new assistant to (id + display name). */
+  projects: { id: string; name: string }[];
   mapDatasetId: (dataset: DatasetLike) => string;
   isChecking: boolean;
   capabilityCheck: CapabilityCheckView | null;
@@ -87,6 +90,11 @@ export function useScenarioWizard(): ScenarioWizardApi {
 
   const { data: datasets } = useGetList("datasets", { pagination: { page: 1, perPage: 200 } });
   const { data: projects } = useGetList("projects", { pagination: { page: 1, perPage: 100 } });
+  // The picker shows names while the API takes ids (see ./projectOptions).
+  const projectOptions = useMemo(
+    () => projectChoices(projects as ProjectLike[] | undefined),
+    [projects],
+  );
   const { values: datasetValues, mapId } = datasetOptions(datasets as DatasetLike[] | undefined);
 
   const { canAccess: canManageChat } = useCanAccess({ resource: "chat", action: "manage" });
@@ -116,11 +124,11 @@ export function useScenarioWizard(): ScenarioWizardApi {
   // plausible project instead of letting the user hit a 400 on submit.
   useEffect(() => {
     if (selection.projectId) return;
-    const rows = (projects as { id: string }[] | undefined) ?? [];
+    const rows = projectOptions;
     if (rows.length === 1) {
       setSelection((prev) => ({ ...prev, projectId: rows[0].id }));
     }
-  }, [projects, selection.projectId]);
+  }, [projectOptions, selection.projectId]);
 
   const runCapabilityCheck = useCallback(async () => {
     const template = selection.template;
@@ -211,10 +219,11 @@ export function useScenarioWizard(): ScenarioWizardApi {
     if (!template || !selection.name.trim() || !selection.projectId) return;
     setSaving(true);
     try {
-      const datasetIds = selection.datasetIds.map((id) => {
-        const dataset = datasetValues.find((item) => item.id === id);
-        return dataset ? mapId(dataset) : id;
-      });
+      // `dataset_ids` here are workspace links, not engine ids: the server resolves
+      // each one with GetDatasetLink(tenantID, id) and answers
+      // 400/40085 "dataset not found in workspace" for an engine id. `mapId`
+      // (ragflow_dataset_id || id) is only for the probe/检索 side.
+      const datasetIds = selection.datasetIds;
       const idempotencyKey = `wizard-${template.id}-${Date.now()}`;
       const result = await instantiateScenarioTemplate(
         template.id,
@@ -289,6 +298,7 @@ export function useScenarioWizard(): ScenarioWizardApi {
     catalogState,
     datasetOptions: datasetValues,
     datasetValues,
+    projects: projectOptions,
     mapDatasetId: mapId,
     isChecking,
     capabilityCheck,
