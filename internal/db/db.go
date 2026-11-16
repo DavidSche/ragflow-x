@@ -68,6 +68,20 @@ func sqliteMemoryDSN(base string, values url.Values) bool {
 // Open creates a GORM connection based on configuration. Supported drivers:
 // "postgres" and "sqlite" (sqlite is for local development and tests).
 func Open(cfg config.Database) (*gorm.DB, error) {
+	return open(cfg, gormlogger.Warn)
+}
+
+// OpenQuiet behaves like Open but never writes the driver's own error into the
+// log. Connectivity probes use it: their outcome is reported to the caller (the
+// setup wizard prints the driver message in the UI), so an unpack-and-run
+// archive that cannot reach the built-in placeholder database must not paint an
+// ANSI-red "failed to initialize database" block on the console before the
+// wizard has even opened.
+func OpenQuiet(cfg config.Database) (*gorm.DB, error) {
+	return open(cfg, gormlogger.Silent)
+}
+
+func open(cfg config.Database, logLevel gormlogger.LogLevel) (*gorm.DB, error) {
 	var dialector gorm.Dialector
 	switch cfg.Driver {
 	case "postgres":
@@ -91,7 +105,7 @@ func Open(cfg config.Database) (*gorm.DB, error) {
 	}
 
 	gdb, err := gorm.Open(dialector, &gorm.Config{
-		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
+		Logger: gormlogger.Default.LogMode(logLevel),
 	})
 	if err != nil {
 		return nil, err

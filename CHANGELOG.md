@@ -12,6 +12,24 @@
 
 ### 修复
 
+- **首次运行：解压即跑的向导页会向控制台刷错误，且连不上库时不告诉原因**。发布包解压后直接
+  `./ragflow-x` 启动时，浏览器控制台会同时出现 404（`/auth/me`、`/auth/logout`、`/branding/public`、
+  `/auth/oidc/status`）、一条 `logout request failed` 警告，以及一条被拦截的第三方遥测请求
+  （`shadcn-admin-kit-telemetry.marmelab.com`）。四处修正：
+  1. bootstrap 路由补齐 SPA 首屏要读的三个只读端点（品牌、OIDC 状态、登出），向导态不再产生 404；
+  2. 前端 `checkAuth`/`checkIdentity` 先读 `/system/setup/status`，向导态直接判定未登录，不再打
+     `/auth/me`（没有用户表时它只可能 401）；
+  3. 删除 `admin.tsx` 里指向 `marmelab.com` 的页面加载遥测（内网/隔离网部署里它只会
+     `ERR_CONNECTION_CLOSED`，并把部署域名发到外网）；
+  4. 未配置任何库时**不再尝试内置占位库**（`ragflow_x`/`change-me`@localhost），启动直接进向导，
+     少一次 5 秒拨号与一段看着像崩溃的驱动报错。
+- **数据库连不上时向导只说「数据库不可达」**：`Status`/preflight 现在带 `db_error`（驱动原文）与
+  `db_hint`（枚举：`database_missing` / `auth_failed` / `unreachable` / `not_writable` / `unknown`），
+  引擎探测失败也带 `ragflow_error`，向导按枚举给出可执行的下一步。实测：
+  `FATAL: database "rgx_missing_db" does not exist (SQLSTATE 3D000)` → 「先建库或改用已存在的库名」。
+  SQLite 探测额外用 `BEGIN IMMEDIATE` 验证可写（只读挂载以前只会在迁移阶段报一句难懂的错误）。
+- **能力检查证据探测类报错不再污染 stderr**：`db.OpenQuiet` 供连通性探测使用，探测结果通过
+  `Status` 上报，避免首次运行先看到一段 ANSI 红色驱动报错再看到向导。
 - **场景模板向导：已满足的能力要求被渲染成「阻断」红标**。`DatasetVerdictCard` 把
   `requirement.achieved`（等级：`unknown/configured/ready/operational`）当四态传给了
   `CapabilityBadge`，而 `normalizeCapabilityState()` 只认四态、其余一律落到 `blocked`，

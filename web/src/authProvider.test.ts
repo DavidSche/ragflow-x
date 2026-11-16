@@ -88,8 +88,54 @@ describe("authProvider approval feature gate", () => {
     vi.setSystemTime(new Date("2026-01-01T00:00:30Z"));
     vi.mocked(api.get).mockResolvedValue(authMe(true));
     await expect(authProvider.canAccess({ resource: "approvals", action: "list" })).resolves.toBe(true);
-    expect(api.get).toHaveBeenCalledTimes(2);
+    // Two identity reads (initial + after TTL), and the first-run probe is
+    // memoized: it must not ride along on every cache miss.
+    const callsTo = (url: string) => vi.mocked(api.get).mock.calls.filter(([u]) => u === url).length;
+    expect(callsTo("/auth/me")).toBe(2);
+    expect(callsTo("/system/setup/status")).toBe(1);
     vi.useRealTimers();
+  });
+});
+
+describe("authProvider first-run setup mode", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    const { api } = await import("./lib/api") as any;
+    vi.mocked(api.get).mockReset();
+  });
+
+  // Regression: the wizard screen used to cost a 404 on /auth/me (no user table
+  // exists yet) before it could draw its first field.
+  it("treats an unfinished setup as unauthenticated without asking /auth/me", async () => {
+    const { api } = await import("./lib/api") as any;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url === "/system/setup/status"
+        ? Promise.resolve({ data: { code: 0, data: { initialized: false } } })
+        : Promise.reject(new Error("must not be called")),
+    );
+    const { authProvider } = await import("./authProvider") as any;
+
+    await expect(authProvider.checkAuth({})).rejects.toThrow();
+    await expect(authProvider.getPermissions({})).resolves.toEqual({
+      approvalsEnabled: false,
+      platform: false,
+      role: "",
+      permissions: [],
+    });
+    expect(vi.mocked(api.get).mock.calls.every(([u]) => u === "/system/setup/status")).toBe(true);
+  });
+
+  it("checks the real session once setup is complete", async () => {
+    const { api } = await import("./lib/api") as any;
+    vi.mocked(api.get).mockImplementation((url: string) =>
+      url === "/system/setup/status"
+        ? Promise.resolve({ data: { code: 0, data: { initialized: true } } })
+        : Promise.resolve(authMe(false)),
+    );
+    const { authProvider } = await import("./authProvider") as any;
+
+    await expect(authProvider.checkAuth({})).resolves.toBeUndefined();
+    expect(vi.mocked(api.get).mock.calls.some(([u]) => u === "/auth/me")).toBe(true);
   });
 });
 

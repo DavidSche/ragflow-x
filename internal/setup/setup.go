@@ -84,7 +84,23 @@ type Status struct {
 	RAGFlowUp   bool   `json:"ragflow_up"`
 	RAGFlowName string `json:"ragflow_provider"`
 	Initialized bool   `json:"initialized"`
+	// DBError/RAGFlowError carry the driver's own message for a failed probe.
+	// Booleans alone left a first-run operator staring at "数据库不可达" with no
+	// way to learn that the database simply did not exist yet.
+	DBError      string `json:"db_error,omitempty"`
+	DBHint       string `json:"db_hint,omitempty"`
+	RAGFlowError string `json:"ragflow_error,omitempty"`
 }
+
+// Probe hint keys: a stable enum the UI maps to a sentence, so the guidance can
+// be translated without the backend learning any language.
+const (
+	DBHintDatabaseMissing = "database_missing"
+	DBHintAuthFailed      = "auth_failed"
+	DBHintUnreachable     = "unreachable"
+	DBHintNotWritable     = "not_writable"
+	DBHintUnknown         = "unknown"
+)
 
 // ApplyRequest is the payload submitted by the setup wizard. Sensitive fields
 // (database password, RAGFlow api key, admin password) arrive RSA-OAEP
@@ -420,6 +436,16 @@ func (m *Manager) Startup() (http.Handler, error) {
 	}
 	databaseConfigured := m.cfg.Database.Driver == "sqlite" ||
 		m.cfg.Database.Password != "" || m.cfg.Database.DSN != ""
+	if databaseConfigured && m.builtinPlaceholderDatabase() {
+		// Freshly unpacked archive, no config file, nobody typed anything: the
+		// only thing to try is the shipped placeholder (user/password/name
+		// "ragflow_x"/"change-me" on localhost). It cannot work on a clean host,
+		// and the attempt costs a 5s dial plus a driver error that reads like a
+		// crash. Open the wizard instead and say why.
+		logger.Info("no database configured, starting the first-run setup wizard",
+			"next", "open http://localhost:<port>/ and fill in the connection form")
+		return m.bootstrapRouter(), nil
+	}
 	if databaseConfigured {
 		sec := &secretstore.Secrets{Database: toSecretDB(m.cfg.Database), RAGFlow: toSecretRG(m.cfg.RAGFlow), Redis: toSecretRedis(m.cfg.Redis)}
 		if err := m.ensureJWTSecret(sec); err != nil {
@@ -442,6 +468,32 @@ func (m *Manager) Startup() (http.Handler, error) {
 			"next", "open the UI and complete the setup form, the engine swaps in place")
 	}
 	return m.bootstrapRouter(), nil
+}
+
+// defaultDBPassword is the built-in placeholder from config defaults. Seeing it
+// on a host that was never configured means "nobody has chosen a password yet",
+// not "this is the real credential".
+const defaultDBPassword = "change-me"
+
+// defaultSQLiteDSN is the sqlite DSN shipped in the defaults. A postgres config
+// never reads it, so it stays present on an untouched config.
+const defaultSQLiteDSN = "file:./ragflow-x.db?cache=shared"
+
+// builtinPlaceholderDatabase reports whether the effective database settings are
+// still the shipped defaults AND the operator supplied no config file. A file (or
+// persisted secrets) always wins, so an operator who really does run PostgreSQL
+// with the placeholder password keeps the normal startup path.
+func (m *Manager) builtinPlaceholderDatabase() bool {
+	if m.cfg.Setup.ConfigFile != "" {
+		return false
+	}
+	d := m.cfg.Database
+	// The shipped defaults carry a SQLite DSN that a postgres config never reads;
+	// seeing it unchanged is part of "nobody configured anything".
+	dsnUntouched := d.DSN == "" || d.DSN == defaultSQLiteDSN
+	return d.Driver == "postgres" && dsnUntouched && d.Host == "localhost" &&
+		d.Port == 5432 && d.User == "ragflow_x" && d.Name == "ragflow_x" &&
+		d.Password == defaultDBPassword
 }
 
 // Close releases the currently running operational resources.
@@ -526,32 +578,88 @@ func (m *Manager) decrypt(req ApplyRequest) (*decrypted, error) {
 func probeDB(ctx context.Context, dbc config.Database, res *Status) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	gdb, err := db.Open(dbc)
+	// Quiet open: the probe outcome is reported through Status (the wizard prints
+	// the driver message next to the field that caused it), so letting GORM also
+	// dump it on stderr only makes a first run look like a crash.
+	gdb, err := db.OpenQuiet(dbc)
 	if err != nil {
+		res.DBError, res.DBHint = classifyDBError(dbc.Driver, err)
 		return
 	}
 	defer closeGDB(gdb)
 	sqlDB, err := gdb.DB()
 	if err != nil {
+		res.DBError, res.DBHint = classifyDBError(dbc.Driver, err)
 		return
 	}
 	defer func() { _ = sqlDB.Close() }()
-	if sqlDB.PingContext(ctx) == nil {
-		res.DBUp = true
+	if err := sqlDB.PingContext(ctx); err != nil {
+		res.DBError, res.DBHint = classifyDBError(dbc.Driver, err)
+		return
+	}
+	// A SQLite file opens read-only far more often than it fails outright
+	// (root-owned database in a read-only directory), and the failure then only
+	// shows up later as a cryptic migration error. Take the write lock here:
+	// BEGIN IMMEDIATE mutates nothing but does require write access.
+	if dbc.Driver == "sqlite" {
+		if err := gdb.Exec("BEGIN IMMEDIATE").Error; err != nil {
+			res.DBError, res.DBHint = classifyDBError(dbc.Driver, err)
+			return
+		}
+		_ = gdb.Exec("ROLLBACK").Error
+	}
+	res.DBUp = true
+}
+
+// classifyDBError returns the driver message plus a stable hint key the setup
+// wizard turns into an actionable sentence. Matching is deliberately narrow: a
+// hint that names the wrong field is worse than the generic one.
+func classifyDBError(driver string, err error) (string, string) {
+	msg := err.Error()
+	low := strings.ToLower(msg)
+	switch {
+	case strings.Contains(msg, "SQLSTATE 3D000"),
+		strings.Contains(low, `database "`) && strings.Contains(low, "does not exist"):
+		return msg, DBHintDatabaseMissing
+	case strings.Contains(msg, "SQLSTATE 28P01"),
+		strings.Contains(low, "password authentication failed"),
+		strings.Contains(low, "invalid password"),
+		strings.Contains(low, `role "`) && strings.Contains(low, "does not exist"):
+		return msg, DBHintAuthFailed
+	case strings.Contains(low, "readonly"), strings.Contains(low, "read-only"),
+		strings.Contains(low, "unable to open database"), strings.Contains(low, "permission denied"):
+		return msg, DBHintNotWritable
+	case strings.Contains(low, "connection refused"), strings.Contains(low, "connectex"),
+		strings.Contains(low, "dial error"), strings.Contains(low, "no such host"),
+		strings.Contains(low, "timeout"), strings.Contains(low, "i/o timeout"):
+		return msg, DBHintUnreachable
+	case driver == "sqlite":
+		return msg, DBHintNotWritable
+	default:
+		return msg, DBHintUnknown
 	}
 }
 
 func probeRAGFlow(ctx context.Context, rgCfg config.RAGFlow, res *Status) {
 	rg, err := provider.NewRAGFlow(rgCfg)
 	if err != nil {
+		res.RAGFlowError = err.Error()
 		return
 	}
 	res.RAGFlowName = rg.Name()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if _, err := rg.Health(ctx); err == nil {
+	healthErr := func() error {
+		_, e := rg.Health(ctx)
+		return e
+	}()
+	if healthErr == nil {
 		res.RAGFlowUp = true
+		return
 	}
+	// The provider's wrapping can degrade to a bare "request ragflow" with no
+	// cause; the address is the one fact an operator needs in that case.
+	res.RAGFlowError = fmt.Sprintf("%s (base_url=%s)", healthErr.Error(), rgCfg.BaseURL)
 }
 
 // buildEngine constructs the fully initialized application from the merged

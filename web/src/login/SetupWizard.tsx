@@ -25,7 +25,25 @@ interface PreflightResult {
   db_up: boolean;
   ragflow_up: boolean;
   configured?: boolean;
+  /** Driver message and hint key for a failed probe (setup.ProbeHint*). */
+  db_error?: string;
+  db_hint?: string;
+  ragflow_error?: string;
 }
+
+/** Turns a probe hint key into the next action an operator can actually take. */
+const DB_HINTS: Record<string, string> = {
+  database_missing:
+    "目标数据库不存在。先在 PostgreSQL 里建库（CREATE DATABASE ragflow_x OWNER <user>;），或把「数据库名」改成已存在的库。",
+  auth_failed: "用户名或密码不对。用同一组凭据执行 psql \"host=… user=… dbname=…\" 验证后再填。",
+  unreachable: "连不上这个地址和端口。确认 PostgreSQL 已启动、监听 0.0.0.0 或本机地址，且防火墙放行该端口。",
+  not_writable:
+    "SQLite 数据库文件不可写。把 DSN 改成绝对路径（如 /data/ragflow-x/ragflow-x.db），并确认运行账号对该目录有写权限。",
+  unknown: "请查看服务器日志中 database 相关的那一行，里面有驱动返回的原始错误。",
+};
+
+const hintFor = (key?: string): string | undefined =>
+  key ? (DB_HINTS[key] ?? DB_HINTS.unknown) : undefined;
 
 interface ApplyPayload {
   database: {
@@ -288,8 +306,19 @@ export const SetupWizard = ({ onInitialized }: SetupWizardProps) => {
                       <CheckCircle2 className="size-4" /> 数据库连接正常
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 text-red-600">
-                      <XCircle className="size-4" /> 数据库不可达
+                    <div className="flex items-start gap-2 text-red-600">
+                      <XCircle className="mt-0.5 size-4 shrink-0" />
+                      <div className="space-y-1">
+                        <p>数据库不可达</p>
+                        {hintFor(preflight.db_hint) && (
+                          <p className="text-xs text-muted-foreground">{hintFor(preflight.db_hint)}</p>
+                        )}
+                        {preflight.db_error && (
+                          <p className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded bg-muted px-2 py-1 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                            {preflight.db_error}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                   {preflight.ragflow_up ? (
@@ -297,8 +326,19 @@ export const SetupWizard = ({ onInitialized }: SetupWizardProps) => {
                       <CheckCircle2 className="size-4" /> 引擎连接正常
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 text-red-600">
-                      <XCircle className="size-4" /> 引擎不可达
+                    <div className="flex items-start gap-2 text-red-600">
+                      <XCircle className="mt-0.5 size-4 shrink-0" />
+                      <div className="space-y-1">
+                        <p>引擎不可达</p>
+                        <p className="text-xs text-muted-foreground">
+                          确认 RAGFlow 已启动，且「引擎地址」能被本机访问（如 http://127.0.0.1:9380）。
+                        </p>
+                        {preflight.ragflow_error && (
+                          <p className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded bg-muted px-2 py-1 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                            {preflight.ragflow_error}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

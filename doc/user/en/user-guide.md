@@ -25,6 +25,25 @@ full router once it succeeds. Use `-config <path>` for another config file. To
 run a container, build the image from source (`cd docker && docker compose up -d
 --build`); image publishing resumes once a registry is available again.
 
+### First run: read the reason the wizard gives you
+
+When "test connection" fails, the wizard now prints an actionable hint, the raw
+driver message, and which field to change. The two cases that account for almost
+all first-run failures:
+
+| Hint | Meaning | What to do |
+|---|---|---|
+| `database_missing` | The server answers, but the target database does not exist (`SQLSTATE 3D000`) | Create it first (`CREATE DATABASE ragflow_x OWNER <user>;`) or point "database name" at an existing one. The wizard never creates a database for you. |
+| `not_writable` | The SQLite file cannot be written (read-only mount, root-owned file, relative path resolving somewhere unexpected) | Use an absolute DSN (e.g. `/data/ragflow-x/ragflow-x.db`) and make the directory writable for the account running the server. |
+
+The other two are `auth_failed` (wrong user/password — verify with one `psql`
+call using the same values) and `unreachable` (address/port — check
+`listen_addresses` in `pg_hba.conf`, the firewall, and container port mapping).
+SQLite is the fastest way to try the product: a writable DSN plus a reachable
+RAGFlow engine is enough, no PostgreSQL required. Either way you still need a
+reachable **RAGFlow engine** (`base_url` + `api_key`); a failed engine probe is
+reported separately with its own message.
+
 ## Sign in
 
 1. Open the web UI and sign in with your username and password.
