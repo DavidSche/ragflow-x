@@ -1,9 +1,9 @@
 import { DataTable, List, SearchInput, SelectInput, TextInput, BulkActionsToolbar } from "@/components/admin";
 import { AutocompleteInput, ReferenceInput } from "@/components/admin";
-import { useCreatePath, useNavigate, useRecordContext, useTranslate } from "ra-core";
+import { useCreatePath, useGetList, useNavigate, useRecordContext, useTranslate } from "ra-core";
 import { Eye } from "lucide-react";
 import { IconButtonWithTooltip } from "@/components/admin/icon-button-with-tooltip";
-import type { ChatLike } from "./chat-types";
+import { datasetIdLabel, type ChatLike, type DatasetLike } from "./chat-types";
 import { ChatActions, EditChatButton } from "./EditChatDialog";
 import { BulkActions } from "./ChatBulkActions";
 import { AssistantRouteGovernanceButton } from "../conversation-center/AssistantRouteGovernance";
@@ -51,6 +51,9 @@ export const ChatList = () => {
     { id: "active", name: t("chats.status_active") },
     { id: "disabled", name: t("chats.status_disabled") },
   ];
+  // Resolve the engine ids the chat record stores into dataset names once per render.
+  const { data: datasets } = useGetList("datasets", { pagination: { page: 1, perPage: 200 } });
+  const datasetRows = datasets as DatasetLike[] | undefined;
   const chatFilters = [
     <SearchInput source="name" key="name" alwaysOn />,
     <SelectInput source="status" label={t("chats.status_active")} choices={statusChoices} key="status" />,
@@ -86,7 +89,7 @@ export const ChatList = () => {
           source="dataset_ids"
           label={t("chats.dataset")}
           className="hidden md:table-cell"
-          render={(r: ChatLike) => r.dataset_ids || "-"}
+          render={(r: ChatLike) => datasetIdLabel(r.dataset_ids, datasetRows)}
         />
         <DataTable.Col
           source="message_count"
