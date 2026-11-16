@@ -107,12 +107,19 @@ export function StepApplication({ wizard }: StepApplicationProps) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="scenario-project">{t("scenarioTemplates.wizard.project")}</Label>
-          <Input
+          <select
             id="scenario-project"
+            className="w-full rounded border bg-background px-2 py-1.5 text-sm"
             value={wizard.selection.projectId}
             onChange={(event) => wizard.setProjectId(event.target.value)}
-            placeholder={t("scenarioTemplates.wizard.projectPlaceholder")}
-          />
+          >
+            <option value="">{t("scenarioTemplates.wizard.projectPlaceholder")}</option>
+            {wizard.projects.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
