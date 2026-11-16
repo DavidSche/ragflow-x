@@ -161,3 +161,72 @@ func TestApplyRejectsUnencryptedAdminPassword(t *testing.T) {
 		t.Fatalf("apply must reject a non-encrypted password, got %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// TestBootstrapRouterAdminStepExplainsItself covers the wizard state a launcher
+// trial lands in — database reachable, engine not configured yet, so only the
+// bootstrap router exists. The SPA's admin-only step posts /system/setup/admin;
+// that endpoint lives on the full router, and a bare 404 there was a dead end
+// (the browser logged "Failed to load resource: 404" and the form did nothing).
+func TestBootstrapRouterAdminStepExplainsItself(t *testing.T) {
+	_, h := wizardFixture(t)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/setup/status", nil)
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: code = %d, body %s", rec.Code, rec.Body.String())
+	}
+	var st struct {
+		Data Status `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatalf("status body: %v", err)
+	}
+	if st.Data.Mode != SetupModeWizard {
+		t.Fatalf("status mode = %q, want %q: the wizard must know the admin-only step is unavailable", st.Data.Mode, SetupModeWizard)
+	}
+
+	rec = postJSON(t, h, "/api/v1/system/setup/admin", map[string]string{"username": "admin", "password": "RgxAdmin#2026"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("POST /admin: code = %d, want %d (body %s)", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	var body struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("admin body: %v", err)
+	}
+	if body.Code != 40009 {
+		t.Fatalf("POST /admin: code = %d, want 40009", body.Code)
+	}
+	if !strings.Contains(body.Message, "setup/apply") {
+		t.Fatalf("POST /admin: message must name the endpoint that does work, got %q", body.Message)
+	}
+}
+
+// TestBootstrapRouterServesContainerProbes keeps the image's HEALTHCHECK honest.
+// It curls /api/v1/readyz; those probe endpoints only existed on the full router,
+// so a freshly started container in wizard mode was reported `unhealthy` for its
+// whole first run even though it was serving the wizard correctly.
+func TestBootstrapRouterServesContainerProbes(t *testing.T) {
+	_, h := wizardFixture(t)
+
+	for path, wantKey := range map[string]string{
+		"/api/v1/healthz": "status",
+		"/api/v1/readyz":  "setup_required",
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: code = %d, want 200 (body %s)", path, rec.Code, rec.Body.String())
+		}
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("GET %s: body: %v", path, err)
+		}
+		if _, okKey := body[wantKey]; !okKey {
+			t.Fatalf("GET %s: body %v missing %q", path, body, wantKey)
+		}
+	}
+}

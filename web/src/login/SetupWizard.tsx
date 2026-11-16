@@ -8,6 +8,7 @@ import { api, unwrap, ApiError } from "../lib/api";
 import { getSetupErrorMessage } from "../lib/errors";
 import { optionalWarning } from "../lib/optional-error";
 import { sealRSAOAEPSHA256 as seal } from "../lib/seal";
+import { wantsAdminOnly } from "./wizardMode";
 
 const DEFAULT_PORT = 5432;
 
@@ -19,6 +20,8 @@ interface Status {
 	configured: boolean;
 	initialized: boolean;
 	db_up: boolean;
+	/** "engine": full router is serving (admin-only step works); "wizard": bootstrap router. */
+	mode?: "engine" | "wizard";
 }
 
 interface PreflightResult {
@@ -84,6 +87,7 @@ export const SetupWizard = ({ onInitialized }: SetupWizardProps) => {
 	const [publicKey, setPublicKey] = useState("");
 	const [configured, setConfigured] = useState(false);
 	const [dbUp, setDbUp] = useState(false);
+	const [mode, setMode] = useState<"engine" | "wizard" | "">("");
 	const [busy, setBusy] = useState(false);
 	const [redisEnabled, setRedisEnabled] = useState(false);
 	const [driver, setDriver] = useState("postgres");
@@ -99,6 +103,7 @@ export const SetupWizard = ({ onInitialized }: SetupWizardProps) => {
 			.then((s) => {
 				setConfigured(s.configured);
 				setDbUp(s.db_up);
+				setMode(s.mode ?? "");
 			})
 			.catch(() => setConfigured(false));
   }, []);
@@ -207,6 +212,11 @@ export const SetupWizard = ({ onInitialized }: SetupWizardProps) => {
   };
 
   const ready = publicKey !== "" && !busy;
+  // The admin-only step posts to /system/setup/admin, which only the full
+  // application router mounts. `mode` says who is answering; the old
+  // "configured && dbUp" guess was true in bootstrap mode too, so a launcher
+  // trial (SQLite up, engine not configured yet) submitted a form that 404ed.
+  const adminOnly = wantsAdminOnly({mode, configured, db_up: dbUp});
 
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
@@ -219,7 +229,7 @@ export const SetupWizard = ({ onInitialized }: SetupWizardProps) => {
           <p className="text-sm text-muted-foreground">首次启动初始化</p>
         </div>
 
-        {configured && dbUp ? (
+        {adminOnly ? (
           <div className="rounded-lg border p-4 space-y-3">
             <h2 className="text-sm font-semibold">创建首个管理员</h2>
             <Form className="space-y-3" onSubmit={handleAdminOnly}>

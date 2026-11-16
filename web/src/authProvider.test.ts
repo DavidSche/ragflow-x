@@ -90,7 +90,7 @@ describe("authProvider approval feature gate", () => {
     await expect(authProvider.canAccess({ resource: "approvals", action: "list" })).resolves.toBe(true);
     // Two identity reads (initial + after TTL), and the first-run probe is
     // memoized: it must not ride along on every cache miss.
-    const callsTo = (url: string) => vi.mocked(api.get).mock.calls.filter(([u]) => u === url).length;
+    const callsTo = (url: string) => vi.mocked(api.get).mock.calls.filter((call: unknown[]) => call[0] === url).length;
     expect(callsTo("/auth/me")).toBe(2);
     expect(callsTo("/system/setup/status")).toBe(1);
     vi.useRealTimers();
@@ -122,7 +122,7 @@ describe("authProvider first-run setup mode", () => {
       role: "",
       permissions: [],
     });
-    expect(vi.mocked(api.get).mock.calls.every(([u]) => u === "/system/setup/status")).toBe(true);
+    expect(vi.mocked(api.get).mock.calls.every((call: unknown[]) => call[0] === "/system/setup/status")).toBe(true);
   });
 
   it("checks the real session once setup is complete", async () => {
@@ -135,7 +135,7 @@ describe("authProvider first-run setup mode", () => {
     const { authProvider } = await import("./authProvider") as any;
 
     await expect(authProvider.checkAuth({})).resolves.toBeUndefined();
-    expect(vi.mocked(api.get).mock.calls.some(([u]) => u === "/auth/me")).toBe(true);
+    expect(vi.mocked(api.get).mock.calls.some((call: unknown[]) => call[0] === "/auth/me")).toBe(true);
   });
 });
 

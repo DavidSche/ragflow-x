@@ -10,6 +10,15 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 )
 
+// Setup modes reported to the first-run wizard. They are not cosmetic: the
+// admin-only step posts to /system/setup/admin, which only exists on the full
+// application router. Offering that form while the bootstrap router serves the
+// request used to end in a bare 404.
+const (
+	ModeWizard = "wizard"
+	ModeEngine = "engine"
+)
+
 // SetupStatus reports whether the platform has been initialized and whether
 // its external dependencies are reachable, so a first-run wizard can guide
 // the operator.
@@ -20,6 +29,11 @@ type SetupStatus struct {
 	RAGFlowName  string `json:"ragflow_provider"`
 	Configured   bool   `json:"configured"`
 	DBUp         bool   `json:"db_up"`
+	// Mode tells the wizard which half of itself is valid right now: "engine"
+	// means the full application router is serving this request (so the
+	// admin-only step has POST /system/setup/admin), "wizard" means only the
+	// bootstrap router is up and the operator must submit the full form.
+	Mode string `json:"mode"`
 }
 
 // SetupStatus reports the first-run state of the control plane.
@@ -39,6 +53,7 @@ func (s *Service) SetupStatus(ctx context.Context) (*SetupStatus, error) {
 		RAGFlowUp:    up,
 		RAGFlowName:  s.RAGFlow.Name(),
 		DBUp:         true,
+		Mode:         ModeEngine,
 	}, nil
 }
 
