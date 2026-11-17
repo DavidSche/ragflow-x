@@ -300,6 +300,44 @@ type Retention struct {
 	// IntervalSec is how often the retention janitor runs. Non-positive values
 	// fall back to a 24h cadence.
 	IntervalSec int `yaml:"interval_sec"`
+
+	// Report-class TTLs (doc/288 §7.6 / D3). They are separated from the four
+	// classes above because a compliance report and the evidence it cites must
+	// outlive the operational ledgers: the report class has its own clock and
+	// its own subject (rgx_report / evidence snapshot / downloadable artifact /
+	// job event stream).
+	//
+	// The effective TTL of a row is frozen into that row's expires_at when the
+	// row is created, so editing these values only affects rows created after
+	// the change: the janitor never recomputes a TTL, never resurrects an
+	// expired row, and a soft delete (cleanup_hold_until) never extends it.
+	ReportDays int `yaml:"report_days"`
+	// ReportEvidenceDays is the retention of the frozen evidence snapshot. The
+	// value actually used is max(report_days, report_evidence_days): evidence
+	// must never disappear before the report that cites it.
+	ReportEvidenceDays int `yaml:"report_evidence_days"`
+	// ReportArtifactDays is the retention of downloadable artifacts (files are
+	// removed first; the export row and its download audit stay on the report
+	// clock).
+	ReportArtifactDays int `yaml:"report_artifact_days"`
+	// ReportEventDays is the retention of the report job event stream
+	// (rgx_report_job_event), the cheapest class to lose.
+	ReportEventDays int `yaml:"report_event_days"`
+	// ReportCleanupHoldDays is the recovery grace period after a soft delete.
+	// It is not an extension of the TTL: the row's expires_at is untouched and
+	// only cleanup_hold_until is written.
+	ReportCleanupHoldDays int `yaml:"report_cleanup_hold_days"`
+}
+
+// EffectiveReportEvidenceTTL is the evidence-snapshot TTL the janitor uses.
+// Evidence is cited by the report, so it may never expire earlier than the
+// report itself (doc/288 §7.6); a shorter report_evidence_days is therefore
+// widened to report_days instead of being silently honoured.
+func (r Retention) EffectiveReportEvidenceTTL() int {
+	if r.ReportEvidenceDays > r.ReportDays {
+		return r.ReportEvidenceDays
+	}
+	return r.ReportDays
 }
 
 // Connector tunes the data-source connector runtime (doc/225 §6.2). Values are
@@ -575,7 +613,10 @@ func defaults() *Config {
 			IntervalSec: 3600,
 			ExportDir:   "",
 		},
-		Retention:    Retention{Enabled: false, AuditDays: 365, UsageDays: 180, FeedbackDays: 180, JobDays: 90, IntervalSec: 86400},
+		Retention: Retention{
+			Enabled: false, AuditDays: 365, UsageDays: 180, FeedbackDays: 180, JobDays: 90, IntervalSec: 86400,
+			ReportDays: 90, ReportEvidenceDays: 90, ReportArtifactDays: 30, ReportEventDays: 7, ReportCleanupHoldDays: 7,
+		},
 		Connector:    Connector{MaxConcurrent: 3, RunTimeoutSec: 1800, RetentionDays: 90, PreviewLimit: 20, MaxObjectMB: 25},
 		Approval:     Approval{DefaultExpireHours: 72, ExecutionMaxRetries: 3, ExpireScanIntervalSec: 3600, RetentionDays: 365, PolicyCacheTTLSec: 30},
 		Runtime:      Runtime{ReportToken: "", HeartbeatTimeoutSec: 60},
@@ -749,6 +790,11 @@ func applyEnv(cfg *Config) {
 	setInt(&cfg.Retention.FeedbackDays, "RGX_RETENTION_FEEDBACK_DAYS")
 	setInt(&cfg.Retention.JobDays, "RGX_RETENTION_JOB_DAYS")
 	setInt(&cfg.Retention.IntervalSec, "RGX_RETENTION_INTERVAL_SEC")
+	setInt(&cfg.Retention.ReportDays, "RGX_RETENTION_REPORT_DAYS")
+	setInt(&cfg.Retention.ReportEvidenceDays, "RGX_RETENTION_REPORT_EVIDENCE_DAYS")
+	setInt(&cfg.Retention.ReportArtifactDays, "RGX_RETENTION_REPORT_ARTIFACT_DAYS")
+	setInt(&cfg.Retention.ReportEventDays, "RGX_RETENTION_REPORT_EVENT_DAYS")
+	setInt(&cfg.Retention.ReportCleanupHoldDays, "RGX_RETENTION_REPORT_CLEANUP_HOLD_DAYS")
 	setInt(&cfg.Connector.MaxConcurrent, "RGX_CONNECTOR_MAX_CONCURRENT")
 	setInt(&cfg.Connector.RunTimeoutSec, "RGX_CONNECTOR_RUN_TIMEOUT_SEC")
 	setInt(&cfg.Connector.RetentionDays, "RGX_CONNECTOR_RETENTION_DAYS")

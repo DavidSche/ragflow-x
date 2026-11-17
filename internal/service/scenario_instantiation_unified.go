@@ -87,11 +87,12 @@ func (s *Service) InstantiateScenarioTemplate(
 	switch appType {
 	case instantiationAppTypeChat, instantiationAppTypeSearch, instantiationAppTypeAgent:
 	default:
-		return nil, httperr.BadRequest(40085, "app_type must be chat, search or agent")
+		return nil, httperr.BadRequest(httperr.CodeInvalidAppType, "app_type must be chat, search or agent")
 	}
 	if strings.TrimSpace(input.ProjectID) == "" {
 		// project_id is NOT NULL on rgx_template_instance (doc/276 §7.5 / S9).
-		return nil, httperr.BadRequest(40085, "project_id is required for instantiation")
+		return nil, httperr.BadRequest(httperr.CodeInstantiationProjectNeeded,
+			"project_id is required for instantiation")
 	}
 	if err := s.validateProject(ctx, tenantID, input.ProjectID); err != nil {
 		return nil, err
@@ -214,7 +215,7 @@ func (s *Service) InstantiateScenarioTemplate(
 		// operator's words: `agent_dsl` is our JSON field name, not something a
 		// tenant admin who picked "智能体" in the wizard can act on (doc/286 §3).
 		s.failInstantiation(ctx, tenantID, instance.ID)
-		return nil, httperr.BadRequest(40085,
+		return nil, httperr.BadRequest(httperr.CodeTemplateAgentUnavailable,
 			"this template cannot be instantiated as an agent: it ships no agent canvas, please choose the chat or search form")
 	}
 	if err := validateCanvasDSLValue(dsl); err != nil {
@@ -259,7 +260,8 @@ func (s *Service) renderScenarioForInstantiation(
 	// checked app_types, so a mismatch here means the template row and its
 	// payload disagree — refuse rather than silently adapting.
 	if payload.Pack.Application.AppType != appType {
-		return nil, nil, httperr.BadRequest(40085, "scenario pack declares app type "+payload.Pack.Application.AppType+" but "+appType+" was requested")
+		return nil, nil, httperr.BadRequest(httperr.CodeScenarioPackMismatch,
+			"scenario pack declares app type "+payload.Pack.Application.AppType+" but "+appType+" was requested")
 	}
 	rendered, err := RenderScenarioPack(payload.Pack)
 	if err != nil {
@@ -289,10 +291,12 @@ func (s *Service) publishedTemplateForAppType(
 		return nil, nil, ScenarioTemplatePayload{}, httperr.NotFound("scenario template not found")
 	}
 	if asset.Status != model.AssetStatusPublished {
-		return nil, nil, ScenarioTemplatePayload{}, httperr.BadRequest(40085, "only published scenario templates can be instantiated")
+		return nil, nil, ScenarioTemplatePayload{}, httperr.BadRequest(httperr.CodeTemplateNotPublished,
+			"only published scenario templates can be instantiated")
 	}
 	if !containsString(strings.Split(asset.AppTypes, ","), appType) {
-		return nil, nil, ScenarioTemplatePayload{}, httperr.BadRequest(40085, "scenario template does not support "+appType+" applications")
+		return nil, nil, ScenarioTemplatePayload{}, httperr.BadRequest(httperr.CodeTemplateAppTypeUnsupported,
+			"scenario template does not support "+appType+" applications")
 	}
 	payload, err := parseTemplatePayload(selected.PayloadJSON)
 	if err != nil {
@@ -452,7 +456,7 @@ func (s *Service) resolveInstantiationDatasets(ctx context.Context, tenantID str
 			return nil, httperr.New(502, 50200, "dataset link lookup failed")
 		}
 		if link == nil {
-			return nil, httperr.BadRequest(40085, "dataset not found in workspace: "+datasetID)
+			return nil, httperr.BadRequest(httperr.CodeDatasetOutsideWorkspace, "dataset not found in workspace: "+datasetID)
 		}
 		out = append(out, datasetID)
 	}

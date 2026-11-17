@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRandomId } from "@/lib/random-id";
 import type { AttachmentDraft } from "../workbench/workbench-types";
-import type { ConversationRouteDecision } from "./types";
+import type { ConversationKind, ConversationRouteDecision } from "./types";
 
 export type PendingRequestState =
   | "routing"
@@ -56,7 +57,7 @@ export interface PendingConversationRequest {
   candidateId?: string;
   candidateKind?: "chat" | "agent";
   targetId?: string;
-  targetKind?: "chat" | "search" | "agent";
+  targetKind?: ConversationKind;
   contextId?: string;
   routeSelectionId?: string;
   bootstrapResourceId?: string;
@@ -90,9 +91,9 @@ export interface PendingRuntimeOperation extends PendingOperation {
 }
 
 export function createCspId(prefix?: string): string {
-  const cryptoObject = typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
-  const id = cryptoObject?.randomUUID?.();
-  if (!id) throw new Error("CSPRNG unavailable");
+  // Never throws: an insecure context (plain http) has no randomUUID, and a
+  // page that cannot mint a request id must still be able to render.
+  const id = createRandomId();
   return prefix ? `${prefix}-${id}` : id;
 }
 

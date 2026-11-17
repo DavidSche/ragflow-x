@@ -12,7 +12,7 @@ import (
 
 // TestUpstreamWriteFailureSurfacesEngineReason pins the drill lesson: an engine
 // that answers HTTP 200 + non-zero code has deliberately refused the request, so
-// the caller gets 400/40085 with the reason instead of a 502 that hides it.
+// the caller gets 400/41140 with the reason instead of a 502 that hides it.
 func TestUpstreamWriteFailureSurfacesEngineReason(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -26,14 +26,14 @@ func TestUpstreamWriteFailureSurfacesEngineReason(t *testing.T) {
 			// it, but the operator reads the instruction first (doc/286 §4).
 			name: "dataset model misconfiguration",
 			err:  &ragflow.Error{HTTPStatus: 200, Code: 500, Message: `model configuration unavailable: model "0" has no saved model row`},
-			code: 40085,
+			code: httperr.CodeUpstreamRejected,
 			want: "ragflow rejected dataset creation: the workspace has no usable chat model for this action: " +
 				"set the default chat model, then retry (engine: model configuration unavailable",
 		},
 		{
 			name: "chat over unparsed dataset",
 			err:  &ragflow.Error{HTTPStatus: 200, Code: 102, Message: "the dataset db0 doesn't own parsed file"},
-			code: 40085,
+			code: httperr.CodeUpstreamRejected,
 			want: "ragflow rejected chat creation: the selected knowledge base has no parsed content yet: " +
 				"upload documents, wait for parsing to finish, then instantiate again (engine: the dataset db0 doesn't own parsed file)",
 		},

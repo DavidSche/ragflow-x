@@ -164,6 +164,24 @@ const (
 // AuthorizationProjection policy input (doc/123 §7).
 const RetrievalPushdownPolicyVersion = "retrieval-pushdown.v1"
 
+// Export subject types (doc/288 §7.2). One snapshot/job/artifact table, two
+// subjects: answers keep `answer`; reports write `report` plus a revision id.
+const (
+	ExportSubjectAnswer = "answer"
+	ExportSubjectReport = "report"
+)
+
+// Artifact statuses, closed set shared with doc/288 §7.7. P0-A implements the
+// first three; expired/deleted are written by the janitor and the soft delete.
+const (
+	ExportArtifactPending = "pending"
+	ExportArtifactReady   = "ready"
+	ExportArtifactFailed  = "failed"
+	ExportArtifactAborted = "aborted"
+	ExportArtifactExpired = "expired"
+	ExportArtifactDeleted = "deleted"
+)
+
 type ExportTemplateVersion struct {
 	ID                 string    `gorm:"column:id;primaryKey;size:32" json:"id"`
 	TenantID           string    `gorm:"column:tenant_id;size:32;not null;uniqueIndex:uk_export_template_version" json:"tenant_id"`
@@ -180,9 +198,13 @@ type ExportTemplateVersion struct {
 func (ExportTemplateVersion) TableName() string { return "rgx_export_template_version" }
 
 type ExportSnapshot struct {
-	ID                string    `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID          string    `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	ProjectID         string    `gorm:"column:project_id;size:32;index" json:"project_id"`
+	ID        string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID  string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	ProjectID string `gorm:"column:project_id;size:32;index" json:"project_id"`
+	// SubjectType distinguishes an answer export from a report export without
+	// minting a second snapshot table (doc/288 §7.2 "扩展，不新建").
+	SubjectType       string    `gorm:"column:subject_type;size:16;not null;default:answer;index" json:"subject_type"`
+	ReportRevisionID  string    `gorm:"column:report_revision_id;size:32;index" json:"report_revision_id"`
 	AnswerSnapshotIDs string    `gorm:"column:answer_snapshot_ids;type:text;not null" json:"answer_snapshot_ids"`
 	TemplateID        string    `gorm:"column:template_id;size:32;not null" json:"template_id"`
 	TemplateVersion   int64     `gorm:"column:template_version;not null" json:"template_version"`
@@ -201,6 +223,8 @@ type ExportJob struct {
 	TenantID          string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	ProjectID         string     `gorm:"column:project_id;size:32;index" json:"project_id"`
 	ExportSnapshotID  string     `gorm:"column:export_snapshot_id;size:32;not null;index" json:"export_snapshot_id"`
+	SubjectType       string     `gorm:"column:subject_type;size:16;not null;default:answer;index" json:"subject_type"`
+	ReportRevisionID  string     `gorm:"column:report_revision_id;size:32;index" json:"report_revision_id"`
 	AnswerSnapshotID  string     `gorm:"column:answer_snapshot_id;size:32;not null;index" json:"answer_snapshot_id"`
 	RequestedBy       string     `gorm:"column:requested_by;size:32;not null;index" json:"requested_by"`
 	Format            string     `gorm:"column:format;size:16;not null;index" json:"format"`
@@ -219,11 +243,17 @@ type ExportJob struct {
 func (ExportJob) TableName() string { return "rgx_export_job" }
 
 type ExportArtifact struct {
-	ID              string    `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID        string    `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	ProjectID       string    `gorm:"column:project_id;size:32;index" json:"project_id"`
-	ExportJobID     string    `gorm:"column:export_job_id;size:32;not null;uniqueIndex" json:"export_job_id"`
-	Format          string    `gorm:"column:format;size:16;not null" json:"format"`
+	ID               string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID         string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	ProjectID        string `gorm:"column:project_id;size:32;index" json:"project_id"`
+	ExportJobID      string `gorm:"column:export_job_id;size:32;not null;uniqueIndex" json:"export_job_id"`
+	SubjectType      string `gorm:"column:subject_type;size:16;not null;default:answer;index:idx_export_artifact_report,priority:1" json:"subject_type"`
+	ReportRevisionID string `gorm:"column:report_revision_id;size:32;index:idx_export_artifact_report,priority:2" json:"report_revision_id"`
+	// ArtifactVersion is allocated inside the revision row lock; re-exporting the
+	// same revision always takes MAX+1 and never revives an expired row (292 D3).
+	ArtifactVersion int64     `gorm:"column:artifact_version;not null;default:1" json:"artifact_version"`
+	ArtifactStatus  string    `gorm:"column:artifact_status;size:16;not null;default:ready" json:"artifact_status"`
+	Format          string    `gorm:"column:format;size:16;not null;index:idx_export_artifact_report,priority:3" json:"format"`
 	RendererVersion string    `gorm:"column:renderer_version;size:32;not null" json:"renderer_version"`
 	FileRef         string    `gorm:"column:file_ref;size:255;not null" json:"file_ref"`
 	Filename        string    `gorm:"column:filename;size:255;not null" json:"filename"`
@@ -232,17 +262,27 @@ type ExportArtifact struct {
 	SHA256          string    `gorm:"column:sha256;size:64;not null" json:"sha256"`
 	CreatedAt       time.Time `gorm:"column:created_at;not null;index" json:"created_at"`
 	ExpiresAt       time.Time `gorm:"column:expires_at;not null;index" json:"expires_at"`
+	// Soft-delete trail for report artifacts; answering exports leave them empty.
+	CreatedBy    string     `gorm:"column:created_by;size:32" json:"created_by"`
+	DeletedBy    string     `gorm:"column:deleted_by;size:32" json:"deleted_by"`
+	DeleteReason string     `gorm:"column:delete_reason;size:64" json:"delete_reason"`
+	DeletedAt    *time.Time `gorm:"column:deleted_at" json:"deleted_at"`
 }
 
 func (ExportArtifact) TableName() string { return "rgx_export_artifact" }
 
 type ExportDownloadAudit struct {
-	ID               string    `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID         string    `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	ProjectID        string    `gorm:"column:project_id;size:32;index" json:"project_id"`
-	ExportArtifactID string    `gorm:"column:export_artifact_id;size:32;not null;index" json:"export_artifact_id"`
-	ExportJobID      string    `gorm:"column:export_job_id;size:32;not null;index" json:"export_job_id"`
-	AnswerSnapshotID string    `gorm:"column:answer_snapshot_id;size:32;not null;index" json:"answer_snapshot_id"`
+	ID               string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID         string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	ProjectID        string `gorm:"column:project_id;size:32;index" json:"project_id"`
+	ExportArtifactID string `gorm:"column:export_artifact_id;size:32;not null;index" json:"export_artifact_id"`
+	ExportJobID      string `gorm:"column:export_job_id;size:32;not null;index" json:"export_job_id"`
+	AnswerSnapshotID string `gorm:"column:answer_snapshot_id;size:32;not null;index" json:"answer_snapshot_id"`
+	// ReportRevisionID is the frozen revision a report download traces back to.
+	// Answer downloads leave it empty; report downloads leave `answer_snapshot_id`
+	// empty and are recovered through the job's report_revision_id — this column
+	// exists so the audit row names the revision without a join (doc/288 §12, K40).
+	ReportRevisionID string    `gorm:"column:report_revision_id;size:32;index" json:"report_revision_id"`
 	DownloadedBy     string    `gorm:"column:downloaded_by;size:32;not null;index" json:"downloaded_by"`
 	DownloadedAt     time.Time `gorm:"column:downloaded_at;not null;index" json:"downloaded_at"`
 	// DownloadCount is always 1: each download appends one audit row (event

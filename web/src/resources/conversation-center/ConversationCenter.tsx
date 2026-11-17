@@ -25,6 +25,7 @@ import { ConversationCenterInput } from "./ConversationCenterInput";
 import { RouteDecisionCard } from "./RouteDecisionCard";
 import { AssistantEmptyState } from "./AssistantEmptyState";
 import { AssistantHeader } from "./AssistantHeader";
+import { ReportWorkspace } from "./report/ReportWorkspace";
 import { CrossAppSessionIndex } from "../workbench/CrossAppSessionIndex";
 import type {
   AttachmentDraft,
@@ -36,7 +37,9 @@ import { feedbackRequestId } from "../workbench/workbench-types";
 import {
   createAgentAdapter,
   createChatAdapter,
+  createReportAdapter,
   createSearchAdapter,
+  type ReportAdapter,
 } from "./adapters";
 import {
   entryTimestamp,
@@ -148,6 +151,10 @@ export function ConversationCenter({
     resource: "agents",
     action: "session:create",
   });
+  const reportAccessResult = useCanAccess({
+    resource: "report",
+    action: "execute",
+  });
   const contextSourceAccessResult = useCanAccess({
     resource: "context-decision",
     action: "read",
@@ -156,6 +163,7 @@ export function ConversationCenter({
   const chatRead = chatReadResult?.canAccess === true;
   const searchAccess = searchAccessResult?.canAccess === true;
   const agentAccess = agentAccessResult?.canAccess === true;
+  const reportAccess = reportAccessResult?.canAccess === true;
   // The three kind checks resolve asynchronously and report `canAccess:
   // undefined` while pending. Reading that as "denied" makes this screen wipe a
   // deep link's targetId (it rebuilds the query with `kind` only) before the
@@ -164,7 +172,8 @@ export function ConversationCenter({
   const kindAccessPending =
     chatAccessResult?.isPending === true ||
     searchAccessResult?.isPending === true ||
-    agentAccessResult?.isPending === true;
+    agentAccessResult?.isPending === true ||
+    reportAccessResult?.isPending === true;
   const agentSessionCreate = agentSessionCreateResult?.canAccess === true;
   const contextSourceAccess = contextSourceAccessResult?.canAccess === true;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -177,16 +186,22 @@ export function ConversationCenter({
       : "chat",
   );
 
-  const adapters = useMemo<Record<ConversationKind, ConversationAdapter>>(
+  const adapters = useMemo<
+    Record<ConversationKind, ConversationAdapter> & { report: ReportAdapter }
+  >(
     () => ({
       chat: createChatAdapter(),
       search: createSearchAdapter(),
       agent: createAgentAdapter(),
+      report: createReportAdapter(),
     }),
     [],
   );
 
   const scopeKey = `${String(identity?.tenant_id ?? "")}:${String(identity?.id ?? "")}`;
+  const [reportWorkspaceOpen, setReportWorkspaceOpen] = useState(false);
+  const openReportWorkspace = useCallback(() => setReportWorkspaceOpen(true), []);
+  const closeReportWorkspace = useCallback(() => setReportWorkspaceOpen(false), []);
   const [target, setTarget] = useState<ConversationTargetRef | null>(null);
   const [context, setContext] = useState<ConversationContext | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -438,6 +453,13 @@ export function ConversationCenter({
   }, [attachments, draftKey, draftStore, identity, input, target]);
 
   const selectKind = (nextKind: ConversationKind) => {
+    if (nextKind === "report") {
+      // A report run is a workspace, not another inbox tab: the `/report`
+      // command and any direct call open the full report editor instead of
+      // dropping a fourth tab into the center sidebar.
+      openReportWorkspace();
+      return;
+    }
     if (nextKind === kind) return;
     discardActiveRun();
     syncUrl(nextKind, null, null);
@@ -764,6 +786,7 @@ export function ConversationCenter({
       chat: chatAccess === true,
       search: searchAccess === true,
       agent: agentAccess === true,
+      report: reportAccess === true,
     };
     const requestedKind =
       urlKind === "chat" || urlKind === "search" || urlKind === "agent"
@@ -980,6 +1003,10 @@ export function ConversationCenter({
     }
     if (commandId === "new") {
       resetContext();
+      return;
+    }
+    if (commandId === "report") {
+      openReportWorkspace();
       return;
     }
     selectKind(commandId as ConversationKind);
@@ -1787,6 +1814,18 @@ export function ConversationCenter({
     return (
       <div className="p-10 text-muted-foreground">
         {t("conversationCenter.no_access")}
+      </div>
+    );
+  }
+
+  if (reportWorkspaceOpen) {
+    return (
+      <div className="h-full min-h-0 overflow-hidden p-4">
+        <ReportWorkspace
+          adapter={adapters.report}
+          identity={identity}
+          onClose={closeReportWorkspace}
+        />
       </div>
     );
   }

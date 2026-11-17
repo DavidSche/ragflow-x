@@ -87,6 +87,29 @@ var settingKeyPolicies = map[string]SettingSourcePolicy{
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "medium",
 	},
+	// Report-class TTLs (doc/288 §7.6 / D3 v2.6). report_days and
+	// report_evidence_days are high risk because shortening them deletes
+	// compliance evidence; the artifact/event classes are cheaper to lose.
+	"retention.report_days": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "high", Impact: "shortens the retention of compliance reports", EffectiveMode: "hot_reload",
+	},
+	"retention.report_evidence_days": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "high", Impact: "shortens the retention of frozen evidence snapshots (effective value is max with report_days)", EffectiveMode: "hot_reload",
+	},
+	"retention.report_artifact_days": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "shortens the retention of downloadable report artifacts", EffectiveMode: "hot_reload",
+	},
+	"retention.report_event_days": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "low", Impact: "shortens the retention of the report job event stream", EffectiveMode: "hot_reload",
+	},
+	"retention.report_cleanup_hold_days": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "changes the recovery window after a soft delete (does not extend TTL)", EffectiveMode: "hot_reload",
+	},
 	"routing.default_mode": {
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "high", Impact: "changes assistant routing", EffectiveMode: "hot_reload",
@@ -239,6 +262,11 @@ var settingKeyValidators = map[string]SettingKeyMetadata{
 	"gateway.rate_limit_per_minute":            {Group: "gateway", Field: "rate_limit_per_minute", Type: "number", Min: 1, Max: 1000000},
 	"retention.audit_days":                     {Group: "retention", Field: "audit_days", Type: "number", Min: 1, Max: 3650},
 	"retention.usage_days":                     {Group: "retention", Field: "usage_days", Type: "number", Min: 1, Max: 3650},
+	"retention.report_days":                    {Group: "retention", Field: "report_days", Type: "number", Min: 1, Max: 3650},
+	"retention.report_evidence_days":           {Group: "retention", Field: "report_evidence_days", Type: "number", Min: 1, Max: 3650},
+	"retention.report_artifact_days":           {Group: "retention", Field: "report_artifact_days", Type: "number", Min: 1, Max: 3650},
+	"retention.report_event_days":              {Group: "retention", Field: "report_event_days", Type: "number", Min: 1, Max: 3650},
+	"retention.report_cleanup_hold_days":       {Group: "retention", Field: "report_cleanup_hold_days", Type: "number", Min: 0, Max: 365},
 	"routing.default_mode":                     {Group: "routing", Field: "default_mode", Type: "enum", Allowed: []string{"disabled", "recommend_only", "auto_low_risk"}},
 	"security.allowed_origins":                 {Group: "security", Field: "allowed_origins", Type: "origin_list"},
 	"security.allowed_methods":                 {Group: "security", Field: "allowed_methods", Type: "method_list"},
@@ -286,8 +314,12 @@ func defaultSystemSettingsSnapshot() map[string]interface{} {
 				"max_conns":                 20,
 				"rate_limit_per_minute":     600,
 			},
-			"retention": map[string]interface{}{"audit_days": 365, "usage_days": 180},
-			"routing":   map[string]interface{}{"default_mode": "recommend_only"},
+			"retention": map[string]interface{}{
+				"audit_days": 365, "usage_days": 180,
+				"report_days": 90, "report_evidence_days": 90, "report_artifact_days": 30,
+				"report_event_days": 7, "report_cleanup_hold_days": 7,
+			},
+			"routing": map[string]interface{}{"default_mode": "recommend_only"},
 			"security": map[string]interface{}{
 				"allowed_origins":                 []interface{}{},
 				"allowed_methods":                 []interface{}{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
@@ -358,6 +390,9 @@ func systemSettingsSnapshotFromConfig(cfg config.Config) map[string]interface{} 
 	}
 	groups["retention"] = map[string]interface{}{
 		"audit_days": cfg.Retention.AuditDays, "usage_days": cfg.Retention.UsageDays,
+		"report_days": cfg.Retention.ReportDays, "report_evidence_days": cfg.Retention.ReportEvidenceDays,
+		"report_artifact_days": cfg.Retention.ReportArtifactDays, "report_event_days": cfg.Retention.ReportEventDays,
+		"report_cleanup_hold_days": cfg.Retention.ReportCleanupHoldDays,
 	}
 	groups["routing"] = map[string]interface{}{
 		"default_mode": firstNonEmpty(cfg.ConversationRouting.Mode, "recommend_only"),
@@ -618,6 +653,11 @@ func (s *Service) ApplySystemSettingsSnapshot(snapshot map[string]interface{}) e
 	retention := s.currentRetentionPolicy()
 	retention.AuditDays = settingNumber(snapshot, "retention", "audit_days", retention.AuditDays)
 	retention.UsageDays = settingNumber(snapshot, "retention", "usage_days", retention.UsageDays)
+	retention.ReportDays = settingNumber(snapshot, "retention", "report_days", retention.ReportDays)
+	retention.ReportEvidenceDays = settingNumber(snapshot, "retention", "report_evidence_days", retention.ReportEvidenceDays)
+	retention.ReportArtifactDays = settingNumber(snapshot, "retention", "report_artifact_days", retention.ReportArtifactDays)
+	retention.ReportEventDays = settingNumber(snapshot, "retention", "report_event_days", retention.ReportEventDays)
+	retention.ReportCleanupHoldDays = settingNumber(snapshot, "retention", "report_cleanup_hold_days", retention.ReportCleanupHoldDays)
 	s.SetRetentionPolicy(retention)
 	routing := s.RoutePolicy
 	routing.Mode = settingString(snapshot, "routing", "default_mode", routing.Mode)

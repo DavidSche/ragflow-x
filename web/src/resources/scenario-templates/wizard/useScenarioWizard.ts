@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useCanAccess, useCreatePath, useGetList, useLocale, useNavigate, useNotify, useTranslate } from "ra-core";
+import { useCanAccess, useCreatePath, useGetIdentity, useGetList, useLocale, useNavigate, useNotify, useTranslate } from "ra-core";
 import { ApiError } from "@/lib/api";
 import { datasetOptions } from "@/resources/chats/chat-types";
+import { tenantScopedDatasetOptions } from "./datasetScope";
 import type { DatasetLike } from "@/resources/chats/chat-types";
 import {
   checkScenarioTemplateCapabilities,
@@ -27,6 +28,8 @@ export interface ScenarioWizardApi {
   catalogState: "loading" | "ready" | "error";
   datasetOptions: DatasetLike[];
   datasetValues: DatasetLike[];
+  /** Datasets belonging to other workspaces, hidden because instantiate cannot resolve them. */
+  hiddenDatasetCount: number;
   /** Projects the caller may attach the new assistant to (id + display name). */
   projects: { id: string; name: string }[];
   mapDatasetId: (dataset: DatasetLike) => string;
@@ -89,13 +92,23 @@ export function useScenarioWizard(): ScenarioWizardApi {
   const [saving, setSaving] = useState(false);
 
   const { data: datasets } = useGetList("datasets", { pagination: { page: 1, perPage: 200 } });
+  // ra 5 types the generic parameter as the error type, so the identity shape
+  // is asserted locally instead of through useGetIdentity<…>.
+  const { data: identity } = useGetIdentity();
+  const tenantId = (identity as { tenant_id?: string } | undefined)?.tenant_id;
   const { data: projects } = useGetList("projects", { pagination: { page: 1, perPage: 100 } });
   // The picker shows names while the API takes ids (see ./projectOptions).
   const projectOptions = useMemo(
     () => projectChoices(projects as ProjectLike[] | undefined),
     [projects],
   );
-  const { values: datasetValues, mapId } = datasetOptions(datasets as DatasetLike[] | undefined);
+  const mapId = datasetOptions(datasets as DatasetLike[] | undefined).mapId;
+  // Only the caller's workspace is bindable: instantiate resolves every id with
+  // the caller's tenant (see ./datasetScope for the drill that proved it).
+  const { values: datasetValues, hidden: hiddenDatasetCount } = useMemo(
+    () => tenantScopedDatasetOptions((datasets as DatasetLike[] | undefined) ?? [], tenantId),
+    [datasets, tenantId],
+  );
 
   const { canAccess: canManageChat } = useCanAccess({ resource: "chat", action: "manage" });
   const { canAccess: canManageAgent } = useCanAccess({ resource: "agent", action: "manage" });
@@ -221,7 +234,7 @@ export function useScenarioWizard(): ScenarioWizardApi {
     try {
       // `dataset_ids` here are workspace links, not engine ids: the server resolves
       // each one with GetDatasetLink(tenantID, id) and answers
-      // 400/40085 "dataset not found in workspace" for an engine id. `mapId`
+      // 400/41120 "dataset not found in workspace" for an engine id. `mapId`
       // (ragflow_dataset_id || id) is only for the probe/检索 side.
       const datasetIds = selection.datasetIds;
       const idempotencyKey = `wizard-${template.id}-${Date.now()}`;
@@ -298,6 +311,7 @@ export function useScenarioWizard(): ScenarioWizardApi {
     catalogState,
     datasetOptions: datasetValues,
     datasetValues,
+    hiddenDatasetCount,
     projects: projectOptions,
     mapDatasetId: mapId,
     isChecking,

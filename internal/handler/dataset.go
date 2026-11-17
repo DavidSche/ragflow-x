@@ -1147,7 +1147,8 @@ func (h *Handler) UpdateDataset(c *gin.Context) {
 	datasetID := c.Param("id")
 	name := strings.TrimSpace(req.Name)
 	if name == "" && req.CompilationTokenBudget == nil && req.PushdownEnabled == nil {
-		response.Fail(c, 400, 40085, "nothing to update: send name, compilation_token_budget or pushdown_enabled")
+		response.Fail(c, 400, httperr.CodeDatasetPatchEmpty,
+			"nothing to update: send name, compilation_token_budget or pushdown_enabled")
 		return
 	}
 	approvalPayload := map[string]any{"name": name}

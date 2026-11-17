@@ -3,15 +3,27 @@
  *
  * The backend returns English error messages in the response envelope.
  * This map provides user-facing Chinese translations keyed by business
- * error code.  When a code is found here the Chinese message is preferred;
- * otherwise the original backend message is used as-is.
+ * error code.
  *
- * Keep this file in sync with doc/12_前后端接口交互规范.md §2.2.
+ * A code belongs here only if it means exactly one thing. Codes the backend
+ * uses as generic buckets are deliberately absent, so the specific backend
+ * detail wins by construction instead of being overwritten by a canned
+ * sentence:
+ *
+ *   40000   handler-level "invalid request" bucket (field-specific details)
+ *   40060   gateway "invalid body" bucket
+ *   404     one detail per entity (chat, dataset, agent, …)
+ *
+ * `40085` used to be in that group (18 unrelated messages on one code, see
+ * doc/294) until the backend split it: 40085 is Role-only again and the
+ * request-precondition family moved to 41100-41199 (go `httperr/codes.go`).
+ *
+ * Keep this file in sync with doc/specification/12_前后端接口交互规范.md §2.2.
  */
 
 const ERROR_MESSAGES: Record<number, string> = {
   // ── 400xx — 参数/验证错误 ──────────────────────────
-  40000: "请求参数无效",
+  // 40000 / 40060 are generic buckets and stay out of this table on purpose.
   40001: "用户名至少需要 3 个字符",
   40003: "服务地址和 API Key 为必填项",
   40010: "数据集名称不能为空",
@@ -70,6 +82,24 @@ const ERROR_MESSAGES: Record<number, string> = {
   40035: "当前 RAGFlow 版本不支持该模型的默认类型",
   40036: "缺少 expected_model_id，请先读取当前默认模型后再提交",
 
+  // ── 411xx — 请求前置校验（原 40085 的多语义拆分，go httperr/codes.go）──
+  41101: "应用类型必须是 chat、search 或 agent",
+  41102: "实例化需要选择项目",
+  41103: "只有已发布的场景模板可以实例化",
+  41104: "该场景模板不支持所选的实例化形态",
+  41105: "该模板没有智能体画布，请选择对话或检索形态",
+  41106: "模板内容声明的形态与所选形态不一致",
+  41110: "更新场景模板必须提交内容",
+  41111: "模板建议的数据集未找到",
+  41112: "骨架 id 必须形如 <source>:<upstream_id>",
+  41113: "不支持该骨架来源",
+  41114: "模板需要的能力在本工作区没有默认模型",
+  41120: "数据集不在当前工作区",
+  41121: "引擎尚未注册嵌入模型，请先配置默认嵌入模型",
+  41122: "没有可更新的字段",
+  41130: "相邻审批步骤不能由同一人审批",
+  41140: "引擎拒绝了这个请求",
+
   // ── 409xx — 资源冲突 ───────────────────────────────
   40920: "企业微信回调重复，请勿重复提交",
 
@@ -79,7 +109,8 @@ const ERROR_MESSAGES: Record<number, string> = {
 
   // ── 404xx — 资源不存在 ─────────────────────────────
   40400: "工作区不存在",
-  404: "请求的数据集不存在或当前范围不可访问",
+  // 404 stays out of this table: the detail names the entity (chat, dataset,
+  // agent, …) and is always more accurate than one generic sentence.
 
   // ── 409xx — 资源冲突 ───────────────────────────────
   40901: "系统已经初始化，不可重复操作",
@@ -112,6 +143,109 @@ const ERROR_MESSAGES: Record<number, string> = {
   50293: "读取默认模型失败，暂无法确认当前状态",
 };
 
+/**
+ * Literal English details the backend emits for flows a user can actually hit.
+ * Only exact or anchored matches live here: a rough match would be the same
+ * class of bug as an overloaded code map. Anything unmatched keeps the raw
+ * detail, which is still more accurate than a wrong Chinese sentence.
+ */
+const EXACT_DETAIL_MESSAGES: Record<string, string> = {
+  "role cannot be its own parent": "角色不能是自身的父角色",
+  "parent role not found": "父角色不存在",
+  "the same user cannot approve adjacent steps": "相邻审批步骤不能由同一人审批",
+  "dataset not found": "数据集不存在或当前范围不可访问",
+  "agent not found": "智能体不存在",
+  "chat not found": "对话助手不存在",
+  "project not found": "项目不存在",
+  "tenant not found": "工作区不存在",
+  "memory not found": "记忆不存在",
+  "search app not found": "检索应用不存在",
+  "model provider not found": "模型提供商不存在",
+  "document not found": "文档不存在",
+  "chunk not found": "切片不存在",
+  "role not found": "角色不存在",
+  "user not found": "用户不存在",
+  "team not found": "团队不存在",
+  "approval not found": "审批不存在",
+  "evaluation set not found": "评测集不存在",
+  "model not found": "模型不存在",
+  "api key not found": "API Key 不存在",
+  "task not found": "任务不存在",
+  "invalid request body": "请求体无效",
+  "invalid request": "请求无效",
+  "empty file": "文件为空",
+  "file is required": "请选择文件",
+  "file too large (max 20MB)": "文件过大（上限 20MB）",
+  "logo file too large (max 2MB)": "Logo 文件过大（上限 2MB）",
+  "unsupported image type": "不支持的图片格式",
+  "app_type must be chat, search or agent": "应用类型必须是 chat、search 或 agent",
+  "only published scenario templates can be instantiated": "只有已发布的场景模板可以实例化",
+  "scenario template does not support chat assistants": "该场景模板不支持对话助手",
+  "project_id is required for instantiation": "实例化需要选择项目",
+  "payload is required when updating a scenario template": "更新场景模板必须提交内容",
+  "skeleton id must be <source>:<upstream_id>": "骨架 id 必须形如 <source>:<upstream_id>",
+  "unsupported skeleton source": "不支持该骨架来源",
+  "nothing to update: send name, compilation_token_budget or pushdown_enabled":
+    "没有可更新的字段：请提交名称、编译预算或推送下推开关",
+};
+
+/** Form names the backend puts in app-type sentences, in the operator's words. */
+const APP_FORM_LABELS: Record<string, string> = {
+  chat: "对话",
+  search: "检索",
+  agent: "智能体",
+};
+
+const DETAIL_PATTERNS: Array<{ pattern: RegExp; render: (match: RegExpMatchArray) => string }> = [
+  {
+    pattern: /^dataset not found in workspace:\s*(.+)$/,
+    render: (m) => `数据集不在当前工作区（${m[1]}），请切换到该工作区或重新创建数据集`,
+  },
+  {
+    pattern: /^no embedding model is registered in the engine/i,
+    render: () => "引擎尚未注册嵌入模型，请先在模型管理中配置嵌入模型再创建数据集",
+  },
+  {
+    pattern: /^dataset suggestions not found:\s*(.+)$/,
+    render: (m) => `模板建议的数据集未找到：${m[1]}`,
+  },
+  {
+    pattern: /^scenario template does not support (\S+) applications?$/,
+    render: (m) => `该场景模板不支持 ${APP_FORM_LABELS[m[1]] ?? m[1]} 形态`,
+  },
+  {
+    pattern: /^scenario pack requires model capabilities with no tenant default:\s*(.+)$/,
+    render: (m) => `模板需要这些能力，但本工作区没有对应的默认模型：${m[1]}`,
+  },
+  {
+    pattern: /^this template cannot be instantiated as an agent/i,
+    render: () => "该模板没有智能体画布，请选择对话或检索形态",
+  },
+  // Handler-level validation (code 40000): the detail carries the field name and
+  // is the only place the operator can learn which parameter is missing.
+  {
+    pattern: /^([a-z][a-z0-9_]*) (?:is|are) required$/,
+    render: (m) => `缺少必填参数：${m[1]}`,
+  },
+  {
+    pattern: /^(?:invalid|unsupported) .*payload$/,
+    render: () => "请求体参数无效或缺少必填字段",
+  },
+];
+
+/** Translate a backend detail message when we know it verbatim; else "". */
+export function translateErrorDetail(detail: string): string {
+  const text = detail.trim();
+  if (!text) return "";
+  const exact = EXACT_DETAIL_MESSAGES[text];
+  if (exact) return exact;
+  for (const rule of DETAIL_PATTERNS) {
+    const match = text.match(rule.pattern);
+    if (match) return rule.render(match);
+  }
+  return "";
+}
+
 /** Fallback messages keyed by HTTP status when no code-specific mapping exists. */
 const HTTP_STATUS_MESSAGES: Record<number, string> = {
   0: "网络连接失败，请检查网络",
@@ -130,10 +264,12 @@ const HTTP_STATUS_MESSAGES: Record<number, string> = {
  * Get the user-facing Chinese message for an error code.
  *
  * Lookup order:
- * 1. Exact business code match (e.g. 40082 → "内建角色不可修改或删除")
- * 2. Original backend message, because detailed operational errors must not be
- *    hidden by a generic status message
- * 3. HTTP status fallback when the backend did not provide a usable message
+ * 1. Verbatim/anchored translation of the backend detail (most specific; also
+ *    the only correct path for the generic 40000/40060/404 buckets, which are
+ *    deliberately absent from ERROR_MESSAGES)
+ * 2. Business code match — every code in the table means exactly one thing
+ * 3. Raw backend detail
+ * 4. HTTP status fallback when the backend did not provide a usable message
  */
 export function getErrorMessage(
   code: number,
@@ -143,8 +279,11 @@ export function getErrorMessage(
   if (code === 0 && status === 0) {
     return HTTP_STATUS_MESSAGES[0] ?? fallbackMessage;
   }
+  const detail = (fallbackMessage ?? "").trim();
+  const translated = translateErrorDetail(detail);
+  if (translated) return translated;
   if (ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
-  return fallbackMessage || HTTP_STATUS_MESSAGES[status] || fallbackMessage;
+  return detail || HTTP_STATUS_MESSAGES[status] || fallbackMessage;
 }
 
 const LOGIN_ERROR_MESSAGES: Record<number, string> = {

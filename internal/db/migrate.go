@@ -3330,6 +3330,82 @@ var migrations = []Migration{
 			).Error
 		},
 	},
+	{
+		Version: 168,
+		Name:    "report_answer_persistence",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/288 §7.2: eleven new tables for the report answer family plus an
+			// additive extension of the three export tables (answer exports keep
+			// working because every new column carries a default).
+			//
+			// The report family is migrated first: the export extension references
+			// report_revision_id, so the referenced table must exist before an
+			// operator can follow the FK-less join.
+			if err := tx.AutoMigrate(
+				&model.ReportTemplate{},
+				&model.Report{},
+				&model.ReportRevision{},
+				&model.ReportJob{},
+				&model.ReportJobAttempt{},
+				&model.ReportSection{},
+				&model.ReportClaim{},
+				&model.ReportCitation{},
+				&model.ReportCharge{},
+				&model.ReportEvidenceSnapshot{},
+				&model.ReportJobEvent{},
+			); err != nil {
+				return err
+			}
+			if err := tx.AutoMigrate(
+				&model.ExportSnapshot{},
+				&model.ExportJob{},
+				&model.ExportArtifact{},
+			); err != nil {
+				return err
+			}
+			// Idempotency is a database guarantee, not a service convention: a
+			// duplicated create with the same client key must lose here. Rows
+			// without a key stay legal (internal retriggers never send one).
+			//
+			// The artifact version index must be PARTIAL for the same reason
+			// doc/288 §7.6 spells out: answer exports leave report_revision_id
+			// empty, and a non-partial index would make every same-format answer
+			// export collide with every other one.
+			for _, index := range []string{
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_report_job_idempotency ON rgx_report_job (tenant_id, idempotency_key) WHERE idempotency_key <> ''",
+				"CREATE UNIQUE INDEX IF NOT EXISTS uidx_rgx_export_artifact_version ON rgx_export_artifact (report_revision_id, format, artifact_version) WHERE report_revision_id <> ''",
+			} {
+				if err := tx.Exec(index).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 169,
+		Name:    "report_answer_rbac",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/288 §11.4 item 8: the report family added `report` and
+			// `report-template` to BuiltinPermissionMatrix(). Existing databases
+			// already recorded v168, so without this step the new grants would only
+			// ever exist on a fresh install and every report route would answer 403
+			// to every role — the quietest possible failure of the whole feature.
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
+	{
+		Version: 170,
+		Name:    "report_revision_datasets",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/288 §13: a report must freeze "which knowledge may it cite" at
+			// creation. The column is additive with a default, so a v169 database
+			// keeps every existing revision — those rows simply have no frozen
+			// dataset list and the generate step refuses to run on them rather than
+			// retrieving from whatever the workspace happens to hold today.
+			return tx.AutoMigrate(&model.ReportRevision{})
+		},
+	},
 }
 
 func evaluationScopeCondition(columnPrefix string) string {
@@ -4746,6 +4822,40 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "read", "user-clearance"},
 		{model.RoleTenantAdmin, "manage", "user-clearance"},
 		{model.RoleTeamAdmin, "read", "user-clearance"},
+		// doc/288 §7.6/§11.4: a report is the caller's own deliverable. `execute`
+		// runs the (token-billed) job, `read` reads the owner-scoped list/detail,
+		// `delete:own` deletes one's own report (the row-level owner check lives in
+		// Service.SoftDeleteReport), and `manage` is the admin surface §11.4
+		// reserves. The template catalog is read-only in P0-A; `manage` there is
+		// frozen for the P0-B clone path and granted to admins only.
+		{model.RolePlatformAdmin, "read", "report"},
+		{model.RolePlatformAdmin, "manage", "report"},
+		{model.RolePlatformAdmin, "execute", "report"},
+		{model.RolePlatformAdmin, "delete:own", "report"},
+		{model.RoleTenantAdmin, "read", "report"},
+		{model.RoleTenantAdmin, "manage", "report"},
+		{model.RoleTenantAdmin, "execute", "report"},
+		{model.RoleTenantAdmin, "delete:own", "report"},
+		{model.RoleOperator, "read", "report"},
+		{model.RoleOperator, "execute", "report"},
+		{model.RoleOperator, "delete:own", "report"},
+		{model.RoleTeamAdmin, "read", "report"},
+		{model.RoleTeamAdmin, "execute", "report"},
+		{model.RoleTeamAdmin, "delete:own", "report"},
+		{model.RoleBusinessUser, "read", "report"},
+		{model.RoleBusinessUser, "execute", "report"},
+		{model.RoleBusinessUser, "delete:own", "report"},
+		{model.RolePlatformAdmin, "read", "report-template"},
+		{model.RolePlatformAdmin, "manage", "report-template"},
+		// TenantAdmin manages the workspace's own template fork: cloning (§11.4) is
+		// a workspace customisation, so the workspace admin must be able to do it.
+		// The grant mirrors the sibling `scenario-template` resource. Operator /
+		// TeamAdmin / BusinessUser stay read-only — they consume the catalog.
+		{model.RoleTenantAdmin, "read", "report-template"},
+		{model.RoleTenantAdmin, "manage", "report-template"},
+		{model.RoleOperator, "read", "report-template"},
+		{model.RoleTeamAdmin, "read", "report-template"},
+		{model.RoleBusinessUser, "read", "report-template"},
 	}
 }
 

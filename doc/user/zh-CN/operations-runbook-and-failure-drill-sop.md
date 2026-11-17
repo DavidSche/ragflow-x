@@ -102,7 +102,7 @@
 2. 执行第 3 节健康检查。
 3. 用真实 API Key 分别 smoke Chat、Search App、Agent 的授权、拒绝和配额路径。
 4. 恢复资源同步，先 scan/import，不直接 reconcile。
-5. **默认模型**：`GET /api/v1/model-providers/defaults` 确认 `chat` / `embedding` 均为 `ok`；若为 `unset`，建库会被本地拦截（`400/40085`），先补默认 embedding 再开放业务。
+5. **默认模型**：`GET /api/v1/model-providers/defaults` 确认 `chat` / `embedding` 均为 `ok`；若为 `unset`，建库会被本地拦截（`400/41121`），先补默认 embedding 再开放业务。
 6. **场景模板**：确认目录（`GET /api/v1/scenario-template-catalog`）里平台基线与本工作区已发布模板都在，已发布版本的 `payload_schema` / `lineage_state` 与升级前一致；能力检查仍能在示例数据集上给出结论。
 
 ## 6. 回滚 SOP
@@ -444,7 +444,7 @@ U1–U5、U13–U15 已被本产品行为吸收，U6–U8 是公开 issue 跟踪
 | U12 | search app 单数 `/completion` 回归 `50265` | 旧路径报错 | 上游已修复；本侧固定复数 `/searches/{id}/completions`，改路径前先看契约测试 |
 | U13 | 数据集配置读写形态不一致：写入拒 `chunk_method`（`101 extra inputs are not permitted`）、读取只回 `parser_id`、无改动 `PUT` 回 `102 no properties were modified` | 改解析档像被静默忽略，或报 101/102 | 读写统一走 `ParseMethod()` / `{parse_type:1, parser_id:…}`；消息 102 按幂等成功处理（`doc/276` §8.6） |
 | U14 | `GET /agents/templates/{id}` 对列表里存在的模板回 404；`components` 序列化为按节点 id 的 map 而非数组 | 单模板详情像“不存在”，画布校验因形态不符失败 | 单行读 404 回退目录；canvas 白名单同时接受数组与 map 两种形态 |
-| U15 | 未注册任何 embedding 模型时 `POST /datasets` 回 **HTTP 200 + `code:500 model configuration unavailable`**（U3 的运行期表现） | 建库失败但只有引擎原文，看不出是模型没配 | 入口本地拦截 `400/40085` 并给可行动提示；上游业务拒绝统一映射 400 + 原文（`502` 只留传输/5xx） |
+| U15 | 未注册任何 embedding 模型时 `POST /datasets` 回 **HTTP 200 + `code:500 model configuration unavailable`**（U3 的运行期表现） | 建库失败但只有引擎原文，看不出是模型没配 | 入口本地拦截 `400/41121` 并给可行动提示；上游业务拒绝统一映射 `400/41140` + 原文（`502` 只留传输/5xx） |
 
 ### 16.6 发版前五条复核命令
 
@@ -471,7 +471,7 @@ cd web && npx tsc -p tsconfig.app.json --noEmit && npx vitest run   # 仓库 tsc
 | `409/40913` | 写锁被另一个请求持有 | 等锁 TTL 过期后重试；**禁止**并发刷写 |
 | `502/50256` | 引擎侧设置默认模型失败（带上游原文） | 按原文修上游（模型被删、实例不可用等）后重试 |
 | `502/50257` | 结果未知：写后回读与期望不一致（`operation_ref` + `status:unknown`） | 先读回当前默认；记 `operation_ref` 交研发，重复重试只会放大不一致 |
-| 面板 `status=unset` | 该类型没有默认值 | 建库会被本地拦截（`400/40085 no embedding model is registered in the engine…`），先补默认 embedding |
+| 面板 `status=unset` | 该类型没有默认值 | 建库会被本地拦截（`400/41121 no embedding model is registered in the engine…`），先补默认 embedding |
 
 恢复补偿 worker 只依赖 `rgx_model_default_recovery_claim` 做幂等协调，**从不 UPDATE 审计行**；
 审计链校验（第 11 节）如果报断链，不要用这条链路去“修”，按审计 SOP 处理。

@@ -1,6 +1,7 @@
 /**
  * Shared types and utils for the workbench modules.
  */
+import { createRandomId } from "@/lib/random-id";
 
 export interface Citation {
   id?: string;
@@ -14,7 +15,7 @@ export interface Citation {
   sourceUri?: string;
 }
 
-export type ConversationKind = "chat" | "search" | "agent";
+export type ConversationKind = "chat" | "search" | "agent" | "report";
 
 export type ConversationErrorCode =
   | "no_result"
@@ -142,9 +143,9 @@ export interface SessionLike {
 export type Rating = "positive" | "negative";
 
 export function newId(): string {
-  const id = globalThis.crypto?.randomUUID?.();
-  if (!id) throw new Error("CSPRNG unavailable");
-  return id;
+  // Turn ids are display identity, not a secret; plain-http deployments have no
+  // crypto.randomUUID and must not fail to render (see lib/random-id).
+  return createRandomId();
 }
 
 export function feedbackRequestId(turnId?: string): string {

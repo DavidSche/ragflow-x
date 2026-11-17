@@ -432,7 +432,8 @@ func (s *Service) resolveScenarioModelRequirement(ctx context.Context, rendered 
 	}
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		return nil, httperr.BadRequest(40085, "scenario pack requires model capabilities with no tenant default: "+strings.Join(missing, ", "))
+		return nil, httperr.BadRequest(httperr.CodeScenarioModelDefaultMissing,
+			"scenario pack requires model capabilities with no tenant default: "+strings.Join(missing, ", "))
 	}
 	if len(resolved) == 0 {
 		return nil, nil

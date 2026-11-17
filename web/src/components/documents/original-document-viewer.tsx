@@ -16,15 +16,26 @@ import {
  * a safe download fallback through the shared preview-format registry.
  *
  * Callers are responsible for fetching the blob and revoking its object URL.
+ *
+ * Pass `blob` whenever it is still at hand: reading it with `blob.arrayBuffer()`
+ * / `blob.text()` keeps the parse on the response body. `fetch(blobUrl)` is only
+ * a fallback, because our CSP is `connect-src 'self'` and a `blob:` URL is not
+ * `'self'` — the 4.151 drill (2026-11-17) showed
+ * "Connecting to 'blob:http://…' violates … connect-src 'self'" followed by
+ * "Fetch API cannot load blob:…", i.e. Office/text previews died on a policy
+ * that is correct as written. Fix the caller, not the policy.
  */
 export function OriginalDocumentViewer({
   blobUrl,
+  blob,
   contentType,
   text,
   filename,
   loading,
 }: {
   blobUrl?: string;
+  /** The same bytes as `blobUrl`; preferred over fetching the object URL. */
+  blob?: Blob | null;
   contentType: string;
   text?: string;
   filename?: string;
@@ -38,7 +49,7 @@ export function OriginalDocumentViewer({
   const decodedText = text || fetchedText;
 
   useEffect(() => {
-    if (!officeKind || !blobUrl) return;
+    if (!officeKind || (!blob && !blobUrl)) return;
     const container = officeRef.current;
     if (!container) return;
     let cancelled = false;
@@ -46,8 +57,7 @@ export function OriginalDocumentViewer({
     setOfficeError(false);
 
     const render = async () => {
-      const response = await fetch(blobUrl);
-      const buffer = await response.arrayBuffer();
+      const buffer = blob ? await blob.arrayBuffer() : await (await fetch(blobUrl!)).arrayBuffer();
       if (cancelled) return;
       if (officeKind === "docx") {
         const { renderAsync } = await import("docx-preview");
@@ -96,18 +106,17 @@ export function OriginalDocumentViewer({
       cancelled = true;
       container.innerHTML = "";
     };
-  }, [blobUrl, contentType, filename, officeKind]);
+  }, [blobUrl, blob, contentType, filename, officeKind]);
 
   useEffect(() => {
-    if (!isDecodedTextKind(previewKind) || !blobUrl || text) {
+    if (!isDecodedTextKind(previewKind) || (!blob && !blobUrl) || text) {
       setFetchedText("");
       return;
     }
     let cancelled = false;
     setFetchedText("");
     (async () => {
-      const response = await fetch(blobUrl);
-      const content = await response.text();
+      const content = blob ? await blob.text() : await (await fetch(blobUrl!)).text();
       if (!cancelled) setFetchedText(content);
     })().catch(() => {
       if (!cancelled) setFetchedText("");
@@ -115,7 +124,7 @@ export function OriginalDocumentViewer({
     return () => {
       cancelled = true;
     };
-  }, [blobUrl, previewKind, text]);
+  }, [blobUrl, blob, previewKind, text]);
 
   if (loading) {
     return <div className="text-muted-foreground">加载中...</div>;

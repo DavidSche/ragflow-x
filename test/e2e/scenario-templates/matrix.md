@@ -33,13 +33,15 @@
 
 | lane | 模板 | 形态 | 期望 | 实际 | 判定 |
 | --- | --- | --- | --- | --- | --- |
-| `neg.chat-on-search-only` | `product-manual` | chat | 4xx/40085 | 400/40085 | ✅ 按预期拒绝 |
-| `neg.search-on-chat-only` | `contract-compliance` | search | 4xx/40085 | 400/40085 | ✅ 按预期拒绝 |
-| `neg.search-on-chat-only-2` | `training` | search | 4xx/40085 | 400/40085 | ✅ 按预期拒绝 |
-| `neg.agent-without-canvas` | `training` | agent | 4xx/40085 | 400/40085 | ✅ 按预期拒绝，且 message 为「该模板无法以智能体形态实例化，请选择对话或检索形态」 |
-| `neg.auto-datasets-empty-kb` | `enterprise-qa` | chat | 4xx/40085 | 400/40085 | ✅ 按预期拒绝，且 message 为「所选知识库还没有可检索内容，请先上传文档并等待解析完成」 |
+| `neg.chat-on-search-only` | `product-manual` | chat | 4xx/41104 | 400/40085（拆分前） | ✅ 按预期拒绝 |
+| `neg.search-on-chat-only` | `contract-compliance` | search | 4xx/41104 | 400/40085（拆分前） | ✅ 按预期拒绝 |
+| `neg.search-on-chat-only-2` | `training` | search | 4xx/41104 | 400/40085（拆分前） | ✅ 按预期拒绝 |
+| `neg.agent-without-canvas` | `training` | agent | 4xx/41105 | 400/40085（拆分前） | ✅ 按预期拒绝，且 message 为「该模板无法以智能体形态实例化，请选择对话或检索形态」 |
+| `neg.auto-datasets-empty-kb` | `enterprise-qa` | chat | 4xx/41140 | 400/40085（拆分前） | ✅ 按预期拒绝，且 message 为「所选知识库还没有可检索内容，请先上传文档并等待解析完成」 |
 
-> `agent` 形态：9 个模板里有 6 个在 `app_types` 里写了 agent（contract-compliance / customer-service / operations / product-manual / sales-support / training），但它们的 Pack 没有 `canvas_dsl`，`renderable_app_types` 因此不含 agent。catalog 如实标注，实例化如实拒绝（40085），不会建空画布。
+> **错误码说明**：`40085` 曾同时承载 18 种语义，本表"实际"列是 2026-11-17 实测记录（`out/evidence-20261117e.json`），写作 `400/40085（拆分前）`。后端已按语义拆分（`40085` 只保留角色自引用，其余迁到 `41100-41199`，见 `internal/pkg/httperr/codes.go` 与 doc/specification/12 §2.2），因此"期望"列是拆分后的契约码；复跑时以新码为准。
+
+> `agent` 形态：9 个模板里有 6 个在 `app_types` 里写了 agent（contract-compliance / customer-service / operations / product-manual / sales-support / training），但它们的 Pack 没有 `canvas_dsl`，`renderable_app_types` 因此不含 agent。catalog 如实标注，实例化如实拒绝（41105），不会建空画布。
 
 ## 3. 问答断言（真实引擎作答，命中原文事实）
 

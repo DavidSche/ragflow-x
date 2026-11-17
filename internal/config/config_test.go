@@ -95,6 +95,39 @@ func TestDefaults_Retention(t *testing.T) {
 	}
 }
 
+// The report class has its own clock (doc/288 D3). Defaults are the numbers
+// signed off in v2.6: report/evidence 90, artifacts 30, events 7, cleanup hold 7.
+func TestDefaults_ReportRetention(t *testing.T) {
+	cfg := defaults()
+	r := cfg.Retention
+	if r.ReportDays != 90 || r.ReportEvidenceDays != 90 || r.ReportArtifactDays != 30 ||
+		r.ReportEventDays != 7 || r.ReportCleanupHoldDays != 7 {
+		t.Fatalf("unexpected report retention defaults: %+v", r)
+	}
+	if r.EffectiveReportEvidenceTTL() != 90 {
+		t.Fatalf("default effective evidence TTL = %d, want 90", r.EffectiveReportEvidenceTTL())
+	}
+}
+
+func TestApplyEnv_ReportRetentionOverrides(t *testing.T) {
+	cfg := defaults()
+	t.Setenv("RGX_RETENTION_REPORT_DAYS", "120")
+	t.Setenv("RGX_RETENTION_REPORT_EVIDENCE_DAYS", "60")
+	t.Setenv("RGX_RETENTION_REPORT_ARTIFACT_DAYS", "14")
+	t.Setenv("RGX_RETENTION_REPORT_EVENT_DAYS", "3")
+	t.Setenv("RGX_RETENTION_REPORT_CLEANUP_HOLD_DAYS", "5")
+	applyEnv(cfg)
+	r := cfg.Retention
+	if r.ReportDays != 120 || r.ReportEvidenceDays != 60 || r.ReportArtifactDays != 14 ||
+		r.ReportEventDays != 3 || r.ReportCleanupHoldDays != 5 {
+		t.Fatalf("unexpected report retention overrides: %+v", r)
+	}
+	// Evidence must not expire before the report that cites it.
+	if r.EffectiveReportEvidenceTTL() != 120 {
+		t.Fatalf("effective evidence TTL = %d, want 120", r.EffectiveReportEvidenceTTL())
+	}
+}
+
 func TestApplyEnv_RetentionOverrides(t *testing.T) {
 	cfg := defaults()
 	t.Setenv("RGX_RETENTION_ENABLED", "true")

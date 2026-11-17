@@ -123,7 +123,7 @@ troubleshooting, compare against `GET /api/v1/system/capabilities` — its
 | U12 | The singular search-app `/completion` path regressed with `50265` | Old path errors out | Fixed upstream; this product pins the plural `/searches/{id}/completions` — check contract tests before changing it |
 | U13 | Dataset config read/write shapes disagree: writes reject `chunk_method` (`101 extra inputs are not permitted`), reads return only `parser_id`, a no-op `PUT` answers `102 no properties were modified` | Parse-type writes look ignored or rejected | Read/write go through `ParseMethod()` / `{parse_type:1, parser_id:…}`; message 102 is treated as idempotent success |
 | U14 | `GET /agents/templates/{id}` returns 404 for templates that exist in the list; `components` is serialised as an object keyed by node id, not an array | Single-template detail looks missing; canvas validation fails on shape | A 404 on single-read falls back to the catalogue; the canvas whitelist accepts both shapes |
-| U15 | With no embedding model registered, `POST /datasets` answers **HTTP 200 + `code:500 model configuration unavailable`** (runtime face of U3) | Dataset creation fails with an opaque engine message | Blocked locally with `400/40085` and an actionable hint; upstream business rejections map to 400 with the engine's text |
+| U15 | With no embedding model registered, `POST /datasets` answers **HTTP 200 + `code:500 model configuration unavailable`** (runtime face of U3) | Dataset creation fails with an opaque engine message | Blocked locally with `400/41121` and an actionable hint; upstream business rejections map to `400/41140` with the engine's text |
 
 ## Rollback
 
@@ -147,7 +147,7 @@ consistency operation, so the failure codes are operational, not cosmetic:
 passed through — fix the model or instance and retry); `502/50257` means the
 outcome is unknown because read-back disagreed with the expectation (read the
 current default back and hand `operation_ref` to engineering, do not loop). A type showing `unset` blocks dataset creation locally with
-`400/40085 no embedding model is registered in the engine…`. The compensator
+`400/41121 no embedding model is registered in the engine…`. The compensator
 coordinates through `rgx_model_default_recovery_claim` and never updates audit
 rows — if audit verification reports a broken chain, follow the audit SOP
 instead of "repairing" it through this path.

@@ -85,8 +85,14 @@ func ResourceTypeRegistry() map[string]ResourceTypeDefinition {
 		"project":             {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
 		"prompt-policy":       {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
 		"release-governance":  {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage", "execute"), SupportsGovernanceRead: true},
-		"role":                {ResourceScope: ResourceScopePlatform, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
-		"scenario-template":   {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
+		// A report is the caller's own deliverable (doc/288 §7.6): the routes are
+		// gated by read/execute, deletion is `delete:own` (the row-level owner check
+		// lives in the service, exactly like document), and `manage` is declared for
+		// the admin-side surface the contract already reserves.
+		"report":            {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage", "execute", "delete:own"), SupportsGovernanceRead: true},
+		"report-template":   {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
+		"role":              {ResourceScope: ResourceScopePlatform, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
+		"scenario-template": {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
 		// The platform baseline is published by platform administrators only;
 		// workspaces fork it into a scenario-template row (doc/276 §7.1).
 		"scenario-template-baseline": {ResourceScope: ResourceScopePlatform, AllowedActions: resourceActions("read", "manage")},

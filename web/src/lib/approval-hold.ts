@@ -1,6 +1,8 @@
 import axios from "axios";
 import type { AxiosError, AxiosResponse } from "axios";
 
+import { createRandomId } from "./random-id";
+
 export interface ApprovalHold {
   approval_id: string;
   request_no: string;
@@ -65,8 +67,7 @@ export function approvalHoldFromError(error: unknown): ApprovalHold | null {
 }
 
 export function approvalIdempotencyKey(prefix = "web"): string {
-  // randomUUID is preferred; the time-and-random fallback keeps older browsers
-  // and non-secure contexts usable while producing URL-safe unique-enough keys.
-  const uuid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}:${uuid}`.replace(/[^A-Za-z0-9_.:-]/g, "-").slice(0, 128);
+  // Non-secure contexts (plain http on a LAN ip) have no crypto.randomUUID; see
+  // ./random-id for why the fallback is safe for request identity.
+  return `${prefix}:${createRandomId()}`.replace(/[^A-Za-z0-9_.:-]/g, "-").slice(0, 128);
 }

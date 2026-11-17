@@ -35,7 +35,10 @@ type RetentionSummary struct {
 	Usage           map[string]int64 `json:"usage"`            // cost_metric+quota_usage+meter_request
 	Feedback        map[string]int64 `json:"feedback"`         // message_feedback
 	Job             map[string]int64 `json:"job"`              // terminal job/task ledgers
-	ExportArtifacts map[string]int64 `json:"export_artifacts"` // expired answer export artifact files
+	ExportArtifacts map[string]int64 `json:"export_artifacts"` // expired answer/report export artifact files
+	Report          map[string]int64 `json:"report"`           // report aggregates (incl. revisions/sections/jobs)
+	ReportEvidence  map[string]int64 `json:"report_evidence"`  // evidence snapshots past their own clock
+	ReportEvent     map[string]int64 `json:"report_event"`     // report job replay events
 }
 
 // SetRetentionPolicy stores the A5 retention policy (enabled + per-class TTLs).
@@ -147,6 +150,8 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 		Enabled: true, Audit: map[string]int64{}, Usage: map[string]int64{},
 		Feedback: map[string]int64{}, Job: map[string]int64{},
 		ExportArtifacts: map[string]int64{},
+		Report:          map[string]int64{}, ReportEvidence: map[string]int64{},
+		ReportEvent: map[string]int64{},
 	}
 	// perTenant accumulates class -> deleted count for the audit record.
 	perTenant := map[string]map[string]int64{}
@@ -254,7 +259,30 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 		}
 	}
 
-	// 5) Audit the purge itself: one record per affected tenant, appended after
+	// 5) Report answer family (doc/288 §7.6): three independent clocks, each read
+	// from the row itself. Export artifacts of reports are covered by step 0
+	// above because they share `rgx_export_artifact.expires_at` with answers.
+	for _, purge := range []struct {
+		class string
+		fn    func(context.Context, time.Time) (map[string]int64, error)
+		sink  map[string]int64
+	}{
+		{"report", s.cleanupExpiredReports, summary.Report},
+		{"report_evidence", s.cleanupExpiredReportEvidence, summary.ReportEvidence},
+		{"report_event", s.cleanupExpiredReportEvents, summary.ReportEvent},
+	} {
+		deleted, err := purge.fn(ctx, now)
+		if err != nil {
+			return summary, err
+		}
+		for tenantID, n := range deleted {
+			purge.sink[tenantID] += n
+			obs.Get().IncRetentionPurged(purge.class, n)
+		}
+		accumulate(deleted, purge.class)
+	}
+
+	// 6) Audit the purge itself: one record per affected tenant, appended after
 	// the (possibly re-anchored) tail so chains stay verifiable.
 	if len(perTenant) > 0 {
 		for tenantID, counts := range perTenant {
@@ -276,7 +304,9 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 
 	logger.Info("data retention purge complete",
 		"audit", len(summary.Audit), "usage", len(summary.Usage),
-		"feedback", len(summary.Feedback), "job", len(summary.Job))
+		"feedback", len(summary.Feedback), "job", len(summary.Job),
+		"report", len(summary.Report), "report_evidence", len(summary.ReportEvidence),
+		"report_event", len(summary.ReportEvent))
 	return summary, nil
 }
 

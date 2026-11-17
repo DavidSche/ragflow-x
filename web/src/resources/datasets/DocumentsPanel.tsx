@@ -86,6 +86,9 @@ export const DocumentsPanel = () => {
   const [chunksPage, setChunksPage] = useState(1);
   const [chunksTotal, setChunksTotal] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // The viewer parses the Blob directly; fetching the object URL would be
+  // blocked by `connect-src 'self'`.
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewCt, setPreviewCt] = useState("");
   const [previewText, setPreviewText] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -297,6 +300,7 @@ export const DocumentsPanel = () => {
         if (previewUrl) URL.revokeObjectURL(previewUrl);
         const ct = (res.headers["content-type"] as string) || "";
         setPreviewUrl(url);
+        setPreviewBlob(blob);
         setPreviewCt(ct);
         setPreviewText(isTextPreview(ct, doc.name) ? await blob.text() : "");
       } catch {
@@ -329,6 +333,7 @@ export const DocumentsPanel = () => {
     if (previewUrl) {
       URL.revokeObjectURL(previewUrl);
       setPreviewUrl(null);
+      setPreviewBlob(null);
     }
     setPreviewText("");
     setPreviewCt("");
@@ -828,6 +833,7 @@ export const DocumentsPanel = () => {
               <div className="flex-1 overflow-auto rounded-md border bg-muted/20 p-2">
                 <OriginalDocumentViewer
                     blobUrl={previewUrl ?? undefined}
+                    blob={previewBlob}
                     contentType={previewCt}
                     text={previewText}
                     filename={chunksDoc?.name}

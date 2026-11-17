@@ -134,6 +134,10 @@ var businessUserReadRules = []BusinessUserReadRule{
 		Rationale: "Context decisions explain why an answer used the context it did."},
 	{Resource: "evidence-snapshot", Intent: BusinessUserReadDenied, Journey: JourneyInteraction,
 		Rationale: "Answer snapshots are exported through chat:read; a second snapshot grant would only widen the surface without adding a capability."},
+	{Resource: "report", Intent: BusinessUserReadAllowed, Journey: JourneyInteraction,
+		Rationale: "A report is the caller's own deliverable and the read model is owner-scoped (ListReports narrows to owner_user_id), so read:report cannot expose a colleague's question text."},
+	{Resource: "report-template", Intent: BusinessUserReadAllowed, Journey: JourneyAssistant,
+		Rationale: "The template catalog is how a consumer picks a structure before starting a run; it holds platform baselines and workspace forks, no tenant content."},
 
 	// ---- operations ------------------------------------------------------
 	{Resource: "usage", Intent: BusinessUserReadDenied, Journey: JourneyOperations,

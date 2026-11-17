@@ -3,8 +3,8 @@ import { useTranslate } from "ra-core";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Database, Loader2, RefreshCw, Settings2, ShieldX, Wrench } from "lucide-react";
-import type { DatasetLike } from "@/resources/chats/chat-types";
 import { CapabilityBadge, requirementBadgeState } from "./CapabilityBadge";
+import { DatasetPicker } from "./DatasetPicker";
 import {
   capabilityName,
   capabilityReason,
@@ -59,31 +59,7 @@ export function StepKnowledge({ wizard }: StepKnowledgeProps) {
           {t("scenarioTemplates.wizard.bindDatasets")}
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">{t("scenarioTemplates.wizard.bindDatasetsHint")}</p>
-        <div className="mt-3 max-h-72 space-y-1 overflow-y-auto rounded border p-2">
-          {wizard.datasetValues.map((item: DatasetLike) => {
-            const suggested = template.suggestedDatasetNames.some((keyword) => item.name.includes(keyword));
-            const verdict = wizard.capabilityCheck?.datasets.find((row) => row.dataset_id === item.id);
-            return (
-              <label key={item.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={wizard.selection.datasetIds.includes(item.id)}
-                  onChange={() => wizard.toggleDataset(item.id)}
-                />
-                <span>{item.name}</span>
-                {suggested ? (
-                  <span className="rounded bg-primary/10 px-1 text-[10px] text-primary">
-                    {t("scenarioTemplates.wizard.suggested")}
-                  </span>
-                ) : null}
-                {verdict ? <CapabilityBadge state={verdict.verdict} label={t("scenarioTemplates.wizard.checked")} /> : null}
-              </label>
-            );
-          })}
-          {wizard.datasetValues.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("scenarioTemplates.wizard.noDatasets")}</p>
-          ) : null}
-        </div>
+        <DatasetPicker wizard={wizard} suggestedNames={template.suggestedDatasetNames} />
         <div className="mt-3 flex items-center gap-2">
           <Button variant="outline" disabled={wizard.isChecking} onClick={() => void wizard.runCapabilityCheck()}>
             {wizard.isChecking ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}

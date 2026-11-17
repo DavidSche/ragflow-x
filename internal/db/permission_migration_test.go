@@ -169,8 +169,9 @@ func TestMigrationV161ConvergesViewerReads(t *testing.T) {
 			t.Fatalf("viewer reads %q but business_user does not: the inversion doc/245 removed came back", resource)
 		}
 	}
-	if len(businessReads) != 15 {
-		t.Fatalf("business_user read set must stay at 15 resources, got %d", len(businessReads))
+	// 15 resources at doc/245, plus report and report-template from doc/288 §7.6.
+	if len(businessReads) != 17 {
+		t.Fatalf("business_user read set must stay at 17 resources, got %d", len(businessReads))
 	}
 }
 

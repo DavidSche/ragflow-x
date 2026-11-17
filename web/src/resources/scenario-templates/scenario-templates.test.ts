@@ -137,7 +137,7 @@ describe("scenario template catalog projection", () => {
 
   it("gates the wizard on renderable app types, not the declared ones", () => {
     // A v2 template declares `agent` for documentation but ships no canvas, so
-    // offering the button would guarantee a 40085 at submit time.
+    // offering the button would guarantee a 41105 at submit time.
     const view = localizeScenarioTemplate(
       catalogItem({ app_types: ["chat", "agent"], renderable_app_types: ["chat"] }),
       "zh",
@@ -193,6 +193,7 @@ describe("scenario template single source of truth", () => {
       "wizard/StepApplication.tsx",
       "wizard/StepVerify.tsx",
       "wizard/CapabilityBadge.tsx",
+      "wizard/DatasetPicker.tsx",
       "wizard/useRepairActions.ts",
     ].forEach((file) => {
       const lines = read(file).split("\n").length;

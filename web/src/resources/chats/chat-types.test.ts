@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEditChatBody, EMPTY_CONFIG } from "./chat-types";
+import { buildEditChatBody, EMPTY_CONFIG, sessionRows } from "./chat-types";
 
 const base = { ...EMPTY_CONFIG, name: "  法规问答  ", selected: ["kb1", "kb2"] };
 
@@ -34,5 +34,31 @@ describe("buildEditChatBody", () => {
 
   it("keeps the whitespace-trimmed name surfaced to the backend", () => {
     expect(buildEditChatBody(base, undefined).name).toBe("法规问答");
+  });
+});
+
+// 4.151 drill 2026-11-17: `GET /chats/:id/sessions` answers a Page envelope and
+// the panel stored it directly in `SessionLike[]`, crashing the whole show page
+// with `sessions.filter is not a function`.
+describe("sessionRows", () => {
+  it("unwraps the paged envelope the handler returns", () => {
+    const rows = sessionRows<{ id: string }>({
+      items: [{ id: "s1" }, { id: "s2" }],
+      total: 2,
+      page: 1,
+      page_size: 30,
+    });
+    expect(rows.map((r) => r.id)).toEqual(["s1", "s2"]);
+  });
+
+  it("still accepts a bare array from older paths", () => {
+    expect(sessionRows<{ id: string }>([{ id: "s1" }]).length).toBe(1);
+  });
+
+  it("never returns a non-array for an unexpected payload", () => {
+    for (const payload of [null, undefined, {}, "oops", 42, { items: "nope" }, { data: [] }]) {
+      expect(Array.isArray(sessionRows(payload))).toBe(true);
+      expect(sessionRows(payload)).toEqual([]);
+    }
   });
 });

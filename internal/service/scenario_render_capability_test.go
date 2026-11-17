@@ -154,7 +154,7 @@ func TestScenarioTemplateCatalogExposesRenderableAppTypes(t *testing.T) {
 // be reported as a gateway failure.
 func TestCreateChatFailureSeparatesUpstreamRejection(t *testing.T) {
 	rejected := &ragflow.Error{HTTPStatus: 200, Code: 102, Message: "the dataset 69e2 doesn't own parsed file"}
-	assertUpstreamHTTPError(t, createChatFailure(rejected), 400, 40085, "doesn't own parsed file")
+	assertUpstreamHTTPError(t, createChatFailure(rejected), 400, httperr.CodeUpstreamRejected, "doesn't own parsed file")
 	assertUpstreamHTTPError(t, createChatFailure(errors.New("dial tcp: connection refused")), 502, 50240, "")
 	assertUpstreamHTTPError(t, createChatFailure(&ragflow.Error{HTTPStatus: 500, Message: "internal"}), 502, 50240, "")
 }
