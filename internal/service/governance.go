@@ -353,7 +353,8 @@ func (s *Service) UpdateScenarioTemplate(ctx context.Context, tenantID, userID, 
 	// is data loss dressed up as a publish (doc/276 §7.7 history is immutable,
 	// so a destructive write must be impossible by construction).
 	if isZeroTemplatePayload(input.Payload) {
-		return nil, httperr.BadRequest(40085, "payload is required when updating a scenario template")
+		return nil, httperr.BadRequest(httperr.CodeTemplatePayloadRequired,
+			"payload is required when updating a scenario template")
 	}
 	if err := validateTemplatePayloadForStatus(input.Payload, status != model.AssetStatusPublished); err != nil {
 		return nil, err
@@ -997,7 +998,7 @@ func (s *Service) CreateChatFromScenarioTemplate(
 			return nil, err
 		}
 		if link == nil {
-			return nil, httperr.BadRequest(40085, "dataset not found in workspace: "+datasetID)
+			return nil, httperr.BadRequest(httperr.CodeDatasetOutsideWorkspace, "dataset not found in workspace: "+datasetID)
 		}
 		datasetIDs = append(datasetIDs, datasetID)
 	}
@@ -1030,7 +1031,8 @@ func (s *Service) CreateChatFromScenarioTemplate(
 			datasetIDs = append(datasetIDs, dataset.ID)
 		}
 		if len(missing) > 0 {
-			return nil, httperr.BadRequest(40085, "dataset suggestions not found: "+strings.Join(missing, ","))
+			return nil, httperr.BadRequest(httperr.CodeTemplateSuggestionsMissing,
+				"dataset suggestions not found: "+strings.Join(missing, ","))
 		}
 	}
 
@@ -1081,7 +1083,7 @@ func (s *Service) PrepareScenarioTemplateInstantiation(
 			return nil, err
 		}
 		if link == nil {
-			return nil, httperr.BadRequest(40085, "dataset not found in workspace: "+datasetID)
+			return nil, httperr.BadRequest(httperr.CodeDatasetOutsideWorkspace, "dataset not found in workspace: "+datasetID)
 		}
 		datasetIDs = append(datasetIDs, datasetID)
 	}
@@ -1105,7 +1107,7 @@ func (s *Service) PrepareScenarioTemplateInstantiation(
 				continue
 			}
 			if !input.CreateMissingDatasets {
-				return nil, httperr.BadRequest(40085, "dataset suggestions not found: "+name)
+				return nil, httperr.BadRequest(httperr.CodeTemplateSuggestionsMissing, "dataset suggestions not found: "+name)
 			}
 			missingSuggestions = append(missingSuggestions, name)
 		}
@@ -1136,10 +1138,12 @@ func (s *Service) publishedChatTemplateForInstantiation(
 		return nil, nil, ScenarioTemplatePayload{}, httperr.NotFound("scenario template not found")
 	}
 	if asset.Status != model.AssetStatusPublished {
-		return nil, nil, ScenarioTemplatePayload{}, httperr.BadRequest(40085, "only published scenario templates can be instantiated")
+		return nil, nil, ScenarioTemplatePayload{}, httperr.BadRequest(httperr.CodeTemplateNotPublished,
+			"only published scenario templates can be instantiated")
 	}
 	if !containsString(strings.Split(asset.AppTypes, ","), "chat") {
-		return nil, nil, ScenarioTemplatePayload{}, httperr.BadRequest(40085, "scenario template does not support chat assistants")
+		return nil, nil, ScenarioTemplatePayload{}, httperr.BadRequest(httperr.CodeTemplateAppTypeUnsupported,
+			"scenario template does not support chat assistants")
 	}
 	payload, err := parseTemplatePayload(selected.PayloadJSON)
 	if err != nil {

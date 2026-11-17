@@ -24,6 +24,9 @@ export function ConversationCitationViewer({ citation, onCitationChange, documen
   const [chunks, setChunks] = useState<Array<{ id: string; content: string }>>([]);
   const [chunksLoading, setChunksLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Kept alongside the object URL: the viewer reads the bytes from the Blob so
+  // the preview never needs `fetch(blob:)`, which `connect-src 'self'` blocks.
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewType, setPreviewType] = useState("");
   const [previewText, setPreviewText] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -82,6 +85,7 @@ export function ConversationCitationViewer({ citation, onCitationChange, documen
       const contentType = String(response.headers["content-type"] ?? "");
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
+      setPreviewBlob(blob);
       setPreviewType(contentType);
       setPreviewText(isTextPreview(contentType, nextCitation.name) ? await blob.text() : "");
     } catch {
@@ -109,6 +113,7 @@ export function ConversationCitationViewer({ citation, onCitationChange, documen
           if (open) return;
           if (previewUrl) URL.revokeObjectURL(previewUrl);
           setPreviewUrl(null);
+          setPreviewBlob(null);
           setPreviewText("");
           setPreviewType("");
           setDocument(null);
@@ -134,7 +139,7 @@ export function ConversationCitationViewer({ citation, onCitationChange, documen
             </div>
           ) : (
             <div className="max-h-[64vh] overflow-auto rounded-md border bg-muted/20 p-2">
-              <OriginalDocumentViewer blobUrl={previewUrl ?? undefined} contentType={previewType} text={previewText} filename={document?.name} loading={previewLoading} />
+              <OriginalDocumentViewer blobUrl={previewUrl ?? undefined} blob={previewBlob} contentType={previewType} text={previewText} filename={document?.name} loading={previewLoading} />
             </div>
           )}
         </DialogContent>

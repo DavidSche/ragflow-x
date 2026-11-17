@@ -114,7 +114,7 @@ func (s *Service) InstantiateTemplateInstance(ctx context.Context, tenantID, use
 			return nil, httperr.New(502, 50200, "dataset link lookup failed")
 		}
 		if link == nil {
-			return nil, httperr.BadRequest(40085, "dataset not found in workspace: "+datasetID)
+			return nil, httperr.BadRequest(httperr.CodeDatasetOutsideWorkspace, "dataset not found in workspace: "+datasetID)
 		}
 		datasetIDs = append(datasetIDs, datasetID)
 	}

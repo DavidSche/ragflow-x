@@ -71,8 +71,8 @@ user cannot reach it from the product. See [CHANGELOG.md](./CHANGELOG.md) for th
   eval gate and signature checks, and Scenario Pack v3 separates the engine-agnostic core from the
   `runtimeExtension.ragflow` runtime block.
 - **Error honesty.** An upstream business rejection (HTTP 200 with `code≠0`) is no longer reported as
-  a `502`: it becomes `400/40085` carrying the engine's own message. `502` is now reserved for
-  transport failures and 5xx.
+  a `502`: it becomes a `400` carrying the engine's own message (code `41140`, upstream rejection).
+  `502` is now reserved for transport failures and 5xx.
 - **Schema 162 → 166**: four additive migrations (permission backfill, recovery claim table, baseline
   lineage columns, instantiation provenance plus the idempotency index). No table rebuild, no drops.
 

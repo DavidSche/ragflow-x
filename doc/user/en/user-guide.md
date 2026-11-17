@@ -353,7 +353,7 @@ The permission resource is `model-default` (platform administrators read+manage,
 workspace administrators read). `409/40913` means another administrator holds the
 write lock; `409/40912` means the expected value changed under you — refresh and
 retry. **With no default embedding model, dataset creation is rejected locally**
-(`400/40085 no embedding model is registered in the engine…`), so set the default
+(`400/41121 no embedding model is registered in the engine…`), so set the default
 first.
 
 Administrators manage model providers, instances, routes, and API keys. API

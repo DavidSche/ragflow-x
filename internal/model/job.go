@@ -47,6 +47,18 @@ const (
 	// JobKindVersionPublishReconcile recovers interrupted document version
 	// publish coordination by comparing Attempt snapshots with RAGFlow state.
 	JobKindVersionPublishReconcile = "version_publish_reconcile"
+	// JobKindReportGenerate is one execution slice of a report job (doc/288
+	// §7.9): `rgx_job` describes a slice, while `rgx_report_job` stays the only
+	// authoritative business state. The slice key
+	// `report:<report_job_id>:<attempt_seq>:<slice_seq>` is what makes execution
+	// idempotent — a replayed trigger enqueues nothing.
+	JobKindReportGenerate = "report_generate"
+	// JobKindReportFinalizeReconcile is the second trigger of the report
+	// terminal write (doc/288 §8.2 / A35 ④): a report left in `finalizing` by a
+	// crash between the outbox insert and the terminal transaction is finished
+	// here. It exists because "the event was published" is not proof that the
+	// terminal state was written.
+	JobKindReportFinalizeReconcile = "report_finalize_reconcile"
 	// JobKindConnectorSync executes a data-source connector sync run (doc/225
 	// §6): scan -> diff -> ledger/idempotent apply -> upload & parse.
 	JobKindConnectorSync = "connector_sync"

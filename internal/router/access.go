@@ -585,6 +585,59 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/eval-cases/:id/evidence", Action: "read", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
 		{Method: "PUT", Path: "/api/v1/eval-cases/:id/evidence", Action: "manage", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
 		{Method: "POST", Path: "/api/v1/eval-cases/:id/revalidate", Action: "execute", Resource: "eval-set", Resolve: resolveEvalCaseScope(svc)},
+
+		// ---- report answers (doc/288 §11.4) ----------------------------------
+		// Every report route takes the tenant from the session, never from the
+		// path, so no Resolve hook is needed here: the row lookup itself is
+		// tenant-filtered, and the owner check answers 44109 "not found" — a
+		// colleague's report id must not be an existence oracle (§7.6).
+		//
+		// DELETE is `delete:own`, not `manage`: §7.6/§13 allow the owner to delete
+		// their own report, which a `manage`-only gate would deny to every
+		// non-admin. The row-level "owner, or platform admin with manage" rule
+		// lives in Service.SoftDeleteReport, the same split as
+		// `DELETE /datasets/:id/documents` (document:delete:own).
+		{Method: "POST", Path: "/api/v1/reports", Action: "execute", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/reports", Action: "read", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/reports/:id", Action: "read", Resource: "report"},
+		{Method: "DELETE", Path: "/api/v1/reports/:id", Action: "delete:own", Resource: "report"},
+		// Cancel is `execute`, not `manage`: it stops the caller's own run. The row
+		// level owner check (44109 for anyone else) is in Service.CancelReport, the
+		// same split as DELETE above.
+		{Method: "POST", Path: "/api/v1/reports/:id/cancel", Action: "execute", Resource: "report"},
+		// Regeneration is `execute` (a new run on one's own report). The row-level
+		// owner check (44109 for anyone else) and its own idempotency namespace are in
+		// Service.RegenerateReport; reading one historical revision by number is
+		// `read`, owner-checked in Service.GetReportRevisionByNumber.
+		{Method: "POST", Path: "/api/v1/reports/:id/revisions", Action: "execute", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision", Action: "read", Resource: "report"},
+		// Outline confirmation is `execute`, not `manage`: §8.4 gives the decision to
+		// the report owner, and the row-level owner check (44109 for everyone else) is
+		// in Service.ConfirmReportOutline.
+		{Method: "POST", Path: "/api/v1/reports/:id/revisions/:revision/outline/confirm", Action: "execute", Resource: "report"},
+		// Export is `execute` (freeze this revision into a file) and does its own
+		// row-level owner check (44109 for anyone else) in CreateReportExport, the
+		// same split as cancel/confirm. The download is `read`: streaming one's
+		// own artifact is not an execution, and the doc owner check answers 44109
+		// (doc/288 §7.7 / §11.4).
+		{Method: "POST", Path: "/api/v1/reports/:id/revisions/:revision/artifacts", Action: "execute", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision/artifacts/:artifactId/download", Action: "read", Resource: "report"},
+		// The template catalog is read-only in P0-A. Cloning (P0-B) and the
+		// capability-check probe (P0-A, §11.4) is `read` — it only discloses a verdict
+		// and never mutates the template. Cloning (P0-B, §11.4) is `manage`: it forks
+		// the platform baseline into the workspace's private version sequence.
+		{Method: "GET", Path: "/api/v1/report-templates", Action: "read", Resource: "report-template"},
+		{Method: "POST", Path: "/api/v1/report-templates/:key/capability-check", Action: "read", Resource: "report-template"},
+		{Method: "POST", Path: "/api/v1/report-templates/:key/clone", Action: "manage", Resource: "report-template"},
+		// The job surface (doc/288 §11.4 / T5): the snapshot and its SSE stream. Both
+		// are `read` — subscribing to your own report is not an execution — and both
+		// resolve the row through the report, whose owner check answers 44109 for a
+		// colleague's job id. The section retry (§8.7) is `execute`, the same split
+		// as cancel/regenerate: it rewrites a section of one's own report, and the
+		// row-level owner check (44109 for anyone else) is in Service.RetryReportSection.
+		{Method: "GET", Path: "/api/v1/report-jobs/:jobId", Action: "read", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/report-jobs/:jobId/events", Action: "read", Resource: "report"},
+		{Method: "POST", Path: "/api/v1/report-jobs/:jobId/sections/:ord/retry", Action: "execute", Resource: "report"},
 	}
 	return withRouteContracts(rules)
 }

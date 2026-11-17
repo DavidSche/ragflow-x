@@ -14,6 +14,8 @@ export interface DatasetLike {
   id: string;
   name: string;
   ragflow_dataset_id?: string;
+  /** Owning workspace; the wizard uses it to hide cross-workspace rows. */
+  tenant_id?: string;
   /** metric metadata optional（P1 dataset-options 接线透出）。 */
   document_count?: number;
   sensitivity?: string;
@@ -137,6 +139,20 @@ export function datasetIdLabel(
 
 export function datasetOptions(datasets: DatasetLike[] | undefined) {
   return { values: datasets ?? [], mapId: (d: DatasetLike) => d.ragflow_dataset_id || d.id };
+}
+
+/**
+ * `GET /chats/:id/sessions` answers the paged envelope
+ * (`{ items, total, page, page_size }`), and a bare array on older paths. The
+ * 4.151 drill (2026-11-17) hit `sessions.filter is not a function` because the
+ * panel stored the envelope itself in an array-typed state and the whole route
+ * fell into the error boundary. Normalise here so the UI cannot regress to
+ * rendering an object as a list.
+ */
+export function sessionRows<T>(data: unknown): T[] {
+  if (Array.isArray(data)) return data as T[];
+  const items = (data as { items?: unknown } | null | undefined)?.items;
+  return Array.isArray(items) ? (items as T[]) : [];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

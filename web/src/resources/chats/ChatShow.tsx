@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, RefreshCw, Copy, Pencil, Trash2, Check, X, Share2, Code } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { sessionRows } from "./chat-types";
 
 interface ChatLike {
   id: string;
@@ -41,8 +42,10 @@ const SessionList = () => {
     if (!record) return;
     setLoading(true);
     try {
-      const res = await api.get<{ code: number; data: SessionLike[] }>(`/chats/${record.id}/sessions`);
-      setSessions(res.data.data ?? []);
+      // The endpoint answers a paged envelope; sessionRows() also tolerates a
+      // bare array so an object can never reach the array-typed state.
+      const res = await api.get<{ code: number; data: unknown }>(`/chats/${record.id}/sessions`);
+      setSessions(sessionRows<SessionLike>(res.data.data));
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("chats.session_load_error"), { type: "error" });
     } finally {
@@ -56,7 +59,8 @@ const SessionList = () => {
       const res = await api.get<{ code: number; data: { messages?: MessageLike[] } }>(
         `/chats/${record.id}/sessions/${sessionId}`,
       );
-      setMessages(res.data.data?.messages ?? []);
+      const loaded = res.data.data?.messages;
+      setMessages(Array.isArray(loaded) ? loaded : []);
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("chats.session_messages_error"), { type: "error" });
     }

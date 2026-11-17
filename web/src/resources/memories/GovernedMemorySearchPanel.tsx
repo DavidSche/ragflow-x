@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Search, ShieldCheck } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { createRandomId } from "@/lib/random-id";
 
 interface AgentOption {
   id: string;
@@ -84,7 +85,7 @@ export const GovernedMemorySearchPanel = ({ memoryId }: { memoryId: string }) =>
         `/memories/${memoryId}/governed-search`,
         {
           query: query.trim(), assistant_id: agentID, session_id: sessionID,
-          request_id: crypto.randomUUID(), top_n: 5,
+          request_id: createRandomId(), top_n: 5,
         },
       );
       const searchResult = response.data?.data;

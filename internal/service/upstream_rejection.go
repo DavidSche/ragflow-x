@@ -20,8 +20,8 @@ import (
 //	POST /datasets  -> 200 {code:500, "model configuration unavailable: ..."}
 //
 // Both are 400-class answers about the request/environment, so they surface as
-// 40085 with the engine's reason attached; real transport and 5xx failures stay
-// 502 with the gateway code.
+// 41140 (upstream rejection) with the engine's reason attached; real transport
+// and 5xx failures stay 502 with the gateway code.
 const upstreamReasonLimit = 200
 
 // upstreamRejection extracts the engine's reason when the engine deliberately
@@ -69,7 +69,7 @@ func upstreamReasonHints(reason string) string {
 // error contract: actionable reason as 400-class validation, otherwise 502.
 func upstreamWriteFailure(err error, action string, gatewayCode int) error {
 	if reason, ok := upstreamRejection(err); ok {
-		return httperr.BadRequest(40085, "ragflow rejected "+action+": "+upstreamReasonHints(reason))
+		return httperr.BadRequest(httperr.CodeUpstreamRejected, "ragflow rejected "+action+": "+upstreamReasonHints(reason))
 	}
 	return httperr.New(502, gatewayCode, "ragflow "+action+" failed")
 }

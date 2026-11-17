@@ -44,6 +44,9 @@ export function CitationWindow({
   const draggingRef = useRef(false);
   const previewUrlRef = useRef<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Same bytes as previewUrl; the viewer must not `fetch(blob:)` under
+  // `connect-src 'self'`.
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewType, setPreviewType] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -80,12 +83,14 @@ export function CitationWindow({
         if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
         previewUrlRef.current = url;
         setPreviewUrl(url);
+        setPreviewBlob(blob);
         setPreviewType(String(response.headers["content-type"] ?? ""));
       } catch {
         if (!active) return;
         if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
         previewUrlRef.current = null;
         setPreviewUrl(null);
+        setPreviewBlob(null);
         setPreviewType("");
       } finally {
         if (active) setPreviewLoading(false);
@@ -144,6 +149,7 @@ export function CitationWindow({
             ) : isSpreadsheet ? (
               <OriginalDocumentViewer
                 blobUrl={previewUrl ?? undefined}
+                blob={previewBlob}
                 contentType={previewType}
                 filename={citation?.name}
                 loading={previewLoading}

@@ -483,6 +483,14 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	runner.Register(&compilationReconcileWorker{svc: s})
 	runner.Register(&evaluationRunWorker{svc: s})
 	runner.Register(&versionPublishReconcileWorker{svc: s})
+	// The report terminal write needs a second trigger: the outbox consumer covers
+	// the normal path, this sweep covers a crash between the outbox insert and the
+	// terminal transaction (doc/288 §8.2 / A35 ④).
+	runner.Register(&reportFinalizeReconcileWorker{svc: s})
+	// The generate worker consumes one execution slice of a report (T4). Without it
+	// `pollOnce` would fail every `report_generate` job with "no worker registered
+	// for kind", which is exactly the failure the slice comment warns about.
+	runner.Register(&reportGenerateWorker{svc: s})
 	runner.Register(&connectorSyncWorker{svc: s})
 	runner.Register(&connectorRetentionWorker{svc: s})
 	s.SetupApprovalWorker(runner)
@@ -495,6 +503,9 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	}
 	if _, scheduleErr := s.ScheduleVersionPublishReconciler(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("version publish reconcile schedule failed", "error", scheduleErr)
+	}
+	if _, scheduleErr := s.ScheduleReportFinalizeReconciler(context.Background(), ""); scheduleErr != nil {
+		logger.Warn("report finalize reconcile schedule failed", "error", scheduleErr)
 	}
 	if _, scheduleErr := s.ScheduleConnectorRetention(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("connector retention schedule failed", "error", scheduleErr)

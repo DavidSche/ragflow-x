@@ -527,19 +527,7 @@ func (s *store) CreateAudit(ctx context.Context, log *model.AuditLog) error {
 			}
 		}
 		err := s.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			last, err := lastAuditTx(tx, log.TenantID)
-			if err != nil {
-				return err
-			}
-			if last != nil {
-				log.Seq = last.Seq + 1
-				log.PrevHash = last.Hash
-			} else {
-				log.Seq = 1
-				log.PrevHash = ""
-			}
-			log.Hash = model.AuditHash(log.PrevHash, log)
-			return tx.Create(log).Error
+			return appendAuditInTx(tx, log)
 		})
 		if err == nil {
 			return nil
@@ -550,6 +538,34 @@ func (s *store) CreateAudit(ctx context.Context, log *model.AuditLog) error {
 		lastErr = err // tail slot lost or transient lock: re-read state and retry
 	}
 	return fmt.Errorf("append audit record after %d attempts (persistent chain contention): %w", auditAppendMaxRetries, lastErr)
+}
+
+// appendAuditInTx is the body of CreateAudit, callable from a caller that
+// already owns a transaction. It reads the chain tail *inside* that transaction
+// and appends with seq = tail.Seq + 1, so an audit written as part of a larger
+// business transaction (billing settlement, finalization) joins the same gapless
+// per-tenant chain instead of stamping a zero seq that would collide with the
+// next in-transaction append on the (tenant_id, seq) index.
+func appendAuditInTx(tx *gorm.DB, log *model.AuditLog) error {
+	if log.ID == "" {
+		log.ID = id.New()
+	}
+	if log.At.IsZero() {
+		log.At = time.Now().UTC()
+	}
+	last, err := lastAuditTx(tx, log.TenantID)
+	if err != nil {
+		return err
+	}
+	if last != nil {
+		log.Seq = last.Seq + 1
+		log.PrevHash = last.Hash
+	} else {
+		log.Seq = 1
+		log.PrevHash = ""
+	}
+	log.Hash = model.AuditHash(log.PrevHash, log)
+	return tx.Create(log).Error
 }
 
 // isDuplicateKeyErr reports whether err is a unique-constraint violation.

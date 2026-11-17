@@ -253,6 +253,11 @@ func TestMigrationV88BusinessUserRole(t *testing.T) {
 		// doc/244: trial runs moved to their own resource; consumers keep the
 		// read access they had through scenario-template:read.
 		"read|trial-run",
+		// doc/288 §7.6: a report is the caller's own deliverable. `execute` runs
+		// it, `read` reads the owner-scoped list/detail, `delete:own` deletes it
+		// (row-level owner check in the service); the template catalog is how a
+		// consumer picks a structure before starting a run.
+		"read|report", "execute|report", "delete:own|report", "read|report-template",
 	}
 	if len(permissions) != len(expected) {
 		t.Fatalf("expected %d business user permissions, got %d: %+v", len(expected), len(permissions), permissions)

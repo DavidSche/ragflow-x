@@ -48,7 +48,7 @@ func (s *Service) CreateDataset(ctx context.Context, tenantID, name string) (*Da
 	// chat models only).
 	embeddingModel := s.defaultEmbeddingModel(ctx)
 	if embeddingModel == "" {
-		return nil, httperr.BadRequest(40085,
+		return nil, httperr.BadRequest(httperr.CodeEmbeddingModelMissing,
 			"no embedding model is registered in the engine; add one before creating a dataset")
 	}
 	ds, err := s.RAGFlow.CreateDataset(ctx, ragflow.CreateDatasetRequest{

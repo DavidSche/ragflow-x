@@ -130,7 +130,7 @@ func (s *Service) listAgentSkeletons(ctx context.Context) ([]ScenarioSkeleton, e
 	items := make([]ScenarioSkeleton, 0, len(templates))
 	for _, template := range templates {
 		// Upstream occasionally lists an empty row (no id, no dsl). It is not a
-		// skeleton: importing it would 40085 on the id, so drop it here instead of
+		// skeleton: importing it would be refused on the id, so drop it here instead of
 		// offering a button that cannot work.
 		if strings.TrimSpace(template.ID) == "" {
 			continue
@@ -191,7 +191,7 @@ func compilationSkeletons(templates []ragflow.CompilationTemplate, source string
 func (s *Service) ImportScenarioSkeleton(ctx context.Context, tenantID, userID, skeletonID string) (*model.ScenarioTemplateAsset, error) {
 	source, upstreamID, ok := splitSkeletonID(skeletonID)
 	if !ok {
-		return nil, httperr.BadRequest(40085, "skeleton id must be <source>:<upstream_id>")
+		return nil, httperr.BadRequest(httperr.CodeSkeletonIDMalformed, "skeleton id must be <source>:<upstream_id>")
 	}
 	payload, key, name, appTypes, err := s.skeletonPayload(ctx, source, upstreamID)
 	if err != nil {
@@ -298,7 +298,7 @@ func (s *Service) skeletonPayload(ctx context.Context, source, upstreamID string
 		}
 		return ScenarioTemplatePayload{}, "", "", nil, httperr.NotFound("compilation skeleton not found")
 	default:
-		return ScenarioTemplatePayload{}, "", "", nil, httperr.BadRequest(40085, "unsupported skeleton source")
+		return ScenarioTemplatePayload{}, "", "", nil, httperr.BadRequest(httperr.CodeSkeletonSourceUnsupported, "unsupported skeleton source")
 	}
 }
 

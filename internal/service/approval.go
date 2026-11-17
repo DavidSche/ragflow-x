@@ -582,7 +582,8 @@ func validateApprovalSteps(steps []model.ApprovalStepSpec) error {
 			}
 			for _, previous := range steps[i-1].Approvers {
 				if previous.Type == model.ApprovalApproverUser && previous.Value == current.Value {
-					return httperr.BadRequest(40085, "the same user cannot approve adjacent steps")
+					return httperr.BadRequest(httperr.CodeApprovalAdjacentApproverConflict,
+						"the same user cannot approve adjacent steps")
 				}
 			}
 		}

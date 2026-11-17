@@ -95,6 +95,13 @@ const (
 	AggregateTypeDocumentVersion      = "document_version"
 	EventTypeMemoryOperationDispatch  = "memory_operation_dispatch"
 	AggregateTypeMemoryOperation      = "memory_operation"
+	// EventTypeReportJobFinalize is the internal delivery type that asks the
+	// finalize consumer to write a report job's terminal state (doc/288 §8.2).
+	// It is deliberately NOT in the SSE event-type closed set: outbox types are
+	// delivery mechanics, and mixing the two registries would let a mechanical
+	// retry type leak into the UI contract.
+	EventTypeReportJobFinalize = "report_job_finalize"
+	AggregateTypeReportJob     = "report_job"
 )
 
 // OutboxEvent is a durable domain event written in the same transaction as

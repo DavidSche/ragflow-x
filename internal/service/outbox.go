@@ -55,6 +55,16 @@ func (s *Service) ProcessOutboxEvents(ctx context.Context, limit int) error {
 			}
 			continue
 		}
+		if handler := reportOutboxHandlers[event.EventType]; handler != nil &&
+			event.AggregateType == model.AggregateTypeReportJob {
+			// Terminal writes and internal deliveries go through a registry (§8.2):
+			// the closure of required consumers is asserted at startup, so a missing
+			// one is a boot failure instead of a report stuck in `finalizing` (A46).
+			if err := handler(ctx, s, event, now); err != nil {
+				failures = append(failures, err)
+			}
+			continue
+		}
 		if event.EventType != model.EventTypeDocumentVersionPublished ||
 			event.AggregateType != model.AggregateTypeDocumentVersion {
 			retryErr := s.Store.RetryOutboxEvent(

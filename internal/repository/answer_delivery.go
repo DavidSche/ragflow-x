@@ -201,9 +201,27 @@ func (s *store) GetAuthorizationProjectionAny(ctx context.Context, tenantID, sna
 func (s *store) UpsertDefaultExportTemplate(ctx context.Context, template *model.ExportTemplateVersion) error {
 	template.CreatedAt = time.Now().UTC()
 	template.CreatedBy = "system"
-	return s.WithContext(ctx).
-		Where("tenant_id = ? AND template_id = ? AND version = ?", template.TenantID, template.TemplateID, template.Version).
-		FirstOrCreate(template).Error
+	// FirstOrCreate is the wrong tool here: GORM folds the struct's non-zero
+	// primary key into the SELECT, so a caller that pre-sets `ID: id.New()` never
+	// matches the existing row and the follow-up INSERT hits the
+	// (tenant_id, template_id, version) unique index (2067). Look the row up by
+	// key alone; only create when it is genuinely absent.
+	var existing model.ExportTemplateVersion
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND template_id = ? AND version = ?",
+			template.TenantID, template.TemplateID, template.Version).
+		First(&existing).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if err == nil {
+		// A frozen default already exists (the same export for this tenant ran
+		// before): report its id so the caller's handle stays consistent with the
+		// stored row, and never rewrite a frozen default.
+		template.ID = existing.ID
+		return nil
+	}
+	return s.WithContext(ctx).Create(template).Error
 }
 
 func (s *store) CreateExportSnapshot(ctx context.Context, snapshot *model.ExportSnapshot) error {

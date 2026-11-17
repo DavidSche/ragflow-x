@@ -1,3 +1,4 @@
+import { createRandomId } from "@/lib/random-id";
 import {
   CONVERSATION_EVENT_SCHEMA_VERSION,
   ConversationContext,
@@ -25,14 +26,15 @@ export function createOpaqueScope(value: string): string {
   return `op-${(hash >>> 0).toString(36)}`;
 }
 
+// Plain-http deployments have no crypto.randomUUID (see lib/random-id); these
+// values only need to be unique within the conversation, never secret.
 function createCspValue(prefix: string): string {
-  const id = globalThis.crypto?.randomUUID?.();
-  if (!id) throw new Error("CSPRNG unavailable");
-  return `${prefix}-${id}`;
+  return `${prefix}-${createRandomId()}`;
 }
 
 export function assertConversationContext(context: ConversationContext): ConversationContext {
-  const valid = (context.kind === "search") === (context.type === "run");
+  const runKind = context.kind === "search" || context.kind === "report";
+  const valid = runKind === (context.type === "run");
   if (!valid || !context.id || !context.targetId) throw new ConversationProtocolError("invalid_context", "Invalid conversation context");
   return context;
 }
@@ -109,6 +111,7 @@ export function slashCommandOptions(): SlashCommandOption[] {
     { id: "chat", label: "/chat", hint: "conversationCenter.kind_chat" },
     { id: "search", label: "/search", hint: "conversationCenter.kind_search" },
     { id: "agent", label: "/agent", hint: "conversationCenter.kind_agent" },
+    { id: "report", label: "/report", hint: "conversationCenter.kind_report" },
     { id: "new", label: "/new", hint: "conversationCenter.new_context" },
     { id: "help", label: "/help", hint: "conversationCenter.help" },
   ];

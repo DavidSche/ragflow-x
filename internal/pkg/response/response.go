@@ -27,14 +27,24 @@ func OK(c *gin.Context, data interface{}) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
 }
 
-// Accepted writes a successful 202 response with the standard envelope.
+// Accepted writes a successful 202 response with the standard envelope. The
+// Location header points at the compilation run, which is the only 202 resource
+// that predates AcceptedAt; new endpoints should call AcceptedAt directly rather
+// than inherit a Location that describes someone else's resource.
 func Accepted(c *gin.Context, data interface{}) {
+	AcceptedAt(c, "/api/v1/compilation/runs/"+c.Param("runId"), data)
+}
+
+// AcceptedAt is Accepted with an explicit Location header (empty means none).
+func AcceptedAt(c *gin.Context, location string, data interface{}) {
 	payload, err := json.Marshal(Body{Code: 0, Message: "accepted", Data: data, TraceID: traceID(c)})
 	if err != nil {
 		Fail(c, 500, 50000, "response serialization failed")
 		return
 	}
-	c.Header("Location", "/api/v1/compilation/runs/"+c.Param("runId"))
+	if location != "" {
+		c.Header("Location", location)
+	}
 	c.Data(http.StatusAccepted, "application/json; charset=utf-8", payload)
 }
 

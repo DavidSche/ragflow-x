@@ -555,19 +555,19 @@ LANES = [
 
 # Forms a template does not declare must be refused, never half-built.
 NEGATIVES = [
-    {"lane": "neg.chat-on-search-only", "template": "product-manual", "app_type": "chat", "accept_codes": (40085,)},
-    {"lane": "neg.search-on-chat-only", "template": "contract-compliance", "app_type": "search", "accept_codes": (40085,)},
-    {"lane": "neg.search-on-chat-only-2", "template": "training", "app_type": "search", "accept_codes": (40085,)},
+    {"lane": "neg.chat-on-search-only", "template": "product-manual", "app_type": "chat", "accept_codes": (41104,)},
+    {"lane": "neg.search-on-chat-only", "template": "contract-compliance", "app_type": "search", "accept_codes": (41104,)},
+    {"lane": "neg.search-on-chat-only-2", "template": "training", "app_type": "search", "accept_codes": (41104,)},
     # `agent` is declared by six templates but their packs carry no canvas DSL,
     # so the catalog reports them as not renderable. The API must say so
     # explicitly instead of creating an empty canvas.
-    {"lane": "neg.agent-without-canvas", "template": "training", "app_type": "agent", "accept_codes": (40085,)},
+    {"lane": "neg.agent-without-canvas", "template": "training", "app_type": "agent", "accept_codes": (41105,)},
     # 自动建库 creates empty knowledge bases, and the engine refuses to bind a
     # dataset without a parsed chunk. That refusal is legitimate, but its message
     # used to be the engine's English sentence about an internal dataset id, which
     # told the operator nothing. It must now instruct (doc/286 §4).
     {"lane": "neg.auto-datasets-empty-kb", "template": "enterprise-qa", "app_type": "chat",
-     "accept_codes": (40085,), "auto_create": True,
+     "accept_codes": (41140,), "auto_create": True,
      "expect_message": "no parsed content yet"},
 ]
 

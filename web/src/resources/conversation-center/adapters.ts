@@ -14,11 +14,25 @@ import {
   type ConversationContextPage,
   type ConversationError,
   type ConversationEvent,
+  type ConversationSnapshot,
+  type ConversationStartInput,
   type ConversationTargetPage,
   type ConversationTargetRef,
   type ConversationStream,
   type RunFinalStatus,
 } from "./types";
+import {
+  openReportEventPoller,
+  rememberReportJob,
+  rememberedReportJob,
+  reportContextFromRecords,
+  type CreateReportResult,
+  type ExportArtifactRecord,
+  type ReportDetailRecord,
+  type ReportJobSnapshot,
+  type ReportTemplateView,
+} from "./report/report-run";
+import { isReportTerminalEvent } from "./report/report-contract";
 
 interface PageEnvelope<T> {
   items: T[];
@@ -582,4 +596,273 @@ class ConversationBootstrapError extends Error {
     super(message);
     this.name = "ConversationBootstrapError";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Report adapter (doc/288 T8, `kind: "report"`)
+// ---------------------------------------------------------------------------
+//
+// A report run is not a chat turn: it POSTs an aggregate (202), then the UI
+// follows the job through `/report-jobs/:id/events` (§8.3 SSE) until a terminal
+// event, and `POST /reports/:id/cancel` records the stop intent (202). The
+// adapter therefore exposes a small imperative surface on top of the
+// `ConversationAdapter` contract; the workspace (`report/ReportWorkspace.tsx`)
+// drives those, and `start()` implements the stream protocol for callers that
+// consume the center's event pipeline.
+
+const REPORT_CREATE_IDEMPOTENCY_PREFIX = "rgx-r";
+
+export interface ReportExportSuccess {
+  export_job: Record<string, unknown>;
+  export_artifact: ExportArtifactRecord;
+  canonical_hash: string;
+}
+
+export interface ReportAdapter extends ConversationAdapter {
+  kind: "report";
+  listTemplates(): Promise<ReportTemplateView[]>;
+  loadDetail(reportId: string, options?: { signal?: AbortSignal }): Promise<ReportDetailRecord>;
+  createReport(body: {
+    title: string;
+    question: string;
+    template_key: string;
+    datasets?: Array<{ dataset_id: string; engine_dataset_id?: string; role?: string; engine_id?: string }>;
+    outline_confirmation?: string;
+  }): Promise<CreateReportResult>;
+  cancelReport(reportId: string): Promise<unknown>;
+  loadSnapshot(reportId: string, jobId: string, options?: { signal?: AbortSignal }): Promise<ReportJobSnapshot>;
+  confirmOutline(reportId: string, revisionNo: number, sections: Array<{ section_key: string; title: string }>): Promise<unknown>;
+  createExport(reportId: string, revisionNo: number, format: "md" | "docx"): Promise<ReportExportSuccess>;
+  artifactDownloadUrl(reportId: string, revisionNo: number, artifactId: string): string;
+}
+
+export function createReportAdapter(): ReportAdapter {
+  const createIdempotencyKey = () =>
+    `${REPORT_CREATE_IDEMPOTENCY_PREFIX}-${Date.now().toString(36)}-${newId()}`;
+
+  async function listTemplates(): Promise<ReportTemplateView[]> {
+    return templateList();
+  }
+
+  async function loadDetail(reportId: string, options: { signal?: AbortSignal } = {}): Promise<ReportDetailRecord> {
+    return unwrap<ReportDetailRecord>(api.get(`/reports/${encodeURIComponent(reportId)}`, { signal: options.signal }));
+  }
+
+  async function createReport(body: {
+    title: string;
+    question: string;
+    template_key: string;
+    datasets?: Array<{ dataset_id: string; engine_dataset_id?: string; role?: string; engine_id?: string }>;
+    outline_confirmation?: string;
+  }): Promise<CreateReportResult> {
+    return unwrap<CreateReportResult>(api.post("/reports", body, {
+      headers: { "Idempotency-Key": createIdempotencyKey() },
+    }));
+  }
+
+  async function cancelReport(reportId: string): Promise<unknown> {
+    return unwrap<unknown>(api.post(`/reports/${encodeURIComponent(reportId)}/cancel`, {}));
+  }
+
+  async function loadSnapshot(reportId: string, jobId: string, options: { signal?: AbortSignal } = {}): Promise<ReportJobSnapshot> {
+    return unwrap<ReportJobSnapshot>(api.get(`/report-jobs/${encodeURIComponent(jobId)}`, { signal: options.signal }));
+  }
+
+  async function confirmOutline(
+    reportId: string,
+    revisionNo: number,
+    sections: Array<{ section_key: string; title: string }>,
+  ): Promise<unknown> {
+    return unwrap<unknown>(api.post(
+      `/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/outline/confirm`,
+      { sections },
+    ));
+  }
+
+  async function createExport(reportId: string, revisionNo: number, format: "md" | "docx"): Promise<ReportExportSuccess> {
+    return unwrap<ReportExportSuccess>(api.post(
+      `/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/artifacts`,
+      { format },
+    ));
+  }
+
+  function artifactDownloadUrl(reportId: string, revisionNo: number, artifactId: string): string {
+    return `/api/v1/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/artifacts/${encodeURIComponent(artifactId)}/download`;
+  }
+
+  async function getTarget(targetId: string, { signal }: { signal?: AbortSignal } = {}): Promise<ConversationTargetRef> {
+    const list = await templateList(signal);
+    const view = list.find((item) => String(item.template_key ?? item.template_id) === targetId)
+      ?? list.find((item) => String(item.template_id) === targetId);
+    if (!view) {
+      // The catalog is the only template read surface (there is no single-key
+      // route in P0-A), so an unknown key degrades to a minimal ref rather than
+      // a hard failure – the workspace substitutes the payload when it opens.
+      return { id: targetId, kind: "report", name: targetId };
+    }
+    return reportTemplateTarget(view);
+  }
+
+  async function searchTargets(query: string, { limit }: { limit: number; cursor?: string; signal?: AbortSignal }): Promise<ConversationTargetPage> {
+    const list = await templateList();
+    const q = query.trim().toLowerCase();
+    const filtered = (q ? list.filter((item) =>
+      itemTemplateName(item).toLowerCase().includes(q) ||
+      String(item.template_key).toLowerCase().includes(q),
+    ) : list).slice(0, limit);
+    return { items: filtered.map(reportTemplateTarget), nextCursor: list.length > limit ? "more" : undefined, total: list.length };
+  }
+
+  async function listContexts(_targetId: string, { limit, cursor, signal }: { limit: number; cursor?: string; signal?: AbortSignal }): Promise<ConversationContextPage> {
+    const pageNumber = Number(cursor ? String(cursor).replace(/[^0-9]/g, "") : 1) || 1;
+    const data = await requestPage<Record<string, unknown>>(`/reports?page=${pageNumber}&page_size=${limit}&keyword=${encodeURIComponent("")}`, signal)
+      .catch(() => ({ items: [], total: 0 }));
+    const rawPage = page(data, limit, pageNumber);
+    return {
+      ...rawPage,
+      items: rawPage.items.map((item) => reportContextFromListItem(item)),
+    };
+  }
+
+  async function loadContext(context: ConversationContext): Promise<ConversationSnapshot> {
+    if (context.kind !== "report") throw new Error("not a report context");
+    const detail = await unwrap<ReportDetailRecord>(api.get(`/reports/${encodeURIComponent(context.id)}`));
+    // The aggregate's latest revision is the reporting surface; the live job is
+    // followed through the snapshot, whose ids are remembered per report.
+    const jobId = rememberedReportJob(context.id) ?? ("reportStatus" in context ? undefined : undefined);
+    return {
+      context: reportContextFromRecords(detail, { jobId }),
+      messages: [],
+    };
+  }
+
+  function reportContextFromListItem(item: Record<string, unknown>): ConversationContext & { kind: "report" } {
+    const updatedAt = typeof item.updated_at === "string" ? Date.parse(String(item.updated_at)) : undefined;
+    return {
+      id: String(item.id ?? ""),
+      targetId: String(item.template_key ?? ""),
+      kind: "report",
+      type: "run",
+      ...(item.title ? { title: String(item.title) } : {}),
+      ...(item.status ? { reportStatus: String(item.status) } : {}),
+      ...(item.question ? { question: String(item.question) } : {}),
+      ...(updatedAt ? { updatedAt } : {}),
+    };
+  }
+
+  async function templateList(signal?: AbortSignal): Promise<ReportTemplateView[]> {
+    const views = await unwrap<ReportTemplateView[]>(api.get("/report-templates", { signal }));
+    return Array.isArray(views) ? views : [];
+  }
+
+  function itemTemplateName(view: ReportTemplateView): string {
+    return view.payload?.name?.zh ?? view.payload?.name?.en ?? String(view.template_key);
+  }
+
+  function reportTemplateTarget(view: ReportTemplateView): ConversationTargetRef {
+    const name = itemTemplateName(view);
+    return {
+      id: String(view.template_key),
+      kind: "report" as const,
+      name,
+      description: name,
+      status: view.retired ? "retired" : view.status,
+    };
+  }
+
+  function start({ target, text, requestId, conversationKey }: ConversationStartInput): ConversationStream {
+    const controller = new AbortController();
+
+    async function* run(): AsyncGenerator<ConversationEvent> {
+      let result: CreateReportResult;
+      let context: (ConversationContext & { kind: "report" }) | null = null;
+      try {
+        // The stream's inherent question is the composer text; the title falls
+        // back to the question (the workspace crafts both explicitly).
+        result = await createReport({ title: text, question: text, template_key: target.id });
+      } catch (error) {
+        const e: ConversationEvent = { ...eventBase(state, { target, context: null, conversationKey, requestId }, "error.occurred"), type: "error.occurred", context: null, error: conversationError("report_create_failed", errorMessage(error), { httpStatus: errorStatus(error), traceId: errorTrace(error) }) };
+        yield e;
+        yield { ...eventBase(state, { target, context: null, conversationKey, requestId }, "stream.completed"), type: "stream.completed", context: null, finalStatus: "failed" };
+        return;
+      }
+      rememberReportJob(result.report.id, result.job.id);
+      context = reportContextFromRecords(result);
+      const createBase = { target, context, conversationKey, requestId };
+      yield { ...eventBase(state, createBase, "status.changed"), type: "status.changed", context, status: "STREAMING" };
+      const poller = openReportEventPoller(result.job.id, {
+        signal: controller.signal,
+        onReset: async () => {
+          const snap = await loadSnapshot(result.report.id, result.job.id).catch(() => null);
+          return snap ? snap.event_seq : 0;
+        },
+      });
+      let finalStatus: RunFinalStatus = "completed";
+      try {
+        for await (const frame of poller.frames()) {
+          if (frame.type.endsWith(".progress") || frame.type.startsWith("section.") || frame.type.startsWith("job.") && frame.type !== "job.queued") {
+            yield { ...eventBase(state, createBase, "status.changed"), type: "status.changed", context, status: "STREAMING" };
+          }
+          if (isReportTerminalEvent(frame.type)) {
+            finalStatus = frame.type === "job.cancelled" ? "cancelled" : frame.type === "job.failed" ? "failed" : "completed";
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        const e: ConversationEvent = { ...eventBase(state, createBase, "error.occurred"), type: "error.occurred", context, error: conversationError("report_stream_failed", errorMessage(error), { failureKind: "unknown", traceId: errorTrace(error) }) };
+        yield e;
+        yield { ...eventBase(state, createBase, "stream.completed"), type: "stream.completed", context, finalStatus: "failed" };
+        return;
+      } finally {
+        poller.abort();
+      }
+      yield { ...eventBase(state, createBase, "stream.completed"), type: "stream.completed", context, finalStatus };
+    }
+
+    const state: StreamState = { eventSequence: 0, assistantId: `report-${requestId}`, controller, streamId: `report-${requestId}` };
+    return { requestId, streamId: `report-${requestId}`, events: run(), abort: () => controller.abort() };
+  }
+
+  return {
+    kind: "report",
+    capabilities: () => capabilities({
+      streaming: false,
+      feedback: false,
+      artifacts: true,
+      toolCalls: false,
+      retry: true,
+      stopGeneration: true,
+      remoteCancel: true,
+      contextModel: "run",
+      persistence: "ephemeral_run",
+    }),
+    getTarget,
+    searchTargets,
+    listContexts,
+    loadContext,
+    async loadMoreMessages() {
+      return { items: [] };
+    },
+    start,
+    listTemplates,
+    loadDetail,
+    createReport,
+    cancelReport,
+    loadSnapshot,
+    confirmOutline,
+    createExport,
+    artifactDownloadUrl,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errorStatus(error: unknown): number | undefined {
+  return error instanceof ApiError ? error.status : undefined;
+}
+
+function errorTrace(error: unknown): string | undefined {
+  return error instanceof ApiError ? error.traceId : undefined;
 }

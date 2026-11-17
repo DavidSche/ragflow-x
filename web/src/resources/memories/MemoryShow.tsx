@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChevronDown, ChevronRight, Loader2, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
+import { createRandomId } from "@/lib/random-id";
 import { GovernedMemorySearchPanel } from "./GovernedMemorySearchPanel";
 import { MemoryOperationPanel } from "./MemoryOperationPanel";
 import { NumericRangeField } from "@/components/NumericRangeField";
@@ -237,7 +238,7 @@ export const MemoryShow = () => {
           request_kind: "search",
           assistant_id: msgForm.agent_id,
           session_id: msgForm.session_id,
-          request_id: crypto.randomUUID(),
+          request_id: createRandomId(),
         },
       );
       setContextDecision(response.data?.data?.decision ?? null);

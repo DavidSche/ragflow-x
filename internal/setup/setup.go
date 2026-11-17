@@ -807,6 +807,14 @@ func (m *Manager) buildEngine(cfg *config.Config, sec *secretstore.Secrets) (htt
 	hub.SetSink(svc)
 	notify.Set(hub)
 
+	// A report whose terminal-write request has no consumer would sit in
+	// `finalizing` forever with nothing in the system saying so (doc/288 §8.2 /
+	// A46). Refuse to start rather than degrade silently.
+	if err := svc.MustHaveReportOutboxHandlers(); err != nil {
+		closeGDB(gdb)
+		return nil, nil, err
+	}
+
 	// A2 async worker: start the in-process runner with the document-sync
 	// consumer. It is stopped via the returned closer (graceful shutdown, with
 	// running jobs heartbeated and recovered on restart).
@@ -830,6 +838,10 @@ func (m *Manager) buildEngine(cfg *config.Config, sec *secretstore.Secrets) (htt
 	// WS7 T7.0: backfill builtin scenario templates for existing tenants. The
 	// bootstrap is idempotent and never blocks startup.
 	svc.BootstrapScenarioTemplates(context.Background())
+	// doc/288 §11.1: seed the platform report-template baseline. Idempotent by
+	// payload hash, never blocks startup, and a workspace only forks a row when
+	// it is actually created.
+	svc.BootstrapReportTemplates(context.Background())
 	svc.FailInterruptedTrialRuns(context.Background())
 
 	// Audit anchors are immutable, periodic chain-tail snapshots. They are

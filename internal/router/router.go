@@ -104,6 +104,7 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		handler.RegisterEvalCaseEvidenceRoutes(protected)
 		handler.RegisterLogicalDocumentRoutes(protected)
 		handler.RegisterDBConnectionRoutes(protected)
+		handler.RegisterReportRoutes(protected)
 		protected.POST("/conversation/route", h.RouteConversation)
 		protected.POST("/conversation/route/:routeId/select", h.SelectRouteCandidate)
 		protected.POST("/conversation/route-selections/:routeSelectionId/bootstrap", h.BootstrapRouteSelection)

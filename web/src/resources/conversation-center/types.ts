@@ -10,7 +10,8 @@ export type ConversationContextType = "session" | "run";
 export type ConversationContext =
   | { kind: "chat"; type: "session"; id: string; targetId: string; title?: string; updatedAt?: number }
   | { kind: "search"; type: "run"; id: string; targetId: string; updatedAt?: number }
-  | { kind: "agent"; type: "session"; id: string; targetId: string; title?: string; updatedAt?: number };
+  | { kind: "agent"; type: "session"; id: string; targetId: string; title?: string; updatedAt?: number }
+  | { kind: "report"; type: "run"; id: string; targetId: string; title?: string; updatedAt?: number; jobId?: string; question?: string; reportStatus?: string };
 
 export interface ConversationTargetRef {
   id: string;

@@ -66,6 +66,7 @@ type Store interface {
 	ResourceSyncRepo
 	SettingRevisionRepo
 	AnswerDeliveryRepo
+	ReportRepo
 	KnowledgeImpactRepo
 	KnowledgeAssetRepo
 	DocumentGovernanceRepo

@@ -399,7 +399,7 @@ Chat 和 Search App 支持提示词预设与参数档位，业务人员无需逐
 2. 在候选模型树里挑一个（候选来自引擎当前已注册的模型；没有 embedding 模型时这里会空，需要先在模型提供商里注册）。
 3. 保存。保存是一次受治理的写：会校验期望值、加写锁、写后读回校验，并记一条审计（含前后值与操作人）。
 
-**权限**：新资源 `model-default`——平台管理员可读可改，工作区管理员只读。别人正在改同一个默认值时，你会看到 `409/40913`（写锁占用），稍后重试即可；期望值已变化看到 `409/40912`，刷新面板再改。**默认 embedding 没配好时建库会被直接拒绝**（`400/40085 no embedding model is registered in the engine…`），请先补默认模型。
+**权限**：新资源 `model-default`——平台管理员可读可改，工作区管理员只读。别人正在改同一个默认值时，你会看到 `409/40913`（写锁占用），稍后重试即可；期望值已变化看到 `409/40912`，刷新面板再改。**默认 embedding 没配好时建库会被直接拒绝**（`400/41121 no embedding model is registered in the engine…`），请先补默认模型。
 
 ### 模型提供商
 
@@ -618,7 +618,7 @@ Chat 和 Search App 支持提示词预设与参数档位，业务人员无需逐
 
 ### 建库被拒绝：no embedding model is registered
 
-提示 `400/40085 no embedding model is registered in the engine; add one before creating a dataset` 时：平台里没有任何可用的默认 embedding 模型，请求在本地就被拦下了（不是引擎故障）。到 **模型提供商 → 默认模型** 选一个 embedding 并保存，再回来建库。
+提示 `400/41121 no embedding model is registered in the engine; add one before creating a dataset` 时：平台里没有任何可用的默认 embedding 模型，请求在本地就被拦下了（不是引擎故障）。到 **模型提供商 → 默认模型** 选一个 embedding 并保存，再回来建库。
 
 ### 默认模型保存报 409 / 502
 

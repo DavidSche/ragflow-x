@@ -23,7 +23,7 @@ const MODULES: { key: string; labelKey: string; resources: string[]; aliases?: s
   },
   {
     key: "chat", labelKey: "roles.mod_chat",
-    resources: ["chat", "search-app", "memory", "agent", "assistant"],
+    resources: ["chat", "report", "report-template", "search-app", "memory", "agent", "assistant"],
     aliases: ["conversation-center", "workbench"],
   },
   { key: "gateway", labelKey: "roles.mod_gateway", resources: ["model-provider", "model-route", "api-key", "usage", "usage-export", "release-governance"] },

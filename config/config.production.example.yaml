@@ -219,6 +219,14 @@ retention:
   feedback_days: 180           # rgx_message_feedback (RGX_RETENTION_FEEDBACK_DAYS)
   job_days: 90                 # terminal rgx_job / rgx_task records
   interval_sec: 86400          # janitor cadence (RGX_RETENTION_INTERVAL_SEC; 0 -> 24h)
+  # Report-class TTLs (doc/288 D3). Frozen into each row's expires_at at creation
+  # time, so a change only affects rows created afterwards. Evidence uses
+  # max(report_days, report_evidence_days) and never expires before its report.
+  report_days: 90                   # rgx_report / revision / job / charge (RGX_RETENTION_REPORT_DAYS)
+  report_evidence_days: 90          # frozen evidence snapshots (RGX_RETENTION_REPORT_EVIDENCE_DAYS)
+  report_artifact_days: 30          # downloadable artifacts (RGX_RETENTION_REPORT_ARTIFACT_DAYS)
+  report_event_days: 7              # job event stream (RGX_RETENTION_REPORT_EVENT_DAYS)
+  report_cleanup_hold_days: 7       # recovery window after a soft delete, does not extend TTL
 
 # Production approval baseline. Enable this only after creating at least one
 # tenant-scoped policy in the UI or by seeding it here. The windows below are

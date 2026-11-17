@@ -38,6 +38,15 @@ compilation sub-resources:
   (sensitive-content minimal authorization; `read` includes team admins).
 - `release-governance` also carries `execute` (evaluation runs and case-version
   triggers) for platform/workspace admins, operators and team admins.
+- `report` is the report-answer resource from the conversation center
+  (doc/288 §7.6): `read` lists and opens the caller's own reports (the server
+  narrows to `owner_user_id`, so a same-workspace colleague's report is
+  `404`/`44109` rather than a hint that it exists), `execute` starts one run (an
+  asynchronous, token-billed job; a `blocked` capability check answers `44102`),
+  `delete:own` deletes one's own report and opens the 7-day recovery window, and
+  `manage` is the admin-side reservation from §11.4. `report-template` is
+  read-only in P0-A — the catalog holds platform baselines and workspace forks,
+  and cloning (`manage`) belongs to P0-B, so only admins hold `manage`.
 - `connector` (data-source connector bindings and sync runs): `read` and
   `manage` for platform admins and workspace admins; no other built-in role may
   list, preview, sync or rotate connector credentials (doc/225).

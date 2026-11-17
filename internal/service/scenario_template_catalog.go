@@ -46,8 +46,8 @@ type ScenarioTemplateCatalogItem struct {
 	// RenderableAppTypes is `app_types` minus the forms this template cannot
 	// actually build. A v2 template declares `agent` for documentation purposes
 	// but carries no canvas, and a v3 pack only instantiates the form it declares
-	// — letting the wizard offer those buttons produces a guaranteed 40085 after
-	// the user has already picked datasets (doc/276 §8.3).
+	// — letting the wizard offer those buttons produces a guaranteed 41105/41104
+	// refusal after the user has already picked datasets (doc/276 §8.3).
 	RenderableAppTypes  []string `json:"renderable_app_types"`
 	LatestVersion       int64    `json:"latest_version"`
 	Source              string   `json:"source"`

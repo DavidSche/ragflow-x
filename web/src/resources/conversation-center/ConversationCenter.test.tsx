@@ -65,6 +65,7 @@ vi.mock("./adapters", () => ({
   createAgentAdapter: () => adapter,
   createChatAdapter: () => adapter,
   createSearchAdapter: () => adapter,
+  createReportAdapter: () => adapter,
 }));
 
 vi.mock("./use-assistant-directory", () => ({

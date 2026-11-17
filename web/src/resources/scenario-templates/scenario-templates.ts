@@ -71,7 +71,7 @@ export interface ScenarioTemplateCatalogItem {
    * `app_types` minus the forms this template cannot build: a v2 template
    * declares `agent` for documentation but carries no canvas, and a v3 pack only
    * renders the form it declares. The wizard gates its buttons on this list so a
-   * guaranteed 40085 never looks like a choice (doc/276 §8.3).
+   * guaranteed 41104/41105 refusal never looks like a choice (doc/276 §8.3).
    */
   renderable_app_types?: ScenarioAppType[];
   latest_version: number;

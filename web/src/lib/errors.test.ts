@@ -46,8 +46,62 @@ describe("getErrorMessage", () => {
 
   test("uses a friendly generic message for HTTP 404 business responses", () => {
     expect(getErrorMessage(404, 404, "dataset not found")).toBe(
-      "请求的数据集不存在或当前范围不可访问",
+      "数据集不存在或当前范围不可访问",
     );
+  });
+
+  // 4.151 drill 2026-11-17: `40085` carried 18 unrelated messages, so the
+  // canned role sentence turned a dataset-scope failure into "角色不能是自身的
+  // 父角色". The backend now splits those semantics into 41101-41140, keeping
+  // 40085 for Role only (`httperr/codes.go` + `Test40085HasASingleOwner`), so a
+  // code → sentence table is safe again.
+  test("maps the request-precondition codes that were split out of 40085", () => {
+    expect(getErrorMessage(41120, 400, "dataset not found in workspace: e9e52e30092f4a74bb1713a610c5e4e2"))
+      .toBe("数据集不在当前工作区（e9e52e30092f4a74bb1713a610c5e4e2），请切换到该工作区或重新创建数据集");
+    expect(getErrorMessage(41121, 400, "no embedding model is registered in the engine; add one before creating a dataset"))
+      .toBe("引擎尚未注册嵌入模型，请先在模型管理中配置嵌入模型再创建数据集");
+    expect(getErrorMessage(41103, 400, "only published scenario templates can be instantiated"))
+      .toBe("只有已发布的场景模板可以实例化");
+    expect(getErrorMessage(41101, 400, "app_type must be chat, search or agent"))
+      .toBe("应用类型必须是 chat、search 或 agent");
+    expect(getErrorMessage(41105, 400, "this template cannot be instantiated as an agent: it ships no agent canvas"))
+      .toBe("该模板没有智能体画布，请选择对话或检索形态");
+    expect(getErrorMessage(41130, 400, "the same user cannot approve adjacent steps"))
+      .toBe("相邻审批步骤不能由同一人审批");
+  });
+
+  test("keeps 40085 for the role sentence only", () => {
+    expect(getErrorMessage(40085, 400, "role cannot be its own parent"))
+      .toBe("角色不能是自身的父角色");
+    expect(getErrorMessage(40085, 400, "")).toBe("角色不能是自身的父角色");
+  });
+
+  test("renders the app form in the operator's words", () => {
+    expect(getErrorMessage(41104, 400, "scenario template does not support agent applications"))
+      .toBe("该场景模板不支持 智能体 形态");
+    expect(getErrorMessage(41104, 400, "scenario template does not support chat assistants"))
+      .toBe("该场景模板不支持对话助手");
+  });
+
+  test("keeps 404 detail for non-dataset entities", () => {
+    expect(getErrorMessage(404, 404, "chat not found")).toBe("对话助手不存在");
+    expect(getErrorMessage(404, 404, "agent not found")).toBe("智能体不存在");
+    expect(getErrorMessage(404, 404, "tenant not found")).toBe("工作区不存在");
+    expect(getErrorMessage(404, 404, "tool registry entry not found")).toBe("tool registry entry not found");
+  });
+
+  // The generic buckets stay out of the code table on purpose: their detail
+  // names the field, and a canned sentence would throw that away.
+  test("surfaces the field name for generic parameter buckets", () => {
+    expect(getErrorMessage(40060, 400, "question is required")).toBe("缺少必填参数：question");
+    expect(getErrorMessage(40000, 400, "ids is required")).toBe("缺少必填参数：ids");
+    expect(getErrorMessage(40000, 400, "document_ids is required")).toBe("缺少必填参数：document_ids");
+    expect(getErrorMessage(40000, 400, "invalid dataset payload")).toBe("请求体参数无效或缺少必填字段");
+    expect(getErrorMessage(40000, 400, "file is required")).toBe("请选择文件");
+    expect(getErrorMessage(40000, 400, "file too large (max 20MB)")).toBe("文件过大（上限 20MB）");
+    expect(getErrorMessage(40000, 400, "cross-tenant writes require an approval policy"))
+      .toBe("cross-tenant writes require an approval policy");
+    expect(getErrorMessage(40000, 400, "")).toBe("请求参数无效");
   });
 
   test("does not globally reinterpret the overloaded setup password code", () => {
