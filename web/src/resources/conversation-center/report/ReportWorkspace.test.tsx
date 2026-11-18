@@ -171,6 +171,33 @@ function makeFlowAdapter(terminalAfterConfirm: "succeeded" | "failed" | null) {
     createReport: vi.fn(async () => createResult),
     cancelReport: vi.fn(async () => undefined),
     loadSnapshot: vi.fn(async () => snapshot(status)),
+    // A11: the published surface re-reads the delivery history from the read.
+    loadDetail: vi.fn(async () => ({ ...createResult, artifacts: [] })),
+    artifactDownloadUrl: vi.fn(
+      (reportId: string, revisionNo: number, artifactId: string) =>
+        `/api/v1/reports/${reportId}/revisions/${revisionNo}/artifacts/${artifactId}/download`,
+    ),
+    createExport: vi.fn(async () => ({
+      export_job: { id: "ej1" },
+      canonical_hash: "sha256:abc",
+      downloadable: true,
+      export_artifact: {
+        id: "art-1",
+        export_job_id: "ej1",
+        subject_type: "report_revision",
+        report_revision_id: "rev1",
+        artifact_version: 1,
+        artifact_status: "ready",
+        format: "docx",
+        renderer_version: "export.renderer.v2",
+        filename: "report.docx",
+        mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        byte_size: 2048,
+        sha256: "sha256:abc",
+        created_at: "2026-11-17T10:00:00.000Z",
+        expires_at: "2026-12-17T10:00:00.000Z",
+      },
+    })),
     // The outline confirm is what releases the job to run; only after it is
     // invoked do snapshots turn terminal — deterministic for the phase machine.
     confirmOutline: vi.fn(async () => {

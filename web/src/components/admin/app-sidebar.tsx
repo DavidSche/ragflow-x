@@ -59,6 +59,7 @@ const RESOURCE_MENU: Record<string, { group: string; order: number }> = {
 	memories: { group: "conversation", order: 4 },
 	agents: { group: "conversation", order: 5 },
 	"conversation-center": { group: "conversation", order: 6 },
+	"report-center": { group: "conversation", order: 8 },
 	"trial-runs": { group: "conversation", order: 7 },
 	"model-providers": { group: "gateway", order: 1 },
   "api-keys": { group: "gateway", order: 2 },

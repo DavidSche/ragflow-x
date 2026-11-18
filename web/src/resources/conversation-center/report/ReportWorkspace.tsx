@@ -44,6 +44,8 @@ import {
   rememberReportJob,
   rememberedReportJob,
   type CreateReportResult,
+  type ReportArtifactEntry,
+  type ReportEvidencePreview,
   type ReportJobSnapshot,
   type ReportTemplateView,
 } from "./report-run";
@@ -87,6 +89,9 @@ export function ReportWorkspace({
   const [creating, setCreating] = useState(false);
   const [report, setReport] = useState<CreateReportResult | null>(null);
   const [snapshot, setSnapshot] = useState<ReportJobSnapshot | null>(null);
+  // Delivery history of the published revision (A11). Loaded from the read, never
+  // held only in the panel's memory: that is what makes an export survive F5.
+  const [artifacts, setArtifacts] = useState<ReportArtifactEntry[]>([]);
   const [outlineConfirmed, setOutlineConfirmed] = useState(false);
   const [confirmingOutline, setConfirmingOutline] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -216,10 +221,35 @@ export function ReportWorkspace({
     [adapter, report, jobId],
   );
 
+  const reloadArtifacts = useCallback(
+    async (options: { signal?: AbortSignal } = {}) => {
+      const id = report?.report.id;
+      const revisionNo = report?.revision.revision;
+      if (!id || !revisionNo) return;
+      const detail = await adapter.loadDetail(id, options).catch(() => null);
+      if (detail && detail.revision?.revision === revisionNo) {
+        setArtifacts(detail.artifacts ?? []);
+      }
+    },
+    [adapter, report],
+  );
+
+  // The published surface owns the artifact list: entering it (including after a
+  // refresh) re-reads the history, and every workspace-level refresh re-reads it
+  // too, so a file delivered in another tab appears without a reload.
+  useEffect(() => {
+    if (phase !== "published") return;
+    const controller = new AbortController();
+    void reloadArtifacts({ signal: controller.signal });
+    return () => controller.abort();
+  }, [phase, reloadArtifacts]);
+
   const refresh = async () => {
     setRefreshing(true);
     try {
-      await reloadSnapshot();
+      // Both halves of the published surface, so a file delivered in another tab and
+      // a section written by a retry appear together instead of one at a time.
+      await Promise.all([reloadSnapshot(), reloadArtifacts()]);
     } finally {
       setRefreshing(false);
     }
@@ -288,6 +318,19 @@ export function ReportWorkspace({
     if (!snapshot) return;
     if (!isReportJobTerminal(snapshot.status)) return;
     setPhase(snapshot.status === "failed" ? "failed" : snapshot.status === "cancelled" ? "cancelled" : "published");
+  }, [snapshot]);
+
+  // The outline's evidence preview comes from the job snapshot's frozen section
+  // rows (v175), not from the template: the template declares what a section
+  // *requires*, the preview records what the knowledge base actually held when
+  // this outline was produced. Keyed by `section_key` so a reordered outline still
+  // pairs the right line with the right section.
+  const outlinePreviews = useMemo(() => {
+    const map: Record<string, ReportEvidencePreview | null> = {};
+    for (const section of snapshot?.sections ?? []) {
+      map[section.section_key] = section.evidence_preview ?? null;
+    }
+    return map;
   }, [snapshot]);
 
   const templateHeader = selectedTemplate ?? templates[0] ?? null;
@@ -446,6 +489,7 @@ export function ReportWorkspace({
               revision={report.revision.revision}
               mode={templateHeader.payload.outline_confirmation === "auto" ? "auto" : "required"}
               sections={templateHeader.payload.sections ?? []}
+              previews={outlinePreviews}
               confirmed={outlineConfirmed}
               busy={confirmingOutline}
               onConfirm={confirmOutline}
@@ -491,7 +535,8 @@ export function ReportWorkspace({
                     adapter={adapter}
                     reportId={report.report.id}
                     revision={report.revision.revision}
-                    initialExports={[]}
+                    history={artifacts}
+                    onExported={() => void reloadArtifacts()}
                   />
                 </>
               )}
