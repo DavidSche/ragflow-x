@@ -122,7 +122,7 @@ RAGFlow-X 是企业私有环境的 AI/RAG 控制面。产品语义使用 **工�
 
 > `eval-set` 的 `execute` 仅用于 Stale Evidence 的重新验证，授予平台/工作区管理员和运营员；Evidence Set 编辑仍走 `manage`。
 
-> `report` 是「报告类回答」（对话中心，doc/288 §7.6）：`R` 读列表与详情（服务端收敛到 `owner_user_id`，同租户他人报告一律 `404`/`44109`，不泄露存在性），`E` 启动一次生成（会开异步计费任务，能力体检 `blocked` 返回 `44102`），`D（own）` 删除本人报告并进入 7 天恢复宽限期，`M` 是管理员侧保留位（§11.4 的删除与治理面）。`report-template` 在 P0-A 只开放只读：模板目录含平台基线与工作区派生，克隆（`manage`）属于 P0-B，授予平台管理员与工作区管理员（与兄弟资源 `scenario-template` 一致）；运营员/团队管理员/业务使用者只读消费目录。
+> `report` 是「报告类回答」（对话中心，doc/288 §7.6）：`R` 读列表、详情、版本列表与任一版本的正文（`GET /reports/:id/revisions`、`GET /reports/:id/revisions/:revision/sections`；服务端收敛到 `owner_user_id`，同租户他人报告一律 `404`/`44109`，不泄露存在性——读他人报告与读一个不存在的 id 返回同一个错误，否则 id 就变得可枚举），`E` 启动一次生成（会开异步计费任务，能力体检 `blocked` 返回 `44102`），`D（own）` 删除本人报告并进入 7 天恢复宽限期，同一动作也覆盖恢复（`POST /api/v1/reports/:id/restore`：谁能删谁能恢复，`force=true` 跳过宽限期另需 `M`），`M` 是管理员侧保留位（§11.4 的删除与治理面 + 指标趋势的租户级视图 `GET /api/v1/report-metrics/trend?view=tenant`）。`report-template` 在 P0-A 只开放只读：模板目录含平台基线与工作区派生，克隆（`manage`）属于 P0-B，授予平台管理员与工作区管理员（与兄弟资源 `scenario-template` 一致）；运营员/团队管理员/业务使用者只读消费目录。
 
 > `memory-content` / `memory-forget` / `memory-operation` / `memory-policy` / `memory-write` 是记忆子系统的细分资源：`memory`（记忆配置与总体读）、`memory-content`（消息内容的读/写/管理）、`memory-write`（记忆写入 `execute`，全员除 viewer）、`memory-forget`（遗忘执行，无 `read`）、`memory-operation`（运行状态只读）、`memory-policy`（记忆策略治理）。`business_user` 可写/遗忘与本人相关记忆内容，但不可管理记忆策略。
 
