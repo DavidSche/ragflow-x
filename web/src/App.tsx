@@ -34,6 +34,7 @@ import { memories } from "./resources/memories";
 import { agents } from "./resources/agents";
 import { enterpriseConnections } from "./resources/enterprise-connections";
 import { conversationCenter } from "./resources/conversation-center";
+import { reportCenter } from "./resources/report-center";
 import { system } from "./resources/system";
 import { WorkbenchRedirect } from "./routes/WorkbenchRedirect";
 
@@ -86,6 +87,7 @@ export default function App() {
               <Route path="/workbench" element={<WorkbenchRedirect />} />
             </CustomRoutes>
             <Resource {...conversationCenter} />
+            <Resource {...reportCenter} />
           </>
         );
       }}

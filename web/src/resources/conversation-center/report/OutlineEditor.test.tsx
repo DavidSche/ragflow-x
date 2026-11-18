@@ -144,4 +144,67 @@ describe("OutlineEditor", () => {
     setup({ busy: true });
     expect(screen.getByDisplayValue("执行摘要")).toBeDisabled();
   });
+
+  // ---- outline evidence preview (doc/288 §9.6, v175) ------------------------
+  //
+  // The confirmation is the last cheap moment to notice that a section has no
+  // evidence. Four states must stay distinguishable, because they answer
+  // different questions: hits (we looked and found something), thin (we looked
+  // and the template minimum was not met), unjudged (we did not look), and
+  // nothing frozen at all (a pre-v175 row).
+
+  it("shows the frozen hit count and main sources per section", () => {
+    setup({
+      previews: {
+        exec_summary: {
+          hit_chunks: 3,
+          top_sources: ["制度汇编.md", "报销手册.md"],
+          insufficient: false,
+        },
+        appendix: { hit_chunks: 0, top_sources: [], insufficient: false },
+      },
+    });
+    const hits = screen.getAllByTestId("outline-evidence-hits");
+    expect(hits).toHaveLength(2);
+    expect(hits[0]).toHaveTextContent(
+      "conversationCenter.report_outline_evidence_preview_hits",
+    );
+    expect(hits[0]).toHaveTextContent(
+      "conversationCenter.report_outline_evidence_preview_sources",
+    );
+  });
+
+  it("warns about thin evidence without claiming the section is empty", () => {
+    setup({
+      previews: {
+        exec_summary: { hit_chunks: 1, top_sources: ["制度汇编.md"], insufficient: true },
+      },
+    });
+    const thin = screen.getByTestId("outline-evidence-thin");
+    expect(thin).toHaveTextContent(
+      "conversationCenter.report_outline_evidence_preview_thin",
+    );
+    // It is a warning, not a verdict: the reviewer can still confirm.
+    expect(
+      screen.getByRole("button", { name: "conversationCenter.report_outline_confirm" }),
+    ).toBeEnabled();
+  });
+
+  it("renders an unavailable preview as unjudged, never as healthy", () => {
+    setup({
+      previews: { exec_summary: { hit_chunks: 0, top_sources: [], insufficient: null, note: "retrieval_unavailable" } },
+    });
+    // Two sections, one with no frozen preview at all — both must read 未评估,
+    // and neither may borrow the "hits" line.
+    expect(screen.getAllByTestId("outline-evidence-unjudged")).toHaveLength(2);
+    expect(screen.queryAllByTestId("outline-evidence-hits")).toHaveLength(0);
+    expect(screen.queryAllByTestId("outline-evidence-thin")).toHaveLength(0);
+  });
+
+  it("keeps the preview a preview: the notice says it is not a sufficiency verdict", () => {
+    setup({ previews: {} });
+    expect(screen.getByTestId("outline-evidence-notice")).toHaveTextContent(
+      "conversationCenter.report_outline_evidence_preview_notice",
+    );
+  });
 });

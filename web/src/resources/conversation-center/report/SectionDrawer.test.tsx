@@ -9,11 +9,23 @@ import type { ReactNode } from "react";
 import { SectionDrawer, type SectionEvidenceEntry } from "./SectionDrawer";
 import type { ReportSectionSnapshot } from "./report-run";
 
+// Only the evidence-disclosure labels resolve to text; everything else falls back
+// to the key it was asked for, so a missing key stays visible instead of silently
+// matching an English word.
+const DICT: Record<string, string> = {
+  "conversationCenter.report_evidence_status_supported": "已支持",
+  "conversationCenter.report_evidence_status_partially_supported": "支持度不足",
+  "conversationCenter.report_evidence_status_unsupported": "无证据支持",
+  "conversationCenter.report_evidence_status_not_required": "证据可选",
+  "conversationCenter.report_evidence_status_conflicting": "证据相互矛盾",
+  "conversationCenter.report_evidence_status_outdated": "证据已过期",
+};
+
 vi.mock("ra-core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("ra-core")>()),
   useTranslate: () =>
     (key: string, options?: { _?: string }) =>
-      options && typeof options._ === "string" ? options._ : key,
+      DICT[key] ?? (options && typeof options._ === "string" ? options._ : key),
 }));
 vi.mock("@/components/ui/badge", () => ({
   Badge: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
@@ -88,9 +100,25 @@ describe("SectionDrawer", () => {
     expect(screen.getByText("5")).toBeInTheDocument(); // citations
     expect(screen.getByText("2")).toBeInTheDocument(); // attempt
     // Both disclosures appear, deduplicated across the section and the badge.
-    expect(screen.getByText("conflicting")).toBeInTheDocument();
-    expect(screen.getAllByText("supported").length).toBeGreaterThan(0);
+    // The disclosure is translated, not the raw enum: a reader sees「证据相互矛盾」.
+    expect(screen.getByText("证据相互矛盾")).toBeInTheDocument();
+    expect(screen.getAllByText("已支持").length).toBeGreaterThan(0);
     expect(screen.getByText("两处数据口径不一致")).toBeInTheDocument();
+  });
+
+  it("shows an evidence-free required section as unsupported, not as absent", async () => {
+    const user = userEvent.setup();
+    // A3b: the section exists and says what it lacks. Dropping the row would turn
+    // an honest gap into a silent one.
+    const unsupported: ReportSectionSnapshot = {
+      ...succeeded,
+      evidence_status: "unsupported",
+      citation_count: 0,
+    };
+    render(<SectionDrawer sections={[unsupported]} />);
+    expect(screen.getByText("执行摘要")).toBeInTheDocument();
+    await user.click(screen.getByTestId("section-toggle-exec_summary"));
+    expect(screen.getByText("无证据支持")).toBeInTheDocument();
   });
 
   it("shows the not-required label for sections without evidence mandates", async () => {

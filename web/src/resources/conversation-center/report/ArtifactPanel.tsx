@@ -1,5 +1,5 @@
 /**
- * Report artifact panel (doc/288 §7.7 + §12, T12).
+ * Report artifact panel (doc/288 §7.7 + §12, T12/T14).
  *
  * P0-A exports are synchronous: `POST .../artifacts` renders the frozen
  * revision inline and returns an already-`ready` (or `failed`) artifact. This
@@ -7,6 +7,14 @@
  * idempotency discipline that a second click re-exports the same content to the
  * same artifact (server-deduped by canonical hash). Downloads go through a
  * plain same-origin link so the browser handles cookies and content-disposition.
+ *
+ * Two rules shape the list:
+ *
+ *   1. the history comes from the **read** (`history`), not from this component's
+ *      memory, so a page refresh still finds the file delivered last week (A11);
+ *   2. `downloadable` is rendered from the server's flag. Deriving it here from
+ *      `artifact_status === "ready"` would ignore the 30-day clock and would be a
+ *      second source of truth for the one thing the download endpoint enforces.
  */
 import { useState } from "react";
 import { useNotify, useTranslate } from "ra-core";
@@ -14,17 +22,19 @@ import { Download, FileDown, FileText, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { ReportAdapter, ReportExportSuccess } from "../adapters";
-import type { ExportArtifactRecord } from "./report-run";
+import type { ExportArtifactRecord, ReportArtifactEntry } from "./report-run";
 
 export interface ArtifactPanelProps {
   adapter: ReportAdapter;
   reportId: string;
   revision: number;
-  /** exports already produced by this workspace session or restored from a refresh. */
-  initialExports?: ReportExportSuccess[];
+  /** Delivery history of this revision from the report read, newest first. */
+  history?: ReportArtifactEntry[];
+  /** Lets the workspace re-read the history after an export (one source of truth). */
+  onExported?: () => void;
 }
 
-/** The `data:` artifact summary line is only shown for canonical exports. */
+/** Human size for the delivery line; a failed render has 0 bytes and prints "—". */
 export function formatArtifactSize(bytes: number): string {
   if (bytes <= 0) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -41,30 +51,59 @@ export function artifactStatusLabel(
   });
 }
 
+/**
+ * Merges this session's fresh exports over the server history, newest first.
+ *
+ * A just-exported row may already be in `history` (if the workspace re-read), so
+ * the merge is by artifact id: the session copy wins only because it is the same
+ * row, and duplicates would double-render one file.
+ */
+export function mergeArtifactEntries(
+  created: ReportExportSuccess[],
+  history: ReportArtifactEntry[],
+): ReportArtifactEntry[] {
+  const seen = new Set(created.map((item) => item.export_artifact.id));
+  return [
+    ...created.map((item) => ({ artifact: item.export_artifact, downloadable: item.downloadable })),
+    ...history.filter((item) => !seen.has(item.artifact.id)),
+  ];
+}
+
 export function ArtifactPanel({
   adapter,
   reportId,
   revision,
-  initialExports = [],
+  history = [],
+  onExported,
 }: ArtifactPanelProps) {
   const t = useTranslate();
   const notify = useNotify();
-  const [exporting, setExporting] = useState<"md" | "docx" | null>(null);
-  const [exports, setExports] = useState<ReportExportSuccess[]>(initialExports);
+  const [exporting, setExporting] = useState<"md" | "docx" | "pdf" | null>(null);
+  const [created, setCreated] = useState<ReportExportSuccess[]>([]);
+  const entries = mergeArtifactEntries(created, history);
 
-  const runExport = async (format: "md" | "docx") => {
+  const runExport = async (format: "md" | "docx" | "pdf") => {
     if (exporting) return;
     setExporting(format);
     try {
       const result = await adapter.createExport(reportId, revision, format);
-      setExports((previous) => {
-        const withoutSame = previous.filter(
-          (item) => item.export_artifact.id !== result.export_artifact.id,
-        );
-        return [result, ...withoutSame];
-      });
+      setCreated((previous) => [
+        result,
+        ...previous.filter((item) => item.export_artifact.id !== result.export_artifact.id),
+      ]);
+      onExported?.();
       if (result.export_artifact.artifact_status === "failed") {
-        notify(t("conversationCenter.report_export_failed"), { type: "error" });
+        // A failed render is recorded, not retried blindly (§7.7 / A40): the
+        // artifact consumes a version and the message tells the operator what to
+        // look at. PDF has one predictable cause, so it gets its own line.
+        notify(
+          t(
+            format === "pdf"
+              ? "conversationCenter.report_export_pdf_unavailable"
+              : "conversationCenter.report_export_failed",
+          ),
+          { type: "error" },
+        );
       }
     } catch (error) {
       notify(t("conversationCenter.report_export_error"), { type: "error" });
@@ -108,61 +147,70 @@ export function ArtifactPanel({
             )}
             {t("conversationCenter.report_export_docx")}
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void runExport("pdf")}
+            disabled={exporting !== null}
+            data-testid="export-pdf"
+          >
+            {exporting === "pdf" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <FileText className="size-4" />
+            )}
+            {t("conversationCenter.report_export_pdf")}
+          </Button>
         </div>
       </div>
 
-      {exports.length === 0 ? (
+      {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {t("conversationCenter.report_artifacts_empty")}
         </p>
       ) : (
         <ul className="space-y-2" data-testid="artifact-list">
-          {exports.map((result) => {
-            const artifact = result.export_artifact;
-            const downloadable =
-              artifact.artifact_status === "ready" && artifact.byte_size > 0;
-            return (
-              <li
-                key={artifact.id}
-                className="flex items-center gap-3 rounded-md border bg-card px-3 py-2"
-                data-testid={`artifact-${artifact.id}`}
-              >
-                <FileDown className="size-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">
-                    {artifact.filename}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {artifact.format.toUpperCase()} ·{" "}
-                    {formatArtifactSize(artifact.byte_size)} ·{" "}
-                    {artifactStatusLabel(t, artifact)}
-                  </p>
-                </div>
-                <Badge variant="secondary" className="hidden sm:inline-flex">
-                  {result.canonical_hash.slice(0, 12)}
-                </Badge>
-                {downloadable ? (
-                  <a
-                    href={adapter.artifactDownloadUrl(
-                      reportId,
-                      revision,
-                      artifact.id,
-                    )}
-                    download
-                    data-testid={`artifact-download-${artifact.id}`}
-                    className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-primary hover:bg-accent"
-                  >
-                    <Download className="size-3.5" />
-                    {t("conversationCenter.report_artifact_download")}
-                  </a>
-                ) : (
-                  <span className="text-xs text-muted-foreground">
-                    {t("conversationCenter.report_artifact_pending")}
-                  </span>
-                )}
-              </li>
-            );
-          })}
+          {entries.map(({ artifact, downloadable }) => (
+            <li
+              key={artifact.id}
+              className="flex items-center gap-3 rounded-md border bg-card px-3 py-2"
+              data-testid={`artifact-${artifact.id}`}
+            >
+              <FileDown className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">
+                  {artifact.filename}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {artifact.format.toUpperCase()} ·{" "}
+                  {formatArtifactSize(artifact.byte_size)} ·{" "}
+                  {artifactStatusLabel(t, artifact)}
+                </p>
+              </div>
+              <Badge variant="secondary" className="hidden sm:inline-flex">
+                {artifact.sha256.slice(0, 12)}
+              </Badge>
+              {downloadable ? (
+                <a
+                  href={adapter.artifactDownloadUrl(
+                    reportId,
+                    revision,
+                    artifact.id,
+                  )}
+                  download
+                  data-testid={`artifact-download-${artifact.id}`}
+                  className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-primary hover:bg-accent"
+                >
+                  <Download className="size-3.5" />
+                  {t("conversationCenter.report_artifact_download")}
+                </a>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  {t("conversationCenter.report_artifact_pending")}
+                </span>
+              )}
+            </li>
+          ))}
         </ul>
       )}
     </section>

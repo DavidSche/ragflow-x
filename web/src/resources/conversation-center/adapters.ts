@@ -616,6 +616,8 @@ export interface ReportExportSuccess {
   export_job: Record<string, unknown>;
   export_artifact: ExportArtifactRecord;
   canonical_hash: string;
+  /** Server-side download decision for this fresh delivery (see ReportArtifactEntry). */
+  downloadable: boolean;
 }
 
 export interface ReportAdapter extends ConversationAdapter {
@@ -632,7 +634,7 @@ export interface ReportAdapter extends ConversationAdapter {
   cancelReport(reportId: string): Promise<unknown>;
   loadSnapshot(reportId: string, jobId: string, options?: { signal?: AbortSignal }): Promise<ReportJobSnapshot>;
   confirmOutline(reportId: string, revisionNo: number, sections: Array<{ section_key: string; title: string }>): Promise<unknown>;
-  createExport(reportId: string, revisionNo: number, format: "md" | "docx"): Promise<ReportExportSuccess>;
+  createExport(reportId: string, revisionNo: number, format: "md" | "docx" | "pdf"): Promise<ReportExportSuccess>;
   artifactDownloadUrl(reportId: string, revisionNo: number, artifactId: string): string;
 }
 
@@ -679,7 +681,7 @@ export function createReportAdapter(): ReportAdapter {
     ));
   }
 
-  async function createExport(reportId: string, revisionNo: number, format: "md" | "docx"): Promise<ReportExportSuccess> {
+  async function createExport(reportId: string, revisionNo: number, format: "md" | "docx" | "pdf"): Promise<ReportExportSuccess> {
     return unwrap<ReportExportSuccess>(api.post(
       `/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/artifacts`,
       { format },

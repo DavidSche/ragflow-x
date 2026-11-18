@@ -47,9 +47,45 @@ export interface ReportRevisionRecord {
   created_at: string;
 }
 
+/**
+ * One delivery of one revision, as the read returns it (`GET /reports/:id`).
+ * `downloadable` is decided by the server (`reportArtifactDownloadable`) — the UI
+ * must render this flag rather than inspect `artifact_status`/`byte_size` itself,
+ * because the 30-day clock is a server fact (A11/A47, doc/288 §7.7).
+ */
+export interface ReportArtifactEntry {
+  artifact: ExportArtifactRecord;
+  downloadable: boolean;
+}
+
 export interface ReportDetailRecord {
   report: ReportRecord;
   revision: ReportRevisionRecord;
+  /** Delivery history, newest first. Present so a refresh re-finds earlier files. */
+  artifacts?: ReportArtifactEntry[];
+  /**
+   * Whether this report's citations can still be re-checked (doc/288 §7.6 / A43).
+   * False once any cited evidence snapshot has been purged or passed its clock: the
+   * body and the recorded judgement stay readable, but the evidence behind them is
+   * gone, and a client must say so instead of opening an empty citation.
+   *
+   * Optional because the pre-A43 payload did not carry it; the reopen surface that
+   * renders the notice arrives with P1, so this field is the contract half only.
+   */
+  evidence_verifiable?: boolean;
+  evidence_expired_at?: string | null;
+}
+
+/**
+ * Outline-time evidence preview (doc/288 §9.6). `insufficient` is nullable on
+ * purpose: `null` means the preview could not be computed, so the UI must say
+ * 未评估 instead of 充足 or 不足.
+ */
+export interface ReportEvidencePreview {
+  hit_chunks: number;
+  top_sources: string[];
+  insufficient: boolean | null;
+  note?: string;
 }
 
 export interface ReportSectionSnapshot {
@@ -62,6 +98,8 @@ export interface ReportSectionSnapshot {
   evidence_status: string;
   quality_status: string;
   requires_evidence: boolean;
+  /** Absent on rows written before v175: render 未评估, never 充足. */
+  evidence_preview?: ReportEvidencePreview | null;
   citation_count: number;
   claim_count: number;
   attempt: number;
@@ -312,9 +350,18 @@ export function openReportEventPoller(
     for (;;) {
       if (state.aborted) return;
       const url = `/api/v1/report-jobs/${encodeURIComponent(jobId)}/events${state.after > 0 ? `?after=${state.after}` : ""}`;
+      // The cursor travels twice on purpose: `?after=` is what the server reads
+      // first, and `Last-Event-ID` is the header §8.3 names so the request is
+      // self-describing in logs and in any proxy that understands resumption. A
+      // browser does NOT resend it on a `fetch`-driven reconnect (EventSource would),
+      // which is why this client sets it by hand.
+      const init: RequestInit = {
+        signal: controller.signal,
+        ...(state.after > 0 ? { headers: { "Last-Event-ID": String(state.after) } } : {}),
+      };
       let response: Response;
       try {
-        response = await transport(url, { signal: controller.signal });
+        response = await transport(url, init);
       } catch (error) {
         if (state.aborted) return;
         throw error;

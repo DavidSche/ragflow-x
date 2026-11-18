@@ -206,6 +206,33 @@ describe("openReportEventPoller", () => {
     );
   });
 
+  it("sends the cursor back as Last-Event-ID (A31b / §8.3)", async () => {
+    // A `fetch`-driven reconnect does not get the browser's EventSource resumption,
+    // so the header is set explicitly: a resume must be legible to the server and to
+    // any proxy that records it, not only as a query string.
+    const transport = vi.fn(async (url: string, init?: RequestInit) => {
+      void init;
+      return sseBody([sseFrame(7, "job.failed")]);
+    });
+    const poller = openReportEventPoller("j1", { after: 6, transport });
+    await drain(poller);
+    const init = transport.mock.calls[0]?.[1];
+    expect(init?.headers).toEqual({ "Last-Event-ID": "6" });
+  });
+
+  it("omits Last-Event-ID for a full replay", async () => {
+    // `after=0` means "everything", and a `Last-Event-ID: 0` header would be a lie
+    // about a cursor that was never handed out.
+    const transport = vi.fn(async (url: string, init?: RequestInit) => {
+      void init;
+      return sseBody([sseFrame(1, "job.failed")]);
+    });
+    const poller = openReportEventPoller("j1", { transport });
+    await drain(poller);
+    const init = transport.mock.calls[0]?.[1];
+    expect(init?.headers).toBeUndefined();
+  });
+
   it("handles a 44115 cursor reset by asking onReset for the resume seq", async () => {
     const onReset = vi.fn(async () => 12);
     const transport = vi

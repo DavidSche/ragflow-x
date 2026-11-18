@@ -18,7 +18,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { ReportTemplateSection } from "./report-run";
+import type { ReportEvidencePreview, ReportTemplateSection } from "./report-run";
 import type { ReportOutlineMode } from "./report-contract";
 
 export interface OutlineSectionDraft {
@@ -37,6 +37,12 @@ export interface OutlineEditorProps {
   requiredKeys?: string[];
   /** True once the revision moved past the confirmation gate. */
   confirmed?: boolean;
+  /**
+   * Outline-time evidence盘面, keyed by `section_key` (doc/288 §9.6). Read from the
+   * job snapshot's frozen section rows; a missing entry means the preview was
+   * never frozen, which renders 未评估 — never 充足.
+   */
+  previews?: Record<string, ReportEvidencePreview | null>;
   busy?: boolean;
   onConfirm: (sections: OutlineSectionDraft[]) => Promise<void> | void;
 }
@@ -52,6 +58,7 @@ export function OutlineEditor({
   requiredKeys,
   confirmed = false,
   busy = false,
+  previews,
   onConfirm,
 }: OutlineEditorProps) {
   const t = useTranslate();
@@ -158,6 +165,10 @@ export function OutlineEditor({
                   aria-label={draft.section_key}
                   className="h-9"
                 />
+                <OutlineEvidencePreviewLine
+                  preview={previews?.[draft.section_key]}
+                  t={t}
+                />
               </span>
               {draft.requires_evidence && (
                 <Badge variant="secondary" className="whitespace-nowrap text-[10px]">
@@ -193,6 +204,13 @@ export function OutlineEditor({
         })}
       </ul>
 
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="outline-evidence-notice"
+      >
+        {t("conversationCenter.report_outline_evidence_preview_notice")}
+      </p>
+
       <div className="flex items-center justify-end gap-2 border-t pt-3">
         {mode === "auto" && (
           <span className="mr-auto text-xs text-muted-foreground">
@@ -213,5 +231,79 @@ export function OutlineEditor({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * One section's evidence preview line.
+ *
+ * The three states are deliberately distinct, because they answer different
+ * questions for the reviewer: 未评估 (we did not look), 命中 N 段 (we looked and
+ * found something), 证据可能不足 (we looked and the template's own minimum was not
+ * met). Collapsing "did not look" into "fine" is how a preview becomes a lie.
+ */
+function OutlineEvidencePreviewLine({
+  preview,
+  t,
+}: {
+  preview?: ReportEvidencePreview | null;
+  t: ReturnType<typeof useTranslate>;
+}) {
+  if (!preview) {
+    return (
+      <span
+        className="mt-1 block text-[11px] text-muted-foreground"
+        data-testid="outline-evidence-unjudged"
+      >
+        {t("conversationCenter.report_outline_evidence_preview_unjudged")}
+      </span>
+    );
+  }
+  if (preview.note === "retrieval_unavailable" || preview.note === "no_datasets") {
+    const key =
+      preview.note === "no_datasets"
+        ? "conversationCenter.report_outline_evidence_preview_no_datasets"
+        : "conversationCenter.report_outline_evidence_preview_unavailable";
+    return (
+      <span
+        className="mt-1 block text-[11px] text-muted-foreground"
+        data-testid="outline-evidence-unjudged"
+      >
+        {t(key)}
+      </span>
+    );
+  }
+  const insufficient = preview.insufficient === true;
+  const hits = t("conversationCenter.report_outline_evidence_preview_hits", {
+    count: preview.hit_chunks,
+  });
+  return (
+    <span
+      className={
+        insufficient
+          ? "mt-1 block text-[11px] text-amber-600 dark:text-amber-400"
+          : "mt-1 block text-[11px] text-muted-foreground"
+      }
+      data-testid={insufficient ? "outline-evidence-thin" : "outline-evidence-hits"}
+    >
+      {insufficient && (
+        <span className="mr-1 font-medium">
+          {t("conversationCenter.report_outline_evidence_preview_thin")}
+        </span>
+      )}
+      {hits}
+      {preview.top_sources.length > 0 && (
+        <span className="ml-1">
+          {t("conversationCenter.report_outline_evidence_preview_sources", {
+            sources: preview.top_sources.join("、"),
+          })}
+        </span>
+      )}
+      {preview.insufficient === null && (
+        <span className="ml-1">
+          {t("conversationCenter.report_outline_evidence_preview_unjudged")}
+        </span>
+      )}
+    </span>
   );
 }
