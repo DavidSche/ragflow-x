@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
+	"gorm.io/gorm"
 )
 
 // Report finalize (doc/288 §8.2 / §7.10 / A34–A46). These tests drive the real
@@ -24,6 +26,9 @@ type reportSectionSeed struct {
 	CitationCount  int
 	EvidenceStatus string
 	QualityStatus  string
+	// GapReason mirrors what the runner stored in `gap_reason` when it closed the
+	// section. Empty means "written before the column existed".
+	GapReason string
 }
 
 func (fx *reportFixture) seedSections(t *testing.T, revisionID string, seeds []reportSectionSeed) {
@@ -39,6 +44,7 @@ func (fx *reportFixture) seedSections(t *testing.T, revisionID string, seeds []r
 			SectionKey: seed.Key, SectionVersion: 1, Title: seed.Key,
 			RequiresEvidence: required, Status: seed.Status, QualityStatus: quality,
 			EvidenceStatus: seed.EvidenceStatus, CitationCount: seed.CitationCount,
+			GapReason: seed.GapReason,
 			ContentMD: "内容：" + seed.Key, ContentHash: "hash-" + seed.Key,
 		}
 		if err := fx.gdb.Create(row).Error; err != nil {
@@ -164,8 +170,11 @@ func successSeeds() []reportSectionSeed {
 			CitationCount: 2, EvidenceStatus: model.ReportEvidenceSupported, QualityStatus: model.ReportQualityPassed},
 		{Key: "compliance", Status: model.ReportSectionSucceeded, RequiresEvi: true,
 			CitationCount: 3, EvidenceStatus: model.ReportEvidenceSupported, QualityStatus: model.ReportQualityPassed},
+		// `partially_supported` is `needs_review`, not `passed`: the section cites
+		// evidence but fewer chunks than the template's min_evidence, and the fixture
+		// has to say what the runner would say.
 		{Key: "gaps", Status: model.ReportSectionSucceeded, RequiresEvi: true,
-			CitationCount: 1, EvidenceStatus: model.ReportEvidencePartiallySupported, QualityStatus: model.ReportQualityPassed},
+			CitationCount: 1, EvidenceStatus: model.ReportEvidencePartiallySupported, QualityStatus: model.ReportQualityNeedsReview},
 		{Key: "remediation", Status: model.ReportSectionSucceeded, RequiresEvi: true,
 			CitationCount: 1, EvidenceStatus: model.ReportEvidenceSupported, QualityStatus: model.ReportQualityPassed},
 	}
@@ -383,10 +392,18 @@ func TestFinalizeReportJobWaitsForRuntimeSlice(t *testing.T) {
 	}
 }
 
-// TestFinalizeReportJobDefersWhileSectionsInFlight is the third gate: a slice that
-// claims success while a section is still `writing` is inconsistent, and finalizing
-// would either invent `failed` or publish a hole.
-func TestFinalizeReportJobDefersWhileSectionsInFlight(t *testing.T) {
+// TestFinalizeReportJobClosesASectionNoSliceWillWrite replaces the old third gate.
+//
+// The old rule deferred whenever a `writing` row survived a slice that reported
+// success. Gate 2 above has already proved that slice settled, and a settled slice
+// cannot call the model again — so there was nothing to wait for, and `finalizing`
+// became a state with no exit: the reconciler re-ran finalize every minute and
+// deferred every minute, forever (observed live on 2026-11-18, doc/44 §6).
+//
+// The rule now: the row is an interrupted write, so finalize closes it and the
+// report reaches a terminal state with the hole disclosed. "Disclosed" is the part
+// that must not regress — silence would be a silent failure.
+func TestFinalizeReportJobClosesASectionNoSliceWillWrite(t *testing.T) {
 	fx := newReportFixture(t, "inflight")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-inflight", "req-inflight-0001")
@@ -402,11 +419,31 @@ func TestFinalizeReportJobDefersWhileSectionsInFlight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("finalize: %v", err)
 	}
-	if outcome != ReportFinalizeDeferred {
-		t.Fatalf("a writing section must defer, got %q", outcome)
+	if outcome != ReportFinalizeApplied {
+		t.Fatalf("a section no slice will write must not defer forever, got %q", outcome)
 	}
-	if job := fx.reportJob(t, created.Job.ID); job.FinalizedAt != nil {
-		t.Fatal("deferred finalize must not write finalized_at")
+	job := fx.reportJob(t, created.Job.ID)
+	if job.FinalizedAt == nil {
+		t.Fatal("finalize must write finalized_at")
+	}
+	if job.Status != model.ReportJobPartial {
+		t.Fatalf("one missing section among written ones is `partial`, got %q", job.Status)
+	}
+	// The row itself is closed, so a reader never sees a `writing` section inside a
+	// published revision.
+	for _, row := range fx.reportSections(t, created.Revision.ID) {
+		if row.Status == model.ReportSectionWriting || row.Status == model.ReportSectionPending {
+			t.Fatalf("finalize must close the interrupted row: %+v", row)
+		}
+	}
+	// ... and the hole is named in `gap_json`, not left for the reader to notice.
+	revision := fx.reportRevision(t, created.Revision.ID)
+	var gap []reportGapEntry
+	if err := json.Unmarshal([]byte(revision.GapJSON), &gap); err != nil {
+		t.Fatalf("gap json: %v (%s)", err, revision.GapJSON)
+	}
+	if len(gap) != 1 || gap[0].Reason == "" {
+		t.Fatalf("the closed section must be disclosed with a reason: %+v", gap)
 	}
 }
 
@@ -492,6 +529,68 @@ func TestFinalizeReportJobPublishesPartialWithGaps(t *testing.T) {
 	if !strings.Contains(terminal[0].PayloadJSON, "budget_exhausted") &&
 		!strings.Contains(terminal[0].PayloadJSON, "gap_json") {
 		t.Fatalf("job.partial must carry the gap list, got %s", terminal[0].PayloadJSON)
+	}
+}
+
+// TestFinalizeReportJobFailsWithoutBorrowingAnOutlineCode pins what a run where
+// every section failed is allowed to say about itself.
+//
+// The failure is real (`failed`, nothing published) but it is not an invalid
+// outline: 44105's single meaning on this surface is "outline / request payload
+// invalid" (doc/288 §8.7 ⑤), and a client that reads it goes looking for a broken
+// template. The branch used to stamp it, which is exactly the "one code, two
+// meanings" the family rule forbids — the live v1 report failed this way and
+// reported 44105 while the actual cause was a dead upstream chat route.
+//
+// So the assertions are: the job fails, nothing publishes, every section is
+// disclosed as a gap with its own reason, and the job-level code stays empty
+// rather than naming a cause that never happened.
+func TestFinalizeReportJobFailsWithoutBorrowingAnOutlineCode(t *testing.T) {
+	fx := newReportFixture(t, "all-failed")
+	ctx := context.Background()
+	created := fx.createReport(t, "link-policy-all-failed", "req-allfailed-0001")
+	seeds := successSeeds()
+	for index := range seeds {
+		seeds[index].Status = model.ReportSectionFailed
+		seeds[index].CitationCount = 0
+		seeds[index].EvidenceStatus = model.ReportEvidenceUnsupported
+	}
+	fx.seedSections(t, created.Revision.ID, seeds)
+	runtimeID := fx.reportRuntimeJob(t, model.JobStatusSucceeded)
+	fx.claimReportJob(t, created.Job.ID, runtimeID)
+	if _, err := fx.svc.BeginReportFinalization(ctx, fx.tenantID, created.Job.ID, 1, 1, runtimeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.svc.FinalizeReportJob(ctx, fx.tenantID, created.Job.ID, runtimeID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	job := fx.reportJob(t, created.Job.ID)
+	if job.Status != model.ReportJobFailed || job.FinalizedAt == nil {
+		t.Fatalf("0 succeeded sections must fail terminally: %+v", job)
+	}
+	if job.ErrorCode == "44105" {
+		t.Fatal("a model failure must not borrow the outline/payload code 44105")
+	}
+	revision := fx.reportRevision(t, created.Revision.ID)
+	if revision.Status != model.ReportRevisionFailed {
+		t.Fatalf("a report with no written section must not publish, got %q", revision.Status)
+	}
+	var gaps []reportGapEntry
+	if err := json.Unmarshal([]byte(revision.GapJSON), &gaps); err != nil {
+		t.Fatalf("gap_json must still disclose every failed section: %v (%s)", err, revision.GapJSON)
+	}
+	if len(gaps) != len(seeds) {
+		t.Fatalf("every failed section must be disclosed, got %d gaps for %d sections", len(gaps), len(seeds))
+	}
+	for _, gap := range gaps {
+		if gap.Reason == "" {
+			t.Fatalf("gap disclosure must carry a reason: %+v", gap)
+		}
+	}
+	terminal := fx.terminalEvents(t, created.Job.ID)
+	if len(terminal) != 1 || terminal[0].Type != reportEventJobFailed {
+		t.Fatalf("expected one job.failed, got %+v", terminal)
 	}
 }
 
@@ -872,5 +971,217 @@ func TestFinalizeReportJobCancelWithHolesPublishesNothing(t *testing.T) {
 	}
 	if revision.MetricsJSON == "" {
 		t.Fatal("even a cancelled non-publishing run must record why (metrics_json)")
+	}
+}
+
+// gapByKey indexes a decoded `gap_json` array, so a test can state what it means
+// about one section without depending on the order the derivation emitted them.
+func gapByKey(t *testing.T, revision *model.ReportRevision) map[string]reportGapEntry {
+	t.Helper()
+	var gaps []reportGapEntry
+	if err := json.Unmarshal([]byte(revision.GapJSON), &gaps); err != nil {
+		t.Fatalf("gap_json must be a JSON array: %v (%s)", err, revision.GapJSON)
+	}
+	byKey := make(map[string]reportGapEntry, len(gaps))
+	for _, gap := range gaps {
+		byKey[gap.SectionKey] = gap
+	}
+	return byKey
+}
+
+func countAuditAction(t *testing.T, gdb *gorm.DB, tenantID, action string) int {
+	t.Helper()
+	var n int64
+	if err := gdb.Model(&model.AuditLog{}).Where("tenant_id = ? AND action = ?", tenantID, action).Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	return int(n)
+}
+
+// TestFinalizeReportJobReportsTheReasonTheRunnerRecorded is the disclosure
+// invariant behind `gap_json.reason`: a reader who sees "budget_exhausted" buys
+// tokens, and a reader who sees "failed" fixes the source. Neither status nor the
+// quality flag separates them (a skip the runner and finalize write is
+// `not_checked`, a model failure is `failed`), so the reason has to travel on the
+// row itself.
+func TestFinalizeReportJobReportsTheReasonTheRunnerRecorded(t *testing.T) {
+	fx := newReportFixture(t, "gapreason")
+	ctx := context.Background()
+	created := fx.createReport(t, "link-policy-gapreason", "req-gapreason-0001")
+	seeds := successSeeds()
+	// A real model failure: the runner recorded nothing beyond the status.
+	seeds[1].CitationCount = 0
+	seeds[1].Status, seeds[1].EvidenceStatus = model.ReportSectionFailed, model.ReportEvidenceUnsupported
+	seeds[1].QualityStatus = model.ReportQualityFailed
+	// A dependency skip: skipped + failed, but not because the budget ran out.
+	seeds[2].CitationCount = 0
+	seeds[2].Status, seeds[2].EvidenceStatus = model.ReportSectionSkipped, model.ReportEvidenceNotRequired
+	seeds[2].QualityStatus, seeds[2].GapReason = model.ReportQualityFailed, model.ReportGapSkipped
+	// The budget bail-out, which is the only reason that may name 44111.
+	seeds[3].CitationCount = 0
+	seeds[3].Status, seeds[3].EvidenceStatus = model.ReportSectionSkipped, model.ReportEvidenceNotRequired
+	seeds[3].QualityStatus, seeds[3].GapReason = model.ReportQualityFailed, model.ReportGapBudgetExhausted
+	fx.seedSections(t, created.Revision.ID, seeds)
+	runtimeID := fx.reportRuntimeJob(t, model.JobStatusSucceeded)
+	fx.claimReportJob(t, created.Job.ID, runtimeID)
+	if _, err := fx.svc.BeginReportFinalization(ctx, fx.tenantID, created.Job.ID, 1, 1, runtimeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.svc.FinalizeReportJob(ctx, fx.tenantID, created.Job.ID, runtimeID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	gaps := gapByKey(t, fx.reportRevision(t, created.Revision.ID))
+	if got := gaps["applicable_rules"]; got.Reason != model.ReportGapFailed || got.ErrorCode != "" {
+		t.Fatalf("a model failure is not a budget problem: %+v", got)
+	}
+	if got := gaps["compliance"]; got.Reason != model.ReportGapSkipped || got.ErrorCode != "" {
+		t.Fatalf("a dependency skip must not be relabelled budget_exhausted: %+v", got)
+	}
+	if got := gaps["gaps"]; got.Reason != model.ReportGapBudgetExhausted ||
+		got.ErrorCode != strconv.Itoa(codeReportBudgetExhausted) {
+		t.Fatalf("the budget bail-out must name 44111: %+v", got)
+	}
+	job := fx.reportJob(t, created.Job.ID)
+	if job.Status != model.ReportJobPartial {
+		t.Fatalf("holes must publish as partial, got %q", job.Status)
+	}
+	if job.ErrorCode != strconv.Itoa(codeReportBudgetExhausted) {
+		t.Fatalf("a budget gap must raise 44111 on the job, got %q", job.ErrorCode)
+	}
+}
+
+// TestFinalizeReportJobPartialWithoutBudgetCarriesNoCode keeps §8.7 ⑥ honest: 44111
+// is the *budget* code. Stamping it on every partial tells a user whose model calls
+// failed to go buy tokens, and makes the one code mean two things.
+func TestFinalizeReportJobPartialWithoutBudgetCarriesNoCode(t *testing.T) {
+	fx := newReportFixture(t, "nocode")
+	ctx := context.Background()
+	created := fx.createReport(t, "link-policy-nocode", "req-nocode-0001")
+	seeds := successSeeds()
+	seeds[3].Status = model.ReportSectionFailed
+	seeds[3].CitationCount = 0
+	seeds[3].EvidenceStatus = model.ReportEvidenceUnsupported
+	fx.seedSections(t, created.Revision.ID, seeds)
+	runtimeID := fx.reportRuntimeJob(t, model.JobStatusSucceeded)
+	fx.claimReportJob(t, created.Job.ID, runtimeID)
+	if _, err := fx.svc.BeginReportFinalization(ctx, fx.tenantID, created.Job.ID, 1, 1, runtimeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.svc.FinalizeReportJob(ctx, fx.tenantID, created.Job.ID, runtimeID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	job := fx.reportJob(t, created.Job.ID)
+	if job.Status != model.ReportJobPartial || job.ErrorCode != "" {
+		t.Fatalf("a non-budget partial must publish without an error code: %+v", job)
+	}
+	// A finalized job must not still claim it is writing sections: live full6
+	// published `partial` with `stage=section_writing` because the stage only ever
+	// moved when a slice wrote one.
+	if job.Stage != model.ReportStageAssembling {
+		t.Fatalf("a terminal job must sit in %q, got %q",
+			model.ReportStageAssembling, job.Stage)
+	}
+}
+
+// TestFinalizeReportJobFinishesWhenTheRuntimeRowIsGone is A46's "拒绝静默失效": a
+// purged `rgx_job` row can only happen after it was terminal, so gate 2 has nothing
+// left to wait for. Refusing would leave the job `finalizing` forever (the outbox
+// has no attempt ceiling) and the report would never reach a terminal state — the
+// exact dead end the gate exists to avoid.
+func TestFinalizeReportJobFinishesWhenTheRuntimeRowIsGone(t *testing.T) {
+	fx := newReportFixture(t, "runtimemissing")
+	ctx := context.Background()
+	created := fx.createReport(t, "link-policy-runtimemissing", "req-runtimemissing-0001")
+	fx.seedSections(t, created.Revision.ID, successSeeds())
+	runtimeID := fx.reportRuntimeJob(t, model.JobStatusSucceeded)
+	fx.claimReportJob(t, created.Job.ID, runtimeID)
+	if _, err := fx.svc.BeginReportFinalization(ctx, fx.tenantID, created.Job.ID, 1, 1, runtimeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.gdb.Where("id = ?", runtimeID).Delete(&model.Job{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := fx.svc.FinalizeReportJob(ctx, fx.tenantID, created.Job.ID, runtimeID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("a missing runtime row must not dead-end finalization: %v", err)
+	}
+	if outcome != ReportFinalizeApplied {
+		t.Fatalf("finalization must apply, got %q", outcome)
+	}
+	job := fx.reportJob(t, created.Job.ID)
+	if job.Status != model.ReportJobSucceeded || job.FinalizedAt == nil {
+		t.Fatalf("every section was written, so the report must succeed: %+v", job)
+	}
+}
+
+// TestFinalizeReportJobWritesDownLedgerDrift is §8.6's reconciliation duty: the
+// ledger wins over the job's cached columns, but a disagreement means a writer
+// crashed between the two, and a number that changes after the fact must leave a
+// trace. The mirror case (columns already agree) must stay silent.
+func TestFinalizeReportJobWritesDownLedgerDrift(t *testing.T) {
+	// Agreement: the totals were refreshed after the settle, so nothing is rewritten
+	// and no reconcile row is written.
+	synced := newReportFixture(t, "driftsync")
+	ctx := context.Background()
+	createdSynced := synced.createReport(t, "link-policy-driftsync", "req-driftsync-0001")
+	synced.seedSections(t, createdSynced.Revision.ID, successSeeds())
+	runtimeSynced := synced.reportRuntimeJob(t, model.JobStatusSucceeded)
+	synced.claimReportJob(t, createdSynced.Job.ID, runtimeSynced)
+	if err := synced.gdb.Create(&model.ReportCharge{
+		ID: id.New(), TenantID: synced.tenantID, ReportJobID: createdSynced.Job.ID,
+		AttemptSeq: 1, SliceSeq: 1, SectionID: "sec-gaps", SectionAttempt: 1, CallSeq: 1,
+		LedgerKey: "report:" + createdSynced.Job.ID + ":1:1:sec-gaps:1:1",
+		State:     model.ReportChargeSettled, ReservedTokens: 100, ActualTokens: 90, ChargedTokens: 90,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := synced.svc.Store.RefreshReportChargeTotals(ctx, synced.tenantID, createdSynced.Job.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := synced.svc.BeginReportFinalization(ctx, synced.tenantID, createdSynced.Job.ID, 1, 1, runtimeSynced); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := synced.svc.FinalizeReportJob(ctx, synced.tenantID, createdSynced.Job.ID, runtimeSynced, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if got := countAuditAction(t, synced.gdb, synced.tenantID, "report.charge.reconciled"); got != 0 {
+		t.Fatalf("agreeing columns must not be reported as drift, got %d rows", got)
+	}
+
+	// Disagreement: the ledger holds a settled charge the summary columns never saw.
+	fx := newReportFixture(t, "drift")
+	createdDrift := fx.createReport(t, "link-policy-drift", "req-drift-0001")
+	fx.seedSections(t, createdDrift.Revision.ID, successSeeds())
+	runtimeDrift := fx.reportRuntimeJob(t, model.JobStatusSucceeded)
+	fx.claimReportJob(t, createdDrift.Job.ID, runtimeDrift)
+	if err := fx.gdb.Create(&model.ReportCharge{
+		ID: id.New(), TenantID: fx.tenantID, ReportJobID: createdDrift.Job.ID,
+		AttemptSeq: 1, SliceSeq: 1, SectionID: "sec-gaps", SectionAttempt: 1, CallSeq: 1,
+		LedgerKey: "report:" + createdDrift.Job.ID + ":1:1:sec-gaps:1:1",
+		State:     model.ReportChargeSettled, ReservedTokens: 100, ActualTokens: 90, ChargedTokens: 90,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.svc.BeginReportFinalization(ctx, fx.tenantID, createdDrift.Job.ID, 1, 1, runtimeDrift); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.svc.FinalizeReportJob(ctx, fx.tenantID, createdDrift.Job.ID, runtimeDrift, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if got := countAuditAction(t, fx.gdb, fx.tenantID, "report.charge.reconciled"); got != 1 {
+		t.Fatalf("ledger drift must be written down exactly once, got %d", got)
+	}
+	job := fx.reportJob(t, createdDrift.Job.ID)
+	if job.ChargedTokens != 90 || job.ActualTokens != 90 {
+		t.Fatalf("the ledger must win over the cached columns: %+v", job)
+	}
+	var audit model.AuditLog
+	if err := fx.gdb.Where("action = ? AND tenant_id = ?", "report.charge.reconciled", fx.tenantID).
+		Take(&audit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(audit.DetailJSON, "ledger_sum_differs_from_job_summary") ||
+		!strings.Contains(audit.DetailJSON, "before") || !strings.Contains(audit.DetailJSON, "after") {
+		t.Fatalf("the reconcile audit must carry both sides: %s", audit.DetailJSON)
 	}
 }

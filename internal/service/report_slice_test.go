@@ -63,6 +63,43 @@ func (fx *reportFixture) finalizeNow(t *testing.T, jobID, runtimeJobID string) {
 	}
 }
 
+// armedSlice returns the runtime slice the job is armed with.
+//
+// Creation arms slice 1 (`armReportJob`), so a fixture never dispatches by hand:
+// a test that dispatched again would only prove the second dispatch is a no-op.
+func (fx *reportFixture) armedSlice(t *testing.T, jobID string) string {
+	t.Helper()
+	job := fx.reportJob(t, jobID)
+	if job.CurrentRuntimeJobID == "" {
+		t.Fatalf("job %s was never armed: %+v", jobID, job)
+	}
+	return job.CurrentRuntimeJobID
+}
+
+// unarmReportJob rewinds a freshly created job to its pre-dispatch state, so the
+// dispatch transition itself can be exercised from its real precondition.
+func (fx *reportFixture) unarmReportJob(t *testing.T, jobID string) {
+	t.Helper()
+	job := fx.reportJob(t, jobID)
+	if job.CurrentRuntimeJobID == "" {
+		t.Fatalf("job %s is already unarmed", jobID)
+	}
+	if err := fx.gdb.Where("report_job_id = ?", jobID).Delete(&model.ReportJobAttempt{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.gdb.Where("id = ?", job.CurrentRuntimeJobID).Delete(&model.Job{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.gdb.Model(&model.ReportJob{}).Where("id = ?", jobID).
+		Updates(map[string]interface{}{
+			"status":                 model.ReportJobQueued,
+			"current_runtime_job_id": "",
+			"started_at":             nil,
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (fx *reportFixture) countSlices(t *testing.T, reportJobID string) int64 {
 	t.Helper()
 	var count int64
@@ -80,6 +117,9 @@ func TestDispatchReportJobArmsFirstSlice(t *testing.T) {
 	fx := newReportFixture(t, "dispatch")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-dispatch", "req-dispatch-0001")
+	// The transition under test starts from `queued`, which is what the fixture
+	// rewinds to: creation itself already armed the slice.
+	fx.unarmReportJob(t, created.Job.ID)
 
 	runtimeJobID, applied, err := fx.svc.DispatchReportJob(ctx, fx.tenantID, created.Job.ID)
 	if err != nil || !applied {
@@ -127,6 +167,71 @@ func TestDispatchReportJobArmsFirstSlice(t *testing.T) {
 	}
 }
 
+// TestCreateReportArmsTheFirstSlice is the same transition reached through the API:
+// a created report must already own a runnable slice.
+//
+// This is the live defect the 151 dry run found: creation committed the aggregate
+// and stopped, so every report sat at `queued`/`outlining` forever — visible in the
+// UI, never started, and nothing in the response or the log said so.
+func TestCreateReportArmsTheFirstSlice(t *testing.T) {
+	fx := newReportFixture(t, "createarms")
+	created := fx.createReport(t, "link-policy-createarms", "req-createarms-0001")
+
+	job := fx.reportJob(t, created.Job.ID)
+	if job.Status != model.ReportJobRunning || job.CurrentRuntimeJobID == "" {
+		t.Fatalf("creation must arm slice 1, got %+v", job)
+	}
+	if created.Job.CurrentRuntimeJobID != job.CurrentRuntimeJobID {
+		t.Fatalf("the 202 body must describe the armed run: %q vs %q",
+			created.Job.CurrentRuntimeJobID, job.CurrentRuntimeJobID)
+	}
+	slice := fx.runtimeJobRow(t, job.CurrentRuntimeJobID)
+	if slice.Kind != model.JobKindReportGenerate {
+		t.Fatalf("armed slice kind must be report_generate, got %s", slice.Kind)
+	}
+	if want := reportSliceKey(created.Job.ID, 1, 1); slice.Key != want {
+		t.Fatalf("armed slice key must be the business identity %q, got %q", want, slice.Key)
+	}
+	if n := fx.countAttempts(t, created.Job.ID); n != 1 {
+		t.Fatalf("arming must write exactly one attempt mapping, got %d", n)
+	}
+}
+
+// TestReconcilerArmsAJobWhoseDispatchWasLost covers the crash window the request
+// path cannot close: the aggregate transaction committed, the process died before
+// the dispatch. The sweep arms it instead of leaving a visible report that never
+// runs, and it leaves a job that is already armed alone.
+func TestReconcilerArmsAJobWhoseDispatchWasLost(t *testing.T) {
+	fx := newReportFixture(t, "armlost")
+	ctx := context.Background()
+	created := fx.createReport(t, "link-policy-armlost", "req-armlost-0001")
+	fx.unarmReportJob(t, created.Job.ID)
+	// Age the row past the grace window so the sweep may touch it.
+	if err := fx.gdb.Model(&model.ReportJob{}).Where("id = ?", created.Job.ID).
+		Update("updated_at", time.Now().UTC().Add(-2*reportFinalizeReconcileStaleAfter)).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := fx.svc.ProcessReportFinalizeReconciler(ctx, 20); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	job := fx.reportJob(t, created.Job.ID)
+	if job.Status != model.ReportJobRunning || job.CurrentRuntimeJobID == "" {
+		t.Fatalf("the sweep must arm the lost dispatch, got %+v", job)
+	}
+	if n := fx.countAttempts(t, created.Job.ID); n != 1 {
+		t.Fatalf("the sweep must arm exactly one slice, got %d mappings", n)
+	}
+
+	// A second pass is a no-op: the job is no longer `queued` with an empty pointer.
+	if err := fx.svc.ProcessReportFinalizeReconciler(ctx, 20); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	if n := fx.countAttempts(t, created.Job.ID); n != 1 {
+		t.Fatalf("a repeated sweep must not arm a second slice, got %d mappings", n)
+	}
+}
+
 // TestDispatchReportJobRefusesFinishedAndCancelledJobs protects the queue from
 // arming work nobody wants: a terminal job and a cancel-requested job must both
 // refuse the transition rather than resurrect it.
@@ -137,9 +242,10 @@ func TestDispatchReportJobRefusesFinishedAndCancelledJobs(t *testing.T) {
 	finished := fx.createReport(t, "link-policy-dispatchguard", "req-dispatchguard-0001")
 	// Terminal writes only fire from `running`/`cancel_requested` (§8.2), so the
 	// fixture dispatches before it finishes — the same order production uses.
+	fx.unarmReportJob(t, finished.Job.ID)
 	finishedRuntimeID, applied, err := fx.svc.DispatchReportJob(ctx, fx.tenantID, finished.Job.ID)
-	if err != nil || !applied {
-		t.Fatalf("dispatch: applied=%v err=%v", applied, err)
+	if err != nil || !applied || finishedRuntimeID == "" {
+		t.Fatalf("dispatch: id=%q err=%v", finishedRuntimeID, err)
 	}
 	fx.seedSections(t, finished.Revision.ID, successSeeds())
 	fx.finalizeNow(t, finished.Job.ID, finishedRuntimeID)
@@ -163,10 +269,7 @@ func TestYieldReportSliceAdvancesPointerAndAnnouncesCheckpoint(t *testing.T) {
 	fx := newReportFixture(t, "yield")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-yield", "req-yield-0001")
-	firstRuntimeID, applied, err := fx.svc.DispatchReportJob(ctx, fx.tenantID, created.Job.ID)
-	if err != nil || !applied {
-		t.Fatalf("dispatch: applied=%v err=%v", applied, err)
-	}
+	firstRuntimeID := fx.armedSlice(t, created.Job.ID)
 	// Two sections finished, the third failed: the next slice resumes at ord 2 and
 	// its counter must not claim more than it wrote.
 	fx.seedSections(t, created.Revision.ID, []reportSectionSeed{
@@ -175,7 +278,7 @@ func TestYieldReportSliceAdvancesPointerAndAnnouncesCheckpoint(t *testing.T) {
 		{Key: "compliance", Status: model.ReportSectionFailed},
 	})
 
-	applied, err = fx.svc.YieldReportSlice(
+	applied, err := fx.svc.YieldReportSlice(
 		ctx, fx.tenantID, created.Job.ID, 1, 1, firstRuntimeID, 2)
 	if err != nil || !applied {
 		t.Fatalf("yield: applied=%v err=%v", applied, err)
@@ -236,18 +339,15 @@ func TestYieldReportSliceIgnoresSupersededSlice(t *testing.T) {
 	fx := newReportFixture(t, "yieldstale")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-yieldstale", "req-yieldstale-0001")
-	firstRuntimeID, applied, err := fx.svc.DispatchReportJob(ctx, fx.tenantID, created.Job.ID)
-	if err != nil || !applied {
-		t.Fatalf("dispatch: applied=%v err=%v", applied, err)
-	}
-	if applied, err = fx.svc.YieldReportSlice(
+	firstRuntimeID := fx.armedSlice(t, created.Job.ID)
+	if applied, err := fx.svc.YieldReportSlice(
 		ctx, fx.tenantID, created.Job.ID, 1, 1, firstRuntimeID, 1,
 	); err != nil || !applied {
 		t.Fatalf("first yield: applied=%v err=%v", applied, err)
 	}
 	before := fx.reportJob(t, created.Job.ID)
 
-	applied, err = fx.svc.YieldReportSlice(
+	applied, err := fx.svc.YieldReportSlice(
 		ctx, fx.tenantID, created.Job.ID, 1, 1, firstRuntimeID, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -271,6 +371,9 @@ func TestCancelReportConvergesWithoutSlice(t *testing.T) {
 	fx := newReportFixture(t, "cancelnoslice")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-cancelnoslice", "req-cancelnoslice-0001")
+	// The dead end only exists when no slice was ever armed: rewind the arming
+	// creation now performs, so the cancel has no checkpoint to reach.
+	fx.unarmReportJob(t, created.Job.ID)
 
 	result, err := fx.svc.CancelReport(ctx, fx.owner.ID, fx.tenantID, created.Report.ID)
 	if err != nil {
@@ -310,6 +413,9 @@ func TestCancelReportIsIdempotent(t *testing.T) {
 	fx := newReportFixture(t, "cancelidem")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-cancelidem", "req-cancelidem-0001")
+	// A slice-less cancel is the case where the request itself must hand out the
+	// terminal write; creation's auto-armed slice would otherwise answer instead.
+	fx.unarmReportJob(t, created.Job.ID)
 
 	if _, err := fx.svc.CancelReport(ctx, fx.owner.ID, fx.tenantID, created.Report.ID); err != nil {
 		t.Fatal(err)
@@ -339,16 +445,13 @@ func TestCancelReportOnFinishedJobIsRefused(t *testing.T) {
 	fx := newReportFixture(t, "cancelfinished")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-cancelfinished", "req-cancelfinished-0001")
-	runtimeJobID, applied, err := fx.svc.DispatchReportJob(ctx, fx.tenantID, created.Job.ID)
-	if err != nil || !applied {
-		t.Fatalf("dispatch: applied=%v err=%v", applied, err)
-	}
+	runtimeJobID := fx.armedSlice(t, created.Job.ID)
 	fx.seedSections(t, created.Revision.ID, successSeeds())
 	fx.finalizeNow(t, created.Job.ID, runtimeJobID)
 	if job := fx.reportJob(t, created.Job.ID); job.Status != model.ReportJobSucceeded {
 		t.Fatalf("fixture must finish the job before the cancel: %+v", job)
 	}
-	_, err = fx.svc.CancelReport(ctx, fx.owner.ID, fx.tenantID, created.Report.ID)
+	_, err := fx.svc.CancelReport(ctx, fx.owner.ID, fx.tenantID, created.Report.ID)
 	if code := reportErrorCode(err); code != codeReportInvalidTransition {
 		t.Fatalf("cancelling a finished job must answer 44104, got %v (%d)", err, code)
 	}
@@ -371,7 +474,7 @@ func TestCancelReportRequiresOwnership(t *testing.T) {
 	if code := reportErrorCode(err); code != codeReportAccessDenied {
 		t.Fatalf("a non-owner cancel must answer 44109, got %v (%d)", err, code)
 	}
-	if job := fx.reportJob(t, created.Job.ID); job.Status != model.ReportJobQueued {
+	if job := fx.reportJob(t, created.Job.ID); job.Status != model.ReportJobRunning {
 		t.Fatalf("a refused cancel must not move the job, got %s", job.Status)
 	}
 }
@@ -383,6 +486,9 @@ func TestReconcilerConvergesStaleActiveJob(t *testing.T) {
 	fx := newReportFixture(t, "converge")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-converge", "req-converge-0001")
+	// The crash class under test has no live slice (nothing to checkpoint), so the
+	// fixture rewinds the slice creation armed.
+	fx.unarmReportJob(t, created.Job.ID)
 	if err := fx.gdb.Model(&model.ReportJob{}).Where("id = ?", created.Job.ID).
 		Updates(map[string]interface{}{
 			"status":              model.ReportJobCancelRequested,
@@ -413,6 +519,7 @@ func TestReconcilerLeavesLiveSliceAlone(t *testing.T) {
 	fx := newReportFixture(t, "convergelive")
 	ctx := context.Background()
 	created := fx.createReport(t, "link-policy-convergelive", "req-convergelive-0001")
+	fx.unarmReportJob(t, created.Job.ID)
 	liveRuntimeID := fx.reportRuntimeJob(t, model.JobStatusRunning)
 	fx.claimReportJob(t, created.Job.ID, liveRuntimeID)
 	fx.attemptRow(t, created.Job.ID, liveRuntimeID)
@@ -445,6 +552,9 @@ func TestReconcilerRebuildsMissingAttemptMapping(t *testing.T) {
 	fx := newReportFixture(t, "reconcileclass3")
 	ctx := context.Background()
 	created := fx.createReport(t, fx.datasetLink, "req-class3-0001")
+	// Class 3 starts from "pointer written, mapping lost": rewind creation's arm
+	// (which wrote both) and let the fixture write only the pointer.
+	fx.unarmReportJob(t, created.Job.ID)
 	liveRuntimeID := fx.reportRuntimeJob(t, model.JobStatusRunning)
 	fx.claimReportJob(t, created.Job.ID, liveRuntimeID)
 	if n := fx.countAttempts(t, created.Job.ID); n != 0 {

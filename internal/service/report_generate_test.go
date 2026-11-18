@@ -93,6 +93,12 @@ func (e *reportRunEngine) RetrieveDatasets(
 	}, nil
 }
 
+func (e *reportRunEngine) retrievalCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.retrievals)
+}
+
 func (e *reportRunEngine) promptCount() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -142,10 +148,10 @@ func (fx *reportFixture) runSlice(t *testing.T, jobID string) {
 
 func (fx *reportFixture) outlineJob(t *testing.T, datasetID, key string) CreateReportResult {
 	t.Helper()
-	ctx := context.Background()
 	created := fx.createReport(t, datasetID, key)
-	if _, applied, err := fx.svc.DispatchReportJob(ctx, fx.tenantID, created.Job.ID); err != nil || !applied {
-		t.Fatalf("dispatch: applied=%v err=%v", applied, err)
+	// CreateReport arms slice 1; the helper only proves it happened.
+	if id := fx.armedSlice(t, created.Job.ID); id == "" {
+		t.Fatalf("report job %s was never armed", created.Job.ID)
 	}
 	return created
 }
@@ -249,9 +255,7 @@ func TestReportGenerateOutlineFreezesRunOnce(t *testing.T) {
 	// template, model and datasets must hash equal, which is what makes "the
 	// conditions changed" detectable at all.
 	created2 := fx.createReport(t, "link-policy-generate-outline", "req-outline-0002")
-	if _, applied, err := fx.svc.DispatchReportJob(context.Background(), fx.tenantID, created2.Job.ID); err != nil || !applied {
-		t.Fatalf("dispatch second report: applied=%v err=%v", applied, err)
-	}
+	fx.armedSlice(t, created2.Job.ID)
 	fx.runSlice(t, created2.Job.ID)
 	second := fx.reportRevision(t, created2.Revision.ID)
 	if second.ExecutionSnapshotHash == "" {
@@ -427,8 +431,13 @@ func TestReportGenerateWritesSectionsWithEvidence(t *testing.T) {
 		t.Fatalf("one section.succeeded per section, got %d for %d", len(events), len(sections))
 	}
 	// Retrieval used the frozen binding and the template's top_k, and sent no cutoff.
-	if len(engine.retrievals) != len(sections) {
-		t.Fatalf("one retrieval per section, got %d", len(engine.retrievals))
+	// Two retrievals per section, both deliberate: one at outline time for the
+	// evidence preview (§9.6) and one when the section is written. Pinning the count
+	// is what stops the preview from silently becoming a second write-path retrieval
+	// (or from disappearing when the outline step is refactored).
+	if len(engine.retrievals) != 2*len(sections) {
+		t.Fatalf("preview + write must be one retrieval each per section (%d), got %d",
+			2*len(sections), len(engine.retrievals))
 	}
 	for _, request := range engine.retrievals {
 		if request.SimilarityThreshold != nil {

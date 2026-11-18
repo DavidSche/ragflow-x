@@ -33,6 +33,28 @@ import (
 //
 // The disclosure banner (completeness + gaps) is rendered from the frozen
 // payload, so the DOCX never disagrees with the Markdown or the page (A41).
+// docxCaptionNumbers numbers figures and tables through the whole document, so a
+// reviewer can cite "表 3" instead of "the third table of §4". The counters are
+// per-document on purpose: they must match the PDF's numbering, or two files that
+// claim to be the same document disagree (A4).
+type docxCaptionNumbers struct {
+	table int
+	image int
+}
+
+// next returns the caption for a numbered block kind, or "" for text.
+func (n *docxCaptionNumbers) next(kind exportBlockKind) string {
+	switch kind {
+	case exportBlockTable:
+		n.table++
+		return fmt.Sprintf("表 %d", n.table)
+	case exportBlockImage:
+		n.image++
+		return fmt.Sprintf("图 %d", n.image)
+	}
+	return ""
+}
+
 func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 	/// The heading style is reused for every section; heading2/3 collapse to
 	/// Heading2 exactly as answer exports render them (docxBlock), so a
@@ -58,17 +80,76 @@ func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 		body.WriteString(docxParagraph("缺失节的结论强度按 §13 无法给出，请人工复核后决定是否重新生成。", ""))
 	}
 
+	// 目录 (§12 封面/目录): the title block above is the cover, this is the contents.
+	// Page numbers are deliberately absent: DOCX shows them only after Word updates a
+	// TOC field, and printing "1" for every row would be worse than printing none.
+	// A numbered title list still navigates (and survives being exported to PDF by
+	// the reader's own tool).
+	body.WriteString(docxParagraph("目录", "Heading1"))
+	for _, section := range document.Sections {
+		body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", section.Ord+1, section.Title), ""))
+	}
+	if len(document.EvidenceAppendix) > 0 {
+		body.WriteString(docxParagraph("证据附录", ""))
+	}
+
+	captions := &docxCaptionNumbers{}
 	for index, section := range document.Sections {
 		if index > 0 {
 			body.WriteString(docxParagraph("", ""))
 		}
 		body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", section.Ord+1, section.Title), "Heading1"))
 		for _, block := range parseAnswerContent(section.ContentMD) {
+			if caption := captions.next(block.kind); caption != "" {
+				body.WriteString(docxParagraph(caption, ""))
+			}
 			body.WriteString(docxBlock(block))
 		}
 		if section.EvidenceStatus != "" && section.CitationCount > 0 {
 			body.WriteString(docxParagraph(fmt.Sprintf("依据：%d 条引用，证据状态 %s。",
 				section.CitationCount, section.EvidenceStatus), ""))
+		}
+	}
+
+	// The evidence appendix is part of the delivered document (§12 / A13), built
+	// from the frozen payload so it survives the snapshots it cites (A43).
+	if len(document.EvidenceAppendix) > 0 {
+		body.WriteString(docxParagraph("证据附录", "Heading1"))
+		if document.EvidenceVerifiable {
+			body.WriteString(docxParagraph("以下为生成时冻结的证据副本，可与原始文档逐条核对。", ""))
+		} else {
+			body.WriteString(docxParagraph("以下为生成时冻结的证据副本；原始快照已过期，当前无法复核。", ""))
+		}
+		currentSection := -1
+		for _, entry := range document.EvidenceAppendix {
+			if entry.SectionOrd != currentSection {
+				currentSection = entry.SectionOrd
+				title := entry.SectionTitle
+				if title == "" {
+					title = fmt.Sprintf("第 %d 节", entry.SectionOrd+1)
+				}
+				body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", entry.SectionOrd+1, title), "Heading2"))
+				// The column header repeats per chapter on purpose: a reader who
+				// opens the appendix at random should not have to scroll up to know
+				// what the columns mean.
+				body.WriteString(docxTable([][]string{
+					{"#", "来源", "分数", "快照片段"},
+				}))
+			}
+			locator := entry.DocumentName
+			if locator == "" {
+				locator = entry.DocumentID
+			}
+			if locator == "" {
+				locator = entry.ChunkID
+			}
+			note := ""
+			if entry.Truncated {
+				note = "（快照已按策略截断）"
+			}
+			body.WriteString(docxTable([][]string{{
+				fmt.Sprintf("%d", entry.Ord+1), locator, scoreLabel(entry), entry.Content + note,
+			}}))
 		}
 	}
 
@@ -81,7 +162,7 @@ func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 		// idempotency component: it is the sha256 of the exact payload JSON, so a
 		// reader can verify the DOCX against the artifact row.
 		Canonical: reportDocxCanonical(document),
-		Renderer:  reportExportRendererVersion + " · " + reportExportTemplateID,
+		Renderer:  reportExportRendererVersion + " · " + reportExportLayoutID(document.TemplateKey, model.ExportFormatDOCX),
 	}
 	return writeReportDocx(data, now)
 }

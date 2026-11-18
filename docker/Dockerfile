@@ -59,8 +59,13 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
 FROM alpine:3.21
 
 # tzdata for correct UTC/local time handling; ca-certificates for outbound
-# TLS (RAGFlow / provider calls).
-RUN apk add --no-cache ca-certificates tzdata
+# TLS (RAGFlow / provider calls); font-wqy-zenhei so PDF export works out of the
+# box. The PDF renderer embeds a TrueType font and refuses to emit boxes instead,
+# so an image without a font turns every `format=pdf` export into a `failed`
+# artifact (doc/288 §12 / T14). WenQuanYi is chosen over font-noto-cjk because
+# Noto ships CFF (OTF) collections that fpdf cannot embed; the renderer probes
+# /usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc (internal/service/ttc.go).
+RUN apk add --no-cache ca-certificates tzdata font-wqy-zenhei
 
 WORKDIR /app
 

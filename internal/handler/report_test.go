@@ -67,15 +67,26 @@ func newReportHarness(t *testing.T, svc *service.Service, engine *reportHandlerE
 	if err != nil {
 		t.Fatal(err)
 	}
+	return newReportHarnessFor(t, svc, engine, tenant.ID, user.ID)
+}
+
+// newReportHarnessFor builds a harness for an *existing* principal. The A19 role
+// matrix needs this: a platform administrator is minted in the system tenant by
+// BootstrapAdmin, so the tenant cannot be created by the harness itself.
+func newReportHarnessFor(
+	t *testing.T, svc *service.Service, engine *reportHandlerEngine, tenantID, userID string,
+) *reportHarness {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	group := router.Group("/api/v1", func(c *gin.Context) {
 		c.Set("handler", New(svc))
-		c.Set(middleware.ContextTenantID, tenant.ID)
-		c.Set(middleware.ContextUserID, user.ID)
+		c.Set(middleware.ContextTenantID, tenantID)
+		c.Set(middleware.ContextUserID, userID)
 		c.Next()
 	})
 	RegisterReportRoutes(group)
-	return &reportHarness{svc: svc, router: router, tenantID: tenant.ID, userID: user.ID}
+	return &reportHarness{svc: svc, router: router, tenantID: tenantID, userID: userID}
 }
 
 // newReportService builds the shared service these harnesses talk to.
@@ -313,15 +324,31 @@ func TestDeleteReportSoftDeletesAndSecondDeleteIs404(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("delete must be 200, got %d (%s)", rec.Code, rec.Body.String())
 	}
-	stored, err := svc.Store.GetReport(context.Background(), fx.tenantID, reportID)
-	if err != nil {
-		t.Fatal(err)
+
+	// A deleted report is withdrawn from every read surface, not just from the
+	// list: reading it, exporting it and deleting it again must all answer the
+	// same "no such report" (44109/404) while the recovery window keeps the row.
+	// Leaving the read surface open served a deleted report's body and download
+	// links until the janitor purged it (found live on 4.151, R16).
+	rec, body := fx.do(t, http.MethodGet, "/api/v1/reports/"+reportID, "", nil)
+	if rec.Code != http.StatusNotFound || envelopeCode(t, body) != 44109 {
+		t.Fatalf("reading a deleted report must be 404/44109, got %d %v", rec.Code, body)
 	}
-	if stored == nil || stored.DeletedAt == nil {
-		t.Fatal("delete must stamp deleted_at")
+	listing, listBody := fx.do(t, http.MethodGet, "/api/v1/reports?page=1&page_size=50", "", nil)
+	if listing.Code != http.StatusOK {
+		t.Fatalf("list must be 200, got %d (%s)", listing.Code, listing.Body.String())
+	}
+	if page, _ := listBody["data"].(map[string]interface{}); page != nil {
+		if items, _ := page["items"].([]interface{}); len(items) > 0 {
+			for _, item := range items {
+				if entry, _ := item.(map[string]interface{}); entry["id"] == reportID {
+					t.Fatalf("a deleted report must not be listed: %v", entry)
+				}
+			}
+		}
 	}
 
-	rec, body := fx.do(t, http.MethodDelete, "/api/v1/reports/"+reportID, "", map[string]string{"reason": "重复删除"})
+	rec, body = fx.do(t, http.MethodDelete, "/api/v1/reports/"+reportID, "", map[string]string{"reason": "重复删除"})
 	if rec.Code != http.StatusNotFound || envelopeCode(t, body) != 44109 {
 		t.Fatalf("second delete must be 404/44109, got %d %v", rec.Code, body)
 	}
@@ -386,13 +413,19 @@ func TestCancelReportAnswersAccepted(t *testing.T) {
 		t.Fatalf("Location must point at the report, got %q", loc)
 	}
 
-	// The terminal state is not written by the request: it is derived by finalize.
+	// The terminal state is not written by the request: the armed slice's next
+	// checkpoint derives it (a job cancelled before any slice existed has the
+	// request hand the terminal write to the outbox — pinned by the service test
+	// TestCancelReportConvergesWithoutSlice).
 	job, err := svc.Store.GetLatestReportJob(context.Background(), fx.tenantID, reportID)
 	if err != nil || job == nil {
 		t.Fatalf("load job: %v", err)
 	}
-	if job.Status != model.ReportJobFinalizing {
-		t.Fatalf("a slice-less cancel asks for the terminal write, got %s", job.Status)
+	if job.Status != model.ReportJobCancelRequested {
+		t.Fatalf("the request must record the intent, got %s", job.Status)
+	}
+	if job.FinalizedAt != nil {
+		t.Fatal("the request must not claim a terminal state finalize has not written")
 	}
 }
 
@@ -420,13 +453,9 @@ func TestConfirmReportOutlineAnswersAccepted(t *testing.T) {
 	if err != nil || job == nil {
 		t.Fatalf("load job: %v", err)
 	}
-	// DispatchReportJob addresses the *job* row, not the report.
-	_, dispatched, err := svc.DispatchReportJob(ctx, fx.tenantID, job.ID)
-	if err != nil || !dispatched {
-		t.Fatalf("dispatch: applied=%v err=%v", dispatched, err)
-	}
-	if job, err = svc.Store.GetLatestReportJob(ctx, fx.tenantID, reportID); err != nil || job == nil {
-		t.Fatalf("reload job: %v", err)
+	// Creation arms the first slice already; the outline step runs against it.
+	if job.CurrentRuntimeJobID == "" {
+		t.Fatal("creation must arm the first runtime slice")
 	}
 	now := time.Now().UTC()
 	applied, err := svc.Store.BeginReportOutline(ctx, repository.ReportOutlineStart{
@@ -498,5 +527,35 @@ func TestConfirmReportOutlineAnswersAccepted(t *testing.T) {
 		map[string]interface{}{"sections": []map[string]string{{"section_key": "background"}}})
 	if rec.Code != http.StatusConflict || envelopeCode(t, body) != 44104 {
 		t.Fatalf("a repeated confirmation must be 409/44104, got %d/%d", rec.Code, envelopeCode(t, body))
+	}
+}
+
+// TestPutReportRetentionRejectsAMalformedBody pins the code, not just the status.
+//
+// A body that does not bind is a `400` "the request itself is wrong", so the answer
+// is `44105` (this surface's invalid-parameter code) — not `44104`, which the registry
+// maps to `409` "the current state forbids this". The two are easy to swap in a
+// handler, and only a pinned assertion catches it.
+func TestPutReportRetentionRejectsAMalformedBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/api/v1/report-retention",
+		strings.NewReader(`{"report_days":"ninety"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	// The bind fails before any service call, so the handler can be exercised without
+	// a Service — which is exactly the property this test relies on.
+	putReportRetention(ctx)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("malformed retention body status = %d, want 400", recorder.Code)
+	}
+	var body map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if code := envelopeCode(t, body); code != 44105 {
+		t.Fatalf("malformed retention body code = %d, want 44105", code)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1017,14 +1018,87 @@ func (c *HTTPClient) VerifyConnection(ctx context.Context, providerName, apiKey,
 	return result, nil
 }
 
+// ChatToModel asks the engine to answer one prompt with one named model, and
+// returns the answer text (never a transport envelope).
+//
+// Why `/chat/completions` and not the per-model management route: RAGFlow
+// v1.0.0's provider API has no "chat with this model" endpoint. The route this
+// client used to call (`POST /providers/{p}/instances/{i}/models/{m}`) answers
+// 404 on the live engine for every suffix tried (`/verify`, `/chat`, …; probed
+// on 4.151 on 2026-11-18), and the engine binary registers only ID-based
+// management paths under `/providers`. The single route that answers a bare
+// prompt is the chat completion endpoint, which accepts `model` in place of
+// `chat_id` and replies `{code:0,data:{answer}}` — verified live, same day.
+//
+// The provider/instance pair is kept in the signature because every caller has
+// it and it belongs in the error message, but the engine addresses models by
+// name on this route: two instances registering the same model name are not
+// distinguishable upstream, and the answer carries no model echo. That is an
+// engine limitation, recorded in doc/environment/verification/44 §6.
 func (c *HTTPClient) ChatToModel(ctx context.Context, providerName, instanceName, modelName, message string, stream, thinking bool) (string, error) {
-	body, _ := json.Marshal(map[string]interface{}{"message": message, "stream": stream, "thinking": thinking})
-	path := "/providers/" + url.PathEscape(providerName) + "/instances/" + url.PathEscape(instanceName) + "/models/" + url.PathEscape(modelName)
-	var out json.RawMessage
-	if err := c.do(ctx, http.MethodPost, path, bytes.NewReader(body), "application/json", &out); err != nil {
-		return "", err
+	if stream {
+		// The streaming form answers raw SSE, which the envelope parser cannot
+		// read. Every caller wants one complete answer; refusing is honest,
+		// whereas silently downgrading would hand streaming callers frames.
+		return "", &Error{Type: ErrorTypeProtocol, Message: "ragflow chat to model: streaming is not supported"}
 	}
-	return string(out), nil
+	body, err := json.Marshal(map[string]interface{}{
+		"model":    modelName,
+		"messages": []map[string]string{{"role": "user", "content": message}},
+		"stream":   false,
+		// `thinking` is declared as a **string** on this engine. Sending a JSON
+		// bool answers HTTP 200 with an envelope error —
+		// `code:400 json: cannot unmarshal bool into Go struct field
+		// ChatCompletionsRequest.thinking of type string` — which every caller
+		// (and the report writer) saw as a 100% section failure while the
+		// transport log said only "200". The value itself is ignored by the
+		// engine (probed 2026-11-18: "true", "false" and "bogus" all answer),
+		// so sending the declared type is free; doc 44 §6 records the probe.
+		"thinking": strconv.FormatBool(thinking),
+	})
+	if err != nil {
+		return "", wrapError("encode ragflow chat request", err)
+	}
+	var out struct {
+		Answer   string `json:"answer"`
+		Content  string `json:"content"`
+		Message  string `json:"message"`
+		Response string `json:"response"`
+		Choices  []struct {
+			Text    string `json:"text"`
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/chat/completions", bytes.NewReader(body), "application/json", &out); err != nil {
+		return "", wrapError(fmt.Sprintf("chat to model %s via %s/%s", modelName, providerName, instanceName), err)
+	}
+	text := out.Answer
+	for _, candidate := range []string{text, out.Content, out.Message, out.Response} {
+		if strings.TrimSpace(candidate) != "" {
+			text = candidate
+			break
+		}
+	}
+	if strings.TrimSpace(text) == "" {
+		for _, choice := range out.Choices {
+			if candidate := choice.Message.Content; strings.TrimSpace(candidate) != "" {
+				text = candidate
+				break
+			}
+			if candidate := choice.Text; strings.TrimSpace(candidate) != "" {
+				text = candidate
+				break
+			}
+		}
+	}
+	if strings.TrimSpace(text) == "" {
+		// An answer envelope with no answer is a protocol break, not an empty
+		// section: returning "" would make the writer publish a blank section.
+		return "", &Error{Type: ErrorTypeProtocol, Message: "ragflow chat reply carries no answer"}
+	}
+	return text, nil
 }
 
 // truncateResponseLog caps a response body for logs so large list replies or

@@ -129,7 +129,9 @@ func (s *Service) RetryReportSection(
 	}
 
 	now := time.Now().UTC()
-	jobID = id.New()
+	// A new job id: the request's `jobID` names the *terminal* generate job, and
+	// reusing it here would point the retry at history.
+	newJobID := id.New()
 	newSection := &model.ReportSection{
 		ID: id.New(), TenantID: tenantID, RevisionID: revision.ID,
 		Ord: live.Ord, SectionKey: live.SectionKey,
@@ -149,7 +151,7 @@ func (s *Service) RetryReportSection(
 		return nil, err
 	}
 	retryJob := &model.ReportJob{
-		ID: jobID, TenantID: tenantID, ReportID: report.ID, RevisionID: revision.ID,
+		ID: newJobID, TenantID: tenantID, ReportID: report.ID, RevisionID: revision.ID,
 		JobKind: model.ReportJobKindSectionRetry, Status: model.ReportJobQueued,
 		Stage: model.ReportStageSectionWriting,
 		// The retry rewrites exactly one section, so it is one attempt of one
@@ -177,7 +179,7 @@ func (s *Service) RetryReportSection(
 	event := &model.ReportJobEvent{
 		TenantID: tenantID, JobID: retryJob.ID, Type: reportEventJobQueued,
 		PayloadJSON: string(eventPayload), CreatedAt: now,
-		ExpiresAt: reportExpiry(now, s.currentRetentionPolicy().ReportEventDays, reportDefaultEventDays),
+		ExpiresAt: reportExpiry(now, s.ReportRetentionFor(ctx, tenantID).ReportEventDays, reportDefaultEventDays),
 	}
 
 	if err := s.Store.WithinTransaction(ctx, func(tx repository.Store) error {
@@ -240,16 +242,20 @@ func (s *Service) RetryReportSection(
 }
 
 // latestSectionAtOrd returns the live (highest section_version) row at ord.
-// ListReportSections orders by `ord ASC, section_version ASC`, so the last row of
-// a repeated ord is the newest version; a caller that only addresses live content
-// uses this row and lets the caller decide what a superseded oldest sibling means.
+//
+// The version comparison is explicit rather than "the last match wins": the caller
+// gets a row from `ListReportSections`, whose ordering is a store detail. If that
+// ORDER BY ever changed, a positional rule would hand back the *oldest* version —
+// and a write against a superseded row is exactly what §7.10 forbids.
 //
 // A nil result means no row has this ord at all.
 func latestSectionAtOrd(sections []model.ReportSection, ord int) *model.ReportSection {
 	var live *model.ReportSection
 	for i := range sections {
-		if sections[i].Ord == ord {
-			// Keep the last match: it is the highest section_version (ordering).
+		if sections[i].Ord != ord {
+			continue
+		}
+		if live == nil || sections[i].SectionVersion > live.SectionVersion {
 			live = &sections[i]
 		}
 	}

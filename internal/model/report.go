@@ -268,6 +268,31 @@ type Report struct {
 
 func (Report) TableName() string { return "rgx_report" }
 
+// TenantReportPolicy is the tenant-level overlay on the report-class TTLs
+// (doc/288 §7.6 / T20b).
+//
+// Every field is a pointer on purpose: `nil` means "inherit the system value",
+// which is what keeps an operational change to `retention.report_days` flowing to
+// every tenant that never asked for something else. Storing a copy of the system
+// value would freeze inheritance at whatever the number was on the day the overlay
+// row was written — the exact "改参数不生效" bug the inherited-value design avoids.
+//
+// The row is a *policy*, not a clock: it is read when a row is created and never
+// again, because the resulting `expires_at` is frozen on that row (§7.6 invariant
+// ①"改参数不追溯").
+type TenantReportPolicy struct {
+	TenantID              string    `gorm:"column:tenant_id;primaryKey;size:32" json:"tenant_id"`
+	ReportDays            *int      `gorm:"column:report_days" json:"report_days,omitempty"`
+	ReportEvidenceDays    *int      `gorm:"column:report_evidence_days" json:"report_evidence_days,omitempty"`
+	ReportArtifactDays    *int      `gorm:"column:report_artifact_days" json:"report_artifact_days,omitempty"`
+	ReportEventDays       *int      `gorm:"column:report_event_days" json:"report_event_days,omitempty"`
+	ReportCleanupHoldDays *int      `gorm:"column:report_cleanup_hold_days" json:"report_cleanup_hold_days,omitempty"`
+	UpdatedBy             string    `gorm:"column:updated_by;size:32" json:"updated_by"`
+	UpdatedAt             time.Time `gorm:"column:updated_at;not null" json:"updated_at"`
+}
+
+func (TenantReportPolicy) TableName() string { return "rgx_tenant_report_policy" }
+
 // ReportRevision is one immutable content version of a report. Editing sections
 // mints a new revision; re-exporting the same revision mints a new artifact
 // (doc/288 §7.1 boundary 1).
@@ -381,20 +406,35 @@ type ReportSection struct {
 	// No column default on purpose: gorm omits a zero-valued field that declares
 	// one, so `false` would silently be stored as the default (`true`) and a
 	// template saying "this section needs no evidence" could never take effect.
-	RequiresEvidence bool       `gorm:"column:requires_evidence;not null" json:"requires_evidence"`
-	Status           string     `gorm:"column:status;size:24;not null;index" json:"status"`
-	QualityStatus    string     `gorm:"column:quality_status;size:24;not null;default:not_checked" json:"quality_status"`
-	EvidenceStatus   string     `gorm:"column:evidence_status;size:24" json:"evidence_status"`
-	PromptHash       string     `gorm:"column:prompt_hash;size:64" json:"prompt_hash"`
-	ContentMD        string     `gorm:"column:content_md;type:text" json:"content_md"`
-	ContentHash      string     `gorm:"column:content_hash;size:64" json:"content_hash"`
-	TokensIn         int64      `gorm:"column:tokens_in;not null;default:0" json:"tokens_in"`
-	TokensOut        int64      `gorm:"column:tokens_out;not null;default:0" json:"tokens_out"`
-	CitationCount    int        `gorm:"column:citation_count;not null;default:0" json:"citation_count"`
-	ClaimCount       int        `gorm:"column:claim_count;not null;default:0" json:"claim_count"`
-	Attempt          int        `gorm:"column:attempt;not null;default:0" json:"attempt"`
-	StartedAt        *time.Time `gorm:"column:started_at" json:"started_at"`
-	FinishedAt       *time.Time `gorm:"column:finished_at" json:"finished_at"`
+	RequiresEvidence bool `gorm:"column:requires_evidence;not null" json:"requires_evidence"`
+	// EvidencePreviewJSON is the outline-time evidence盘面 (doc/288 §9.6): how many
+	// chunks this section's query hit, the main source documents, and whether that
+	// is thin against `min_evidence`. It is frozen when the outline is written, in
+	// the same transaction, so the reviewer's confirmation is recorded next to the
+	// evidence they saw. Advisory only — it is never a sufficiency verdict, which
+	// is why `insufficient` can be null ("did not look").
+	EvidencePreviewJSON string `gorm:"column:evidence_preview_json;type:text" json:"evidence_preview_json,omitempty"`
+	Status              string `gorm:"column:status;size:24;not null;index" json:"status"`
+	QualityStatus       string `gorm:"column:quality_status;size:24;not null;default:not_checked" json:"quality_status"`
+	EvidenceStatus      string `gorm:"column:evidence_status;size:24" json:"evidence_status"`
+	// GapReason is why the section ended without content, from the closed set
+	// `failed | skipped | budget_exhausted` (doc/288 §7.8 `gap_json.reason`). It is
+	// written by the runner that made the decision because the reason cannot be
+	// reconstructed afterwards: `quality_status='failed'` is set both when the
+	// budget bail-out skipped the section and when the model actually failed, and
+	// the two are different promises to the reader ("buy more budget" vs "fix the
+	// source"). Empty on a row that succeeded.
+	GapReason     string     `gorm:"column:gap_reason;size:32" json:"gap_reason"`
+	PromptHash    string     `gorm:"column:prompt_hash;size:64" json:"prompt_hash"`
+	ContentMD     string     `gorm:"column:content_md;type:text" json:"content_md"`
+	ContentHash   string     `gorm:"column:content_hash;size:64" json:"content_hash"`
+	TokensIn      int64      `gorm:"column:tokens_in;not null;default:0" json:"tokens_in"`
+	TokensOut     int64      `gorm:"column:tokens_out;not null;default:0" json:"tokens_out"`
+	CitationCount int        `gorm:"column:citation_count;not null;default:0" json:"citation_count"`
+	ClaimCount    int        `gorm:"column:claim_count;not null;default:0" json:"claim_count"`
+	Attempt       int        `gorm:"column:attempt;not null;default:0" json:"attempt"`
+	StartedAt     *time.Time `gorm:"column:started_at" json:"started_at"`
+	FinishedAt    *time.Time `gorm:"column:finished_at" json:"finished_at"`
 }
 
 func (ReportSection) TableName() string { return "rgx_report_section" }
@@ -420,19 +460,24 @@ func (ReportClaim) TableName() string { return "rgx_report_claim" }
 // per-reference audit context (EvidenceUsage). Duplicate content is deduplicated
 // in the snapshot table; usage is never deduplicated (doc/288 §7.5.1).
 type ReportCitation struct {
-	ID                        string    `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID                  string    `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	RevisionID                string    `gorm:"column:revision_id;size:32;not null;index:idx_report_citation_revision,priority:1" json:"revision_id"`
-	SectionID                 string    `gorm:"column:section_id;size:32;not null;uniqueIndex:uidx_rgx_report_citation_section_ord,priority:1" json:"section_id"`
-	SectionOrd                int       `gorm:"column:section_ord;not null;index:idx_report_citation_revision,priority:2" json:"section_ord"`
-	SectionVersion            int       `gorm:"column:section_version;not null" json:"section_version"`
-	Ord                       int       `gorm:"column:ord;not null;uniqueIndex:uidx_rgx_report_citation_section_ord,priority:2" json:"ord"`
-	ClaimID                   string    `gorm:"column:claim_id;size:32" json:"claim_id"`
-	EvidenceSnapshotID        string    `gorm:"column:evidence_snapshot_id;size:32;not null;index" json:"evidence_snapshot_id"`
-	SourceDatasetID           string    `gorm:"column:source_dataset_id;size:32" json:"source_dataset_id"`
-	SourceEngineDatasetID     string    `gorm:"column:source_engine_dataset_id;size:64" json:"source_engine_dataset_id"`
-	SourceDocumentID          string    `gorm:"column:source_document_id;size:32" json:"source_document_id"`
-	SourceDocumentRevision    int64     `gorm:"column:source_document_revision" json:"source_document_revision"`
+	ID                     string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID               string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	RevisionID             string `gorm:"column:revision_id;size:32;not null;index:idx_report_citation_revision,priority:1" json:"revision_id"`
+	SectionID              string `gorm:"column:section_id;size:32;not null;uniqueIndex:uidx_rgx_report_citation_section_ord,priority:1" json:"section_id"`
+	SectionOrd             int    `gorm:"column:section_ord;not null;index:idx_report_citation_revision,priority:2" json:"section_ord"`
+	SectionVersion         int    `gorm:"column:section_version;not null" json:"section_version"`
+	Ord                    int    `gorm:"column:ord;not null;uniqueIndex:uidx_rgx_report_citation_section_ord,priority:2" json:"ord"`
+	ClaimID                string `gorm:"column:claim_id;size:32" json:"claim_id"`
+	EvidenceSnapshotID     string `gorm:"column:evidence_snapshot_id;size:32;not null;index" json:"evidence_snapshot_id"`
+	SourceDatasetID        string `gorm:"column:source_dataset_id;size:32" json:"source_dataset_id"`
+	SourceEngineDatasetID  string `gorm:"column:source_engine_dataset_id;size:64" json:"source_engine_dataset_id"`
+	SourceDocumentID       string `gorm:"column:source_document_id;size:32" json:"source_document_id"`
+	SourceDocumentRevision int64  `gorm:"column:source_document_revision" json:"source_document_revision"`
+	// DocumentLabel is the human name the appendix prints (doc/288 §12: 证据附录
+	// 列出「快照片段 + 文档名 + 分数类型」). The id alone is not a label a reviewer
+	// can read, and re-resolving the name at export time would let a renamed or
+	// deleted document change what an already-published report says about it.
+	DocumentLabel             string    `gorm:"column:document_label;size:255" json:"document_label"`
 	SourceChunkID             string    `gorm:"column:source_chunk_id;size:64" json:"source_chunk_id"`
 	SourceContentHash         string    `gorm:"column:source_content_hash;size:64" json:"source_content_hash"`
 	SourcePermissionScopeJSON string    `gorm:"column:source_permission_scope_json;type:text" json:"source_permission_scope_json"`
@@ -498,6 +543,18 @@ type ReportEvidenceSnapshot struct {
 	CreatedAt          time.Time  `gorm:"column:created_at;not null" json:"created_at"`
 	ExpiresAt          time.Time  `gorm:"column:expires_at;not null;index:idx_report_evidence_expires" json:"expires_at"`
 }
+
+// Evidence truncation strategies (doc/288 §7.5 / A33). The set is closed for the
+// same reason every other report enum is: a free-form string in the column would let
+// a reader guess whether "" means "not truncated" or "unknown strategy".
+const (
+	// ReportEvidenceTruncationNone is the empty strategy of a snapshot that stores
+	// the chunk verbatim.
+	ReportEvidenceTruncationNone = ""
+	// ReportEvidenceTruncationExcerptWindow is a prefix window of the chunk, sized
+	// to the per-snapshot budget and guaranteed to contain the citation snippet.
+	ReportEvidenceTruncationExcerptWindow = "excerpt_window"
+)
 
 func (ReportEvidenceSnapshot) TableName() string { return "rgx_report_evidence_snapshot" }
 

@@ -15,19 +15,37 @@ import (
 
 // Report content-template seeding (doc/288 §11.1 / §11.2).
 //
-// P0-A ships exactly one template, `report-compliance`, because the acceptance
-// list only claims "1 个模板（制度符合性）". The row is seeded into the *platform*
-// tenant and read as a baseline by every workspace, the same posture as the
-// scenario-template catalogue: one authored copy, no per-tenant drift, and a
-// workspace that customises it forks into its own version sequence (292 D4).
+// P0-A shipped exactly one template, `report-compliance`, because its acceptance
+// list only claimed "1 个模板（制度符合性）". P0-B adds the two templates its scope
+// promised (`report-tech-review`, `report-postmortem`), which is why this file
+// is a catalogue rather than a single literal.
+//
+// Every row is seeded into the *platform* tenant and read as a baseline by every
+// workspace, the same posture as the scenario-template catalogue: one authored
+// copy, no per-tenant drift, and a workspace that customises one forks into its own
+// version sequence (292 D4).
+//
+// The three templates differ in **section graph**, not just in prose. That is the
+// point of shipping more than one: `depends_on` chains, the number of sections that
+// require evidence, and the order a reader expects are what a template actually is
+// (§11.1). A second template that reused the compliance section keys would prove
+// nothing about the outline/ordering path.
 
 // builtinReportBootstrapActor is the audit actor of system-seeded templates.
 // Tenant users never authenticate as this principal.
 const builtinReportBootstrapActor = "system"
 
-// reportComplianceTemplateKey is the P0-A template key. It is referenced by the
-// creation path and by tests, so it lives in one place.
-const reportComplianceTemplateKey = "report-compliance"
+// Template keys. They are referenced by the creation path, by the export layout id
+// and by tests, so each lives in exactly one place. Renaming a key is a breaking
+// change for every report pinned to it: keys are contract, versions are content.
+const (
+	reportComplianceTemplateKey = "report-compliance"
+	// Kept compact on purpose: `rgx_export_template_version.template_id` is 32 bytes
+	// and the export layout id is `<key>-v<version>-<format>` (docx|markdown|pdf), so
+	// `report-tech-review-v1-markdown` (30) fits while a spelled-out key would not.
+	reportTechnicalReviewKey    = "report-tech-review"
+	reportPostmortemTemplateKey = "report-postmortem"
+)
 
 // BuiltinReportTemplate is one shipped content template.
 type BuiltinReportTemplate struct {
@@ -46,7 +64,7 @@ var builtinReportTemplates = []BuiltinReportTemplate{
 				Zh: "制度符合性分析报告",
 				En: "Compliance analysis report",
 			},
-			OutputFormats: []string{"docx", "md"},
+			OutputFormats: []string{"docx", "md", "pdf"},
 			Sections: []ReportTemplateSection{
 				{
 					Key: "background", Title: "背景与范围",
@@ -92,6 +110,136 @@ var builtinReportTemplates = []BuiltinReportTemplate{
 			// P0-A only implements `required`; `auto` stays frozen in the closed
 			// set with an empty role list so it cannot be turned on by accident
 			// (292 D2).
+			OutlineConfirmation:     model.ReportOutlineRequired,
+			AutoConfirmAllowedRoles: []string{},
+		},
+	},
+	{
+		// Technical review: the reader wants "what was proposed, does it hold, what
+		// is still unproven". `assessment` is the only section allowed to be long,
+		// and it depends on both the criteria and the proposal so it can judge one
+		// against the other instead of restating the proposal.
+		Key: reportTechnicalReviewKey,
+		Payload: ReportTemplatePayload{
+			Name: ReportTemplateName{
+				Zh: "技术方案评审报告",
+				En: "Technical design review",
+			},
+			OutputFormats: []string{"docx", "md", "pdf"},
+			Sections: []ReportTemplateSection{
+				{
+					Key: "context", Title: "背景与评审目标",
+					Prompt:           "说明被评审方案的业务背景、评审触发原因与本报告的评审目标；不评价方案本身。",
+					RequiresEvidence: false, MaxWords: 300,
+				},
+				{
+					Key: "criteria", Title: "评审依据与标准",
+					Prompt:           "列出本次评审采用的依据（规范、既有架构约定、性能与安全基线），逐条写明来源与适用范围。",
+					RequiresEvidence: true, MaxWords: 400,
+				},
+				{
+					Key: "proposal", Title: "方案要点归纳",
+					Prompt:           "客观归纳方案的关键设计选择（数据流、接口、存储、部署），不加入评审意见。",
+					RequiresEvidence: true, MaxWords: 800,
+					DependsOn: []string{"context"},
+				},
+				{
+					Key: "assessment", Title: "逐项评估结论",
+					Prompt:           "按评审依据逐条评估方案，判定「满足 / 部分满足 / 不满足 / 资料不足」，每条必须引用方案依据与评审标准。",
+					RequiresEvidence: true, MaxWords: 1200,
+					DependsOn: []string{"criteria", "proposal"},
+				},
+				{
+					Key: "risks", Title: "风险与待确认项",
+					Prompt:           "列出评估中发现的风险与无法从资料判定的待确认项，写明影响面与需要谁来确认；不得把「资料不足」写成「不满足」。",
+					RequiresEvidence: true, MaxWords: 800,
+					DependsOn: []string{"assessment"},
+				},
+				{
+					Key: "recommendation", Title: "结论与建议",
+					Prompt:           "给出评审结论（通过 / 有条件通过 / 不通过 / 信息不足）并说明条件或补充材料要求，与前文评估逐条对应。",
+					RequiresEvidence: true, MaxWords: 500,
+					DependsOn: []string{"risks"},
+				},
+			},
+			Limits: ReportTemplateLimits{
+				MaxSections: 10, SliceMaxSeconds: 480, TotalMaxSeconds: 3600,
+				MaxSlices: 8, MaxTokensPerSection: 1600,
+			},
+			Retrieval: ReportTemplateRetrieval{
+				TopK: 8, ThresholdPolicy: "dataset_calibrated", MinEvidence: 1,
+			},
+			EvidencePolicy: ReportTemplateEvidencePolicy{
+				ConflictHandling:  reportConflictHandlingP0,
+				OutdatedEvidence:  reportOutdatedEvidenceP0,
+				UnsupportedClaims: reportUnsupportedClaimsP0,
+			},
+			OutlineConfirmation:     model.ReportOutlineRequired,
+			AutoConfirmAllowedRoles: []string{},
+		},
+	},
+	{
+		// Postmortem: `timeline` is the shared spine — impact, root cause and the
+		// response all hang off it, so the four sections cannot contradict each
+		// other's sequence of events. `actions` depends on both the causes and the
+		// response, which is what stops an improvement list from being written
+		// before anyone established why it happened.
+		Key: reportPostmortemTemplateKey,
+		Payload: ReportTemplatePayload{
+			Name: ReportTemplateName{
+				Zh: "事故复盘报告",
+				En: "Incident postmortem",
+			},
+			OutputFormats: []string{"docx", "md", "pdf"},
+			Sections: []ReportTemplateSection{
+				{
+					Key: "summary", Title: "事件概要",
+					Prompt:           "用不超过五句话说明发生了什么、影响谁、持续多久、当前状态；细节留给后续章节。",
+					RequiresEvidence: false, MaxWords: 200,
+				},
+				{
+					Key: "timeline", Title: "事件时间线",
+					Prompt:           "按时间顺序列出关键节点（发现、升级、定位、处置、恢复），每行给出时间与事实来源，不做归因。",
+					RequiresEvidence: true, MaxWords: 800,
+					DependsOn: []string{"summary"},
+				},
+				{
+					Key: "impact", Title: "影响范围与损失",
+					Prompt:           "量化影响：受影响的对象、范围、时长与可核对的损失指标；无法量化的影响写明估算依据。",
+					RequiresEvidence: true, MaxWords: 600,
+					DependsOn: []string{"timeline"},
+				},
+				{
+					Key: "root_cause", Title: "根因分析",
+					Prompt:           "区分直接原因、根本原因与促成因素，每条给出证据；证据不足以定论时明确写「待确认」，不猜测。",
+					RequiresEvidence: true, MaxWords: 900,
+					DependsOn: []string{"impact"},
+				},
+				{
+					Key: "response", Title: "处置与恢复过程",
+					Prompt:           "说明处置动作、有效性判断与恢复验证方式，与时间线节点一一对应。",
+					RequiresEvidence: true, MaxWords: 600,
+					DependsOn: []string{"timeline"},
+				},
+				{
+					Key: "actions", Title: "改进项与责任人",
+					Prompt:           "针对每条根因与促成因素给出可验证的改进项、责任角色与完成判据，并与根因逐条对应。",
+					RequiresEvidence: true, MaxWords: 600,
+					DependsOn: []string{"root_cause", "response"},
+				},
+			},
+			Limits: ReportTemplateLimits{
+				MaxSections: 10, SliceMaxSeconds: 480, TotalMaxSeconds: 3600,
+				MaxSlices: 8, MaxTokensPerSection: 1600,
+			},
+			Retrieval: ReportTemplateRetrieval{
+				TopK: 8, ThresholdPolicy: "dataset_calibrated", MinEvidence: 1,
+			},
+			EvidencePolicy: ReportTemplateEvidencePolicy{
+				ConflictHandling:  reportConflictHandlingP0,
+				OutdatedEvidence:  reportOutdatedEvidenceP0,
+				UnsupportedClaims: reportUnsupportedClaimsP0,
+			},
 			OutlineConfirmation:     model.ReportOutlineRequired,
 			AutoConfirmAllowedRoles: []string{},
 		},

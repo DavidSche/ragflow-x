@@ -3,7 +3,6 @@ package ragflow
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,8 +40,8 @@ func TestHTTPClientOperationalResourceContract(t *testing.T) {
 			writeTestEnvelope(w, nil)
 		case r.Method == http.MethodGet && r.URL.EscapedPath() == "/api/v1/providers/OpenAI-API-Compatible/instances/production/models":
 			writeEnvelope(t, w, []ProviderModel{{Name: "gpt-4o", ModelTypes: []string{"chat"}, Status: "active"}})
-		case r.Method == http.MethodPost && r.URL.EscapedPath() == "/api/v1/providers/OpenAI-API-Compatible/instances/production/models/gpt-4o":
-			writeEnvelope(t, w, json.RawMessage(`{"answer":"model is healthy"}`))
+		case r.Method == http.MethodPost && r.URL.EscapedPath() == "/api/v1/chat/completions":
+			writeEnvelope(t, w, map[string]interface{}{"answer": "model is healthy"})
 		case r.Method == http.MethodPost && r.URL.EscapedPath() == "/api/v1/providers/OpenAI-API-Compatible/connection":
 			writeTestEnvelope(w, nil)
 		case r.Method == http.MethodGet && r.URL.EscapedPath() == "/api/v1/datasets/ds1/documents/doc1/chunks/c1":

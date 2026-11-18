@@ -110,11 +110,11 @@ func TestReportJobSnapshotRouteCarriesResumeCursor(t *testing.T) {
 	if seq, _ := data["event_seq"].(float64); int64(seq) != 1 {
 		t.Fatalf("a queued job has written exactly one event: %v", data["event_seq"])
 	}
-	if status, _ := data["status"].(string); status != model.ReportJobQueued {
+	if status, _ := data["status"].(string); status != model.ReportJobRunning {
 		t.Fatalf("snapshot status must be the row's, got %q", status)
 	}
 	if terminal, _ := data["terminal"].(bool); terminal {
-		t.Fatal("a queued job is not terminal")
+		t.Fatal("an armed job is not terminal")
 	}
 	if data["job_id"] != jobID {
 		t.Fatalf("snapshot must answer the job that was asked for: %v", data["job_id"])

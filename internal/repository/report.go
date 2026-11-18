@@ -25,6 +25,10 @@ type ReportRepo interface {
 	CreateReportTemplate(ctx context.Context, template *model.ReportTemplate) error
 	GetReportTemplate(ctx context.Context, tenantID, templateKey string, version int64) (*model.ReportTemplate, error)
 	ListReportTemplates(ctx context.Context, tenantID string) ([]model.ReportTemplate, error)
+	// TenantReportPolicy is the T20b overlay on the four report clocks. A nil row
+	// (or a nil field) means "inherit the system value".
+	GetTenantReportPolicy(ctx context.Context, tenantID string) (*model.TenantReportPolicy, error)
+	UpsertTenantReportPolicy(ctx context.Context, policy *model.TenantReportPolicy) error
 
 	// Aggregate writes. Creation composes them inside one transaction
 	// (WithinTransaction) so a report can never exist without its first
@@ -40,8 +44,6 @@ type ReportRepo interface {
 	// derives, the repository applies. Nothing else may set `finalized_at`.
 	BeginReportFinalization(ctx context.Context, start ReportFinalizationStart) (bool, error)
 	ApplyReportFinalization(ctx context.Context, plan ReportFinalizationPlan) (bool, error)
-	// RecordReportExecutionSnapshot freezes the generation conditions once.
-	RecordReportExecutionSnapshot(ctx context.Context, tenantID, revisionID, snapshotJSON, hash string) (bool, error)
 	// ListStaleFinalizingReportJobs finds jobs whose terminal write was requested
 	// but never landed (the crash window §8.2 / A35 leaves open). The reconcile
 	// worker is the second trigger; ApplyReportFinalization is what makes the
@@ -57,6 +59,11 @@ type ReportRepo interface {
 	// RequestReportJobCancel flips an active job to `cancel_requested`; it never
 	// writes the terminal state (that stays finalize's job, §8.4).
 	RequestReportJobCancel(ctx context.Context, tenantID, jobID string, now time.Time) (bool, error)
+	// ListUnarmedQueuedReportJobs finds jobs a request committed but never armed:
+	// `queued` with no runtime slice pointer, older than the caller's grace window.
+	// They are the crash-between-commit-and-dispatch class (doc/288 §8.2): the run
+	// exists, nobody will ever start it, and no error is attached.
+	ListUnarmedQueuedReportJobs(ctx context.Context, updatedBefore time.Time, limit int) ([]ReportConvergenceCandidate, error)
 	// ListStaleActiveReportJobs finds jobs that are still `running` (or
 	// `cancel_requested`) long after their last row update, so the reconcile
 	// sweep can ask for a terminal write that nobody else will.
@@ -101,8 +108,29 @@ type ReportRepo interface {
 	GetReportRevisionByID(ctx context.Context, tenantID, revisionID string) (*model.ReportRevision, error)
 	ListReportSections(ctx context.Context, tenantID, revisionID string) ([]model.ReportSection, error)
 	ListReportCitations(ctx context.Context, tenantID, revisionID string) ([]model.ReportCitation, error)
+	// ListReportEvidenceByIDs loads the frozen snapshots an export appendix needs.
+	// A missing id is *absent from the result*, not an error: the caller decides
+	// whether absence means "no citations" or "the snapshot was purged" (A43).
+	ListReportEvidenceByIDs(ctx context.Context, tenantID string, ids []string) ([]model.ReportEvidenceSnapshot, error)
+	// CountUnverifiableReportEvidence counts citations whose snapshot is gone or
+	// past its clock: the read-side half of A43.
+	CountUnverifiableReportEvidence(ctx context.Context, tenantID, revisionID string, now time.Time) (int64, error)
 	ListReports(ctx context.Context, tenantID, ownerUserID string, limit, offset int) ([]model.Report, error)
+	// GetReportIncludingDeleted is the restore path's read (A47). It is separate from
+	// GetReport on purpose: the deleted filter must not become a parameter of the
+	// normal read, or it eventually gets passed as "true" somewhere it shouldn't.
+	GetReportIncludingDeleted(ctx context.Context, tenantID, reportID string) (*model.Report, error)
 	CountReports(ctx context.Context, tenantID, ownerUserID string) (int64, error)
+	// ListReportRevisions returns every revision of one report, newest first, for
+	// the version history surface (doc/288 §7.10). `current_revision_id` is the
+	// authority on which row is live; this list is a browser, so it never decides
+	// what is current.
+	ListReportRevisions(ctx context.Context, tenantID, reportID string, limit int) ([]model.ReportRevision, error)
+	// ListReportRevisionsForMetrics feeds the A15 quality trend (doc/288 §14.1).
+	// It reads terminal revision rows only, never their sections: `metrics_json` is
+	// the stored verdict, and re-deriving it here would let a trend disagree with
+	// the report it summarizes.
+	ListReportRevisionsForMetrics(ctx context.Context, q ReportMetricsQuery) ([]model.ReportRevision, error)
 	CountActiveReportJobs(ctx context.Context, tenantID, reportID string) (int64, error)
 	SumReportCharges(ctx context.Context, tenantID, jobID string) (ReportChargeSums, error)
 
@@ -153,6 +181,14 @@ type ReportRepo interface {
 	// `expires_at`: the hold is a grace period on a deleted report, not a TTL
 	// extension (doc/288 §7.6).
 	SoftDeleteReport(ctx context.Context, tenantID, reportID string, now, holdUntil time.Time) error
+
+	// RestoreReport clears the soft-delete marker inside the recovery window
+	// (A47). The compare-and-swap lives here rather than in the service so a
+	// concurrent janitor purge and a restore cannot both win: whichever update
+	// lands on a still-existing row with a still-open window is the only one that
+	// reports a row change. `false` means "nothing to restore", and the service
+	// re-reads to explain why.
+	RestoreReport(ctx context.Context, tenantID, reportID string, now time.Time) (bool, error)
 
 	// Retention surface (doc/288 §7.6).
 	ListExpiredReportIDs(ctx context.Context, now time.Time, limit int) ([]model.Report, error)
@@ -393,6 +429,40 @@ func (s *store) ListReportTemplates(ctx context.Context, tenantID string) ([]mod
 }
 
 // ---------------------------------------------------------------------------
+// Tenant report policy (T20b)
+// ---------------------------------------------------------------------------
+
+// GetTenantReportPolicy returns the tenant's overlay row, or nil when the tenant
+// never overrode anything (the common case, and the reason a missing row is not an
+// error: "no overrides" is a legitimate answer, not a failure).
+func (s *store) GetTenantReportPolicy(ctx context.Context, tenantID string) (*model.TenantReportPolicy, error) {
+	var policy model.TenantReportPolicy
+	err := s.WithContext(ctx).Where("tenant_id = ?", tenantID).Take(&policy).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &policy, nil
+}
+
+// UpsertTenantReportPolicy writes the overlay in place.
+//
+// The row is keyed by tenant, so there is exactly one current policy per tenant; the
+// settings chain (revisions + audit) is what records *history*, and duplicating that
+// here would create two answers to "what was the TTL last Tuesday".
+func (s *store) UpsertTenantReportPolicy(ctx context.Context, policy *model.TenantReportPolicy) error {
+	if policy == nil || policy.TenantID == "" {
+		return errors.New("tenant report policy requires a tenant id")
+	}
+	if policy.UpdatedAt.IsZero() {
+		policy.UpdatedAt = time.Now().UTC()
+	}
+	return s.WithContext(ctx).Save(policy).Error
+}
+
+// ---------------------------------------------------------------------------
 // Aggregate writes
 // ---------------------------------------------------------------------------
 
@@ -513,7 +583,37 @@ func appendReportEventInTx(tx *gorm.DB, event *model.ReportJobEvent) (int64, err
 // GetReport loads one report for one tenant. Soft-deleted rows are returned as
 // well: the caller decides whether the recovery window is still open, and a
 // soft-deleted report must remain restorable.
+// GetReport loads one live report for one tenant.
+//
+// `deleted_at IS NULL` is part of the read, not a caller's job: a soft delete is
+// the owner withdrawing the report, so every surface that acts on "the report"
+// (read, export, cancel, regenerate, the worker loading its own job) must answer
+// "not found" afterwards. Leaving the filter out made a deleted report keep its
+// body, its artifacts and its download links until the janitor physically purged
+// it — found live on 4.151 (R16: DELETE then GET answered 200 while the recovery
+// window was still open). The row itself is kept for the window; only the access
+// is withdrawn.
 func (s *store) GetReport(ctx context.Context, tenantID, reportID string) (*model.Report, error) {
+	var report model.Report
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", tenantID, reportID).
+		First(&report).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
+// GetReportIncludingDeleted loads a report whether or not it is soft-deleted.
+//
+// Only the restore path needs this (A47): every other reader must keep answering
+// "not found" for a deleted row, so this cannot be folded into GetReport with a flag
+// — a boolean parameter on the main read is how a deleted report comes back to a list
+// six months later. It still filters by tenant, so a wrong tenant cannot restore.
+func (s *store) GetReportIncludingDeleted(ctx context.Context, tenantID, reportID string) (*model.Report, error) {
 	var report model.Report
 	err := s.WithContext(ctx).
 		Where("tenant_id = ? AND id = ?", tenantID, reportID).
@@ -582,6 +682,25 @@ func (s *store) GetReportRevision(ctx context.Context, tenantID, reportID string
 	return &row, nil
 }
 
+// ListReportRevisions returns the report's revision rows, newest first.
+//
+// Superseded rows are included on purpose: A41 says a historical revision's body
+// and delivered files stay readable, and a history list that hides them makes that
+// promise unreachable in the UI. The cap is the same page size every other list
+// uses; a report with more revisions than that is a data pathology, not a UI case.
+func (s *store) ListReportRevisions(
+	ctx context.Context, tenantID, reportID string, limit int,
+) ([]model.ReportRevision, error) {
+	if limit <= 0 || limit > maxPageSize {
+		limit = maxPageSize
+	}
+	var rows []model.ReportRevision
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND report_id = ?", tenantID, reportID).
+		Order("revision DESC").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
 // ListReports returns one tenant's live reports, newest first, optionally
 // narrowed to a single owner. Soft-deleted rows are excluded: they are in their
 // recovery window, and a restorable report is not a list entry. Cross-tenant
@@ -601,6 +720,72 @@ func (s *store) ListReports(ctx context.Context, tenantID, ownerUserID string, l
 	var reports []model.Report
 	err := q.Order("created_at DESC, id DESC").Limit(limit).Offset(offset).Find(&reports).Error
 	return reports, err
+}
+
+// ReportMetricsQuery selects the revision rows behind one A15 trend read.
+type ReportMetricsQuery struct {
+	TenantID string
+	// OwnerUserID narrows to one owner ("my reports"); empty means the workspace.
+	// The caller decides which it may ask for (service.ReportMetricsTrend).
+	OwnerUserID string
+	// From is inclusive, To exclusive, both UTC.
+	From time.Time
+	To   time.Time
+	// TemplateKey narrows to one content template; empty means every template.
+	TemplateKey string
+	Limit       int
+}
+
+// ListReportRevisionsForMetrics returns terminal revisions in [From, To), newest
+// first, for the A15 trend rollup (doc/288 §14.1).
+//
+// Soft-deleted reports are excluded, for the same reason ListReports excludes them:
+// A47 promises a deleted report is gone, and a trend that keeps counting it makes
+// that promise false in the one place nobody thinks to look.
+//
+// The rows are returned rather than aggregated in SQL because `metrics_json` is a
+// JSON *text* column: summing it in SQL would need a dialect-specific JSON function
+// (SQLite `json_extract` vs PostgreSQL `->>`), and the two must produce identical
+// numbers — the same portability rule that keeps `gorm.Expr` out of this package's
+// report queries.
+func (s *store) ListReportRevisionsForMetrics(
+	ctx context.Context, q ReportMetricsQuery,
+) ([]model.ReportRevision, error) {
+	limit := q.Limit
+	if limit <= 0 || limit > reportMetricsRowLimit {
+		limit = reportMetricsRowLimit
+	}
+	query := s.WithContext(ctx).
+		Table("rgx_report_revision").
+		Select("rgx_report_revision.*").
+		Joins("JOIN rgx_report ON rgx_report.id = rgx_report_revision.report_id").
+		Where("rgx_report_revision.tenant_id = ? AND rgx_report.deleted_at IS NULL", q.TenantID).
+		Where("rgx_report_revision.created_at >= ? AND rgx_report_revision.created_at < ?", q.From, q.To).
+		Where("rgx_report_revision.status IN ?", reportMetricsTerminalStatuses())
+	if q.OwnerUserID != "" {
+		query = query.Where("rgx_report.owner_user_id = ?", q.OwnerUserID)
+	}
+	if q.TemplateKey != "" {
+		query = query.Where("rgx_report_revision.template_key = ?", q.TemplateKey)
+	}
+	var revisions []model.ReportRevision
+	err := query.Order("rgx_report_revision.created_at DESC, rgx_report_revision.id DESC").
+		Limit(limit).Find(&revisions).Error
+	return revisions, err
+}
+
+// reportMetricsRowLimit caps a trend read. The rollup is a workspace summary, not an
+// export: a window that would need more rows than this is answered over the rows it
+// got, and the service reports the truncation instead of hiding it.
+const reportMetricsRowLimit = 5000
+
+func reportMetricsTerminalStatuses() []string {
+	return []string{
+		model.ReportRevisionPublished,
+		model.ReportRevisionSuperseded,
+		model.ReportRevisionFailed,
+		model.ReportRevisionCancelled,
+	}
 }
 
 // CountReports counts exactly the rows ListReports returns, so a paged answer
@@ -656,6 +841,30 @@ func (s *store) SoftDeleteReport(ctx context.Context, tenantID, reportID string,
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// RestoreReport re-opens a soft-deleted report whose recovery window is still
+// open (A47).
+//
+// Three conditions are part of the UPDATE rather than a preceding read, because the
+// janitor can purge between the two: the row must still exist, it must still be
+// deleted, and `cleanup_hold_until` must not have passed. `cleanup_hold_until IS
+// NULL` is treated as "no window" — a row deleted before the column existed has no
+// recorded grace period, and inventing one on read would be worse than refusing.
+func (s *store) RestoreReport(ctx context.Context, tenantID, reportID string, now time.Time) (bool, error) {
+	result := s.WithContext(ctx).Model(&model.Report{}).
+		Where("tenant_id = ? AND id = ?", tenantID, reportID).
+		Where("deleted_at IS NOT NULL").
+		Where("cleanup_hold_until IS NOT NULL AND cleanup_hold_until >= ?", now).
+		Updates(map[string]interface{}{
+			"deleted_at":         nil,
+			"cleanup_hold_until": nil,
+			"updated_at":         now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // ListReportEvents replays the job event stream after a cursor. The cursor is the
@@ -735,7 +944,12 @@ func (s *store) BeginReportFinalization(ctx context.Context, start ReportFinaliz
 				start.TenantID, start.JobID, start.AttemptSeq, start.SliceSeq,
 				[]string{model.ReportJobRunning, model.ReportJobCancelRequested}).
 			Updates(map[string]interface{}{
-				"status": model.ReportJobFinalizing, "updated_at": start.Now,
+				// The stage moves with the status: `assembling` is where the job
+				// actually is. Leaving it on `section_writing` (the last thing a
+				// slice wrote) made a finalized report claim it was still writing
+				// sections — live full6 published with stage=section_writing.
+				"status": model.ReportJobFinalizing, "stage": model.ReportStageAssembling,
+				"updated_at": start.Now,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -883,7 +1097,8 @@ func settleReportChargesInTx(tx *gorm.DB, plan ReportFinalizationPlan) error {
 	var job model.ReportJob
 	if err := tx.Model(&model.ReportJob{}).
 		Where("tenant_id = ? AND id = ?", plan.TenantID, plan.JobID).
-		Select("reserved_tokens").Take(&job).Error; err != nil {
+		Select("reserved_tokens, actual_tokens, charged_tokens, released_tokens, overage_tokens, pending_reconcile_tokens").
+		Take(&job).Error; err != nil {
 		return err
 	}
 	budget := job.ReservedTokens
@@ -896,6 +1111,18 @@ func settleReportChargesInTx(tx *gorm.DB, plan ReportFinalizationPlan) error {
 		overage = -released
 		released = 0
 	}
+	// Reconciliation, not a rewrite of history: the summary columns are a cache
+	// derived from the ledger, so the ledger wins. But a disagreement means some
+	// writer moved one side without the other (a crash between a settle and the
+	// totals refresh), and §8.6 requires that to be written down rather than
+	// silently corrected — otherwise a number that changed after the fact has no
+	// trace at all.
+	//
+	// Only the three quantities the per-call writers maintain are compared:
+	// `released`/`overage` are outputs of this very settlement, computed from both
+	// sides, so comparing them would report this function's own work as drift.
+	drift := job.ActualTokens != sums.Actual || job.ChargedTokens != sums.Charged ||
+		job.PendingReconcileTokens != sums.Orphan
 	updates := map[string]interface{}{
 		"actual_tokens":            sums.Actual,
 		"charged_tokens":           sums.Charged,
@@ -907,6 +1134,24 @@ func settleReportChargesInTx(tx *gorm.DB, plan ReportFinalizationPlan) error {
 		Where("tenant_id = ? AND id = ?", plan.TenantID, plan.JobID).
 		Updates(updates).Error; err != nil {
 		return err
+	}
+	if drift {
+		if err := auditReportCharge(tx, plan.TenantID, plan.ReportID, plan.Now,
+			"report.charge.reconciled", map[string]interface{}{
+				"reason": "ledger_sum_differs_from_job_summary",
+				"before": map[string]int64{
+					"actual": job.ActualTokens, "charged": job.ChargedTokens,
+					"released": job.ReleasedTokens, "overage": job.OverageTokens,
+					"pending_reconcile": job.PendingReconcileTokens,
+				},
+				"after": map[string]int64{
+					"actual": sums.Actual, "charged": sums.Charged,
+					"released": released, "overage": overage,
+					"pending_reconcile": sums.Orphan,
+				},
+			}); err != nil {
+			return err
+		}
 	}
 	if released > 0 {
 		if err := auditReportCharge(tx, plan.TenantID, plan.ReportID, plan.Now,
@@ -1040,32 +1285,6 @@ func (s *store) SumReportCharges(ctx context.Context, tenantID, jobID string) (R
 		Select(reportChargeSumSelect).
 		Scan(&sums).Error
 	return sums, err
-}
-
-// RecordReportExecutionSnapshot freezes the generation conditions of a revision
-// exactly once (doc/288 §7.7 / A8).
-//
-// Write-once is the point: the snapshot answers "with which model, threshold and
-// dataset binding was this text produced?", and a second write would turn that
-// answer into "whatever the config said the second time". `applied=false` means
-// the snapshot was already frozen; callers must treat it as a no-op, not as an
-// error, because a retried outline step is a normal outcome.
-func (s *store) RecordReportExecutionSnapshot(
-	ctx context.Context, tenantID, revisionID, snapshotJSON, hash string,
-) (bool, error) {
-	if snapshotJSON == "" || hash == "" {
-		return false, gorm.ErrRecordNotFound
-	}
-	result := s.WithContext(ctx).Model(&model.ReportRevision{}).
-		Where("tenant_id = ? AND id = ? AND (execution_snapshot_hash IS NULL OR execution_snapshot_hash = '')",
-			tenantID, revisionID).
-		Updates(map[string]interface{}{
-			"execution_snapshot_json": snapshotJSON, "execution_snapshot_hash": hash,
-		})
-	if result.Error != nil {
-		return false, result.Error
-	}
-	return result.RowsAffected > 0, nil
 }
 
 // ListReportSections returns every section row of one revision in display order.
@@ -1412,6 +1631,28 @@ func (s *store) ListStaleActiveReportJobs(
 		Select("tenant_id, id AS job_id, status").
 		Where("status IN ? AND finalized_at IS NULL AND updated_at < ?",
 			[]string{model.ReportJobRunning, model.ReportJobCancelRequested}, staleBefore).
+		Order("updated_at ASC").
+		Limit(limit).
+		Scan(&candidates).Error
+	return candidates, err
+}
+
+// ListUnarmedQueuedReportJobs returns `queued` jobs that still have no runtime
+// pointer. The grace window (`updatedBefore`) keeps the sweep from racing the
+// request that is about to arm its own job: it only touches rows that have been
+// sitting there.
+func (s *store) ListUnarmedQueuedReportJobs(
+	ctx context.Context, updatedBefore time.Time, limit int,
+) ([]ReportConvergenceCandidate, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 20
+	}
+	var candidates []ReportConvergenceCandidate
+	err := s.WithContext(ctx).Model(&model.ReportJob{}).
+		Select("tenant_id, id AS job_id, status").
+		Where(`status = ? AND finalized_at IS NULL AND updated_at < ? AND
+			(current_runtime_job_id IS NULL OR current_runtime_job_id = '')`,
+			model.ReportJobQueued, updatedBefore).
 		Order("updated_at ASC").
 		Limit(limit).
 		Scan(&candidates).Error

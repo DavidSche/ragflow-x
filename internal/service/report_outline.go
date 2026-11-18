@@ -151,7 +151,7 @@ func (s *Service) ConfirmReportOutline(
 		Event: &model.ReportJobEvent{
 			TenantID: tenantID, JobID: job.ID, Type: reportEventOutlineConfirmed,
 			PayloadJSON: string(eventPayload), CreatedAt: now,
-			ExpiresAt: reportExpiry(now, s.currentRetentionPolicy().ReportEventDays, reportDefaultEventDays),
+			ExpiresAt: reportExpiry(now, s.ReportRetentionFor(ctx, tenantID).ReportEventDays, reportDefaultEventDays),
 		},
 	})
 	if err != nil {
@@ -223,7 +223,7 @@ func normalizeReportOutlineTitles(
 	seen := make(map[string]struct{}, len(input))
 	titles := make([]repository.ReportSectionTitle, 0, len(input))
 	edited := 0
-	for index, item := range input {
+	for _, item := range input {
 		key := strings.TrimSpace(item.SectionKey)
 		if key == "" {
 			return nil, 0, httperr.BadRequest(codeReportOutlineInvalid,
@@ -259,7 +259,6 @@ func normalizeReportOutlineTitles(
 			// make the audit trail claim a change nobody made.
 			continue
 		}
-		_ = index
 		titles = append(titles, repository.ReportSectionTitle{SectionKey: key, Title: title})
 		edited++
 	}

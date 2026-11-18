@@ -15,10 +15,10 @@ import (
 // as "克隆自 source@version，平台当前已到 vN".
 type CloneReportTemplateResult struct {
 	// Template is the workspace's new fork row.
-	Template            ReportTemplateView `json:"template"`
-	SourceTemplateID    string             `json:"source_template_id"`
-	SourceTemplateVersion int64            `json:"source_template_version"`
-	SourceVersionPinned bool               `json:"source_version_pinned"`
+	Template              ReportTemplateView `json:"template"`
+	SourceTemplateID      string             `json:"source_template_id"`
+	SourceTemplateVersion int64              `json:"source_template_version"`
+	SourceVersionPinned   bool               `json:"source_version_pinned"`
 	// Created is false when the request was a replay of an identical fork and the
 	// already-committed clone was returned instead (double-click safe).
 	Created bool `json:"created"`

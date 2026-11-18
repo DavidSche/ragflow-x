@@ -152,6 +152,18 @@ func errReportArtifactVersionConflict(reason string) error {
 	return httperr.New(500, codeReportArtifactVersionConflict, reason)
 }
 
+// errReportEvidenceExpired is 44116: re-exporting this revision would produce an
+// appendix whose evidence no longer exists. It is a 409 because the request is valid
+// and the *state* is the problem — the already-delivered artifact keeps its frozen
+// appendix, and an older revision that still has its evidence can be exported instead
+// (doc/288 §7.6 / A43). Rendering an empty appendix here would be a silent lie.
+func errReportEvidenceExpired(sectionOrd, citationOrd int) error {
+	return httperr.New(409, codeReportEvidenceExpired,
+		"evidence for section "+strconv.Itoa(sectionOrd+1)+
+			" citation "+strconv.Itoa(citationOrd+1)+
+			" has expired and cannot be re-verified; the previously delivered artifact keeps its frozen appendix")
+}
+
 // errReportArtifactUnavailable is 44104 for a *download*: the row exists and is
 // yours, but its state (expired/deleted, or past its `expires_at`) does not allow
 // handing out a file. Re-exporting the same revision is the legitimate next step,

@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
-	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
-	"github.com/ragflow-x/ragflow-x/internal/repository"
 	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
@@ -193,20 +191,13 @@ func handlerPublishReport(t *testing.T, svc *service.Service, owner *reportHarne
 		}
 	}
 
-	runtimeID := id.New()
+	// Creation already armed slice 1; settle that slice instead of arming a second.
+	armed, err := svc.Store.GetReportJob(ctx, owner.tenantID, jobID)
+	if err != nil || armed == nil || armed.CurrentRuntimeJobID == "" {
+		t.Fatalf("load armed job: %v %+v", err, armed)
+	}
+	runtimeID := armed.CurrentRuntimeJobID
 	now := time.Now().UTC()
-	applied, err := svc.Store.DispatchReportSlice(ctx, repository.ReportSliceStart{
-		TenantID: owner.tenantID, JobID: jobID, ReportID: created.Report.ID, RevisionID: revID,
-		AttemptSeq: 1, SliceSeq: 1, RuntimeJobID: runtimeID,
-		RuntimeKey: "report:" + jobID + ":1:1", PayloadJSON: "{}",
-		Stage: model.ReportStageAssembling, Now: now,
-	})
-	if err != nil {
-		t.Fatalf("dispatch: %v", err)
-	}
-	if !applied {
-		t.Fatalf("dispatch not applied")
-	}
 	claimed, err := svc.Store.ClaimJobs(ctx, 10, now)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
