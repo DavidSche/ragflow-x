@@ -221,7 +221,24 @@ func (s *store) UpsertDefaultExportTemplate(ctx context.Context, template *model
 		template.ID = existing.ID
 		return nil
 	}
-	return s.WithContext(ctx).Create(template).Error
+	if createErr := s.WithContext(ctx).Create(template).Error; createErr != nil {
+		// Two concurrent first-time exports race between the SELECT above and this
+		// INSERT; the loser hits the (tenant_id, template_id, version) unique index.
+		// That is not a caller-visible failure — the row it wanted now exists, and it
+		// is the same frozen default — so re-read and adopt it. Ordering matters: the
+		// re-read has to happen only after a failed insert, or the first-time path
+		// would silently skip creating the row.
+		var winner model.ExportTemplateVersion
+		if err := s.WithContext(ctx).
+			Where("tenant_id = ? AND template_id = ? AND version = ?",
+				template.TenantID, template.TemplateID, template.Version).
+			First(&winner).Error; err != nil {
+			return createErr
+		}
+		template.ID = winner.ID
+		return nil
+	}
+	return nil
 }
 
 func (s *store) CreateExportSnapshot(ctx context.Context, snapshot *model.ExportSnapshot) error {

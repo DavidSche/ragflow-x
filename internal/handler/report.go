@@ -100,13 +100,45 @@ func deleteReport(c *gin.Context) {
 			return
 		}
 	}
+	// `force=true` skips the 7-day recovery window (A47). It is a query parameter
+	// rather than a body field because it changes what the DELETE *means* (reversible
+	// or not), and a body-shaped flag is the kind of thing a client copies along with
+	// the `reason` and never notices. The service additionally requires
+	// `manage:report` for it; the route action stays `delete:own`.
+	force := false
+	if raw := strings.TrimSpace(c.Query("force")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			response.Fail(c, 400, 44105, "force must be true or false")
+			return
+		}
+		force = parsed
+	}
 	if err := handlerFrom(c).Service.SoftDeleteReport(
-		c.Request.Context(), userID, tenantID, c.Param("id"), input.Reason,
+		c.Request.Context(), userID, tenantID, c.Param("id"), input.Reason, force,
 	); err != nil {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"deleted": true})
+	response.OK(c, gin.H{"deleted": true, "recoverable": !force})
+}
+
+// restoreReport re-opens a soft-deleted report inside its recovery window (A47).
+//
+// 200 with the report detail: the restore has already happened by the time this
+// answers, so there is nothing asynchronous to acknowledge. 409/44104 means the
+// window closed (or the row is not deleted), which is a state answer, not a missing
+// route — that is why it is not a 404.
+func restoreReport(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	detail, err := handlerFrom(c).Service.RestoreReport(
+		c.Request.Context(), userID, tenantID, c.Param("id"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, detail)
 }
 
 // cancelReport records the user's cancel intent for the report's current job.
@@ -248,6 +280,9 @@ func createReportExport(c *gin.Context) {
 		"export_job":      result.Job,
 		"export_artifact": result.Artifact,
 		"canonical_hash":  result.Canonical,
+		// Server-made decision (doc/288 §7.7): the panel's download button follows
+		// this flag instead of re-deriving readiness from the row.
+		"downloadable": result.Downloadable,
 	})
 }
 
@@ -300,6 +335,45 @@ func createReportRevision(c *gin.Context) {
 	response.AcceptedAt(c, location, result)
 }
 
+// listReportSections is the reading surface: one revision's sections with bodies.
+//
+// Without it a report could only be read as an exported file, which is why the
+// centre had a drawer with statuses and no text (doc/44 「好用」 gap #4).
+func listReportSections(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	revisionNo, err := strconv.ParseInt(c.Param("revision"), 10, 64)
+	if err != nil || revisionNo <= 0 {
+		response.Fail(c, 400, 44105, "revision must be a positive number")
+		return
+	}
+	sections, err := handlerFrom(c).Service.ListReportSections(
+		c.Request.Context(), userID, tenantID, c.Param("id"), revisionNo,
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, gin.H{"sections": sections})
+}
+
+// listReportRevisions answers the report's version history (doc/288 §7.10).
+//
+// A superseded revision is reachable today only by guessing its number: the detail
+// page resolves `current_revision_id`, and nothing told a client which other
+// numbers exist. That made A41's "historical revisions stay readable" true of the
+// API and false of the product.
+func listReportRevisions(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	rows, err := handlerFrom(c).Service.ListReportRevisions(
+		c.Request.Context(), userID, tenantID, c.Param("id"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, gin.H{"revisions": rows})
+}
+
 // getReportRevision reads "second revision of report X" by its number, the
 // historical-run view a client refreshes after reconnecting. The report row is
 // carried in the answer (same shape as GET /reports/:id) so a caller paging
@@ -321,6 +395,81 @@ func getReportRevision(c *gin.Context) {
 	response.OK(c, detail)
 }
 
+// getReportRetention reads the effective report TTLs for this workspace (T20b).
+//
+// The tenant is taken from the session, never from the path: a `:tenantId`
+// parameter would turn "which numbers apply to you" into an enumeration oracle for
+// other workspaces' retention policies, and the caller has exactly one workspace.
+func getReportRetention(c *gin.Context) {
+	tenantID, _ := reportContext(c)
+	view, err := handlerFrom(c).Service.ReportRetention(c.Request.Context(), tenantID)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
+// putReportRetention sets the tenant-level overlay. `manage` is the right action:
+// retention decides when compliance evidence disappears, which is governance, not
+// a per-user preference (`execute` is not enough).
+func putReportRetention(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	var request service.TenantReportPolicyRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		// 44105, not 44104: 44104 is a 409 "the state forbids this", and a body that
+		// does not parse is a 400 "the request itself is wrong" (§8.7).
+		response.Fail(c, 400, 44105, "invalid report retention payload")
+		return
+	}
+	view, err := handlerFrom(c).Service.SetTenantReportPolicy(
+		c.Request.Context(), userID, tenantID, request)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
+// getReportMetricsTrend answers A15: the stored per-revision quality verdicts of a
+// window, rolled up by day or week (doc/288 §14.1).
+//
+// The query is parsed permissively — an absent `days`/`bucket`/`view` takes the
+// documented default — but a *present and wrong* value is refused with 44105 instead
+// of being coerced: a caller that asked for 400 days and silently received 180 would
+// chart a window it did not request. 44105 is the report surface's payload code; it
+// is not reused for a model or total failure (§8.7).
+func getReportMetricsTrend(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	request := service.ReportMetricsTrendRequest{
+		Bucket:      c.Query("bucket"),
+		View:        c.Query("view"),
+		TemplateKey: c.Query("template_key"),
+	}
+	if raw := strings.TrimSpace(c.Query("days")); raw != "" {
+		days, err := strconv.Atoi(raw)
+		if err != nil {
+			response.Fail(c, 400, 44105, "days must be an integer")
+			return
+		}
+		if days < 1 {
+			// `days=0` is refused at the edge rather than read as "absent": the service
+			// uses 0 for "caller did not ask", and letting an explicit zero fall through
+			// would answer a 30-day window to someone who asked for none.
+			response.Fail(c, 400, 44105, "days must be at least 1")
+			return
+		}
+		request.Days = days
+	}
+	view, err := handlerFrom(c).Service.ReportMetricsTrend(
+		c.Request.Context(), userID, tenantID, request)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
 // RegisterReportRoutes wires the P0-A/P0-B report surface. The remaining §11.4
 // routes (capability-check) land with the capability-probe slice; registering a
 // route before its handler exists would be a 500 waiting to happen.
@@ -329,9 +478,12 @@ func RegisterReportRoutes(group *gin.RouterGroup) {
 	group.GET("/reports", listReports)
 	group.GET("/reports/:id", getReport)
 	group.DELETE("/reports/:id", deleteReport)
+	group.POST("/reports/:id/restore", restoreReport)
 	group.POST("/reports/:id/cancel", cancelReport)
 	group.POST("/reports/:id/revisions", createReportRevision)
+	group.GET("/reports/:id/revisions", listReportRevisions)
 	group.GET("/reports/:id/revisions/:revision", getReportRevision)
+	group.GET("/reports/:id/revisions/:revision/sections", listReportSections)
 	group.POST("/reports/:id/revisions/:revision/outline/confirm", confirmReportOutline)
 	group.POST("/reports/:id/revisions/:revision/artifacts", createReportExport)
 	group.GET("/reports/:id/revisions/:revision/artifacts/:artifactId/download", downloadReportExport)
@@ -346,6 +498,16 @@ func RegisterReportRoutes(group *gin.RouterGroup) {
 	group.GET("/report-jobs/:jobId", getReportJob)
 	group.GET("/report-jobs/:jobId/events", streamReportJobEvents)
 	group.POST("/report-jobs/:jobId/sections/:ord/retry", retryReportSection)
+	// Retention policy (T20b): the tenant-level overlay on the four report clocks.
+	// Read is `read:report`; writing it is `manage:report` (tenant_admin and above).
+	group.GET("/report-retention", getReportRetention)
+	group.PUT("/report-retention", putReportRetention)
+	// A15 quality trend: `read:report`, scoped to the caller's own reports unless
+	// `scope=tenant` (which the service gates on `manage:report`). It sits under
+	// `/report-metrics` rather than `/reports/metrics` so the path cannot be confused
+	// with a report id — no route in this surface should ever need to prove that a
+	// static segment wins over `:id`.
+	group.GET("/report-metrics/trend", getReportMetricsTrend)
 }
 
 // retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B).

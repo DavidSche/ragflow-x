@@ -601,6 +601,9 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/reports", Action: "read", Resource: "report"},
 		{Method: "GET", Path: "/api/v1/reports/:id", Action: "read", Resource: "report"},
 		{Method: "DELETE", Path: "/api/v1/reports/:id", Action: "delete:own", Resource: "report"},
+		// A47 restore: undoing one's own delete is the same act, so the same action.
+		// A `force=true` delete (no window) is refused by the service with 44104.
+		{Method: "POST", Path: "/api/v1/reports/:id/restore", Action: "delete:own", Resource: "report"},
 		// Cancel is `execute`, not `manage`: it stops the caller's own run. The row
 		// level owner check (44109 for anyone else) is in Service.CancelReport, the
 		// same split as DELETE above.
@@ -610,7 +613,14 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		// Service.RegenerateReport; reading one historical revision by number is
 		// `read`, owner-checked in Service.GetReportRevisionByNumber.
 		{Method: "POST", Path: "/api/v1/reports/:id/revisions", Action: "execute", Resource: "report"},
+		// The history list is `read` for the same reason as the single-revision GET:
+		// browsing what this report used to say is reading it. Owner check inside
+		// Service.ListReportRevisions (44109 for a colleague's report).
+		{Method: "GET", Path: "/api/v1/reports/:id/revisions", Action: "read", Resource: "report"},
 		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision", Action: "read", Resource: "report"},
+		// Reading a revision's bodies is `read`: it is the document itself, not a new
+		// execution. Owner check inside Service.ListReportSections (44109).
+		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision/sections", Action: "read", Resource: "report"},
 		// Outline confirmation is `execute`, not `manage`: §8.4 gives the decision to
 		// the report owner, and the row-level owner check (44109 for everyone else) is
 		// in Service.ConfirmReportOutline.
@@ -638,6 +648,19 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/report-jobs/:jobId", Action: "read", Resource: "report"},
 		{Method: "GET", Path: "/api/v1/report-jobs/:jobId/events", Action: "read", Resource: "report"},
 		{Method: "POST", Path: "/api/v1/report-jobs/:jobId/sections/:ord/retry", Action: "execute", Resource: "report"},
+		// A15 quality trend: the aggregate describes reports the caller already may
+		// read, and `view=tenant` additionally requires `manage:report` in the
+		// service, so the role gate here stays `read` (viewer still holds nothing).
+		//
+		// The widening parameter is `view`, deliberately not `scope`: every GET rule
+		// gets AllowedScope={CURRENT} unless its resource supports governance reads
+		// (route_registry.go), and the RBAC middleware reads `?scope=` as the tenant
+		// scope of a governance read — anything other than current/specific/all is a
+		// bare 400 there (middleware/rbac.go). Two meanings for one query word on one
+		// route is the defect class this feature keeps paying for.
+		{Method: "GET", Path: "/api/v1/report-metrics/trend", Action: "read", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/report-retention", Action: "read", Resource: "report"},
+		{Method: "PUT", Path: "/api/v1/report-retention", Action: "manage", Resource: "report"},
 	}
 	return withRouteContracts(rules)
 }

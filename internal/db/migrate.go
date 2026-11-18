@@ -3406,6 +3406,70 @@ var migrations = []Migration{
 			return tx.AutoMigrate(&model.ReportRevision{})
 		},
 	},
+	{
+		Version: 171,
+		Name:    "report_section_gap_reason",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/288 §7.8: the runner that skips a section is the only writer that
+			// knows *why* (`skipped` from a failed dependency vs `budget_exhausted`
+			// from the envelope), and finalize cannot reconstruct it from
+			// `quality_status` because both cases mark the row `failed`. Additive and
+			// nullable: existing rows keep an empty reason and the derivation falls
+			// back to its old heuristic.
+			return tx.AutoMigrate(&model.ReportSection{})
+		},
+	},
+	{
+		Version: 172,
+		Name:    "tenant_report_policy",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/288 §7.6 / T20b: the tenant-level overlay on the four report clocks.
+			// Nullable columns are the inheritance mechanism — no row (or a NULL
+			// column) means "use the system value", so an operator change keeps
+			// flowing to tenants that never overrode it.
+			return tx.AutoMigrate(&model.TenantReportPolicy{})
+		},
+	},
+	{
+		Version: 173,
+		Name:    "report_citation_document_label",
+		Migrate: func(tx *gorm.DB) error {
+			// The evidence appendix prints a document *name* (doc/288 §12). Keeping
+			// it on the citation freezes what the writer saw at citation time; old
+			// rows stay empty and the appendix falls back to the document id.
+			// Additive and nullable, so the migration is safe on a live table.
+			return tx.AutoMigrate(&model.ReportCitation{})
+		},
+	},
+	{
+		Version: 174,
+		Name:    "export_download_audit_report_revision",
+		Migrate: func(tx *gorm.DB) error {
+			// `report_revision_id` was added to the model in v168, but a database
+			// that had already recorded v168 (every installation upgraded from
+			// 0.6.3) never got the column: AutoMigrate for version 168 had already
+			// run, so the new field was never applied to the existing table.
+			// The first live report download then failed its audit insert with
+			// SQLSTATE 42703 (`column "report_revision_id" ... does not exist`)
+			// and answered 500 — a download that cannot be audited must not be
+			// served, so the whole artifact fetch broke (doc/44 §6).
+			//
+			// Additive and nullable, so existing audit rows keep every column they
+			// have and simply read back an empty revision.
+			return tx.AutoMigrate(&model.ExportDownloadAudit{})
+		},
+	},
+	{
+		Version: 175,
+		Name:    "report_section_evidence_preview",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/288 §9.6: the outline-time evidence preview lives on the section row
+			// so the confirmation is recorded next to the evidence the reviewer saw.
+			// Additive and nullable: existing rows read back an empty preview, which
+			// the read surface renders as "未评估" rather than "充足".
+			return tx.AutoMigrate(&model.ReportSection{})
+		},
+	},
 }
 
 func evaluationScopeCondition(columnPrefix string) string {

@@ -50,7 +50,7 @@ func TestValidateReportTemplatePayloadRejectsContractViolations(t *testing.T) {
 		want   string
 	}{
 		{"no name", func(p *ReportTemplatePayload) { p.Name.En = "" }, "name.zh and name.en"},
-		{"pdf not shipped", func(p *ReportTemplatePayload) { p.OutputFormats = []string{"pdf"} }, "unsupported output format"},
+		{"unknown output format", func(p *ReportTemplatePayload) { p.OutputFormats = []string{"xlsx"} }, "unsupported output format"},
 		{"absolute threshold", func(p *ReportTemplatePayload) {
 			// A hard-coded similarity drifts with the embedding model and silently
 			// empties the report, so the contract only accepts the policy name.
@@ -113,28 +113,54 @@ func TestSliceMaxSecondsCeilingTracksRuntimeJobTimeout(t *testing.T) {
 	}
 }
 
-func TestShippedReportTemplateSatisfiesItsOwnContract(t *testing.T) {
+// TestShippedReportTemplatesSatisfyTheirOwnContract walks the whole catalogue.
+//
+// Every shipped template is validated, not just the first one: a second template is
+// only worth shipping if the outline/ordering/dependency machinery actually runs on
+// it, and the cheapest place to find a broken dependency chain is here rather than
+// in a user's failed run.
+func TestShippedReportTemplatesSatisfyTheirOwnContract(t *testing.T) {
 	templates := BuiltinReportTemplates()
-	if len(templates) != 1 {
-		t.Fatalf("P0-A ships exactly one template, got %d", len(templates))
+	// P0-B completes the catalogue: compliance + technical review + postmortem.
+	if len(templates) != 3 {
+		t.Fatalf("the shipped catalogue must hold 3 templates, got %d", len(templates))
 	}
-	shipped := templates[0]
-	if shipped.Key != reportComplianceTemplateKey {
-		t.Fatalf("unexpected template key %q", shipped.Key)
+	seenKeys := make(map[string]bool, len(templates))
+	for _, shipped := range templates {
+		shipped := shipped
+		if shipped.Key == "" || seenKeys[shipped.Key] {
+			t.Fatalf("template keys must be non-empty and unique, got %q", shipped.Key)
+		}
+		seenKeys[shipped.Key] = true
+		t.Run(shipped.Key, func(t *testing.T) {
+			if err := validateReportTemplatePayload(&shipped.Payload); err != nil {
+				t.Fatalf("shipped template violates its contract: %v", err)
+			}
+			if shipped.Payload.OutlineConfirmation != model.ReportOutlineRequired {
+				t.Fatal("P0 must ship outline_confirmation=required")
+			}
+			if len(shipped.Payload.AutoConfirmAllowedRoles) != 0 {
+				t.Fatal("P0 must not ship auto-confirm roles")
+			}
+			if shipped.Payload.Retrieval.ThresholdPolicy != "dataset_calibrated" {
+				t.Fatal("shipped template must use the calibration policy, not a literal threshold")
+			}
+			// PDF is claimed by every shipped template now that the renderer exists;
+			// a template that silently dropped it would hide the format in the UI.
+			if !containsString(shipped.Payload.OutputFormats, "pdf") {
+				t.Fatalf("every shipped template must offer pdf, got %v", shipped.Payload.OutputFormats)
+			}
+			if len(shipped.Payload.Sections) < 4 {
+				t.Fatalf("a shipped template needs a real section graph, got %d sections",
+					len(shipped.Payload.Sections))
+			}
+		})
 	}
-	if err := validateReportTemplatePayload(&shipped.Payload); err != nil {
-		t.Fatalf("shipped template violates its contract: %v", err)
+	compliance := BuiltinReportTemplates()[0]
+	if compliance.Key != reportComplianceTemplateKey {
+		t.Fatalf("unexpected template key %q", compliance.Key)
 	}
-	if shipped.Payload.OutlineConfirmation != model.ReportOutlineRequired {
-		t.Fatal("P0-A must ship outline_confirmation=required")
-	}
-	if len(shipped.Payload.AutoConfirmAllowedRoles) != 0 {
-		t.Fatal("P0-A must not ship auto-confirm roles")
-	}
-	if shipped.Payload.Retrieval.ThresholdPolicy != "dataset_calibrated" {
-		t.Fatal("shipped template must use the calibration policy, not a literal threshold")
-	}
-	keys := reportTemplateSectionOrder(&shipped.Payload)
+	keys := reportTemplateSectionOrder(&compliance.Payload)
 	if len(keys) != 5 {
 		t.Fatalf("compliance template must have 5 sections, got %v", keys)
 	}
@@ -262,15 +288,37 @@ func TestListReportTemplatesPrefersWorkspaceVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(views) != 1 {
-		t.Fatalf("one key must render one row, got %d (%+v)", len(views), views)
+	// One key renders one row: the catalogue ships three keys, the workspace forked
+	// one of them, so the workspace must see exactly three rows — its fork plus the
+	// two untouched baselines — and never two versions of the same key.
+	byKey := make(map[string]ReportTemplateView, len(views))
+	for _, item := range views {
+		if _, duplicate := byKey[item.Key]; duplicate {
+			t.Fatalf("key %q rendered twice (%+v)", item.Key, views)
+		}
+		byKey[item.Key] = item
 	}
-	view := views[0]
+	if len(byKey) != len(BuiltinReportTemplates()) {
+		t.Fatalf("every shipped key must render exactly one row, got %d: %+v", len(byKey), views)
+	}
+	view, ok := byKey[reportComplianceTemplateKey]
+	if !ok {
+		t.Fatalf("the forked key is missing: %+v", views)
+	}
 	if view.TenantID != fx.tenantID || view.Payload.Name.Zh != "租户定制模板" {
 		t.Fatalf("workspace version must win over the platform baseline: %+v", view)
 	}
 	if view.Retired {
 		t.Fatal("an active template must not be flagged retired")
+	}
+	// The keys the workspace never forked still come from the platform baseline.
+	for key, item := range byKey {
+		if key == reportComplianceTemplateKey {
+			continue
+		}
+		if item.TenantID != model.PlatformTenantID {
+			t.Fatalf("unforked key %q must read the baseline, got tenant %q", key, item.TenantID)
+		}
 	}
 }
 

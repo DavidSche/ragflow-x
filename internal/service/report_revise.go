@@ -109,7 +109,7 @@ func (s *Service) RegenerateReport(
 	}
 
 	now := time.Now().UTC()
-	eventClock := reportExpiry(now, s.currentRetentionPolicy().ReportEventDays, reportDefaultEventDays)
+	eventClock := reportExpiry(now, s.ReportRetentionFor(ctx, tenantID).ReportEventDays, reportDefaultEventDays)
 	revisionID := id.New()
 	jobID := id.New()
 	// Every business canary column is pinned from the base: the sections count (the
@@ -186,6 +186,13 @@ func (s *Service) RegenerateReport(
 		return nil, err
 	}
 
+	// Same arming rule as creation: a regeneration that never dispatches leaves the
+	// new revision in `draft` with a `queued` job nobody runs (doc/288 §8.2).
+	job, err = s.armReportJob(ctx, tenantID, job)
+	if err != nil {
+		return nil, err
+	}
+
 	detail, err := json.Marshal(map[string]interface{}{
 		"report_id": report.ID, "job_id": jobID, "revision_id": revisionID,
 		"revision": revision.Revision, "based_on_revision": base.Revision,
@@ -256,6 +263,10 @@ func (s *Service) replayRegeneration(
 		return nil, httperr.New(404, codeReportRevisionNotFound,
 			"report revision is no longer available")
 	}
+	job, err = s.armReportJob(ctx, tenantID, job)
+	if err != nil {
+		return nil, err
+	}
 	return &CreateReportResult{Report: report, Revision: revision, Job: job, Created: false}, nil
 }
 
@@ -284,5 +295,7 @@ func (s *Service) GetReportRevisionByNumber(
 	if row == nil {
 		return nil, errReportRevisionNotFound(revision)
 	}
-	return &ReportDetail{Report: report, Revision: row}, nil
+	// Same aggregate as the current-revision read, so a superseded revision shows
+	// its own delivered files (A41) with the same derived `downloadable` flag.
+	return s.reportDetailWithEvidence(ctx, report, row)
 }

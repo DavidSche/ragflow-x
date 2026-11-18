@@ -170,13 +170,17 @@ func TestCreateReportWritesAggregateAndFreezesClocks(t *testing.T) {
 	if revision.OutlineConfirmation != model.ReportOutlineRequired {
 		t.Fatalf("P0-A must write outline_confirmation=required, got %q", revision.OutlineConfirmation)
 	}
-	if job.Status != model.ReportJobQueued || job.Stage != model.ReportStageOutlining {
-		t.Fatalf("job must start queued/outlining: %+v", job)
+	if job.Status != model.ReportJobRunning || job.Stage != model.ReportStageOutlining {
+		t.Fatalf("creation must arm the run (running/outlining): %+v", job)
 	}
-	if job.CurrentRuntimeJobID != "" {
-		// Creation deliberately does not enqueue: the dispatch step owns the first
-		// runtime slice, and a pointer here would claim a job that does not exist.
-		t.Fatalf("creation must not claim a runtime job, got %q", job.CurrentRuntimeJobID)
+	if job.CurrentRuntimeJobID == "" {
+		// A created report whose first slice was never dispatched is a job that
+		// stays `queued` forever with no error attached — the exact silent dead end
+		// doc/288 §8.2 forbids.
+		t.Fatal("creation must claim the first runtime job")
+	}
+	if job.StartedAt == nil {
+		t.Fatal("an armed job must carry its start clock")
 	}
 	if job.IdempotencyKey != fx.owner.ID+":req-0001-abcdef" {
 		t.Fatalf("idempotency key must be namespaced by user, got %q", job.IdempotencyKey)
@@ -239,12 +243,67 @@ func TestCreateReportIdempotencyKeyReplaysSameAggregate(t *testing.T) {
 		t.Fatalf("replay returned a different aggregate: %q/%q vs %q/%q",
 			second.Report.ID, second.Job.ID, first.Report.ID, first.Job.ID)
 	}
+	// The replayed aggregate describes *this job's* run. Answering with the report's
+	// newest revision would silently hand a later regenerate's revision to a caller
+	// replaying the original request.
+	if second.Revision == nil || second.Revision.ID != first.Revision.ID {
+		t.Fatalf("replay must return the job's own revision %q, got %+v",
+			first.Revision.ID, second.Revision)
+	}
 	reports, err := fx.svc.Store.ListReports(ctx, fx.tenantID, "", 100, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(reports) != 1 {
 		t.Fatalf("replay must not create a second report, got %d", len(reports))
+	}
+}
+
+// A38: the key is the only dedup key. An identical question is not.
+//
+// "Same question = same report" is the tempting shortcut, and it is wrong twice:
+// a user legitimately wants a fresh run of the same question after the data moved,
+// and it would let one user's key-respecting retry collide with another request
+// that merely happens to ask the same thing. So two different keys must produce two
+// independent reports even when the question hash, template and datasets match
+// byte for byte.
+func TestCreateReportDifferentKeysWithTheSameQuestionMakeTwoReports(t *testing.T) {
+	fx := newReportFixture(t, "same-question")
+	ctx := context.Background()
+	req := reportCreateRequest("link-policy-same-question")
+
+	first, err := fx.svc.CreateReport(ctx, fx.owner.ID, fx.tenantID, "req-same-question-0001", req)
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	second, err := fx.svc.CreateReport(ctx, fx.owner.ID, fx.tenantID, "req-same-question-0002", req)
+	if err != nil {
+		t.Fatalf("second create: %v", err)
+	}
+	if !second.Created {
+		t.Fatal("a distinct key must be a real creation, not a replay")
+	}
+	if second.Report.ID == first.Report.ID || second.Job.ID == first.Job.ID {
+		t.Fatalf("distinct keys must not share an aggregate: %q/%q vs %q/%q",
+			first.Report.ID, first.Job.ID, second.Report.ID, second.Job.ID)
+	}
+	reports, err := fx.svc.Store.ListReports(ctx, fx.tenantID, "", 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 2 {
+		t.Fatalf("the same question under two keys must leave two reports, got %d", len(reports))
+	}
+	// Each report must own the revision its own job produced, so a later regenerate
+	// on one of them can never be answered as the other's.
+	if first.Revision == nil || second.Revision == nil {
+		t.Fatalf("each creation must return its revision: %+v / %+v", first.Revision, second.Revision)
+	}
+	if first.Revision.ID == second.Revision.ID {
+		t.Fatalf("two reports must not share a revision, both got %q", first.Revision.ID)
+	}
+	if second.Revision.ReportID != second.Report.ID {
+		t.Fatalf("revision %q does not belong to report %q", second.Revision.ID, second.Report.ID)
 	}
 }
 
@@ -375,14 +434,14 @@ func TestSoftDeleteReportKeepsTTLAndSecondDeleteIsNotFound(t *testing.T) {
 	}
 	frozenTTL := created.Report.ExpiresAt
 
-	if err := fx.svc.SoftDeleteReport(ctx, fx.owner.ID, fx.tenantID, created.Report.ID, "季度归档"); err != nil {
+	if err := fx.svc.SoftDeleteReport(ctx, fx.owner.ID, fx.tenantID, created.Report.ID, "季度归档", false); err != nil {
 		t.Fatalf("soft delete: %v", err)
 	}
-	stored, err := fx.svc.Store.GetReport(ctx, fx.tenantID, created.Report.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stored == nil || stored.DeletedAt == nil {
+	// The row is read straight from the table: a soft-deleted report is no longer
+	// reachable through Store.GetReport (that is the whole point of the delete), but
+	// the recovery window and the frozen TTL are facts on the row itself.
+	stored := loadReportRow(t, fx, created.Report.ID)
+	if stored.DeletedAt == nil {
 		t.Fatal("soft delete must stamp deleted_at")
 	}
 	if stored.CleanupHoldUntil == nil {
@@ -398,18 +457,28 @@ func TestSoftDeleteReportKeepsTTLAndSecondDeleteIsNotFound(t *testing.T) {
 	}
 
 	// A second delete is a no-op, not a fresh 7-day window.
-	err = fx.svc.SoftDeleteReport(ctx, fx.owner.ID, fx.tenantID, created.Report.ID, "重复删除")
+	err = fx.svc.SoftDeleteReport(ctx, fx.owner.ID, fx.tenantID, created.Report.ID, "重复删除", false)
 	var httpErr *httperr.Error
 	if !errors.As(err, &httpErr) || httpErr.Code != codeReportAccessDenied {
 		t.Fatalf("second delete must answer 404/%d, got %v", codeReportAccessDenied, err)
 	}
-	after, err := fx.svc.Store.GetReport(ctx, fx.tenantID, created.Report.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	after := loadReportRow(t, fx, created.Report.ID)
 	if !after.CleanupHoldUntil.Equal(*stored.CleanupHoldUntil) {
 		t.Fatalf("second delete must not extend the window: %v -> %v", stored.CleanupHoldUntil, after.CleanupHoldUntil)
 	}
+}
+
+// loadReportRow reads a report row including soft-deleted ones. The read surface
+// deliberately hides a deleted report, so a test that asserts the recovery window
+// has to bypass it.
+func loadReportRow(t *testing.T, fx *reportFixture, reportID string) model.Report {
+	t.Helper()
+	var report model.Report
+	if err := fx.gdb.Where("tenant_id = ? AND id = ?", fx.tenantID, reportID).
+		First(&report).Error; err != nil {
+		t.Fatalf("load report row %s: %v", reportID, err)
+	}
+	return report
 }
 
 func TestSoftDeleteReportIsTenantScoped(t *testing.T) {

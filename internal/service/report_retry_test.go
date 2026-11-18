@@ -10,6 +10,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
+	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
 // retrySeed is a directly-seeded published-but-partial report: one generate job,
@@ -402,4 +403,129 @@ func ordOf(key string) int {
 		return 2
 	}
 	return 0
+}
+
+// TestRetryOnlyRewritesTheTargetSection is A12: a single-section retry must leave
+// every other section untouched. It is asserted on `content_hash` because that is
+// the frozen identity of a section's text (canonical body hash, §7.3): "the same
+// words were regenerated" would keep the hash but a *rewrite of a bystander* cannot.
+// The repair also stays inside the same revision — a new revision would make the
+// published citations unreachable (§7.10 / A21).
+func TestRetryOnlyRewritesTheTargetSection(t *testing.T) {
+	fx := newReportFixture(t, "a12")
+	ctx := context.Background()
+	seed := seedRetryReport(t, fx)
+	now := time.Now().UTC()
+	// The template's other three sections are already written: the repair has
+	// bystanders to leave alone, and the revision stays structurally complete so the
+	// finalize exit republishes instead of failing the structure gate.
+	for index, key := range []string{"compliance", "gaps", "remediation"} {
+		seed.sections = append(seed.sections, &model.ReportSection{
+			ID: id.New(), TenantID: fx.tenantID, RevisionID: seed.revision.ID,
+			Ord: 3 + index, SectionKey: key, SectionVersion: 1,
+			Title: key, RequiresEvidence: false,
+			Status: model.ReportSectionSucceeded, Attempt: 1,
+			ContentMD: "# " + key + "\n\n已核对。", ContentHash: "hash-" + key + "-v1",
+			FinishedAt: &now,
+		})
+	}
+	seed.flush(t, fx)
+
+	result, err := fx.svc.RetryReportSection(ctx, fx.owner.ID, fx.tenantID, seed.job.ID, 2)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+
+	// The runner writes the rewritten section: begin (pending → writing, attempt 1)
+	// then commit, exactly as report_generate.go does.
+	if applied, err := fx.svc.Store.BeginReportSection(ctx, repository.ReportSectionStart{
+		TenantID: fx.tenantID, JobID: result.Job.ID, RevisionID: seed.revision.ID,
+		SectionID: result.Section.ID, PreviousAttempt: 0, Now: now,
+	}); err != nil || !applied {
+		t.Fatalf("begin rewritten section: applied=%v err=%v", applied, err)
+	}
+	rewritten := result.Section
+	rewritten.Attempt = 1
+	rewritten.ContentMD = "# 适用制度清单" + "\n\n" + "第二版：补充了三条制度。"
+	rewritten.ContentHash = "hash-applicable-v2"
+	rewritten.QualityStatus = model.ReportQualityPassed
+	rewritten.EvidenceStatus = model.ReportEvidenceSupported
+	if applied, err := fx.svc.Store.CommitReportSection(ctx, repository.ReportSectionCommit{
+		TenantID: fx.tenantID, JobID: result.Job.ID, Now: now, Section: rewritten,
+	}); err != nil || !applied {
+		t.Fatalf("commit rewritten section: applied=%v err=%v", applied, err)
+	}
+
+	// Publish through the ordinary finalize出口 so the assertion covers the state a
+	// reader actually sees, not the intermediate one.
+	runtimeID := result.RuntimeJobID
+	if runtimeID == "" {
+		t.Fatalf("the retry must arm its first slice, got none")
+	}
+	// The slice was armed at dispatch; mark it done and claim the business job the
+	// way Run() would before finalizing.
+	if err := fx.gdb.Model(&model.Job{}).Where("id = ?", runtimeID).
+		Updates(map[string]interface{}{"status": model.JobStatusSucceeded}).Error; err != nil {
+		t.Fatal(err)
+	}
+	fx.claimReportJob(t, result.Job.ID, runtimeID)
+	if _, err := fx.svc.BeginReportFinalization(ctx, fx.tenantID, result.Job.ID, 1, 1, runtimeID); err != nil {
+		t.Fatalf("begin finalization: %v", err)
+	}
+	if _, err := fx.svc.FinalizeReportJob(ctx, fx.tenantID, result.Job.ID, runtimeID, now); err != nil {
+		t.Fatalf("finalize: %v", err)
+	}
+
+	// A12: every section except ord 2 still carries its original row and hash.
+	sections, err := fx.svc.Store.ListReportSections(ctx, fx.tenantID, seed.revision.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := map[int]model.ReportSection{}
+	for _, section := range sections {
+		if section.Status == model.ReportSectionSuperseded {
+			continue
+		}
+		live[section.Ord] = section
+	}
+	for _, original := range seed.sections {
+		current, ok := live[original.Ord]
+		if !ok {
+			t.Fatalf("section ord %d disappeared during the retry", original.Ord)
+		}
+		if original.Ord == 2 {
+			if current.ID == original.ID {
+				t.Fatal("the retried section must be a new row, not an update of the old one")
+			}
+			if current.ContentHash != "hash-applicable-v2" || current.SectionVersion != 2 {
+				t.Fatalf("rewritten section must carry v2 content, got %+v", current)
+			}
+			continue
+		}
+		if current.ID != original.ID || current.ContentHash != original.ContentHash ||
+			current.SectionVersion != original.SectionVersion || current.ContentMD != original.ContentMD {
+			t.Fatalf("section ord %d must be untouched by the retry: %+v", original.Ord, current)
+		}
+	}
+
+	// The repair republishes the *same* revision: a retry is not a new revision.
+	revision := fx.reportRevision(t, seed.revision.ID)
+	if revision.ID != seed.revision.ID || revision.Revision != 1 {
+		t.Fatalf("a section retry must not mint a revision: %+v", revision)
+	}
+	if revision.Status != model.ReportRevisionPublished {
+		t.Fatalf("the repaired revision must stay published, got %s", revision.Status)
+	}
+
+	// A18 at the repair boundary: the retry's own ledger is empty until the runner
+	// spends anything, and the original job's charges were not re-settled.
+	var retryCharges int64
+	if err := fx.gdb.Model(&model.ReportCharge{}).
+		Where("tenant_id = ? AND report_job_id = ?", fx.tenantID, result.Job.ID).
+		Count(&retryCharges).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retryCharges != 0 {
+		t.Fatalf("a retry that made no model call must have no charge rows, got %d", retryCharges)
+	}
 }

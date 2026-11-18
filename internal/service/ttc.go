@@ -235,12 +235,16 @@ func pdfFontPath() string {
 
 // pdfFontCandidates lists the CJK fonts probed when RGX_EXPORT_PDF_FONT is not
 // set. Later Linux entries exist because the Noto packages ship CFF collections
-// this renderer cannot embed.
+// this renderer cannot embed; the Alpine entry is the one our own images install
+// (docker/Dockerfile, localenv/151-test/Dockerfile.test) — Alpine puts the WenQuanYi
+// collection under /usr/share/fonts/wqy-zenhei/, not under the Debian `truetype/wqy`
+// tree, so an image could ship a perfectly good font and still fail every PDF.
 func pdfFontCandidates() []string {
 	return []string{
 		`C:\Windows\Fonts\Deng.ttf`,
 		`C:\Windows\Fonts\msyh.ttc`,
 		`C:\Windows\Fonts\simhei.ttf`,
+		"/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc",
 		"/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
 		"/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
 		"/usr/share/fonts/truetype/arphic/uming.ttc",

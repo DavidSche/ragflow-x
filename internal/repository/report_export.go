@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -121,6 +122,44 @@ func (s *store) ListReportCitations(
 	return citations, err
 }
 
+// CountUnverifiableReportEvidence answers "can the citations of this revision still
+// be re-checked?" in one query (doc/288 §7.6 / A43).
+//
+// It counts citations whose frozen snapshot is either gone (purged by the evidence
+// clock) or already past its own `expires_at`. Both mean the same thing to a reader:
+// the body and the judgement stand, but the evidence can no longer be re-opened. A
+// LEFT JOIN keeps this to a single round trip — hydrating every citation to count
+// them would put the whole evidence corpus on the read path of a page view.
+func (s *store) CountUnverifiableReportEvidence(
+	ctx context.Context, tenantID, revisionID string, now time.Time,
+) (int64, error) {
+	var unverifiable int64
+	err := s.WithContext(ctx).
+		Table("rgx_report_citation AS c").
+		Joins("LEFT JOIN rgx_report_evidence_snapshot AS e ON e.id = c.evidence_snapshot_id AND e.tenant_id = c.tenant_id").
+		Where("c.tenant_id = ? AND c.revision_id = ?", tenantID, revisionID).
+		Where("e.id IS NULL OR e.expires_at <= ?", now).
+		Count(&unverifiable).Error
+	return unverifiable, err
+}
+
+// ListReportEvidenceByIDs loads the evidence snapshots a citation set points at.
+// Missing ids are simply absent from the result: the appendix builder decides what
+// absence means (no citations vs. a purged snapshot, A43), because those two cases
+// have different honest answers.
+func (s *store) ListReportEvidenceByIDs(
+	ctx context.Context, tenantID string, ids []string,
+) ([]model.ReportEvidenceSnapshot, error) {
+	if len(ids) == 0 {
+		return []model.ReportEvidenceSnapshot{}, nil
+	}
+	var snapshots []model.ReportEvidenceSnapshot
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND id IN ?", tenantID, ids).
+		Find(&snapshots).Error
+	return snapshots, err
+}
+
 // ReportExportArtifact loads one artifact row within one tenant. It intentionally
 // does not filter on subject_type: the caller must pair it with the export job
 // (whose `subject_type` is authoritative) so a misdirected artifact id cannot be
@@ -137,16 +176,22 @@ func (s *store) ReportExportArtifact(ctx context.Context, tenantID, artifactID s
 	return &artifact, nil
 }
 
-// ListReportArtifacts returns the export history of one revision, newest version
+// ListReportArtifacts returns the export history of one revision, newest delivery
 // first. Soft-deleted rows are excluded (they are gone from the user's view and
 // re-exporting is the honest next step); failed/expired rows stay because the UI
 // explains each one with a distinct label (doc/288 §7.7).
+//
+// The order is `created_at`, not `artifact_version`: versions are allocated per
+// (revision, format) — a DOCX and a Markdown delivery of the same revision are both
+// "第 1 次导出" of their own format — so version alone cannot order a mixed-format
+// history. The newest file is the one written last.
 func (s *store) ListReportArtifacts(ctx context.Context, tenantID, revisionID string) ([]model.ExportArtifact, error) {
 	var artifacts []model.ExportArtifact
 	err := s.WithContext(ctx).
 		Where("tenant_id = ? AND report_revision_id = ? AND subject_type = ?",
 			tenantID, revisionID, model.ExportSubjectReport).
 		Where("deleted_at IS NULL").
+		Order("created_at DESC").
 		Order("artifact_version DESC").
 		Find(&artifacts).Error
 	return artifacts, err

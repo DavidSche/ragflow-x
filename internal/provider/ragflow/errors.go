@@ -46,16 +46,26 @@ var (
 
 func (e *Error) Error() string {
 	// Preserve original message format for compatibility with isTransientRAGFlowErr.
-	if e.HTTPStatus > 0 && e.Code != 0 {
-		return fmt.Sprintf("ragflow error %d: %v (HTTP %d)", e.Code, e.Message, e.HTTPStatus)
+	//
+	// The cause is appended rather than dropped: a wrapper like "chat to model X"
+	// with no cause told an operator nothing about a live 100% section failure
+	// (the upstream body said `thinking of type string`; the log said only
+	// "ragflow: chat to model …"). "ragflow: <what we were doing>: <why it failed>"
+	// is the shape a log reader needs. Substring predicates (isTransientRAGFlowErr)
+	// only gain text, so they keep matching.
+	base := fmt.Sprintf("ragflow: %s", e.Message)
+	switch {
+	case e.HTTPStatus > 0 && e.Code != 0:
+		base = fmt.Sprintf("ragflow error %d: %v (HTTP %d)", e.Code, e.Message, e.HTTPStatus)
+	case e.HTTPStatus > 0:
+		base = fmt.Sprintf("ragflow returned status %d: %s", e.HTTPStatus, e.Message)
+	case e.Code != 0:
+		base = fmt.Sprintf("ragflow error %d: %v", e.Code, e.Message)
 	}
-	if e.HTTPStatus > 0 {
-		return fmt.Sprintf("ragflow returned status %d: %s", e.HTTPStatus, e.Message)
+	if e.Cause != nil {
+		return base + ": " + e.Cause.Error()
 	}
-	if e.Code != 0 {
-		return fmt.Sprintf("ragflow error %d: %v", e.Code, e.Message)
-	}
-	return fmt.Sprintf("ragflow: %s", e.Message)
+	return base
 }
 
 func (e *Error) Unwrap() error { return e.Cause }

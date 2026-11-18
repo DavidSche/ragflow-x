@@ -73,22 +73,26 @@ type ReportRevisionSnapshot struct {
 // `status` and `quality_status` stay two fields (doc/288 R21): a section can finish
 // writing and still fail its evidence check.
 type ReportSectionSnapshot struct {
-	ID               string     `json:"id"`
-	Ord              int        `json:"ord"`
-	SectionKey       string     `json:"section_key"`
-	Title            string     `json:"title"`
-	SectionVersion   int        `json:"section_version"`
-	Status           string     `json:"status"`
-	EvidenceStatus   string     `json:"evidence_status"`
-	QualityStatus    string     `json:"quality_status"`
-	RequiresEvidence bool       `json:"requires_evidence"`
-	CitationCount    int        `json:"citation_count"`
-	ClaimCount       int        `json:"claim_count"`
-	Attempt          int        `json:"attempt"`
-	TokensIn         int64      `json:"tokens_in"`
-	TokensOut        int64      `json:"tokens_out"`
-	StartedAt        *time.Time `json:"started_at"`
-	FinishedAt       *time.Time `json:"finished_at"`
+	ID               string `json:"id"`
+	Ord              int    `json:"ord"`
+	SectionKey       string `json:"section_key"`
+	Title            string `json:"title"`
+	SectionVersion   int    `json:"section_version"`
+	Status           string `json:"status"`
+	EvidenceStatus   string `json:"evidence_status"`
+	QualityStatus    string `json:"quality_status"`
+	RequiresEvidence bool   `json:"requires_evidence"`
+	// EvidencePreview is the outline-time evidence盘面 (doc/288 §9.6), decoded for
+	// the confirmation screen. Nil means nothing was frozen — render 未评估, never
+	// "充足".
+	EvidencePreview *reportEvidencePreview `json:"evidence_preview,omitempty"`
+	CitationCount   int                    `json:"citation_count"`
+	ClaimCount      int                    `json:"claim_count"`
+	Attempt         int                    `json:"attempt"`
+	TokensIn        int64                  `json:"tokens_in"`
+	TokensOut       int64                  `json:"tokens_out"`
+	StartedAt       *time.Time             `json:"started_at"`
+	FinishedAt      *time.Time             `json:"finished_at"`
 }
 
 // ReportJobSnapshot is the refresh-without-loss payload (§8.3): the current truth
@@ -193,6 +197,7 @@ func (s *Service) GetReportJobSnapshot(ctx context.Context, actorID, tenantID, j
 			EvidenceStatus:   section.EvidenceStatus,
 			QualityStatus:    section.QualityStatus,
 			RequiresEvidence: section.RequiresEvidence,
+			EvidencePreview:  reportSectionEvidencePreview(section.EvidencePreviewJSON),
 			CitationCount:    section.CitationCount,
 			ClaimCount:       section.ClaimCount,
 			Attempt:          section.Attempt,

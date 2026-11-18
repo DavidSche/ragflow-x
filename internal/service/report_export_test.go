@@ -367,11 +367,11 @@ func TestCreateReportExportRejectsUnsupportedFormat(t *testing.T) {
 	report, _ := fx.svc.Store.GetReport(ctx, fx.tenantID, revision.ReportID)
 
 	_, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
-		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatPDF,
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatHTML,
 	})
 	var httpErr *httperr.Error
 	if !errors.As(err, &httpErr) || httpErr.Code != 40130 || httpErr.Status != 400 {
-		t.Fatalf("pdf must be refused as unsupported, got %v", err)
+		t.Fatalf("html must be refused as unsupported, got %v", err)
 	}
 }
 
@@ -625,6 +625,207 @@ func TestSupersededRevisionKeepsArtifactDownloadable(t *testing.T) {
 	}
 }
 
+// TestReportArtifactsStayWithTheirOwnRevision is A24: two published revisions of one
+// report must not swap files. The risk is concrete — artifacts are addressed by
+// `(report, revision, artifact_id)`, so a download that resolved the report's
+// *current* revision instead of the addressed one would silently serve v2 to
+// someone who asked for v1, and a user re-checking last week's compliance report
+// would read today's text.
+func TestReportArtifactsStayWithTheirOwnRevision(t *testing.T) {
+	fx := newReportFixture(t, "crossrev")
+	ctx := context.Background()
+	first := publishReport(t, fx, successSeeds())
+	report, err := fx.svc.Store.GetReport(ctx, fx.tenantID, first.ReportID)
+	if err != nil || report == nil {
+		t.Fatalf("load report: %v", err)
+	}
+	exportV1, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: first.Revision, Format: model.ExportFormatDOCX,
+	})
+	if err != nil {
+		t.Fatalf("export v1: %v", err)
+	}
+	textV1 := docxBodyText(t, exportV1.Artifact.FileRef)
+	if !strings.Contains(textV1, "内容：background") {
+		t.Fatalf("v1 body must carry v1 text, got %q", textV1)
+	}
+
+	// v2: minted from the published base, generated with different text, published
+	// through the same finalize path so the promotion rules are the real ones.
+	regenerated, err := regenerateReport(t, fx, report.ID, "req-crossrev-0002")
+	if err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	fx.seedSections(t, regenerated.Revision.ID, successSeeds())
+	if err := fx.gdb.Model(&model.ReportSection{}).
+		Where("revision_id = ? AND ord = 0", regenerated.Revision.ID).
+		Updates(map[string]interface{}{
+			"content_md":   "内容：background（v2 改版）",
+			"content_hash": "hash-background-v2",
+		}).Error; err != nil {
+		t.Fatalf("rewrite v2 section: %v", err)
+	}
+	runtimeID := fx.reportRuntimeJob(t, model.JobStatusSucceeded)
+	fx.claimReportJob(t, regenerated.Job.ID, runtimeID)
+	if _, err := fx.svc.BeginReportFinalization(ctx, fx.tenantID, regenerated.Job.ID, 1, 1, runtimeID); err != nil {
+		t.Fatalf("begin v2 finalization: %v", err)
+	}
+	if _, err := fx.svc.FinalizeReportJob(ctx, fx.tenantID, regenerated.Job.ID, runtimeID, time.Now().UTC()); err != nil {
+		t.Fatalf("finalize v2: %v", err)
+	}
+
+	// A32/A41: the promotion is a single fact — current_revision_id names v2 and v1
+	// is `superseded` with a timestamp, not deleted.
+	after, err := fx.svc.Store.GetReport(ctx, fx.tenantID, report.ID)
+	if err != nil || after == nil {
+		t.Fatalf("reload report: %v", err)
+	}
+	if after.CurrentRevisionID != regenerated.Revision.ID {
+		t.Fatalf("current_revision_id must move to v2, got %q", after.CurrentRevisionID)
+	}
+	superseded := fx.reportRevision(t, first.ID)
+	if superseded.Status != model.ReportRevisionSuperseded || superseded.SupersededAt == nil {
+		t.Fatalf("v1 must be superseded with a timestamp: %+v", superseded)
+	}
+
+	exportV2, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: regenerated.Revision.Revision, Format: model.ExportFormatDOCX,
+	})
+	if err != nil {
+		t.Fatalf("export v2: %v", err)
+	}
+	if exportV2.Artifact.ReportRevisionID != regenerated.Revision.ID {
+		t.Fatalf("v2 artifact must name v2: %+v", exportV2.Artifact)
+	}
+	textV2 := docxBodyText(t, exportV2.Artifact.FileRef)
+	if !strings.Contains(textV2, "内容：background（v2 改版）") {
+		t.Fatalf("v2 body must carry v2 text, got %q", textV2)
+	}
+	if strings.Contains(textV2, "内容：background") && !strings.Contains(textV2, "v2 改版") {
+		t.Fatal("v2 must not render v1's section text")
+	}
+	// The v1 file is untouched by the v2 export: same bytes on disk, same text.
+	if again := docxBodyText(t, exportV1.Artifact.FileRef); again != textV1 {
+		t.Fatal("exporting v2 must not rewrite the v1 artifact")
+	}
+
+	// Downloads are paired, both ways: v1's artifact is reachable under revision 1
+	// only, and v2's under revision 2 only.
+	if _, err := fx.svc.OpenReportArtifact(ctx, fx.owner.ID, fx.tenantID,
+		report.ID, first.Revision, exportV1.Artifact.ID); err != nil {
+		t.Fatalf("v1 artifact must stay downloadable from v1: %v", err)
+	}
+	if _, err := fx.svc.OpenReportArtifact(ctx, fx.owner.ID, fx.tenantID,
+		report.ID, first.Revision, exportV2.Artifact.ID); err == nil {
+		t.Fatal("v2 artifact must not be downloadable through the v1 path")
+	}
+	if _, err := fx.svc.OpenReportArtifact(ctx, fx.owner.ID, fx.tenantID,
+		report.ID, regenerated.Revision.Revision, exportV1.Artifact.ID); err == nil {
+		t.Fatal("v1 artifact must not be downloadable through the v2 path")
+	}
+}
+
+// TestFailedRegenerationKeepsThePublishedBase is A32's first clause: a failed v2 is
+// not a reason to lose v1. The current pointer is what the detail page and every
+// download URL resolve through, so a promotion that ran "on attempt" instead of "on
+// structural success" would blank the only file the user actually has.
+func TestFailedRegenerationKeepsThePublishedBase(t *testing.T) {
+	fx := newReportFixture(t, "keepbase")
+	ctx := context.Background()
+	base := publishReport(t, fx, successSeeds())
+	report, err := fx.svc.Store.GetReport(ctx, fx.tenantID, base.ReportID)
+	if err != nil || report == nil {
+		t.Fatalf("load report: %v", err)
+	}
+	if report.CurrentRevisionID != base.ID {
+		t.Fatalf("published base must be current, got %q", report.CurrentRevisionID)
+	}
+	delivered, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: base.Revision, Format: model.ExportFormatDOCX,
+	})
+	if err != nil {
+		t.Fatalf("export base: %v", err)
+	}
+
+	regenerated, err := regenerateReport(t, fx, report.ID, "req-keepbase-0002")
+	if err != nil {
+		t.Fatalf("regenerate: %v", err)
+	}
+	// A *missing* required section, not a disclosed gap: the one combination that
+	// cannot be published as `partial` (A39), so the structural check must refuse the
+	// promotion and leave the base alone.
+	seeds := successSeeds()
+	fx.seedSections(t, regenerated.Revision.ID, seeds[:len(seeds)-1])
+	runtimeID := fx.reportRuntimeJob(t, model.JobStatusFailed)
+	fx.claimReportJob(t, regenerated.Job.ID, runtimeID)
+	if _, err := fx.svc.BeginReportFinalization(ctx, fx.tenantID, regenerated.Job.ID, 1, 1, runtimeID); err != nil {
+		t.Fatalf("begin v2 finalization: %v", err)
+	}
+	if _, err := fx.svc.FinalizeReportJob(ctx, fx.tenantID, regenerated.Job.ID, runtimeID, time.Now().UTC()); err != nil {
+		t.Fatalf("finalize failed v2: %v", err)
+	}
+
+	if job := fx.reportJob(t, regenerated.Job.ID); job.Status != model.ReportJobFailed {
+		t.Fatalf("v2 job must be failed, got %q", job.Status)
+	}
+	if failed := fx.reportRevision(t, regenerated.Revision.ID); failed.Status != model.ReportRevisionFailed {
+		t.Fatalf("v2 revision must not publish: %q", failed.Status)
+	}
+	after, err := fx.svc.Store.GetReport(ctx, fx.tenantID, report.ID)
+	if err != nil || after == nil {
+		t.Fatalf("reload report: %v", err)
+	}
+	if after.CurrentRevisionID != base.ID {
+		t.Fatalf("a failed v2 must leave current_revision_id on the base, got %q", after.CurrentRevisionID)
+	}
+	if still := fx.reportRevision(t, base.ID); still.Status != model.ReportRevisionPublished {
+		t.Fatalf("the base must stay published: %q", still.Status)
+	}
+
+	// The delivered file is still the user's: downloadable, and the only thing the
+	// report offers, since v2 cannot be exported (44106).
+	if _, err := fx.svc.OpenReportArtifact(ctx, fx.owner.ID, fx.tenantID,
+		report.ID, base.Revision, delivered.Artifact.ID); err != nil {
+		t.Fatalf("base artifact must stay downloadable: %v", err)
+	}
+	var httpErr *httperr.Error
+	_, err = fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: regenerated.Revision.Revision, Format: model.ExportFormatDOCX,
+	})
+	if !errors.As(err, &httpErr) || httpErr.Code != codeReportExportRequiresPublished {
+		t.Fatalf("a failed revision must refuse exports with 44106, got %v", err)
+	}
+}
+
+func docxBodyText(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read docx: %v", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("docx must be a valid zip: %v", err)
+	}
+	for _, file := range reader.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+		handle, err := file.Open()
+		if err != nil {
+			t.Fatalf("open document.xml: %v", err)
+		}
+		defer handle.Close()
+		body, err := io.ReadAll(handle)
+		if err != nil {
+			t.Fatalf("read document.xml: %v", err)
+		}
+		return string(body)
+	}
+	t.Fatal("docx has no word/document.xml")
+	return ""
+}
+
 func TestReportExportArtifactVersionIncrementsWithNewContent(t *testing.T) {
 	fx := newReportFixture(t, "veridx")
 	ctx := context.Background()
@@ -764,5 +965,96 @@ func TestCreateReportExportWritesRowsInOneTransaction(t *testing.T) {
 	}
 	if snapshotCount != 1 || jobCount != 1 || artifactCount != 1 {
 		t.Fatalf("snapshot/job/artifact must all exist: %d/%d/%d", snapshotCount, jobCount, artifactCount)
+	}
+}
+
+// TestExpiredReportArtifactIsRenewedNotRevived is A47's re-export clause: once an
+// artifact's clock runs out, exporting the same frozen revision again must produce
+// `artifact_version = N+1` while the expired row stays exactly as it was. The
+// failure this guards against is subtle and user-visible: the export is idempotent
+// on frozen content, so a naive replay would hand back the expired artifact id
+// forever — a download button that always 404s, with no way to get a working file
+// short of editing the report.
+func TestExpiredReportArtifactIsRenewedNotRevived(t *testing.T) {
+	fx := newReportFixture(t, "a47renew")
+	ctx := context.Background()
+	revision := publishReport(t, fx, successSeeds())
+	report, _ := fx.svc.Store.GetReport(ctx, fx.tenantID, revision.ReportID)
+
+	// Learn the canonical hash without taking the DOCX key: the markdown export
+	// freezes the same payload, so its hash names the DOCX request too.
+	markdown, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatMarkdown,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	// The expired DOCX delivery: same idempotency key the service would compute
+	// (`report:<revision>:docx:<canonical>`), clock already past.
+	expiredJob := exportTestJob(fx, revision, "a47-expired-job", markdown.Canonical, model.ExportJobSucceeded)
+	expiredArtifact := exportTestArtifact(fx, revision, expiredJob, "a47-expired-artifact",
+		model.ExportArtifactReady, "expired-file.docx", 2048, 1, now.Add(-48*time.Hour))
+	if err := fx.gdb.Create(expiredJob).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.gdb.Create(expiredArtifact).Error; err != nil {
+		t.Fatal(err)
+	}
+	views, err := fx.svc.ListReportArtifacts(ctx, fx.tenantID, revision.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, view := range views {
+		if view.ID == expiredArtifact.ID && view.Downloadable {
+			t.Fatal("an artifact past its clock must not be downloadable")
+		}
+	}
+
+	renewed, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatDOCX,
+	})
+	if err != nil {
+		t.Fatalf("re-export after expiry must succeed: %v", err)
+	}
+	if renewed.Artifact.ID == expiredArtifact.ID {
+		t.Fatal("A47: an expired artifact must not be replayed as the answer")
+	}
+	if renewed.Artifact.ArtifactVersion != 2 {
+		t.Fatalf("the renewal must take version 2, got %d", renewed.Artifact.ArtifactVersion)
+	}
+	if renewed.Artifact.ArtifactStatus != model.ExportArtifactReady {
+		t.Fatalf("the renewal must be a real file, got %s (%s)",
+			renewed.Artifact.ArtifactStatus, renewed.Job.ErrorCode)
+	}
+	// Downloadable through the official path, which is the point of renewing.
+	if _, err := fx.svc.OpenReportArtifact(ctx, fx.owner.ID, fx.tenantID,
+		report.ID, revision.Revision, renewed.Artifact.ID); err != nil {
+		t.Fatalf("the renewed artifact must download: %v", err)
+	}
+
+	// The expired row is untouched: still `ready`, still the old clock, still v1.
+	// "Renewed" must never mean "the old row was patched into a live one".
+	var stored model.ExportArtifact
+	if err := fx.gdb.Where("id = ?", expiredArtifact.ID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.ArtifactVersion != 1 || stored.ArtifactStatus != model.ExportArtifactReady {
+		t.Fatalf("the expired row must keep its version and status: %+v", stored)
+	}
+	if stored.ExpiresAt.After(now) {
+		t.Fatalf("re-export must not extend the old row's clock: %s", stored.ExpiresAt)
+	}
+
+	// Renewal stays idempotent: a second click returns version 2, not version 3.
+	again, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatDOCX,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Artifact.ID != renewed.Artifact.ID || again.Artifact.ArtifactVersion != 2 {
+		t.Fatalf("a second re-export must replay the renewal: %s v%d",
+			again.Artifact.ID, again.Artifact.ArtifactVersion)
 	}
 }

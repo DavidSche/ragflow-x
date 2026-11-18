@@ -77,9 +77,11 @@ type ReportTemplateEvidencePolicy struct {
 // ReportTemplatePayload is the stored template body.
 type ReportTemplatePayload struct {
 	Name ReportTemplateName `json:"name"`
-	// OutputFormats is the closed set the report may be rendered to. P0-A ships
-	// docx + md; pdf belongs to P0-B and is refused at validation instead of
-	// silently falling back to markdown.
+	// OutputFormats is the closed set the report may be rendered to: docx, md and
+	// pdf. PDF became legal in P0-B when the renderer landed; a template that omits
+	// it simply does not advertise the format (the export endpoint still accepts it
+	// for any published revision, because the rendering contract is the frozen
+	// document, not the template's list).
 	OutputFormats       []string                     `json:"output_formats"`
 	Sections            []ReportTemplateSection      `json:"sections"`
 	Limits              ReportTemplateLimits         `json:"limits"`
@@ -94,7 +96,7 @@ type ReportTemplatePayload struct {
 
 // Closed sets of the template payload (doc/288 §11.1 / §9.4 / §9.5).
 var (
-	reportOutputFormats        = []string{"docx", "md"}
+	reportOutputFormats        = []string{"docx", "md", "pdf"}
 	reportThresholdPolicies    = []string{"dataset_calibrated"}
 	reportConflictHandlings    = []string{"disclose", "block", "prefer_latest"}
 	reportOutdatedEvidence     = []string{"flag", "exclude"}

@@ -48,6 +48,7 @@ func TestMigrationV168ReportTablesExist(t *testing.T) {
 			"subject_type", "report_revision_id", "artifact_version",
 			"artifact_status", "created_by", "deleted_by", "delete_reason", "deleted_at",
 		},
+		"rgx_export_download_audit": {"report_revision_id"},
 	}
 	for table, columns := range exportColumns {
 		for _, column := range columns {
@@ -55,6 +56,13 @@ func TestMigrationV168ReportTablesExist(t *testing.T) {
 				t.Fatalf("%s.%s missing after v168", table, column)
 			}
 		}
+	}
+
+	// v175: the outline-time evidence preview must exist on the section row, or the
+	// confirmation screen silently loses the evidence盘面 on every upgraded
+	// database (the same defect migration 174 repaired for the download audit).
+	if !gdb.Migrator().HasColumn("rgx_report_section", "evidence_preview_json") {
+		t.Fatal("rgx_report_section.evidence_preview_json missing after v175")
 	}
 
 	// The frozen clocks: a row that could be inserted without expires_at would
@@ -167,6 +175,80 @@ func TestMigrationV168ReportTablesExist(t *testing.T) {
 	}
 	if err := gdb.Exec(insertArtifact, "art-rep-2", "ej-4", "report", "rev-1", 1, "docx").Error; err == nil {
 		t.Fatal("duplicate (report_revision_id, format, artifact_version) accepted")
+	}
+}
+
+// TestMigrationV174AddsTheReportRevisionColumnToAnExistingAuditTable replays
+// the upgrade path a real installation takes, which a fresh-database test can
+// never see: the database already recorded v168 *before* the audit model grew
+// its `report_revision_id` field, so AutoMigrate for v168 never ran again and
+// the column was missing on every upgraded box. The first live report download
+// then failed its audit insert (SQLSTATE 42703) and answered 500 — the audit
+// table is immutable, so "serve the bytes anyway" was not an option.
+func TestMigrationV174AddsTheReportRevisionColumnToAnExistingAuditTable(t *testing.T) {
+	gdb, err := Open(config.Database{Driver: "sqlite", DSN: t.TempDir() + "/report-v174.db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := gdb.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+	if err := MigrateTo(gdb, 173); err != nil {
+		t.Fatalf("migrate to 173: %v", err)
+	}
+
+	// Rewind the audit table to the pre-v174 shape: no report_revision_id, plus
+	// one immutable row written by an answer download before the upgrade.
+	if err := gdb.Exec("DROP TABLE rgx_export_download_audit").Error; err != nil {
+		t.Fatalf("drop audit table: %v", err)
+	}
+	if err := gdb.Exec(`CREATE TABLE rgx_export_download_audit (
+		id VARCHAR(32) PRIMARY KEY,
+		tenant_id VARCHAR(32) NOT NULL,
+		project_id VARCHAR(32),
+		export_artifact_id VARCHAR(32) NOT NULL,
+		export_job_id VARCHAR(32) NOT NULL,
+		answer_snapshot_id VARCHAR(32) NOT NULL,
+		downloaded_by VARCHAR(32) NOT NULL,
+		downloaded_at DATETIME NOT NULL,
+		download_count BIGINT NOT NULL DEFAULT 1,
+		decision_hash VARCHAR(64) NOT NULL,
+		trace_id VARCHAR(64))`).Error; err != nil {
+		t.Fatalf("create pre-v174 audit table: %v", err)
+	}
+	if err := gdb.Exec(`INSERT INTO rgx_export_download_audit
+		(id, tenant_id, project_id, export_artifact_id, export_job_id, answer_snapshot_id,
+		 downloaded_by, downloaded_at, download_count, decision_hash, trace_id)
+		VALUES ('legacy-audit', 't1', '', 'art-1', 'ej-1', 'snap-1', 'u1',
+		        '2026-11-01 00:00:00', 1, 'hash-1', 'trace-1')`).Error; err != nil {
+		t.Fatalf("seed legacy audit row: %v", err)
+	}
+
+	if err := Migrate(gdb); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if !gdb.Migrator().HasColumn("rgx_export_download_audit", "report_revision_id") {
+		t.Fatal("rgx_export_download_audit.report_revision_id missing after the upgrade")
+	}
+
+	// Additive, not destructive: the row written before the upgrade is intact.
+	var legacy int64
+	if err := gdb.Table("rgx_export_download_audit").Where("id = ?", "legacy-audit").Count(&legacy).Error; err != nil {
+		t.Fatalf("count legacy row: %v", err)
+	}
+	if legacy != 1 {
+		t.Fatalf("the upgrade must not drop existing audit rows: found %d", legacy)
+	}
+
+	// And the report download that used to 500 can now be audited.
+	if err := gdb.Exec(`INSERT INTO rgx_export_download_audit
+		(id, tenant_id, project_id, export_artifact_id, export_job_id, answer_snapshot_id,
+		 report_revision_id, downloaded_by, downloaded_at, download_count, decision_hash, trace_id)
+		VALUES ('report-audit', 't1', '', 'art-2', 'ej-2', '', 'rev-1', 'u1',
+		        '2026-11-18 00:00:00', 1, 'hash-2', 'trace-2')`).Error; err != nil {
+		t.Fatalf("report download audit insert: %v", err)
 	}
 }
 

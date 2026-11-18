@@ -28,11 +28,10 @@ import (
 // one transaction (repository side), because "the job is running" must imply "the
 // slice it names is mapped and executable" (I1).
 //
-// The generate worker that consumes these slices lands with the section pipeline
-// (T4): dispatching now would hand every created report to a kind no worker serves
-// and turn "not implemented yet" into a user-visible failure. Until then these
-// functions are driven by tests only, which is why they are written and reviewed
-// here — the invariants are cheaper to pin before the pipeline exists than after.
+// Both transitions are also driven by the request path: CreateReport and
+// RegenerateReport arm slice 1 before answering 202 (`armReportJob`), because a
+// report whose first slice is never dispatched is a permanently `queued` job with
+// no error attached to it. Tests drive them directly to pin the invariants.
 
 // ReportSlicePayload is `rgx_job.payload` for a report slice. The quintuple is the
 // slice identity; `start_ord` is where the slice should begin writing, so a resumed
@@ -189,7 +188,7 @@ func (s *Service) YieldReportSlice(
 	event := &model.ReportJobEvent{
 		TenantID: tenantID, JobID: jobID, Type: reportEventJobProgress,
 		PayloadJSON: string(eventPayload), CreatedAt: now,
-		ExpiresAt: reportExpiry(now, s.currentRetentionPolicy().ReportEventDays, reportDefaultEventDays),
+		ExpiresAt: reportExpiry(now, s.ReportRetentionFor(ctx, tenantID).ReportEventDays, reportDefaultEventDays),
 	}
 	return s.Store.AdvanceReportSlice(ctx, repository.ReportSliceAdvance{
 		Slice: next, PreviousRuntimeJobID: runtimeJobID,

@@ -253,6 +253,46 @@ func TestReportTenantIsolationRepoByIDAccessors(t *testing.T) {
 	}
 }
 
+// A15's trend read is a list face too, and it joins the report row to reach
+// `owner_user_id` — the join is exactly where a forgotten tenant predicate shows up as
+// another workspace's quality numbers. It is asserted separately from ListReports
+// because the two queries narrow differently (the trend filters on the revision's
+// clock and drops soft-deleted parents).
+func TestReportMetricsQueryIsTenantScoped(t *testing.T) {
+	st := newAuditStore(t).(*store)
+	ctx := context.Background()
+	seed := seedReportTenantA(t, st)
+	now := time.Now().UTC()
+
+	window := ReportMetricsQuery{
+		TenantID: seed.tenantID,
+		From:     now.AddDate(0, 0, -1),
+		To:       now.AddDate(0, 0, 1),
+	}
+	rows, err := st.ListReportRevisionsForMetrics(ctx, window)
+	if err != nil {
+		t.Fatalf("own tenant trend read: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != seed.revisionID {
+		t.Fatalf("sanity: own tenant must see the published revision: %+v", rows)
+	}
+
+	foreign := window
+	foreign.TenantID = "t-b"
+	if rows, err := st.ListReportRevisionsForMetrics(ctx, foreign); err != nil || len(rows) != 0 {
+		t.Fatalf("cross-tenant trend read must be empty: n=%d err=%v", len(rows), err)
+	}
+
+	// A soft-deleted report stops counting immediately: the trend may not keep
+	// reporting the quality of a report the user has deleted (A47).
+	if err := st.SoftDeleteReport(ctx, seed.tenantID, seed.reportID, now, now.AddDate(0, 0, 7)); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+	if rows, err := st.ListReportRevisionsForMetrics(ctx, window); err != nil || len(rows) != 0 {
+		t.Fatalf("a deleted report must leave the trend: n=%d err=%v", len(rows), err)
+	}
+}
+
 // ④ list frames: a foreign tenant gets empty collections, never rows; the own
 // tenant's lists still return the seed.
 func TestReportTenantIsolationRepoListFaces(t *testing.T) {
@@ -287,5 +327,97 @@ func TestReportTenantIsolationRepoListFaces(t *testing.T) {
 	}
 	if arts, err := st.ListReportArtifacts(ctx, seed.tenantID, seed.revisionID); err != nil || len(arts) != 1 {
 		t.Fatalf("own tenant ListReportArtifacts must see the seed: n=%d err=%v", len(arts), err)
+	}
+}
+
+// TestReportTenantIsolationP0BAccessors closes the T15 gap for the accessors added
+// by P0-B: the evidence appendix read path (T14/A43), the ledger sums (T3), the
+// event replay (T17) and the tenant retention overlay (T20b). Each is a by-id or
+// by-tenant read, so each must be blind to another workspace for the same reason the
+// P0-A accessors are.
+//
+// These are asserted at the store because that is where the `WHERE tenant_id` lives:
+// a missing clause here cannot be repaired by a handler, since the handler never sees
+// the row to reject.
+func TestReportTenantIsolationP0BAccessors(t *testing.T) {
+	st := newAuditStore(t).(*store)
+	ctx := context.Background()
+	seed := seedReportTenantA(t, st)
+	now := time.Now().UTC()
+
+	// Evidence appendix reads (T14): ids are guessed from the owning tenant's rows.
+	var evidence model.ReportEvidenceSnapshot
+	if err := st.DB.Where("tenant_id = ?", seed.tenantID).First(&evidence).Error; err != nil {
+		t.Fatalf("load seeded evidence: %v", err)
+	}
+	// Point the seeded citation at the seeded evidence row so "verifiable" is a
+	// fact about this fixture rather than a dangling pointer.
+	if err := st.DB.Model(&model.ReportCitation{}).
+		Where("tenant_id = ? AND revision_id = ?", seed.tenantID, seed.revisionID).
+		Update("evidence_snapshot_id", evidence.ID).Error; err != nil {
+		t.Fatalf("repoint citation: %v", err)
+	}
+	if rows, err := st.ListReportEvidenceByIDs(ctx, seed.tenantID, []string{evidence.ID}); err != nil || len(rows) != 1 {
+		t.Fatalf("own tenant evidence lookup must return the row: n=%d err=%v", len(rows), err)
+	}
+	if rows, err := st.ListReportEvidenceByIDs(ctx, "t-b", []string{evidence.ID}); err != nil || len(rows) != 0 {
+		t.Fatalf("cross-tenant evidence lookup must be empty: n=%d err=%v", len(rows), err)
+	}
+	// A43's count answers "are the citations verifiable" — a foreign tenant must not
+	// even be able to ask the question about another workspace's revision, so the
+	// tenant-scoped count is zero rather than "1 unverifiable".
+	if n, err := st.CountUnverifiableReportEvidence(ctx, seed.tenantID, seed.revisionID, now); err != nil || n != 0 {
+		t.Fatalf("own tenant citations are verifiable: n=%d err=%v", n, err)
+	}
+	if n, err := st.CountUnverifiableReportEvidence(ctx, "t-b", seed.revisionID, now); err != nil || n != 0 {
+		t.Fatalf("cross-tenant evidence count must be zero: n=%d err=%v", n, err)
+	}
+
+	// Ledger sums (T3/T20b): keyed by tenant + business job.
+	if sums, err := st.SumReportCharges(ctx, "t-b", seed.jobID); err != nil || sums.Held != 0 || sums.Actual != 0 {
+		t.Fatalf("cross-tenant ledger sums must be zero: %+v err=%v", sums, err)
+	}
+
+	// Event replay (T17): a foreign job id yields no events, not someone's timeline.
+	if events, err := st.ListReportEvents(ctx, "t-b", seed.jobID, 0, 100); err != nil || len(events) != 0 {
+		t.Fatalf("cross-tenant event replay must be empty: n=%d err=%v", len(events), err)
+	}
+
+	// Retention overlay (T20b): one policy row per tenant, never shared.
+	evidenceDays := 120
+	if err := st.UpsertTenantReportPolicy(ctx, &model.TenantReportPolicy{
+		TenantID: seed.tenantID, ReportEvidenceDays: &evidenceDays, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("upsert policy: %v", err)
+	}
+	if policy, err := st.GetTenantReportPolicy(ctx, "t-b"); err != nil || policy != nil {
+		t.Fatalf("a workspace without an overlay must read nil, got %+v err=%v", policy, err)
+	}
+	if policy, err := st.GetTenantReportPolicy(ctx, seed.tenantID); err != nil || policy == nil ||
+		policy.ReportEvidenceDays == nil || *policy.ReportEvidenceDays != evidenceDays {
+		t.Fatalf("own overlay must round-trip: %+v err=%v", policy, err)
+	}
+
+	// Template catalog (A16): a tenant fork is invisible to another workspace.
+	fork := &model.ReportTemplate{
+		TenantID:            seed.tenantID,
+		TemplateKey:         "financial_review",
+		Version:             1,
+		NameJSON:            `{"zh":"租户克隆","en":"tenant fork"}`,
+		Status:              model.ReportTemplateStatusActive,
+		OutlineConfirmation: model.ReportOutlineRequired,
+		CreatedAt:           now,
+	}
+	if err := st.CreateReportTemplate(ctx, fork); err != nil {
+		t.Fatalf("create fork: %v", err)
+	}
+	if got, err := st.GetReportTemplate(ctx, "t-b", "financial_review", 1); err != nil || got != nil {
+		t.Fatalf("cross-tenant template load must be NotFound: row=%v err=%v", got, err)
+	}
+	if rows, err := st.ListReportTemplates(ctx, "t-b"); err != nil || len(rows) != 0 {
+		t.Fatalf("cross-tenant template list must be empty: n=%d err=%v", len(rows), err)
+	}
+	if rows, err := st.ListReportTemplates(ctx, seed.tenantID); err != nil || len(rows) != 1 {
+		t.Fatalf("own template list must see the fork: n=%d err=%v", len(rows), err)
 	}
 }

@@ -14,6 +14,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
@@ -31,6 +34,11 @@ const (
 	reportEvidenceTotalRunes   = 12000
 	// reportEvidenceSnippetChars is the disclosure-only citation snippet length.
 	reportEvidenceSnippetChars = 240
+	// reportEvidenceSnapshotMaxBytes is the per-snapshot budget (§7.5: ≤8KB per
+	// excerpt). The snapshot is what the appendix prints and what a reviewer checks,
+	// so it is capped by bytes rather than runes — the point of the cap is storage,
+	// and storage bills bytes.
+	reportEvidenceSnapshotMaxBytes = 8 * 1024
 	// reportQueryMaxRunes bounds the retrieval question built from a section.
 	reportQueryMaxRunes = 512
 	// reportPriorSectionExcerptRunes is how much of a dependency's body is shown
@@ -354,7 +362,15 @@ type reportEvidenceItem struct {
 	EngineDataset string
 	DatasetLabel  string
 	DocumentLabel string
-	Content       string
+	// Content is the **prompt view** of the chunk: what the model is shown, after
+	// `boundReportEvidence` has fitted it into the section's token budget.
+	Content string
+	// SourceContent is the chunk as retrieved, untrimmed by the prompt budget. The
+	// evidence snapshot freezes *this* (§7.5 ≤8KB), because the snapshot's whole job
+	// is to be the copy a reviewer checks later: storing the 1200-rune prompt excerpt
+	// instead would mean an appendix that is silently not the chunk it names, while
+	// `truncated=false` claims nothing was cut.
+	SourceContent string
 	ContentHash   string
 	Score         float64
 }
@@ -404,6 +420,69 @@ func reportCitedIndexes(content string, count int) map[int]bool {
 	return used
 }
 
+// reportCitationMarkerPattern matches the citation numbers the reader sees. The
+// digit cap is load-bearing: the evidence list a section is shown is at most one
+// screen long, so `[2024]` in "(2024 修订)" is a year, not a citation, and
+// treating it as one would flag perfectly good prose.
+var reportCitationMarkerPattern = regexp.MustCompile(`\[(\d{1,2})\]`)
+
+// reportDanglingCitationMarkers lists the citation numbers a section body shows
+// that no evidence item can answer (doc/288 §9.3 / A3c).
+//
+// This is the half of A3c that `reportCitedIndexes` cannot see: building citations
+// only from markers within `1..len(evidence)` is consistent by construction in one
+// direction, and silently blind in the other. A model that writes `[9]` after being
+// handed three chunks produced a **fabricated** reference; leaving it in the body
+// ships a number the appendix can never resolve — the reader has no way to tell it
+// apart from a real one.
+func reportDanglingCitationMarkers(content string, evidenceCount int) []int {
+	set := make(map[int]bool)
+	for _, match := range reportCitationMarkerPattern.FindAllStringSubmatch(content, -1) {
+		index, err := strconv.Atoi(match[1])
+		if err != nil || index < 1 || index <= evidenceCount {
+			continue
+		}
+		set[index] = true
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	indexes := make([]int, 0, len(set))
+	for index := range set {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	return indexes
+}
+
+// reportStripCitationMarkers removes the given markers from a body. It is the
+// companion of `reportDanglingCitationMarkers`: the marker goes, the sentence it
+// was attached to stays, so the delivered text neither hides the claim nor pretends
+// the claim had a source.
+//
+// Only the marker and the single space next to it are removed. Re-flowing the whole
+// body (splitting on spaces, rejoining) would also flatten the indentation markdown
+// uses for lists and code blocks, i.e. it would silently rewrite formatting the model
+// was asked for — a repair must not cost more than the defect.
+func reportStripCitationMarkers(content string, indexes []int) string {
+	if len(indexes) == 0 {
+		return content
+	}
+	stripped := content
+	for _, index := range indexes {
+		marker := fmt.Sprintf("[%d]", index)
+		switch {
+		case strings.Contains(stripped, " "+marker):
+			stripped = strings.ReplaceAll(stripped, " "+marker, "")
+		case strings.Contains(stripped, marker+" "):
+			stripped = strings.ReplaceAll(stripped, marker+" ", "")
+		default:
+			stripped = strings.ReplaceAll(stripped, marker, "")
+		}
+	}
+	return reportNormalizeContent(stripped)
+}
+
 // reportEvidenceStatus derives the section's evidence disclosure (§9.3) from what
 // was retrieved and what was cited. It never reports `conflicting`/`outdated`:
 // those require comparing sources against each other or against the source clock,
@@ -421,10 +500,46 @@ func reportEvidenceStatus(requiresEvidence bool, retrieved int, cited int, minEv
 	if cited == 0 {
 		return model.ReportEvidenceUnsupported
 	}
-	if minEvidence > 0 && cited >= minEvidence {
+	// `min_evidence` is the standard the template declared, and it may legally be
+	// zero (§ the seed templates declare 1, but a validation that only refuses
+	// negatives must not be read as "0 means unset"). Citing at least as many
+	// chunks as the template asked for *is* meeting the standard: answering
+	// `partially_supported` to a section that satisfied `min_evidence=0` would put
+	// it in the reader's "待复核" list for a standard it never missed.
+	if cited >= minEvidence {
 		return model.ReportEvidenceSupported
 	}
 	return model.ReportEvidencePartiallySupported
+}
+
+// reportSectionQualityStatus is the P0 quality gate's whole verdict (§14.2): the
+// section cites evidence where its template requires it, and the citations resolve.
+//
+// It is mechanical on purpose. P0 records the verdict without gating on it (a
+// `needs_review` never blocks publishing), so the only thing this function must not
+// do is *invent* a verdict it did not reach:
+//
+//   - `supported` → `passed`
+//   - `partially_supported` (cited, but fewer chunks than the template's
+//     min_evidence) → `needs_review`: the section did not meet the standard the
+//     template set, and calling that "passed" would hide it
+//   - `unsupported` / `outdated` / `conflicting` → `needs_review` (a disclosure,
+//     never a failure; A3c)
+//   - `not_required` → `not_checked`: the template never asked for evidence, so the
+//     gate has nothing to say. Writing `passed` here is how a metrics trend ends up
+//     claiming a 100% gate pass rate over sections nobody inspected.
+func reportSectionQualityStatus(evidenceStatus string) string {
+	switch evidenceStatus {
+	case model.ReportEvidenceSupported:
+		return model.ReportQualityPassed
+	case model.ReportEvidencePartiallySupported,
+		model.ReportEvidenceUnsupported,
+		model.ReportEvidenceOutdated,
+		model.ReportEvidenceConflicting:
+		return model.ReportQualityNeedsReview
+	default:
+		return model.ReportQualityNotChecked
+	}
 }
 
 // reportModelReply is one decoded model answer.

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 )
@@ -111,5 +112,32 @@ func TestReportRetentionTTLRejectsOutOfRangeValues(t *testing.T) {
 	}
 	if err := validateSettingChange("retention.report_event_days", 3651); err == nil {
 		t.Fatal("report_event_days above the documented maximum must be rejected")
+	}
+}
+
+// TestReportEvidenceClockFollowsTheEffectiveTTL is §7.6 invariant ②: the snapshot
+// clock is written by the runner, not by the janitor, and it must be
+// max(report_days, report_evidence_days). This test goes through the same method the
+// write path calls, so a wiring mistake (using `ReportDays` directly) fails here
+// instead of silently publishing evidence that expires before its own report.
+func TestReportEvidenceClockFollowsTheEffectiveTTL(t *testing.T) {
+	fx := newReportFixture(t, "evidenceclock")
+	run := &reportSectionRun{svc: fx.svc}
+	now := time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name         string
+		report, evid int
+		wantDays     int
+	}{
+		{"evidence kept longer than the report", 90, 180, 180},
+		{"shorter evidence request is widened", 120, 60, 120},
+		{"equal clocks", 30, 30, 30},
+		{"unset falls back to the documented default", 0, 0, reportDefaultTTLDays},
+	}
+	for _, c := range cases {
+		fx.svc.SetRetentionPolicy(config.Retention{Enabled: true, ReportDays: c.report, ReportEvidenceDays: c.evid})
+		if got, want := run.evidenceExpiry(now), now.AddDate(0, 0, c.wantDays); !got.Equal(want) {
+			t.Fatalf("%s: evidence expiry = %s, want %s", c.name, got, want)
+		}
 	}
 }

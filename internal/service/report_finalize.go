@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -90,6 +88,34 @@ type reportFinalizePayload struct {
 	SliceSeq     int    `json:"slice_seq"`
 }
 
+// reportGapReason is the disclosure wording of one section that ended without
+// content (doc/288 §7.8: `failed | skipped | budget_exhausted`).
+//
+// The row's own `gap_reason` is authoritative. The fallback exists for rows written
+// before the column was introduced and reproduces the old heuristic exactly, so a
+// pre-existing run keeps the gap list it was published with.
+func reportGapReasonOf(section model.ReportSection) string {
+	switch section.GapReason {
+	case model.ReportGapFailed, model.ReportGapSkipped, model.ReportGapBudgetExhausted:
+		return section.GapReason
+	}
+	if section.Status == model.ReportSectionSkipped && section.QualityStatus == model.ReportQualityFailed {
+		return model.ReportGapBudgetExhausted
+	}
+	return model.ReportGapFailed
+}
+
+// reportGapErrorCode is the only code a gap may carry: budget exhaustion (§8.7
+// 44111). Every other reason is a business outcome with no API error behind it, and
+// lending it a code would make one code mean two things.
+func reportGapErrorCode(reason string) string {
+	if reason == model.ReportGapBudgetExhausted {
+		return strconv.Itoa(codeReportBudgetExhausted)
+	}
+	return ""
+}
+
+// reportGapEntry is one disclosed hole in a published revision.
 // reportGapEntry is one row of `rgx_report_revision.gap_json` — the disclosure a
 // `partial` report has to carry (§7.10: 缺失节 key + 原因 + 影响范围, §12: 错误码).
 // It is persisted rather than derived at read time, so the banner, the DOCX
@@ -119,8 +145,21 @@ type reportQualityMetrics struct {
 	EvidenceAvailability   float64 `json:"evidence_availability"`
 	UnsupportedRatio       float64 `json:"unsupported_ratio"`
 	AttributionConsistency float64 `json:"attribution_consistency"`
-	QualityGatePassRate    float64 `json:"quality_gate_pass_rate"`
-	QualityNotChecked      int     `json:"quality_not_checked"`
+	// QualityGatePassRate is `passed / judged`, and `judged` is the number of
+	// succeeded sections the gate actually reached a verdict on. It is a pointer so
+	// "never judged" stores `null` instead of 0.0: a stored 0.0 next to
+	// `quality_flag: ok` reads as "every section failed the gate", which is the
+	// opposite of what happened. Live full10 exposed exactly that pair
+	// (`quality_gate_pass_rate: 0`, `quality_not_checked: 4`, `flag: ok`) — three
+	// numbers telling three different stories about one revision.
+	QualityGatePassRate *float64 `json:"quality_gate_pass_rate"`
+	// QualityJudged / QualityNeedsReview / QualityNotChecked are the counts behind
+	// the ratio, stored so a trend line can say "3 of 5 judged, 2 flagged" without
+	// re-reading every section row.
+	QualityJudged      int `json:"quality_judged"`
+	QualityPassed      int `json:"quality_passed"`
+	QualityNeedsReview int `json:"quality_needs_review"`
+	QualityNotChecked  int `json:"quality_not_checked"`
 	// QualityFlag is the closed set {ok, degraded} (K37).
 	QualityFlag string `json:"quality_flag"`
 	// EvidenceSections is `E` in §14.1 — the number of declared sections whose
@@ -145,7 +184,7 @@ func (s *Service) BeginReportFinalization(
 		return false, nil
 	}
 	now := time.Now().UTC()
-	eventExpiry := reportExpiry(now, s.currentRetentionPolicy().ReportEventDays, reportDefaultEventDays)
+	eventExpiry := reportExpiry(now, s.ReportRetentionFor(ctx, tenantID).ReportEventDays, reportDefaultEventDays)
 	sections, err := s.Store.ListReportSections(ctx, tenantID, job.RevisionID)
 	if err != nil {
 		return false, err
@@ -221,15 +260,22 @@ func (s *Service) FinalizeReportJob(
 			return "", err
 		}
 		if runtimeJob == nil {
-			// The runtime row is gone while the business job still points at it.
-			// Retrying is the honest answer: finalizing on a slice we cannot inspect
-			// would be guessing. The failure stays visible in the outbox projection.
-			return "", fmt.Errorf("report finalize: runtime job %s not found", runtimeJobID)
-		}
-		if !reportRuntimeSettled(runtimeJob.Status) {
+			// The runtime row is gone while the business job still points at it. A
+			// `rgx_job` row is only purged once it is terminal (`PurgeTerminalJobsBefore`),
+			// so the slice it described cannot start running again: nothing is left that
+			// could write a terminal state behind our back, and gate 2's window is
+			// vacuous. Refusing here instead would make `finalizing` a permanent dead
+			// end — the outbox row retries forever (there is no attempt ceiling) and no
+			// terminal write ever lands (A46 "拒绝静默失效"). The unwritten sections are
+			// still disclosed honestly: with an empty runtime status the derivation
+			// treats them as unreachable gaps rather than as work in flight.
+			logger.Warn("report finalize: runtime job row is gone, treating its slice as settled",
+				"report_job_id", jobID, "runtime_job_id", runtimeJobID)
+		} else if !reportRuntimeSettled(runtimeJob.Status) {
 			return ReportFinalizeDeferred, nil
+		} else {
+			runtimeStatus = runtimeJob.Status
 		}
-		runtimeStatus = runtimeJob.Status
 	}
 	revision, err := s.Store.GetReportRevisionByID(ctx, tenantID, job.RevisionID)
 	if err != nil {
@@ -243,6 +289,10 @@ func (s *Service) FinalizeReportJob(
 	if err != nil {
 		return "", err
 	}
+	sections, err = s.closeUnwritableReportSections(ctx, job, revision, sections, now)
+	if err != nil {
+		return "", err
+	}
 	templateKeys, evidenceKeys, err := s.reportPinnedTemplateSections(ctx, tenantID, revision)
 	if err != nil {
 		return "", err
@@ -251,14 +301,14 @@ func (s *Service) FinalizeReportJob(
 		Job: job, RuntimeStatus: runtimeStatus, Sections: sections,
 		TemplateKeys: templateKeys, EvidenceKeys: evidenceKeys,
 	})
-	if decision.Deferred {
-		// Gate 3: the slice claims success but sections are still `pending`/
-		// `writing`. Finalizing now would either invent `failed` for work in
-		// flight or publish holes; waiting is the only answer that does neither.
-		logger.Warn("report finalize deferred: sections still in progress",
+	if decision.Pending > 0 || decision.Writing > 0 {
+		// Unreachable after `closeUnwritableReportSections` unless a concurrent
+		// write moved under us. The derivation still discloses them as gaps, so
+		// the report terminates with a hole named instead of a job that never
+		// ends — the live hang this replaced deferred every minute forever.
+		logger.Warn("report finalize: sections had no writer",
 			"report_job_id", jobID, "runtime_job_id", runtimeJobID,
 			"pending", decision.Pending, "writing", decision.Writing)
-		return ReportFinalizeDeferred, nil
 	}
 	gapJSON, err := json.Marshal(decision.Gap)
 	if err != nil {
@@ -269,7 +319,7 @@ func (s *Service) FinalizeReportJob(
 		return "", err
 	}
 	event, err := reportTerminalEvent(tenantID, job, decision, string(gapJSON), now,
-		reportExpiry(now, s.currentRetentionPolicy().ReportEventDays, reportDefaultEventDays))
+		reportExpiry(now, s.ReportRetentionFor(ctx, tenantID).ReportEventDays, reportDefaultEventDays))
 	if err != nil {
 		return "", err
 	}
@@ -326,11 +376,11 @@ type reportFinalDecision struct {
 	// CompletedOrds is `job.cancelled`'s disclosure: a cancel that keeps finished
 	// work must say which sections it kept (§8.8).
 	CompletedOrds []int
-	// Deferred is set when a gate inside the derivation fails; `Pending`/`Writing`
-	// say why, so the caller can log it instead of guessing.
-	Deferred bool
-	Pending  int
-	Writing  int
+	// Pending/Writing are the sections that still had no outcome when the
+	// decision was made. They are disclosed as gaps, never as "work in flight":
+	// `closeUnwritableReportSections` has already proved no slice can write them.
+	Pending int
+	Writing int
 }
 
 // deriveReportFinalDecision implements §7.10's four-row publish matrix in the
@@ -382,49 +432,44 @@ func deriveReportFinalDecision(facts reportFinalizeFacts) reportFinalDecision {
 	}
 	decision.Metrics = deriveReportQualityMetrics(facts, present, len(decision.MissingKeys))
 
-	// A slice that reports success while a section is still `pending`/`writing`
-	// never wrote it and never will: deferring is the only answer that neither
-	// invents an outcome nor publishes a hole. A slice that reports failure is
-	// different — the unwritten sections are simply unreachable, and `skipped`/
-	// `failed` wording describes what happened.
-	//
-	// A cancel request is the exception: the slice stopped *because* it was told
-	// to, so the unwritten sections are not "still in progress", they are
-	// unreachable. Deferring there would loop forever — every retry sees the same
-	// pending rows and the same finished slice.
-	if (pending > 0 || writing > 0) && facts.RuntimeStatus == model.JobStatusSucceeded &&
-		facts.Job.CancelRequestedAt == nil {
-		decision.Deferred = true
-		return decision
-	}
+	// A `pending`/`writing` row that survives the closure above is still disclosed
+	// as a gap below: the report reaches a terminal state with the hole named
+	// instead of waiting for a writer that no longer exists (see
+	// `closeUnwritableReportSections`).
 
 	// Every non-succeeded section becomes a disclosed gap. A gap on an existing
 	// row is what makes `partial` publishable instead of a silent omission.
+	//
+	// The reason is read from the row (`gap_reason`), not inferred from
+	// `quality_status`: the budget bail-out and a model failure both mark the row
+	// `quality_status=failed`, and telling a reader "budget exhausted" when the
+	// real cause was a failed dependency would send them to buy tokens instead of
+	// fixing the source (§8.6 / A39 disclosure). Rows written before the column
+	// existed fall back to the old heuristic.
 	for _, section := range facts.Sections {
 		switch section.Status {
 		case model.ReportSectionFailed:
+			reason := reportGapReasonOf(section)
 			decision.Gap = append(decision.Gap, reportGapEntry{
 				SectionKey: section.SectionKey, Ord: section.Ord, Title: section.Title,
-				Reason: model.ReportGapFailed, Impact: model.ReportGapImpactSectionMissing,
+				Reason: reason, ErrorCode: reportGapErrorCode(reason),
+				Impact: model.ReportGapImpactSectionMissing,
 			})
 		case model.ReportSectionSkipped:
-			reason, code := model.ReportGapSkipped, ""
-			if section.QualityStatus == model.ReportQualityFailed {
-				// The budget bail-out marks the row `skipped` + `quality_status=failed`
-				// (the runner has no other column to record "why"), and §7.10 names
-				// `budget_exhausted` for exactly that case.
-				reason, code = model.ReportGapBudgetExhausted, strconv.Itoa(codeReportBudgetExhausted)
-			}
+			reason := reportGapReasonOf(section)
 			decision.Gap = append(decision.Gap, reportGapEntry{
 				SectionKey: section.SectionKey, Ord: section.Ord, Title: section.Title,
-				Reason: reason, ErrorCode: code, Impact: model.ReportGapImpactSectionMissing,
+				Reason: reason, ErrorCode: reportGapErrorCode(reason),
+				Impact: model.ReportGapImpactSectionMissing,
 			})
 		case model.ReportSectionPending, model.ReportSectionWriting:
 			// Only reachable when the slice did not succeed: the runner died mid
-			// section, and the honest description is "not written".
+			// section (or its row never ran), and the honest description is "not
+			// written".
 			decision.Gap = append(decision.Gap, reportGapEntry{
 				SectionKey: section.SectionKey, Ord: section.Ord, Title: section.Title,
-				Reason: model.ReportGapFailed, Impact: model.ReportGapImpactSectionMissing,
+				Reason: model.ReportGapFailed, ErrorCode: reportGapErrorCode(model.ReportGapFailed),
+				Impact: model.ReportGapImpactSectionMissing,
 			})
 		}
 	}
@@ -451,18 +496,37 @@ func deriveReportFinalDecision(facts reportFinalizeFacts) reportFinalDecision {
 		return decision
 	}
 	// Priority 3: the run produced nothing.
+	//
+	// No job-level code: 0 succeeded sections means every section ended in a gap,
+	// and a gap's cause is a model/retrieval failure — not an invalid outline. The
+	// only code this branch used to stamp was 44105, whose single meaning is
+	// "outline / request payload invalid" (doc/288 §8.7); a client reading it would
+	// look for a broken template while the real cause sits in the section rows.
+	// The honest disclosure is the terminal status plus each gap's own `reason`
+	// (the same discipline priority 4 follows for `partial`), and the per-section
+	// cause already travelled on each `section.failed` event.
 	if succeeded == 0 {
 		decision.Status = model.ReportJobFailed
-		decision.ErrorCode = strconv.Itoa(codeReportOutlineInvalid)
 		return decision
 	}
 	// Priority 4: structure fine, content has holes → publishable `partial` with a
 	// mandatory disclosure.
+	//
+	// The job-level `error_code` only names a *budget* exhaustion, and only when a
+	// gap really is one: §8.7 ⑥ keeps 44111 out of the worker (there is no HTTP
+	// response to attach it to), and the honest disclosure of "some sections
+	// failed" is the status `partial` plus each gap's own `reason`. Stamping 44111
+	// on every partial would tell a user whose model calls failed to go buy tokens.
 	if !contentComplete {
 		decision.Status = model.ReportJobPartial
 		decision.Publish = true
 		decision.Completeness = model.ReportCompletenessPartial
-		decision.ErrorCode = strconv.Itoa(codeReportBudgetExhausted)
+		for _, gap := range decision.Gap {
+			if gap.Reason == model.ReportGapBudgetExhausted {
+				decision.ErrorCode = strconv.Itoa(codeReportBudgetExhausted)
+				break
+			}
+		}
 		return decision
 	}
 	decision.Status = model.ReportJobSucceeded
@@ -513,12 +577,19 @@ func deriveReportQualityMetrics(
 		if section.Status != model.ReportSectionSucceeded {
 			continue
 		}
+		// Only sections the gate reached a verdict on belong in the denominator.
+		// Counting `not_checked` as a failed check is what made the stored ratio
+		// always 0.0 while the flag said `ok`.
+		if section.QualityStatus == model.ReportQualityNotChecked {
+			metrics.QualityNotChecked++
+			continue
+		}
 		gateDenominator++
 		switch section.QualityStatus {
 		case model.ReportQualityPassed:
 			gatePassed++
-		case model.ReportQualityNotChecked:
-			metrics.QualityNotChecked++
+		case model.ReportQualityNeedsReview:
+			metrics.QualityNeedsReview++
 		}
 		if section.CitationCount >= 1 {
 			attributionDenominator++
@@ -540,9 +611,11 @@ func deriveReportQualityMetrics(
 	if attributionDenominator > 0 {
 		metrics.AttributionConsistency = roundRatio(float64(attributionOK) / float64(attributionDenominator))
 	}
-	metrics.QualityGatePassRate = 1
+	metrics.QualityJudged = gateDenominator
+	metrics.QualityPassed = gatePassed
 	if gateDenominator > 0 {
-		metrics.QualityGatePassRate = roundRatio(float64(gatePassed) / float64(gateDenominator))
+		rate := roundRatio(float64(gatePassed) / float64(gateDenominator))
+		metrics.QualityGatePassRate = &rate
 	}
 	// §14.2: only the citation-coverage gate degrades the revision flag.
 	if metrics.CitationCoverage < reportCitationCoverageFloor {
@@ -569,6 +642,69 @@ func reportOrdBuckets(sections []model.ReportSection) (completed, failed []int) 
 		}
 	}
 	return completed, failed
+}
+
+// closeUnwritableReportSections ends the attempts no slice will ever finish.
+//
+// It runs only after gate 2, which proved the owning runtime slice has settled —
+// and a settled slice cannot call the model again. A row left `pending`/`writing`
+// therefore describes an interrupted attempt, not work in flight. Leaving it alone
+// made `finalizing` a state with no exit: every retry saw the same `writing` row,
+// deferred, and no terminal write ever landed (the reconciler re-ran that once a
+// minute, forever). The rows are closed without `section.failed` events: this is
+// the bookkeeping of a dead attempt, not a second failure for the reader to read.
+func (s *Service) closeUnwritableReportSections(
+	ctx context.Context, job *model.ReportJob, revision *model.ReportRevision,
+	sections []model.ReportSection, now time.Time,
+) ([]model.ReportSection, error) {
+	started := make([]string, 0, len(sections))
+	closed := false
+	for _, section := range sections {
+		switch section.Status {
+		case model.ReportSectionPending:
+			started = append(started, section.ID)
+		case model.ReportSectionWriting:
+			applied, err := s.Store.CloseReportSection(ctx, repository.ReportSectionClose{
+				TenantID: job.TenantID, JobID: job.ID, RevisionID: revision.ID,
+				SectionID: section.ID, Attempt: section.Attempt,
+				Status: model.ReportSectionFailed, QualityStatus: model.ReportQualityFailed,
+				EvidenceStatus: model.ReportEvidenceUnsupported, Now: now,
+				Stage: model.ReportStageAssembling,
+			})
+			if err != nil {
+				return nil, err
+			}
+			if applied {
+				closed = true
+				logger.Warn("report finalize: closed an interrupted section",
+					"report_job_id", job.ID, "section_key", section.SectionKey,
+					"ord", section.Ord, "attempt", section.Attempt)
+			}
+		}
+	}
+	if len(started) > 0 {
+		applied, err := s.Store.SkipReportSections(ctx, repository.ReportSectionSkip{
+			TenantID: job.TenantID, JobID: job.ID, RevisionID: revision.ID,
+			// `not_checked`, not `failed`: these sections never ran, so the quality
+			// gate never judged them. The gap (`skipped`) is what discloses them.
+			SectionIDs: started, QualityStatus: model.ReportQualityNotChecked,
+			EvidenceStatus: model.ReportEvidenceNotRequired,
+			GapReason:      model.ReportGapSkipped, Now: now,
+			Stage: model.ReportStageAssembling,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if applied > 0 {
+			closed = true
+			logger.Warn("report finalize: closed a section that never started",
+				"report_job_id", job.ID, "sections", applied)
+		}
+	}
+	if !closed {
+		return sections, nil
+	}
+	return s.Store.ListReportSections(ctx, job.TenantID, revision.ID)
 }
 
 // reportRuntimeSettled reports whether a runtime job has stopped running. A
@@ -659,24 +795,6 @@ func (s *Service) reportPinnedTemplateSections(
 		evidence[section.Key] = section.RequiresEvidence
 	}
 	return keys, evidence, nil
-}
-
-// RecordReportExecutionSnapshot freezes the generation conditions of a revision
-// exactly once and reports whether this call wrote it (§7.7 / A8 可复现).
-//
-// The payload is supplied by the caller (the outline step owns its schema); this
-// function owns only the invariant — canonical JSON in, sha256 of that JSON out,
-// never overwritten. `applied=false` is a normal outcome for a retried step.
-func (s *Service) RecordReportExecutionSnapshot(
-	ctx context.Context, tenantID, revisionID string, snapshot interface{},
-) (bool, error) {
-	encoded, err := json.Marshal(snapshot)
-	if err != nil {
-		return false, err
-	}
-	sum := sha256.Sum256(encoded)
-	return s.Store.RecordReportExecutionSnapshot(
-		ctx, tenantID, revisionID, string(encoded), hex.EncodeToString(sum[:]))
 }
 
 // reportOutboxHandler consumes one durable internal delivery event.
@@ -816,18 +934,53 @@ func (s *Service) ProcessReportFinalizeReconciler(ctx context.Context, limit int
 	if err != nil {
 		failures = append(failures, err)
 	}
+	armed, err := s.armUnarmedReportJobs(ctx, staleBefore, limit)
+	if err != nil {
+		failures = append(failures, err)
+	}
 	if len(failures) > 0 {
 		// Return the first failure so the worker job records a visible error while
 		// the remaining candidates still got their chance above.
 		return failures[0]
 	}
-	if len(candidates) > 0 || converged > 0 || skipped > 0 || rebuilt > 0 || charges.Orphaned > 0 {
+	if len(candidates) > 0 || converged > 0 || skipped > 0 || rebuilt > 0 ||
+		charges.Orphaned > 0 || armed > 0 {
 		logger.Info("report finalize reconcile swept",
 			"finalizing_candidates", len(candidates), "applied", applied, "deferred", deferred,
 			"converged", converged, "still_live", skipped, "rebuilt_attempts", rebuilt,
-			"orphaned_charges", charges.Orphaned)
+			"orphaned_charges", charges.Orphaned, "armed_jobs", armed)
 	}
 	return nil
+}
+
+// armUnarmedReportJobs dispatches the first slice of jobs that were committed but
+// never armed (the crash between the aggregate transaction and the dispatch).
+//
+// The request path already arms synchronously (`armReportJob`), so this is the
+// safety net, not the normal path: a grace window keeps it from racing a request
+// that is about to arm its own job. Without it, the failure mode is silent — the
+// report is visible, the job is `queued`, and nothing ever runs.
+func (s *Service) armUnarmedReportJobs(ctx context.Context, updatedBefore time.Time, limit int) (int, error) {
+	candidates, err := s.Store.ListUnarmedQueuedReportJobs(ctx, updatedBefore, limit)
+	if err != nil {
+		return 0, err
+	}
+	armed := 0
+	var failures []error
+	for _, candidate := range candidates {
+		_, applied, err := s.DispatchReportJob(ctx, candidate.TenantID, candidate.JobID)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("arm report job %s: %w", candidate.JobID, err))
+			continue
+		}
+		if applied {
+			armed++
+		}
+	}
+	if len(failures) > 0 {
+		return armed, failures[0]
+	}
+	return armed, nil
 }
 
 // convergeStaleActiveReportJobs asks for a terminal write on active jobs whose

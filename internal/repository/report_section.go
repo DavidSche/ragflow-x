@@ -344,7 +344,12 @@ func (s *store) CommitReportSection(ctx context.Context, commit ReportSectionCom
 		if err := tx.Model(&model.ReportJob{}).
 			Where("tenant_id = ? AND id = ?", commit.TenantID, commit.JobID).
 			Updates(map[string]interface{}{
-				"progress_done":      gorm.Expr("MIN(progress_total, progress_done + 1)"),
+				// `MIN(a, b)` is the *scalar* two-argument form, which SQLite has and
+				// PostgreSQL does not: there the aggregate of that name takes one
+				// argument, so `MIN(bigint, bigint)` fails with SQLSTATE 42883 and the
+				// section commit transaction aborts. A CASE is the same arithmetic in
+				// both dialects. (Live defect, doc/44 §6.)
+				"progress_done":      gorm.Expr("CASE WHEN progress_done + 1 > progress_total THEN progress_total ELSE progress_done + 1 END"),
 				"stage":              commit.Stage,
 				"last_checkpoint_at": commit.Now,
 				"updated_at":         commit.Now,
@@ -424,6 +429,12 @@ type ReportSectionClose struct {
 	Now            time.Time
 	Stage          string
 	Event          *model.ReportJobEvent
+	// Audit is the `report.section.failed` ledger row (doc/288 §11.3). It rides
+	// this transaction so "the section ended failed" and "someone may read why"
+	// cannot disagree: an audit written afterwards is skipped whenever
+	// this close loses its attempt CAS or the process dies between the two
+	// writes, and the report would then show a failed section nobody can trace.
+	Audit *model.AuditLog
 }
 
 // CloseReportSection fails or skips a section that is currently `writing`.
@@ -449,7 +460,10 @@ func (s *store) CloseReportSection(ctx context.Context, closeReport ReportSectio
 				"status":          closeReport.Status,
 				"quality_status":  closeReport.QualityStatus,
 				"evidence_status": closeReport.EvidenceStatus,
-				"finished_at":     closeReport.Now,
+				// A `failed` section's reason is `failed`; a direct close is never a
+				// skip (SkipReportSections owns that word and its own reason).
+				"gap_reason":  model.ReportGapFailed,
+				"finished_at": closeReport.Now,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -462,6 +476,11 @@ func (s *store) CloseReportSection(ctx context.Context, closeReport ReportSectio
 		}
 		if closeReport.Event != nil {
 			if _, err := appendReportEventInTx(tx, closeReport.Event); err != nil {
+				return err
+			}
+		}
+		if closeReport.Audit != nil {
+			if err := appendAuditInTx(tx, closeReport.Audit); err != nil {
 				return err
 			}
 		}
@@ -486,9 +505,12 @@ type ReportSectionSkip struct {
 	SectionIDs     []string
 	QualityStatus  string
 	EvidenceStatus string
-	Now            time.Time
-	Stage          string
-	Events         []*model.ReportJobEvent
+	// GapReason is the runner's own wording (`skipped` or `budget_exhausted`). It is
+	// stored on the row so finalize does not have to guess it from the quality flag.
+	GapReason string
+	Now       time.Time
+	Stage     string
+	Events    []*model.ReportJobEvent
 }
 
 // SkipReportSections writes the skip in one transaction with its events, so a
@@ -507,6 +529,7 @@ func (s *store) SkipReportSections(ctx context.Context, skip ReportSectionSkip) 
 				"status":          model.ReportSectionSkipped,
 				"quality_status":  skip.QualityStatus,
 				"evidence_status": skip.EvidenceStatus,
+				"gap_reason":      skip.GapReason,
 				"finished_at":     skip.Now,
 			})
 		if result.Error != nil {

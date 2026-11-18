@@ -146,7 +146,9 @@ func (s *Service) CreateReport(
 	}
 
 	now := time.Now().UTC()
-	policy := s.currentRetentionPolicy()
+	// The clocks are resolved per tenant (T20b): a tenant override wins over the
+	// system value, and the evidence `max` rule is re-applied after the overlay.
+	policy := s.ReportRetentionFor(ctx, tenantID)
 	reportClock := reportExpiry(now, policy.ReportDays, reportDefaultTTLDays)
 	eventClock := reportExpiry(now, policy.ReportEventDays, reportDefaultEventDays)
 
@@ -241,6 +243,16 @@ func (s *Service) CreateReport(
 		return nil, err
 	}
 
+	// Arm the first execution slice. A created report that nobody dispatches is a
+	// job that stays `queued` forever: the aggregate would be visible, the UI would
+	// poll a run that never starts, and no error would ever say so. The dispatch is
+	// idempotent (`applied=false` when someone else armed it first), so the retry
+	// path below can safely repeat it after a crash between commit and dispatch.
+	job, err = s.armReportJob(ctx, tenantID, job)
+	if err != nil {
+		return nil, err
+	}
+
 	detail, err := json.Marshal(map[string]interface{}{
 		"report_id": reportID, "job_id": jobID, "revision_id": revisionID,
 		"template_key": templateRow.TemplateKey, "template_version": templateRow.Version,
@@ -276,14 +288,56 @@ func (s *Service) replayReportCreation(ctx context.Context, tenantID string, job
 		// "it no longer exists": §8.7 forbids distinguishing the two.
 		return nil, httperr.New(404, codeReportAccessDenied, "report is no longer available")
 	}
-	revision, err := s.Store.GetReportRevision(ctx, tenantID, report.ID, 0)
+	// The replay answers with *this job's* revision, which is what the original 202
+	// described. Reading the newest row would hand back a later regenerate's
+	// revision, and the caller would take it for the run it just replayed.
+	revision, err := s.Store.GetReportRevisionByID(ctx, tenantID, job.RevisionID)
 	if err != nil {
 		return nil, err
 	}
 	if revision == nil {
+		// No revision id on the row (an older job): the report's current revision is
+		// the closest honest answer.
+		revision, err = s.reportCurrentRevision(ctx, tenantID, report)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if revision == nil {
 		return nil, httperr.New(404, codeReportRevisionNotFound, "report revision is no longer available")
 	}
+	// Same-key replay is also the recovery path for a process that died between
+	// committing the aggregate and arming the first slice: arming here is a no-op
+	// for a job that already started, and heals one that did not.
+	job, err = s.armReportJob(ctx, tenantID, job)
+	if err != nil {
+		return nil, err
+	}
 	return &CreateReportResult{Report: report, Revision: revision, Job: job, Created: false}, nil
+}
+
+// armReportJob dispatches the job's first slice and returns the job row as it now
+// stands, so the 202 body describes the armed run instead of a pre-dispatch copy.
+//
+// A dispatch error is returned rather than logged: the caller would otherwise
+// answer "202 accepted" for a report that will never run. The aggregate is already
+// committed, and the same idempotency key replays into the dispatch above, so the
+// retry semantics stay intact.
+func (s *Service) armReportJob(ctx context.Context, tenantID string, job *model.ReportJob) (*model.ReportJob, error) {
+	if job == nil {
+		return nil, nil
+	}
+	if _, _, err := s.DispatchReportJob(ctx, tenantID, job.ID); err != nil {
+		return nil, err
+	}
+	fresh, err := s.Store.GetReportJob(ctx, tenantID, job.ID)
+	if err != nil {
+		return nil, err
+	}
+	if fresh == nil {
+		return job, nil
+	}
+	return fresh, nil
 }
 
 // normalizeReportIdempotencyKey validates the header value. The error is 44114 in
@@ -505,10 +559,81 @@ func reportExpiry(now time.Time, configuredDays, fallbackDays int) time.Time {
 	return now.AddDate(0, 0, days)
 }
 
+// RestoreReport re-opens a soft-deleted report inside its recovery window (A47).
+//
+// The permission is `delete:own`, the same action that deleted it: whoever may close
+// a report may re-open it, and re-opening is not a read permission someone could hold
+// separately. A `force=true` delete has a zero-length window, so it refuses here with
+// 44104 rather than resurrecting a row the caller explicitly asked to lose.
+//
+// The answer is the report detail view because that is what the client needs next: a
+// `{"restored":true}` would force every caller to re-read the report it just got
+// back, and the window between the two reads is exactly when the janitor could take
+// it away again.
+func (s *Service) RestoreReport(ctx context.Context, actorID, tenantID, reportID string) (*ReportDetail, error) {
+	if err := s.AuthorizeObject(ctx, actorID, "delete:own", "report", tenantID, ""); err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	// The row is read before the compare-and-swap only to tell the three refusals
+	// apart; whether the restore is allowed is decided by the UPDATE in the store.
+	deleted, err := s.Store.GetReportIncludingDeleted(ctx, tenantID, reportID)
+	if err != nil {
+		return nil, err
+	}
+	if deleted == nil {
+		return nil, errReportNotFound()
+	}
+	if deleted.OwnerUserID != actorID {
+		ac, err := s.authz(ctx, actorID)
+		if err != nil {
+			return nil, err
+		}
+		if !s.canAccessAcrossTenant(ac, "manage") {
+			return nil, errReportNotFound()
+		}
+	}
+	if deleted.DeletedAt == nil {
+		return nil, errReportInvalidTransition("report is not deleted")
+	}
+	if !deleted.ExpiresAt.IsZero() && !deleted.ExpiresAt.After(now) {
+		// Retention already ended. Recycling it would produce a report the next
+		// janitor pass deletes again, which reads to the user as "my restore was
+		// silently undone".
+		return nil, errReportInvalidTransition("report retention has ended")
+	}
+	restored, err := s.Store.RestoreReport(ctx, tenantID, reportID, now)
+	if err != nil {
+		return nil, err
+	}
+	if !restored {
+		// Lost the race with the janitor (or with a later delete): the window closed
+		// between the read and the write.
+		return nil, errReportInvalidTransition("report recovery window has closed")
+	}
+	if err := s.RecordAudit(ctx, &model.AuditLog{
+		TenantID: tenantID, UserID: actorID, Action: "report.restored",
+		Resource: "report", ResourceID: reportID, Result: "SUCCESS",
+		DetailJSON: `{"cleanup_hold_until":null}`, At: now,
+	}); err != nil {
+		// The restore already happened. Reporting it as a failure would make the user
+		// retry and be told "report is not deleted", so the audit error is logged and
+		// the restored row — the thing the caller asked for — is still returned.
+		logger.Warn("report restore audit failed", "report_id", reportID, "error", err)
+	}
+	return s.GetReport(ctx, actorID, tenantID, reportID)
+}
+
 // SoftDeleteReport closes a report and opens its recovery window. The recovery
 // window is a grace period on a deleted row, never a TTL extension: `expires_at`
 // stays exactly as it was frozen at creation (doc/288 §7.6).
-func (s *Service) SoftDeleteReport(ctx context.Context, actorID, tenantID, reportID string, reason string) error {
+//
+// `force` collapses the recovery window to zero (A47): the report disappears now and
+// can no longer be restored, so the only thing left is the purge at its original
+// `expires_at`. It is a stronger action than "delete my own report" and therefore
+// needs `manage:report` — a caller who may only delete their own rows must not be
+// able to shorten somebody else's recovery window either.
+func (s *Service) SoftDeleteReport(ctx context.Context, actorID, tenantID, reportID string, reason string, force bool) error {
 	// `delete:own` is the route-level action too: the RBAC answer is "you may
 	// delete rows of your own", and the row check below decides whether this row
 	// is one of them.
@@ -534,12 +659,25 @@ func (s *Service) SoftDeleteReport(ctx context.Context, actorID, tenantID, repor
 			return errReportNotFound()
 		}
 	}
+	if force {
+		if err := s.AuthorizeObject(ctx, actorID, "manage", "report", tenantID, ""); err != nil {
+			return err
+		}
+	}
 	now := time.Now().UTC()
-	holdDays := s.currentRetentionPolicy().ReportCleanupHoldDays
+	// The recovery window follows the tenant's overlay too (T20b). It is a policy on
+	// the *delete*, not on the row: `expires_at` is untouched either way (§7.6).
+	holdDays := s.ReportRetentionFor(ctx, tenantID).ReportCleanupHoldDays
 	if holdDays < 0 {
 		holdDays = 0
 	}
 	holdUntil := now.AddDate(0, 0, holdDays)
+	if force {
+		// Zero-length window: `RestoreReport` requires `cleanup_hold_until >= now`,
+		// so this is the one write that closes the door while keeping the row for
+		// the purge audit trail.
+		holdUntil = now
+	}
 	if err := s.Store.SoftDeleteReport(ctx, tenantID, reportID, now, holdUntil); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// Someone deleted it between the read and the write. Same answer as "no
@@ -550,6 +688,7 @@ func (s *Service) SoftDeleteReport(ctx context.Context, actorID, tenantID, repor
 	}
 	detail, err := json.Marshal(map[string]interface{}{
 		"reason": strings.TrimSpace(reason), "cleanup_hold_until": holdUntil,
+		"force": force,
 	})
 	if err != nil {
 		return err

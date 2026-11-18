@@ -91,9 +91,12 @@ func TestRegenerateReportMintsNextRevisionFromPublishedBase(t *testing.T) {
 	}
 
 	job := result.Job
-	if job.JobKind != model.ReportJobKindGenerate || job.Status != model.ReportJobQueued ||
+	if job.JobKind != model.ReportJobKindGenerate || job.Status != model.ReportJobRunning ||
 		job.Stage != model.ReportStageOutlining {
-		t.Fatalf("regenerated job must be queued/outlining generate: %+v", job)
+		t.Fatalf("regenerated job must be armed (running/outlining) generate: %+v", job)
+	}
+	if job.CurrentRuntimeJobID == "" {
+		t.Fatal("regeneration must arm its own slice, not leave a queued job behind")
 	}
 	if job.ReportID != baseReport.ID || job.RevisionID != result.Revision.ID {
 		t.Fatalf("job must bind the new revision: %+v", job)

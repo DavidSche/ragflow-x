@@ -131,7 +131,12 @@ var endpointRegistry = []EndpointRecord{
 	// extra_body; the top-level form is source-aligned and pending live-drill
 	// confirmation. The endpoint itself is documented; the field usage is the
 	// only undocumented aspect.
-	{Method: "POST", Path: "/chat/completions", Stability: EndpointDocumented, Evidence: "docs §Converse with chat assistant (legacy chats/{id}/completions deprecated)", ClientMethods: []string{"ChatCompletion", "StreamChatCompletion"}, UsedByCapability: []string{"chat", "stream", "references"}, MaxVerified: "v1.0.0"},
+	// ChatToModel rides the same route with `model` instead of `chat_id`: RAGFlow
+	// v1.0.0 has no per-model chat endpoint (the old
+	// `POST /providers/{p}/instances/{i}/models/{m}` answers 404 on the live
+	// engine, probed 2026-11-18), and this is the only route that answers a bare
+	// prompt. See HTTPClient.ChatToModel for the live evidence.
+	{Method: "POST", Path: "/chat/completions", Stability: EndpointDocumented, Evidence: "docs §Converse with chat assistant (legacy chats/{id}/completions deprecated); also the direct-model form `{model,messages}` used by ChatToModel — live-verified 2026-11-18 on 4.151: 200 with `{code:0,data:{answer}}`, while every `/providers/{p}/instances/{i}/models/{m}` POST answered 404", ClientMethods: []string{"ChatCompletion", "StreamChatCompletion", "ChatToModel"}, UsedByCapability: []string{"chat", "stream", "references"}, MaxVerified: "v1.0.0"},
 
 	// ── Temporary upload (documented via deprecated alias table) ──
 	{Method: "POST", Path: "/documents/upload", Stability: EndpointDocumented, Evidence: "docs deprecated table: POST /v1/document/upload_info -> POST /api/v1/documents/upload", ClientMethods: []string{"UploadChatFile"}, UsedByCapability: []string{"chat"}, MaxVerified: "v1.0.0"},
@@ -200,7 +205,7 @@ var endpointRegistry = []EndpointRecord{
 	{Method: "POST", Path: "/providers/{provider_name}/instances/{instance_name}/models", Stability: EndpointInternal, Evidence: "source: api/apps/llm_management_api.py", ClientMethods: []string{"AddModelToInstance"}, UsedByCapability: []string{"chat", "agent", "search_app"}, MaxVerified: "v1.0.0"},
 	{Method: "PATCH", Path: "/providers/{provider_name}/instances/{instance_name}/models/{model_name}", Stability: EndpointInternal, Evidence: "source: api/apps/llm_management_api.py", ClientMethods: []string{"UpdateModel"}, UsedByCapability: []string{"chat", "agent", "search_app"}, MaxVerified: "v1.0.0"},
 	{Method: "DELETE", Path: "/providers/{provider_name}/instances/{instance_name}/models", Stability: EndpointInternal, Evidence: "source: api/apps/llm_management_api.py", ClientMethods: []string{"DeleteModelsFromInstance"}, UsedByCapability: []string{"chat", "agent", "search_app"}, MaxVerified: "v1.0.0"},
-	{Method: "POST", Path: "/providers/{provider_name}/connection", Stability: EndpointInternal, Evidence: "source: api/apps/llm_management_api.py", ClientMethods: []string{"VerifyConnection", "ChatToModel"}, UsedByCapability: []string{"chat", "agent", "search_app"}, MaxVerified: "v1.0.0"},
+	{Method: "POST", Path: "/providers/{provider_name}/connection", Stability: EndpointInternal, Evidence: "source: API & Model Provider Refactoring; live-verified 2026-11-18 on 4.151 (200 with a `base_url`-missing code for a local factory). NOTE: this row used to also own ChatToModel, which was wrong — the engine has no per-model chat route and ChatToModel now calls /chat/completions", ClientMethods: []string{"VerifyConnection"}, UsedByCapability: []string{"chat", "agent", "search_app"}, MaxVerified: "v1.0.0"},
 
 	// ── Misc ──
 	{Method: "GET", Path: "/system/healthz", Stability: EndpointDocumented, Evidence: "docs §System Check (legacy /v1/system/healthz deprecated)", ClientMethods: []string{"Health"}, UsedByCapability: []string{"chat"}, MaxVerified: "v1.0.0"},

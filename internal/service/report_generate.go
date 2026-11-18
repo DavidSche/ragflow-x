@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
@@ -171,6 +172,11 @@ func (s *Service) runReportOutlineStep(
 	limits := templatePayload.Limits
 	outline, sections := buildReportOutline(
 		tenantID, revision.ID, report.Question, templateRow.TemplateKey, templateRow.Version, templatePayload)
+	// The reviewer confirms titles; the preview is what makes that confirmation
+	// informed (doc/288 §9.6). Frozen on the section rows in the same transaction
+	// as the outline, so "what did the knowledge base hold when this was approved"
+	// stays answerable after the run.
+	s.attachReportEvidencePreview(ctx, tenantID, sections, bindings, templatePayload.Retrieval)
 
 	snapshot := reportExecutionSnapshot{
 		TemplateKey: templateRow.TemplateKey, TemplateVersion: templateRow.Version,
@@ -222,7 +228,7 @@ func (s *Service) runReportOutlineStep(
 		Event: &model.ReportJobEvent{
 			TenantID: tenantID, JobID: business.ID, Type: reportEventOutlineReady,
 			PayloadJSON: string(eventPayload), CreatedAt: now,
-			ExpiresAt: reportExpiry(now, s.currentRetentionPolicy().ReportEventDays, reportDefaultEventDays),
+			ExpiresAt: reportExpiry(now, s.ReportRetentionFor(ctx, tenantID).ReportEventDays, reportDefaultEventDays),
 		},
 	})
 	if err != nil {
@@ -402,7 +408,7 @@ func (r *reportSectionRun) execute() error {
 		}
 		if current.Status == model.ReportJobCancelRequested {
 			r.business = current
-			return r.requestFinalization(r.stage)
+			return r.requestFinalization()
 		}
 		payload := ReportSlicePayload{
 			ReportJobID: current.ID, ReportID: current.ReportID, RevisionID: current.RevisionID,
@@ -413,15 +419,29 @@ func (r *reportSectionRun) execute() error {
 		}
 		r.business = current
 
+		if err := r.closeInterruptedSections(); err != nil {
+			return err
+		}
 		section, gapReason := r.nextSection()
 		if section == nil {
 			if gapReason != "" {
 				// Nothing writable is left, but something is still open (a
 				// dependency failed, or the section exhausted its attempts).
 				// Skipping is the honest close: it is disclosed in `gap_json`
-				// instead of pretending the work is still coming.
-				if err := r.skipRemaining(gapReason, model.ReportQualityFailed); err != nil {
+				// instead of pretending the work is still coming. The quality flag is
+				// `not_checked`, not `failed`: a section that never ran was never
+				// judged by the quality gate, and `failed` would claim it was.
+				closed, err := r.skipRemaining(gapReason, model.ReportQualityNotChecked)
+				if err != nil {
 					return err
+				}
+				if closed == 0 {
+					// Nothing moved: a second pass would loop on the same rows.
+					// Leaving them to the caller keeps the loop bounded — finalize
+					// discloses whatever is still unwritten instead of hanging.
+					logger.Warn("report slice has nothing left to close",
+						"report_job_id", r.business.ID, "reason", gapReason)
+					break
 				}
 				continue
 			}
@@ -443,26 +463,32 @@ func (r *reportSectionRun) execute() error {
 		}
 	}
 	if r.budgetBlocked {
-		if err := r.skipRemaining(model.ReportGapBudgetExhausted, model.ReportQualityFailed); err != nil {
+		// Same rule as above: the sections this closes were never attempted.
+		if _, err := r.skipRemaining(model.ReportGapBudgetExhausted, model.ReportQualityNotChecked); err != nil {
 			return err
 		}
 	}
 	if r.allTerminal() {
-		return r.requestFinalization(model.ReportStageAssembling)
+		return r.requestFinalization()
 	}
 	// Sections remain and the lease is fine: yield so a fresh slice continues.
 	return r.checkpoint()
 }
 
-// requestFinalization hands the job to the finalize Outbox path.
-func (r *reportSectionRun) requestFinalization(stage string) error {
+// requestFinalization moves the job to `finalizing` and hands it to the finalize
+// Outbox path.
+//
+// It takes no stage argument on purpose: the stage is written by
+// `BeginReportFinalization` (`assembling`) in the same statement as the status, so
+// no caller can pass a value that is only logged and never stored.
+func (r *reportSectionRun) requestFinalization() error {
 	applied, err := r.svc.BeginReportFinalization(
 		r.ctx, r.tenantID, r.business.ID, r.attemptSeq, r.sliceSeq, r.runtimeJobID)
 	if err != nil {
 		return err
 	}
 	logger.Info("report slice requested finalization",
-		"report_job_id", r.business.ID, "stage", stage, "applied", applied)
+		"report_job_id", r.business.ID, "applied", applied)
 	return nil
 }
 
@@ -529,11 +555,31 @@ func (r *reportSectionRun) nextSection() (*model.ReportSection, string) {
 }
 
 // writeSection runs one section through reserve → retrieve → begin → call →
-// settle → commit.
+// settle → commit, and retries the model half while §7.9 allows it.
 //
 // `terminal` says whether the section reached a terminal state (so the loop may
 // continue); `blocked` says the budget gate refused, which ends the loop.
 func (r *reportSectionRun) writeSection(section *model.ReportSection) (bool, bool, error) {
+	for {
+		terminal, blocked, retry, err := r.writeSectionAttempt(section)
+		if err != nil || terminal || blocked || !retry {
+			return terminal, blocked, err
+		}
+		// The row is still `writing` and `section.Attempt` still names the attempt
+		// that just failed, so the retry re-begins it as `attempt+1`. Nothing may
+		// mistake it for a dead slice's wreck: it never leaves this call.
+	}
+}
+
+// writeSectionAttempt is one attempt of `writeSection`.
+//
+// `retry` reports that the attempt failed in a way §7.9 retries *inside the same
+// slice* (`rgx_report_section.attempt ≤ 2`) and that another call is still
+// allowed. Live traffic is why this exists: one 60 s read timeout on the chat
+// route closed a section on attempt 1, which skipped every section depending on
+// it and published a 3/5 report — two sections lost to one transient stall, with
+// `reportSectionMaxAttempts` unreachable because a `failed` row is terminal.
+func (r *reportSectionRun) writeSectionAttempt(section *model.ReportSection) (terminal, blocked, retry bool, err error) {
 	now := time.Now().UTC()
 	charge, err := r.svc.ReserveReportCharge(r.ctx, r.tenantID, ReportChargeCall{
 		JobID: r.business.ID, SectionID: section.ID, AttemptSeq: r.attemptSeq,
@@ -545,18 +591,19 @@ func (r *reportSectionRun) writeSection(section *model.ReportSection) (bool, boo
 		if reportCodeOf(err) == codeReportBudgetExhausted {
 			logger.Info("report budget exhausted",
 				"report_job_id", r.business.ID, "section_id", section.ID, "error", err)
-			return false, true, nil
+			return false, true, false, nil
 		}
-		return false, false, err
+		return false, false, false, err
 	}
 	evidence, truncated, retrieveErr := r.retrieve(section)
 	if retrieveErr != nil {
 		// Nothing was sent to the model, so the reservation is refunded rather than
 		// written down as unknown spend.
 		if _, err := r.svc.ReleaseReportCharge(r.ctx, r.tenantID, r.business.ID, charge.LedgerKey, now); err != nil {
-			return false, false, err
+			return false, false, false, err
 		}
-		return r.closeSection(section, model.ReportSectionFailed, retrieveErr, now)
+		terminal, blocked, err = r.closeSection(section, model.ReportSectionFailed, retrieveErr, now)
+		return terminal, blocked, false, err
 	}
 	if truncated {
 		r.truncated++
@@ -574,15 +621,15 @@ func (r *reportSectionRun) writeSection(section *model.ReportSection) (bool, boo
 		}, now),
 	})
 	if err != nil {
-		return false, false, err
+		return false, false, false, err
 	}
 	if !applied {
 		// Another slice already owns this section: release and stop, its outcome is
 		// not ours to write.
 		if _, err := r.svc.ReleaseReportCharge(r.ctx, r.tenantID, r.business.ID, charge.LedgerKey, now); err != nil {
-			return false, false, err
+			return false, false, false, err
 		}
-		return false, false, nil
+		return false, false, false, nil
 	}
 	section.Attempt++
 	section.Status = model.ReportSectionWriting
@@ -591,14 +638,14 @@ func (r *reportSectionRun) writeSection(section *model.ReportSection) (bool, boo
 		r.snapshot.Model.Provider, r.snapshot.Model.Instance, r.snapshot.Model.Name,
 		prompt, false, false)
 	if callErr != nil {
-		return r.handleCallFailure(section, charge, evidence, callErr)
+		return r.handleCallFailure(section, charge, callErr)
 	}
 	// The raw endpoint answers with a string: the shape is the caller's problem
 	// (see `decodeReportModelReply`), and a body we cannot read is a failed section,
 	// not a broken job.
 	reply, decodeErr := decodeReportModelReply(raw)
 	if decodeErr != nil {
-		return r.handleCallFailure(section, charge, evidence, decodeErr)
+		return r.handleCallFailure(section, charge, decodeErr)
 	}
 	if !reply.UsageReported {
 		// The estimate is made here, not in the decoder, because only this frame
@@ -609,12 +656,39 @@ func (r *reportSectionRun) writeSection(section *model.ReportSection) (bool, boo
 	}
 	settled, err := r.settleCall(charge, reply, now)
 	if err != nil {
-		return false, false, err
+		return false, false, false, err
 	}
 	if !settled {
-		return false, false, fmt.Errorf("report charge %s could not be settled", charge.LedgerKey)
+		return false, false, false, fmt.Errorf("report charge %s could not be settled", charge.LedgerKey)
 	}
-	return r.commitSection(section, reply, evidence, now)
+	if reportNormalizeContent(reply.Text) == "" {
+		// The call happened and was billed, but the answer was empty: an unusable
+		// attempt, so it retries like any other (§7.9) instead of ending the section.
+		return r.retryOrClose(section, errors.New("model returned an empty section"), now)
+	}
+	terminal, blocked, err = r.commitSection(section, reply, evidence, now)
+	return terminal, blocked, false, err
+}
+
+// retryOrClose ends one *model* attempt: an answer the model did not produce
+// usefully gets another call while `reportSectionMaxAttempts` allows, and is
+// closed `failed` only once the attempts are spent.
+//
+// The retry is safe for the ledger: every reservation allocates its own
+// `call_seq`, and an unanswered call is written down as an orphan, which the
+// budget gate discloses but does not subtract a second time (§8.6).
+func (r *reportSectionRun) retryOrClose(
+	section *model.ReportSection, cause error, now time.Time,
+) (bool, bool, bool, error) {
+	if reportSectionRetryable(cause) && section.Attempt < reportSectionMaxAttempts {
+		logger.Warn("report section retrying",
+			"report_job_id", r.business.ID, "ord", section.Ord,
+			"section_key", section.SectionKey, "attempt", section.Attempt,
+			"max_attempts", reportSectionMaxAttempts, "error", cause)
+		return false, false, true, nil
+	}
+	terminal, blocked, err := r.closeSection(section, model.ReportSectionFailed, cause, now)
+	return terminal, blocked, false, err
 }
 
 // handleCallFailure ends one section after a provider error.
@@ -624,22 +698,43 @@ func (r *reportSectionRun) writeSection(section *model.ReportSection) (bool, boo
 // while a transport failure or a timeout means we genuinely do not know, and the
 // reservation becomes an orphan that reconciliation will account for (§8.6).
 func (r *reportSectionRun) handleCallFailure(
-	section *model.ReportSection, charge *model.ReportCharge,
-	evidence []reportEvidenceItem, callErr error,
-) (bool, bool, error) {
+	section *model.ReportSection, charge *model.ReportCharge, callErr error,
+) (bool, bool, bool, error) {
 	now := time.Now().UTC()
 	if reportProviderAnswered(callErr) {
 		if _, err := r.svc.ReleaseReportCharge(r.ctx, r.tenantID, r.business.ID, charge.LedgerKey, now); err != nil {
-			return false, false, err
+			return false, false, false, err
 		}
 	} else if _, err := r.svc.Store.OrphanReportCharge(r.ctx, repository.ReportChargeCandidate{
 		ID: charge.ID, TenantID: r.tenantID, JobID: r.business.ID, LedgerKey: charge.LedgerKey,
 		ReservedTokens: charge.ReservedTokens, Reason: model.ReportReconcileProviderUnconfirmed,
 	}, now); err != nil {
-		return false, false, err
+		return false, false, false, err
 	}
-	_ = evidence
-	return r.closeSection(section, model.ReportSectionFailed, callErr, now)
+	return r.retryOrClose(section, callErr, now)
+}
+
+// reportSectionRetryable says whether one *model* attempt deserves another call
+// inside the same slice (§7.9: `rgx_report_section.attempt ≤ 2`).
+//
+// A transport failure, a timeout or an unreadable/blank answer is the model
+// failing to answer, and the next call may well succeed; a business refusal (a
+// 4xx in which the provider answered and said no) is not retried, because the
+// same request would be refused again and the retry would only burn budget. A
+// cancelled call is the *job* being cancelled, so it must not be retried either.
+func reportSectionRetryable(cause error) bool {
+	var upstream *ragflow.Error
+	if !errors.As(cause, &upstream) {
+		// Decoder/policy failures (unreadable body, empty answer, unusable text)
+		// belong to the attempt, not to the job.
+		return true
+	}
+	switch upstream.Type {
+	case ragflow.ErrorTypeTransport, ragflow.ErrorTypeTimeout, ragflow.ErrorTypeProtocol:
+		return true
+	default:
+		return false
+	}
 }
 
 // settleCall converts the reservation into the measured cost.
@@ -668,11 +763,31 @@ func (r *reportSectionRun) commitSection(
 		return r.closeSection(section, model.ReportSectionFailed,
 			errors.New("model returned an empty section"), now)
 	}
+	// A3c: a marker that no evidence item can answer is a fabricated reference, not
+	// a citation with a missing row. It is removed from the body (so the delivered
+	// text never shows a number the appendix cannot print) and the section is
+	// flagged for review (so the rewrite is not silent). The two together are what
+	// makes 标记 ↔ 引用行 consistent by construction instead of by hope.
+	dangling := reportDanglingCitationMarkers(content, len(evidence))
+	if len(dangling) > 0 {
+		content = reportStripCitationMarkers(content, dangling)
+		if content == "" {
+			return r.closeSection(section, model.ReportSectionFailed,
+				errors.New("model answered with nothing but unresolvable citations"), now)
+		}
+	}
 	cited := reportCitedIndexes(content, len(evidence))
 	evidenceStatus := reportEvidenceStatus(
 		section.RequiresEvidence, len(evidence), len(cited), r.template.Retrieval.MinEvidence)
-	qualityStatus := model.ReportQualityNotChecked
-	if section.RequiresEvidence && evidenceStatus == model.ReportEvidenceUnsupported {
+	// The P0 quality gate is mechanical, and these are its only two rules (§14.2):
+	// the section cites evidence when its template requires evidence, and the
+	// citations actually resolve. Anything else — fewer citations than the template
+	// asked for, or citations the retriever could not support — is `needs_review`,
+	// a disclosure that never blocks publishing. A section whose template never
+	// asked for evidence stays `not_checked`: there is nothing for the gate to say,
+	// and saying `passed` would invent a verdict.
+	qualityStatus := reportSectionQualityStatus(evidenceStatus)
+	if len(dangling) > 0 && qualityStatus != model.ReportQualityFailed {
 		qualityStatus = model.ReportQualityNeedsReview
 	}
 	citations := make([]model.ReportCitation, 0, len(cited))
@@ -682,8 +797,14 @@ func (r *reportSectionRun) commitSection(
 		}
 		citations = append(citations, r.citation(section, item, now))
 	}
-	evidenceRows := reportEvidenceRows(evidence, cited, r.tenantID,
-		reportExpiry(now, r.svc.currentRetentionPolicy().ReportDays, reportDefaultTTLDays), now)
+	// The evidence clock is `max(report_days, report_evidence_days)`, never the
+	// report clock alone: a snapshot that expires before the report citing it turns
+	// "有据可查" into a false promise (doc/288 §7.6 invariant ②).
+	evidenceRows, err := reportEvidenceRows(evidence, cited, r.tenantID,
+		r.evidenceExpiry(now), now)
+	if err != nil {
+		return r.closeSection(section, model.ReportSectionFailed, err, now)
+	}
 
 	commit := repository.ReportSectionCommit{
 		TenantID: r.tenantID, JobID: r.business.ID, Now: now,
@@ -698,7 +819,8 @@ func (r *reportSectionRun) commitSection(
 		Event: r.event(reportEventSectionSucceeded, section, map[string]interface{}{
 			"citation_count": len(citations), "evidence_status": evidenceStatus,
 			"quality_status": qualityStatus, "tokens_in": reply.TokensIn,
-			"tokens_out": reply.TokensOut, "usage_estimated": !reply.UsageReported,
+			"dangling_citations": dangling,
+			"tokens_out":         reply.TokensOut, "usage_estimated": !reply.UsageReported,
 		}, now),
 	}
 	applied, err := r.svc.Store.CommitReportSection(r.ctx, commit)
@@ -744,6 +866,7 @@ func (r *reportSectionRun) closeSection(
 		QualityStatus: qualityStatus, EvidenceStatus: evidenceStatus, Now: now,
 		Stage: model.ReportStageSectionWriting,
 		Event: r.event(reportEventSectionFailed, section, payload, now),
+		Audit: r.sectionFailureAudit(section, payload, now),
 	})
 	if err != nil {
 		return false, false, err
@@ -752,10 +875,73 @@ func (r *reportSectionRun) closeSection(
 		section.Status = status
 		section.QualityStatus = qualityStatus
 		section.EvidenceStatus = evidenceStatus
+		section.GapReason = model.ReportGapFailed
 	}
 	logger.Warn("report section closed",
 		"report_job_id", r.business.ID, "ord", section.Ord, "status", status, "error", cause)
 	return true, false, nil
+}
+
+// sectionFailureAudit is the `report.section.failed` ledger row (doc/288 §11.3).
+//
+// The event tells the SSE reader that a section ended failed; the audit row is
+// what answers "who can look at this and why" months later, after the job event
+// has been purged by its own retention clock. Neither substitutes for the other,
+// which is why both are written in the same transaction.
+//
+// The writer is the runner, not a person, so the row carries no UserID — exactly
+// like `report.charge.reconciled`. Inventing a system user id would make the
+// audit claim an actor that does not exist.
+func (r *reportSectionRun) sectionFailureAudit(
+	section *model.ReportSection, payload map[string]interface{}, now time.Time,
+) *model.AuditLog {
+	detail, err := json.Marshal(map[string]interface{}{
+		"report_job_id": r.business.ID,
+		"revision_id":   r.revision.ID,
+		"revision":      r.revision.Revision,
+		"section_key":   section.SectionKey,
+		"section_ord":   section.Ord,
+		"attempt":       section.Attempt,
+		"reason":        payload["reason"],
+		"error_code":    payload["error_code"],
+	})
+	if err != nil {
+		// json.Marshal of strings and ints cannot fail; if it ever did, an audit
+		// row with no detail still beats a failed section nobody can trace.
+		detail = []byte(`{}`)
+	}
+	return &model.AuditLog{
+		TenantID: r.tenantID, Action: "report.section.failed",
+		Resource: "report", ResourceID: r.report.ID,
+		Result: "FAILURE", DetailJSON: string(detail), At: now,
+	}
+}
+
+// closeInterruptedSections ends the attempts a dead slice left behind.
+//
+// A `writing` row seen at the top of this loop cannot belong to this slice: the
+// loop only marks a section writing inside `writeSection`, and that call either
+// commits or closes it before returning. So the row is the wreck of a slice that
+// died mid-call (a crashed worker, an aborted commit). Nothing can ever close it
+// on its own — the owner is gone — so the honest close is here, and the
+// `attempt` CAS in `CloseReportSection` still refuses the write if another owner
+// got there first.
+func (r *reportSectionRun) closeInterruptedSections() error {
+	now := time.Now().UTC()
+	for index := range r.sections {
+		section := &r.sections[index]
+		if section.Status != model.ReportSectionWriting {
+			continue
+		}
+		logger.Warn("report section interrupted",
+			"report_job_id", r.business.ID, "ord", section.Ord,
+			"section_key", section.SectionKey, "attempt", section.Attempt)
+		if _, _, err := r.closeSection(section, model.ReportSectionFailed,
+			errors.New("section write was interrupted before it committed"), now); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // skipRemaining closes every section that never started.
@@ -763,13 +949,19 @@ func (r *reportSectionRun) closeSection(
 // `gapReason` is the disclosure the reader sees: `budget_exhausted` when the
 // envelope ran out, `skipped` when a dependency failed first. The two are not
 // interchangeable — one says "buy more budget", the other says "fix the source".
-func (r *reportSectionRun) skipRemaining(gapReason, qualityStatus string) error {
+//
+// The selection is narrower than the store's guard (`status IN (pending, failed)`)
+// on purpose: a `writing` row is not this call's to close, and marking it `skipped`
+// in memory only would make `allTerminal()` lie — the job would then ask for
+// finalization with a section still in flight (the live hang that motivated
+// `closeInterruptedSections`).
+func (r *reportSectionRun) skipRemaining(gapReason, qualityStatus string) (int, error) {
 	pending := make([]string, 0, len(r.sections))
 	events := make([]*model.ReportJobEvent, 0, len(r.sections))
 	now := time.Now().UTC()
 	for index := range r.sections {
 		section := &r.sections[index]
-		if reportSectionIsTerminal(section.Status) {
+		if !reportSectionSkippable(section.Status) {
 			continue
 		}
 		pending = append(pending, section.ID)
@@ -779,17 +971,29 @@ func (r *reportSectionRun) skipRemaining(gapReason, qualityStatus string) error 
 		}, now))
 		section.Status = model.ReportSectionSkipped
 		section.QualityStatus = qualityStatus
+		section.GapReason = gapReason
 	}
 	if len(pending) == 0 {
-		return nil
+		return 0, nil
 	}
-	_, err := r.svc.Store.SkipReportSections(r.ctx, repository.ReportSectionSkip{
+	applied, err := r.svc.Store.SkipReportSections(r.ctx, repository.ReportSectionSkip{
 		TenantID: r.tenantID, JobID: r.business.ID, RevisionID: r.revision.ID,
 		SectionIDs: pending, QualityStatus: qualityStatus,
-		EvidenceStatus: model.ReportEvidenceNotRequired, Now: now,
+		EvidenceStatus: model.ReportEvidenceNotRequired, GapReason: gapReason, Now: now,
 		Stage: model.ReportStageSectionWriting, Events: events,
 	})
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return int(applied), nil
+}
+
+// reportSectionSkippable is the narrow slice of the store's guard this runner may
+// use: only rows that never started. The store also accepts `failed` rows, but
+// relabelling one of those here would overwrite the reason it failed with
+// "budget exhausted" / "skipped" — a disclosure lie, not a skip.
+func reportSectionSkippable(status string) bool {
+	return status == model.ReportSectionPending
 }
 
 // skipErrorCode maps a skip reason to the code an operator can look up. Only the
@@ -848,6 +1052,20 @@ func (r *reportSectionRun) retrieve(section *model.ReportSection) ([]reportEvide
 		if content == "" {
 			continue
 		}
+		// The engine's chunk identifier is not one name: `/retrieval` on RAGFlow
+		// v1.0.0 answers `id` (and `row_id`), while the older envelope used
+		// `chunk_id`. Reading only `chunk_id` produced snapshots whose chunk was
+		// nameless, i.e. evidence a reader cannot trace back to a source chunk.
+		chunkID := firstNonEmptyString(stringFromAny(chunk["chunk_id"]),
+			stringFromAny(chunk["id"]), stringFromAny(chunk["row_id"]))
+		if chunkID == "" {
+			// An evidence row that cannot name its chunk is untraceable: disclose it
+			// as missing evidence rather than store a citation into nowhere.
+			logger.Warn("report evidence chunk carries no identifier",
+				"report_job_id", r.business.ID, "ord", section.Ord,
+				"dataset_id", stringFromAny(chunk["dataset_id"]))
+			continue
+		}
 		documentID := stringFromAny(chunk["document_id"])
 		if documentID == "" {
 			documentID = stringFromAny(chunk["doc_id"])
@@ -855,16 +1073,17 @@ func (r *reportSectionRun) retrieve(section *model.ReportSection) ([]reportEvide
 		engineDataset := stringFromAny(chunk["dataset_id"])
 		localDataset := r.localDatasetID(engineDataset)
 		items = append(items, reportEvidenceItem{
-			ChunkID:       stringFromAny(chunk["chunk_id"]),
+			ChunkID:       chunkID,
 			DatasetID:     localDataset,
 			DocumentID:    documentID,
 			EngineDataset: engineDataset,
 			DatasetLabel:  r.datasetLabel(engineDataset),
 			DocumentLabel: firstNonEmptyString(
 				stringFromAny(chunk["document_name"]), stringFromAny(chunk["doc_name"]), documentID),
-			Content:     content,
-			ContentHash: sha256Hex(strings.TrimSpace(content)),
-			Score:       reportChunkScore(chunk),
+			Content:       content,
+			SourceContent: strings.TrimSpace(content),
+			ContentHash:   sha256Hex(strings.TrimSpace(content)),
+			Score:         reportChunkScore(chunk),
 		})
 	}
 	bounded, truncated := boundReportEvidence(items)
@@ -921,6 +1140,7 @@ func (r *reportSectionRun) sectionInstruction(sectionKey string) string {
 func (r *reportSectionRun) citation(
 	section *model.ReportSection, item reportEvidenceItem, now time.Time,
 ) model.ReportCitation {
+	snippet := reportEvidenceSnippet(item.Content)
 	return model.ReportCitation{
 		ID:         reportRowID("citation", section.ID, fmt.Sprint(item.Index)),
 		TenantID:   r.tenantID,
@@ -929,15 +1149,78 @@ func (r *reportSectionRun) citation(
 		SourceDatasetID:       r.localDatasetID(item.EngineDataset),
 		SourceEngineDatasetID: item.EngineDataset,
 		SourceDocumentID:      item.DocumentID,
+		DocumentLabel:         item.DocumentLabel,
 		SourceChunkID:         item.ChunkID,
 		SourceContentHash:     item.ContentHash,
 		ReferencedAt:          now,
 		ReferencedBy:          r.report.OwnerUserID,
 		RetrievalScore:        item.Score,
 		RetrievalScoreType:    "similarity",
-		Snippet:               truncateKnowledgeText(item.Content, reportEvidenceSnippetChars),
+		Snippet:               snippet,
 		UsedInText:            true,
+		// EvidenceUsage (doc/288 §7.5.1, A37). The snapshot row is deduplicated by
+		// content, so it cannot hold "who cited this and under what range" — the
+		// second citer would inherit the first one's answer. These two columns are
+		// the per-reference half, and they stay empty only if the run has no frozen
+		// dataset list at all.
+		SourcePermissionScopeJSON: r.permissionScopeJSON(),
+		ReferenceWindowJSON:       reportCitationReferenceWindowJSON(snippet),
 	}
+}
+
+// reportCitationPermissionScope is the "当时的授权范围" half of EvidenceUsage.
+//
+// It records the dataset set the run was frozen to, because that *is* the scope the
+// retrieval ran under: `parseReportDatasetBindings` refuses to retrieve from
+// "whatever the workspace holds today" (§13), so the frozen list is the only honest
+// answer to "this citation could have come from where".
+type reportCitationPermissionScope struct {
+	Datasets []reportCitationScopeDataset `json:"datasets"`
+}
+
+type reportCitationScopeDataset struct {
+	DatasetID       string `json:"dataset_id"`
+	EngineDatasetID string `json:"engine_dataset_id"`
+}
+
+func (r *reportSectionRun) permissionScopeJSON() string {
+	scope := reportCitationPermissionScope{
+		Datasets: make([]reportCitationScopeDataset, 0, len(r.snapshot.Datasets)),
+	}
+	for _, binding := range r.snapshot.Datasets {
+		scope.Datasets = append(scope.Datasets, reportCitationScopeDataset{
+			DatasetID:       binding.DatasetID,
+			EngineDatasetID: binding.EngineDatasetID,
+		})
+	}
+	encoded, err := json.Marshal(scope)
+	if err != nil {
+		// Cannot happen for two string fields; an empty column is a visible gap in an
+		// audit query, which is the right failure mode for "we could not record it".
+		return ""
+	}
+	return string(encoded)
+}
+
+// reportCitationReferenceWindow is the other half: where in the frozen content the
+// snippet sits.
+//
+// The offsets are rune indices into `rgx_report_evidence_snapshot.content`, and the
+// window is always a prefix (`start=0`, `end` = rune length of the snippet). That is
+// not a simplification: §7.5 makes the snapshot a prefix window and the snippet a
+// shorter prefix of the same text, which is exactly why A33's substring assertion
+// can hold instead of "search for the quoted sentence and hope".
+func reportCitationReferenceWindowJSON(snippet string) string {
+	window := struct {
+		Start int    `json:"start"`
+		End   int    `json:"end"`
+		Unit  string `json:"unit"`
+	}{Start: 0, End: len([]rune(snippet)), Unit: "rune"}
+	encoded, err := json.Marshal(window)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 // localDatasetID maps an engine dataset id back to the workspace dataset id, which
@@ -966,10 +1249,55 @@ func (r *reportSectionRun) event(
 		return &model.ReportJobEvent{
 			TenantID: r.tenantID, JobID: r.business.ID, Type: eventType,
 			PayloadJSON: string(encoded), CreatedAt: now,
-			ExpiresAt: reportExpiry(now, r.svc.currentRetentionPolicy().ReportEventDays, reportDefaultEventDays),
+			ExpiresAt: reportExpiry(now, r.svc.ReportRetentionFor(r.ctx, r.tenantID).ReportEventDays, reportDefaultEventDays),
 		}
 	}
 	return nil
+}
+
+// reportEvidenceSnippet is the citation's disclosure snippet as a *literal prefix*
+// of the chunk text.
+//
+// It differs from truncateKnowledgeText on purpose: that helper appends "..." so a
+// reader knows the text continues, which would stop the result from being a substring
+// of the source. A33 requires the snapshot to contain the citation snippet verbatim,
+// so the citation-side snippet carries no ellipsis. The ellipsis stays where it
+// belongs — in prose read by a human, not in a pointer meant to be verified.
+func reportEvidenceSnippet(content string) string {
+	trimmed := strings.TrimSpace(content)
+	runes := []rune(trimmed)
+	if len(runes) <= reportEvidenceSnippetChars {
+		return trimmed
+	}
+	return strings.TrimSpace(string(runes[:reportEvidenceSnippetChars]))
+}
+
+// reportEvidenceWindow fits one chunk into the per-snapshot byte budget (§7.5:
+// ≤8KB) without splitting a rune, and reports which strategy produced it.
+//
+// The window is a prefix, which is what makes A33 provable: the citation snippet is
+// itself a prefix of the same text, so a prefix window at least as long as the
+// snippet always contains it. A window chosen for "relevance" instead would need the
+// snippet located first, and would fail exactly when the interesting sentence sat
+// past the budget.
+func reportEvidenceWindow(content string) (string, string, bool) {
+	if len(content) <= reportEvidenceSnapshotMaxBytes {
+		return content, model.ReportEvidenceTruncationNone, true
+	}
+	runes := []rune(content)
+	size, limit := 0, 0
+	for limit < len(runes) {
+		width := utf8.RuneLen(runes[limit])
+		if width < 0 || size+width > reportEvidenceSnapshotMaxBytes {
+			break
+		}
+		size += width
+		limit++
+	}
+	if limit == 0 {
+		return "", model.ReportEvidenceTruncationNone, false
+	}
+	return string(runes[:limit]), model.ReportEvidenceTruncationExcerptWindow, true
 }
 
 // reportEvidenceRows builds the evidence snapshots of the cited chunks.
@@ -978,28 +1306,63 @@ func (r *reportSectionRun) event(
 // storing it would inflate the evidence table with text nothing references. The
 // row keeps both hashes on purpose — `source_content_hash` identifies the upstream
 // chunk, `content_hash` identifies the (possibly truncated) copy we stored.
+//
+// The snippet check is the write-side half of A33: a snapshot that does not contain
+// the snippet it is cited for is not evidence, it is a broken pointer, and the honest
+// answer is to refuse the commit (44103) rather than store a row the appendix cannot
+// back up.
+// evidenceExpiry is the frozen clock of every snapshot this run writes.
+//
+// It is a named method rather than an inline call so the one rule that matters here
+// can be tested directly: the evidence clock never runs out before the report that
+// cites it (§7.6 invariant ②), and it is resolved through the same helper the
+// janitor's contract describes, so a *longer* `report_evidence_days` takes effect.
+func (r *reportSectionRun) evidenceExpiry(now time.Time) time.Time {
+	return reportExpiry(now, r.svc.ReportRetentionFor(r.ctx, r.tenantID).EffectiveReportEvidenceTTL(), reportDefaultTTLDays)
+}
+
 func reportEvidenceRows(
 	evidence []reportEvidenceItem, cited map[int]bool, tenantID string,
 	expiresAt, now time.Time,
-) []model.ReportEvidenceSnapshot {
+) ([]model.ReportEvidenceSnapshot, error) {
 	rows := make([]model.ReportEvidenceSnapshot, 0, len(cited))
 	for _, item := range evidence {
 		if !cited[item.Index] {
 			continue
 		}
+		// The snapshot freezes the chunk as retrieved, not the prompt excerpt
+		// (`SourceContent`): the appendix is read weeks later by someone checking the
+		// claim, and a 1200-rune prompt window relabelled `truncated=false` would be a
+		// copy that overstates its own completeness.
+		source := item.SourceContent
+		if strings.TrimSpace(source) == "" {
+			source = item.Content
+		}
+		snippet := reportEvidenceSnippet(item.Content)
+		window, strategy, ok := reportEvidenceWindow(source)
+		if !ok || !strings.Contains(window, snippet) {
+			// 44103: the snapshot cannot hold the text it is cited for. This is a
+			// "cannot happen" (the window is a prefix, the snippet a shorter prefix),
+			// so a human must look at the chunk rather than receive a silently weaker
+			// appendix.
+			return nil, httperr.New(500, codeReportEvidenceSnapshotRejected,
+				"evidence snapshot for chunk "+item.ChunkID+" cannot contain its citation snippet")
+		}
 		rows = append(rows, model.ReportEvidenceSnapshot{
 			ID: reportRowID("evidence", tenantID, item.ChunkID, item.ContentHash), TenantID: tenantID,
 			DatasetID: item.DatasetID, DocumentID: item.DocumentID,
 			ChunkID: item.ChunkID, ChunkOrd: item.Index,
-			SourceContentHash: item.ContentHash,
-			SourceContentSize: int64(len([]rune(item.Content))),
-			Content:           item.Content,
-			ContentHash:       hashReportContent(item.Content),
-			ContentSize:       int64(len([]rune(item.Content))),
-			CreatedAt:         now, ExpiresAt: expiresAt,
+			SourceContentHash:  item.ContentHash,
+			SourceContentSize:  int64(len([]rune(source))),
+			Content:            window,
+			ContentHash:        hashReportContent(window),
+			ContentSize:        int64(len([]rune(window))),
+			Truncated:          strategy != model.ReportEvidenceTruncationNone,
+			TruncationStrategy: strategy,
+			CreatedAt:          now, ExpiresAt: expiresAt,
 		})
 	}
-	return rows
+	return rows, nil
 }
 
 // reportSectionDependencies decodes `depends_on_sections_json`, tolerating the
@@ -1149,8 +1512,25 @@ func sectionMaxWords(payload *ReportTemplatePayload, sectionKey string) int {
 	return reportSectionWordDefault
 }
 
+// reportRowIDMaxLen is the widest id this helper may produce: the snapshot and
+// citation tables declare `varchar(32)` on both SQLite and PostgreSQL, and
+// PostgreSQL enforces it (`22001 value too long for type character varying(32)`).
+//
+// The budget is real, not theoretical: `"evidence" + "-" + 24 hex` is 33\, and a
+// live run lost the section that way — the commit transaction aborted while the
+// row stayed `writing`, which then read as work in flight forever.
+const reportRowIDMaxLen = 32
+
 // reportRowID derives a deterministic row id from its identity, so a retried write
 // collides instead of duplicating.
 func reportRowID(prefix string, parts ...string) string {
-	return prefix + "-" + sha256Hex(strings.Join(parts, "\x00"))[:24]
+	digest := sha256Hex(strings.Join(parts, "\x00"))
+	keep := reportRowIDMaxLen - len(prefix) - 1
+	if keep > len(digest) {
+		keep = len(digest)
+	}
+	if keep < 1 {
+		keep = 1
+	}
+	return prefix + "-" + digest[:keep]
 }
