@@ -74,7 +74,7 @@ func TestReportReadCarriesTheArtifactHistory(t *testing.T) {
 	}
 	// Newest delivery first: a mixed-format history is ordered by when the file was
 	// written, because the version numbers live in separate per-format sequences.
-	if detail.Artifacts[0].ID == detail.Artifacts[0].ID && detail.Artifacts[0].CreatedAt.Before(detail.Artifacts[1].CreatedAt) {
+	if detail.Artifacts[0].CreatedAt.Before(detail.Artifacts[1].CreatedAt) {
 		t.Fatalf("history must be newest delivery first: %s then %s",
 			detail.Artifacts[0].CreatedAt, detail.Artifacts[1].CreatedAt)
 	}

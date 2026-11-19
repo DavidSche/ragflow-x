@@ -126,7 +126,7 @@ func (s *store) ClaimDueReportSchedules(
 			// The advance is computed by the service (a pure function over the
 			// cadence), then written here. `next_run_at` must move forward even if the
 			// run fails, otherwise a failing report retriggers every tick forever.
-			advanced := row.NextRunAt
+			var advanced time.Time
 			if row.NextRunAt.After(now) {
 				// Already advanced by a concurrent claim; skip it rather than run it.
 				continue

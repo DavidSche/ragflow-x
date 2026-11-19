@@ -43,11 +43,6 @@ const (
 	// reportScheduleTickLimit caps one tick. Fifty reports per minute is far above
 	// what a single workspace schedules, and the cap keeps the tick's latency flat.
 	reportScheduleTickLimit = 50
-	// reportScheduleMinuteSec / HourSec / DaySec keep the arithmetic readable and
-	// avoid magic numbers in the offset handling.
-	reportScheduleMinuteSec = 60
-	reportScheduleHourSec   = 60 * reportScheduleMinuteSec
-	reportScheduleDaySec    = 24 * reportScheduleHourSec
 	// reportScheduleMaxTZOffsetMin is UTC+14:00; the minimum is UTC-12:00. Both are
 	// the real extremes of civil time, and the pair is what the UI's select shows.
 	reportScheduleMaxTZOffsetMin = 840

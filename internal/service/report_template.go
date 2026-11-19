@@ -135,21 +135,6 @@ func sliceMaxSecondsCeiling() int {
 	return int(float64(defaultJobTimeoutSeconds) * reportSliceMaxSecondsRatio)
 }
 
-// parseReportTemplatePayload decodes a stored payload. The caller gets an error
-// instead of a half-decoded struct: a template whose JSON is broken must fail
-// the request, never produce a report with zero sections.
-func parseReportTemplatePayload(raw string) (*ReportTemplatePayload, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil, fmt.Errorf("report template payload is empty")
-	}
-	var payload ReportTemplatePayload
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-		return nil, fmt.Errorf("report template payload is invalid: %w", err)
-	}
-	return &payload, nil
-}
-
 // validateReportTemplatePayload enforces the §11.1 contract. Every rule below has
 // a downstream consumer, so a violation would otherwise surface as a runtime
 // oddity (unknown dependency, slice that always overruns, report with no
@@ -385,16 +370,4 @@ func reportTemplateSectionOrder(payload *ReportTemplatePayload) []string {
 		keys = append(keys, section.Key)
 	}
 	return keys
-}
-
-// reportTemplateSectionMap indexes sections by key.
-func reportTemplateSectionMap(payload *ReportTemplatePayload) map[string]ReportTemplateSection {
-	if payload == nil {
-		return nil
-	}
-	out := make(map[string]ReportTemplateSection, len(payload.Sections))
-	for _, section := range payload.Sections {
-		out[section.Key] = section
-	}
-	return out
 }

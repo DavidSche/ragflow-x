@@ -430,22 +430,6 @@ func reportResearchPlanningLabel(state string) string {
 	return ""
 }
 
-// researchPlanNote is what the reader sees under the section: the depth, the state,
-// and how much the extra queries actually added.
-func researchPlanNote(plan *reportResearchPlan) string {
-	if plan == nil {
-		return ""
-	}
-	label := reportResearchPlanningLabel(plan.Planning)
-	if label == "" {
-		return ""
-	}
-	if plan.Planning != reportResearchPlanningPlanned {
-		return label
-	}
-	return label + "（新增 " + strconv.Itoa(plan.Merged) + " 段，重复 " + strconv.Itoa(plan.Duplicates) + " 段）"
-}
-
 // reportResearchPlanLine is the exporter/reader wording for a section's frozen
 // research plan. "" for a standard section: the three files must stay silent about a
 // feature the run did not use, not print "标准检索" on every chapter.

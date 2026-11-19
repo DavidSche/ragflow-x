@@ -118,7 +118,7 @@ func TestReportHandlerSameWorkspaceNonOwnerIsolation(t *testing.T) {
 	_, created := owner.do(t, http.MethodPost, "/api/v1/reports", "key-colleague-0001", reportCreateBody(datasetID))
 	reportID := createReportIDRow(t, created, "report")
 
-	colleagueUser, err := svc.CreateUser(nil, owner.tenantID, "", service.CreateUserRequest{
+	colleagueUser, err := svc.CreateUser(context.Background(), owner.tenantID, "", service.CreateUserRequest{
 		Username: "report-colleague-2", Password: "secret123", Role: model.RoleOperator,
 	})
 	if err != nil {
