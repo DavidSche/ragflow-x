@@ -15,6 +15,8 @@ package service
 // because the constant alone cannot notice that the image stopped installing it.
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
@@ -29,12 +31,19 @@ func TestEveryImageFontPackageHasAProbePath(t *testing.T) {
 		"font-wqy-zenhei": "/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc",
 	}
 
+	// `localenv/` is git-ignored (drill-only files), so CI checks out without it.
+	// Missing here means "not the drill image", not "the image forgot the font": the
+	// packed Dockerfile is the one that must always pass, and it is the shipped one.
 	for _, path := range []string{
 		"../../docker/Dockerfile",
 		"../../localenv/151-test/Dockerfile.test",
 	} {
 		raw, err := os.ReadFile(path)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) && strings.Contains(path, "localenv/") {
+				t.Logf("skip %s: drill-only file is not checked in (git-ignored)", path)
+				continue
+			}
 			t.Fatalf("read %s: %v", path, err)
 		}
 		installed := apkPackages(string(raw))
