@@ -396,9 +396,19 @@ jobs:
           # a 404 on the registry, which is what v0.6.1's page did for 40 minutes.
           IMAGE_PUSHED="${{ needs.docker.outputs.pushed }}"
 
+          # A per-version highlights file (optional) is the one place a release can
+          # say *what* shipped instead of listing commit subjects. Absent file, absent
+          # section: an old tag re-released keeps rendering exactly as it did.
+          HIGHLIGHTS=".github/release-notes/${TAG}.md"
           {
             echo "## ragflow-x ${TAG}"
             echo
+            if [ -f "$HIGHLIGHTS" ]; then
+              cat "$HIGHLIGHTS"
+              echo
+              echo "---"
+              echo
+            fi
             if [ -n "$PREV" ]; then
               echo "自 **${PREV}** 以来的变更（共 $(git rev-list --count "${PREV}..${TAG}") 个提交）："
               echo
