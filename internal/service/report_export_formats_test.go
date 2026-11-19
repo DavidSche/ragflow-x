@@ -48,6 +48,21 @@ func TestReportExportDeliversFiveFormats(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s export: %v", testCase.format, err)
 		}
+		if testCase.format == model.ExportFormatPDF && !usableFontFile(pdfFontPath()) {
+			// No embeddable CJK TrueType font on this host (the macOS runner ships
+			// none). The renderer must then fail closed with the documented code
+			// instead of delivering a PDF of blank glyphs — the failure mode the
+			// live drill hit in the drill image. The other four formats still prove
+			// the delivery contract, so this leg asserts the degraded path rather
+			// than skipping the whole test.
+			if first.Artifact.ArtifactStatus != model.ExportArtifactFailed ||
+				first.Job == nil || first.Job.ErrorCode != "export_render_failed" || first.Downloadable {
+				t.Fatalf("pdf without a CJK font must fail closed with export_render_failed, "+
+					"got status=%q downloadable=%v", first.Artifact.ArtifactStatus, first.Downloadable)
+			}
+			t.Logf("pdf readiness not asserted: no CJK font on this host")
+			continue
+		}
 		if first.Artifact.ArtifactStatus != model.ExportArtifactReady {
 			t.Fatalf("%s must deliver a ready artifact, got %q",
 				testCase.format, first.Artifact.ArtifactStatus)
