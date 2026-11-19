@@ -44,6 +44,16 @@ func (s *Service) CloneReportTemplate(
 	if key == "" {
 		return nil, errReportTemplateNotFound()
 	}
+	if tenantID == "" || tenantID == model.PlatformTenantID {
+		// A clone means "fork upstream into my workspace". Inside the platform
+		// tenant there is no workspace to fork into: the write would land on the
+		// baseline itself and mint a platform version whose payload is byte-identical
+		// to the one it copied (live 2026-11-19: the UI offered the button, and
+		// report-compliance went v2 → v3 with the same content hash, i.e. every
+		// workspace's "newest" baseline changed because an admin clicked "克隆").
+		// Same answer as the retire route: there is nothing here to fork.
+		return nil, errReportTemplateNotFound()
+	}
 	// The source is the platform baseline, not whatever the workspace currently
 	// resolves: a clone means "fork upstream", and fork-on-top-of-your-own-fork
 	// would silently freeze stale upstream content forever.
