@@ -90,14 +90,6 @@ type reportFact struct {
 	Value string
 }
 
-// reportKeyedFact is a fact plus where it was found, which is what a disclosure
-// needs: "冲突" without a source list is an accusation the reader cannot check.
-type reportKeyedFact struct {
-	reportFact
-	Source string
-	Ord    int
-}
-
 // reportKeyedFacts extracts the comparable facts of one text.
 //
 // The two passes are ordered, not independent: a date's "年"/"月" would otherwise

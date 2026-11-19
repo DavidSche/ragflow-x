@@ -180,7 +180,7 @@ func TestReportExportFormatsAgreeOnStructure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if docx.Document.EvidenceAppendix == nil || len(docx.Document.EvidenceAppendix) == 0 {
+	if len(docx.Document.EvidenceAppendix) == 0 {
 		t.Fatal("the frozen document must carry the evidence appendix")
 	}
 	if len(docx.Document.EvidenceAppendix) != len(markdown.Document.EvidenceAppendix) {

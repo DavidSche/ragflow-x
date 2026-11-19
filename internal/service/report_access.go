@@ -86,25 +86,6 @@ type SetReportAccessRequest struct {
 	TeamIDs []string `json:"team_ids"`
 }
 
-// reportAccessScopeOf decodes the stored scope payload. A malformed payload is an
-// empty scope, not an error: it authorizes nothing (the grants decide), and failing
-// the read would make a report unopenable because of a cosmetic column.
-func reportAccessScopeOf(report *model.Report) model.ReportAccessScope {
-	scope := model.ReportAccessScope{}
-	if report == nil {
-		return scope
-	}
-	raw := strings.TrimSpace(report.AccessScopeJSON)
-	if raw == "" {
-		return scope
-	}
-	if err := json.Unmarshal([]byte(raw), &scope); err != nil {
-		logger.Warn("report access scope is not valid JSON", "report_id", report.ID, "error", err)
-		return model.ReportAccessScope{}
-	}
-	return scope
-}
-
 // reportVisibilityFor resolves what the reader may see in one workspace.
 //
 // The team list is loaded once per request rather than joined per row: the list

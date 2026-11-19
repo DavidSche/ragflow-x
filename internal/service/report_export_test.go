@@ -821,7 +821,7 @@ func docxBodyText(t *testing.T, path string) string {
 		if err != nil {
 			t.Fatalf("open document.xml: %v", err)
 		}
-		defer handle.Close()
+		defer func() { _ = handle.Close() }()
 		body, err := io.ReadAll(handle)
 		if err != nil {
 			t.Fatalf("read document.xml: %v", err)

@@ -21,7 +21,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -273,45 +272,6 @@ func reportScheduleFinishOf(
 		finish.Error = runErr.Error()
 	}
 	return finish
-}
-
-// reportScheduleStatusLabel is the single place a schedule outcome becomes words
-// for a reader; an unknown value returns "" so a new state cannot leak a token into
-// the UI.
-func reportScheduleStatusLabel(status string) string {
-	switch status {
-	case model.ReportScheduleStatusCreated:
-		return "已生成新版本"
-	case model.ReportScheduleStatusSkippedBusy:
-		return "跳过：已有运行中的任务"
-	case model.ReportScheduleStatusSkippedNoBase:
-		return "跳过：没有可更新的版本"
-	case model.ReportScheduleStatusSkippedTemplate:
-		return "跳过：模板不可用"
-	case model.ReportScheduleStatusSkippedDisabled:
-		return "跳过：计划已停用"
-	case model.ReportScheduleStatusFailed:
-		return "运行失败"
-	}
-	return ""
-}
-
-// reportScheduleCadenceLabel names the cadence, including the local time it fires
-// at, so a reader does not have to combine four fields themselves.
-func reportScheduleCadenceLabel(view ReportScheduleView) string {
-	clock := fmt.Sprintf("%02d:%02d", view.Hour, view.Minute)
-	switch view.Cadence {
-	case model.ReportScheduleCadenceDaily:
-		return "每天 " + clock
-	case model.ReportScheduleCadenceWeekly:
-		names := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
-		weekday := view.Weekday
-		if weekday < 0 || weekday >= len(names) {
-			return clock
-		}
-		return "每" + names[weekday] + " " + clock
-	}
-	return clock
 }
 
 // disableReportSchedule switches a plan off without deleting it. It is used by the

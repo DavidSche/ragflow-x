@@ -73,8 +73,7 @@ func xlsxHeaderCell(value string) xlsxCell { return xlsxCell{text: value, style:
 func xlsxNumberCell(value float64) xlsxCell {
 	return xlsxCell{number: value, numeric: true}
 }
-func xlsxWrapCell(value string) xlsxCell  { return xlsxCell{text: value, style: 3} }
-func xlsxTitleCell(value string) xlsxCell { return xlsxCell{text: value, style: 1} }
+func xlsxWrapCell(value string) xlsxCell { return xlsxCell{text: value, style: 3} }
 
 func renderReportXlsx(document *reportDocument, now time.Time) ([]byte, error) {
 	sheets := []xlsxSheet{
