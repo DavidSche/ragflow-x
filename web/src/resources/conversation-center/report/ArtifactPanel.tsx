@@ -15,6 +15,10 @@
  *   2. `downloadable` is rendered from the server's flag. Deriving it here from
  *      `artifact_status === "ready"` would ignore the 30-day clock and would be a
  *      second source of truth for the one thing the download endpoint enforces.
+ *
+ *   3. the five buttons come from `REPORT_EXPORT_FORMATS`, the same closed set the
+ *      report-center drawer maps over: two entries to one delivery must not offer
+ *      two different format lists (2026-11-19: this panel still had three).
  */
 import { useState } from "react";
 import { useNotify, useTranslate } from "ra-core";
@@ -22,6 +26,7 @@ import { Download, FileDown, FileText, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { reportArtifactStatusLabel } from "../../report-center/report-center-api";
+import { REPORT_EXPORT_FORMATS, type ReportExportFormat } from "./report-contract";
 import type { ReportAdapter, ReportExportSuccess } from "../adapters";
 import type { ExportArtifactRecord, ReportArtifactEntry } from "./report-run";
 
@@ -78,11 +83,11 @@ export function ArtifactPanel({
 }: ArtifactPanelProps) {
   const t = useTranslate();
   const notify = useNotify();
-  const [exporting, setExporting] = useState<"md" | "docx" | "pdf" | null>(null);
+  const [exporting, setExporting] = useState<ReportExportFormat | null>(null);
   const [created, setCreated] = useState<ReportExportSuccess[]>([]);
   const entries = mergeArtifactEntries(created, history);
 
-  const runExport = async (format: "md" | "docx" | "pdf") => {
+  const runExport = async (format: ReportExportFormat) => {
     if (exporting) return;
     setExporting(format);
     try {
@@ -119,48 +124,26 @@ export function ArtifactPanel({
           <FileDown className="size-4 text-muted-foreground" />
           {t("conversationCenter.report_artifacts_title")}
         </h3>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void runExport("md")}
-            disabled={exporting !== null}
-            data-testid="export-md"
-          >
-            {exporting === "md" ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <FileText className="size-4" />
-            )}
-            {t("conversationCenter.report_export_md")}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => void runExport("docx")}
-            disabled={exporting !== null}
-            data-testid="export-docx"
-          >
-            {exporting === "docx" ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <FileDown className="size-4" />
-            )}
-            {t("conversationCenter.report_export_docx")}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void runExport("pdf")}
-            disabled={exporting !== null}
-            data-testid="export-pdf"
-          >
-            {exporting === "pdf" ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <FileText className="size-4" />
-            )}
-            {t("conversationCenter.report_export_pdf")}
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {REPORT_EXPORT_FORMATS.map((format) => (
+            <Button
+              key={format}
+              size="sm"
+              variant={format === "docx" ? "default" : "outline"}
+              onClick={() => void runExport(format)}
+              disabled={exporting !== null}
+              data-testid={`export-${format}`}
+            >
+              {exporting === format ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : format === "docx" || format === "xlsx" ? (
+                <FileDown className="size-4" />
+              ) : (
+                <FileText className="size-4" />
+              )}
+              {t(`reportCenter.label_export_format.${format}`, { _: format })}
+            </Button>
+          ))}
         </div>
       </div>
 

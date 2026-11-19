@@ -256,6 +256,9 @@ describe("ReportTemplatePanel", () => {
     expect(await screen.findByTestId("report-template-panel")).toBeTruthy();
     expect(screen.queryByTestId("template-create")).toBeNull();
     expect(screen.getByTestId("template-create-blocked").textContent).toContain("平台租户");
+    // The fork button was still offered (live 2026-11-19: clicking it minted a
+    // byte-identical platform v3, i.e. it edited the baseline it was copying).
+    expect(screen.queryByTestId("template-clone-analysis")).toBeNull();
     identity.tenant_id = "tenant-1";
   });
 
