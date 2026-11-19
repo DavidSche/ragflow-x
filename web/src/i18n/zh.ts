@@ -2877,7 +2877,8 @@ const zhMessages = {
     template_editor_title: "编辑模板结构（%{key}）",
     template_create: "新建模板",
     template_editor_title_create: "新建模板",
-    template_create_platform_blocked: "平台租户的模板目录随版本发布；要给某个工作区加模板，请在该工作区里新建。",
+    template_create_platform_blocked:
+      "平台租户的模板目录随版本发布：这里既不能新建，也不能克隆（克隆只对工作区有意义）；要给某个工作区加模板，请在该工作区里新建。",
     template_editor_hint: "保存会发布一个新版本：已发布的版本不可改写，历史报告仍按原版本号解析。",
     template_editor_key: "模板 key",
     template_editor_key_note: "key 是契约：报告、导出文件名与审计都按它解析，创建后不要再改（改 key 等于换一个模板）。",

@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { ArtifactPanel, formatArtifactSize } from "./ArtifactPanel";
 import type { ReportAdapter, ReportExportSuccess } from "../adapters";
+import { REPORT_EXPORT_FORMATS } from "./report-contract";
 
 const notifyMock = vi.hoisted(() => vi.fn());
 
@@ -50,7 +51,7 @@ const readyExport: ReportExportSuccess = {
 function makeAdapter(): ReportAdapter {
   return {
     kind: "report" as const,
-    createExport: vi.fn(async (reportId: string, revisionNo: number, format: "md" | "docx" | "pdf") => ({
+    createExport: vi.fn(async (reportId: string, revisionNo: number, format: string) => ({
       ...readyExport,
       export_artifact: { ...readyExport.export_artifact, id: `art-${format}-${reportId}` },
     })),
@@ -88,6 +89,28 @@ describe("ArtifactPanel", () => {
       "href",
       "/api/v1/reports/rep1/revisions/1/artifacts/art-docx-rep1/download",
     );
+  });
+
+  it("offers the five-report-format set the drawer offers, not the old three", () => {
+    // 2026-11-19 线上复核发现的缺口：同一个交付，工作区面板只给 3 个按钮，
+    // 详情抽屉给 5 个。两个入口必须映射同一个闭集。
+    render(<ArtifactPanel adapter={makeAdapter()} reportId="rep1" revision={1} />);
+    for (const format of REPORT_EXPORT_FORMATS) {
+      expect(screen.getByTestId(`export-${format}`)).toBeInTheDocument();
+    }
+    expect(screen.queryByTestId("export-json")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("export-html")).toBeInTheDocument();
+    expect(screen.queryByTestId("export-xlsx")).toBeInTheDocument();
+  });
+
+  it("exports HTML and XLSX with their wire names", async () => {
+    const user = userEvent.setup();
+    const adapter = makeAdapter();
+    render(<ArtifactPanel adapter={adapter} reportId="rep1" revision={1} />);
+    await user.click(screen.getByTestId("export-html"));
+    expect(adapter.createExport).toHaveBeenCalledWith("rep1", 1, "html");
+    await user.click(screen.getByTestId("export-xlsx"));
+    expect(adapter.createExport).toHaveBeenCalledWith("rep1", 1, "xlsx");
   });
 
   it("offers a PDF export alongside Markdown and Word (T14)", async () => {
@@ -191,7 +214,7 @@ describe("ArtifactPanel", () => {
       },
     }));
     render(<ArtifactPanel adapter={adapter} reportId="rep1" revision={1} />);
-    await user.click(screen.getByTestId("export-md"));
+    await user.click(screen.getByTestId("export-markdown"));
     const row = await screen.findByTestId("artifact-art-failed");
     expect(row).toBeInTheDocument();
     expect(row.textContent).toContain("failed");

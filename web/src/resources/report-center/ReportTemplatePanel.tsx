@@ -263,7 +263,10 @@ export function ReportTemplatePanel({ canManage }: ReportTemplatePanelProps) {
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex justify-end gap-2">
-                        {canManage && group.newest.source === "platform" && (
+                        {/* No fork inside the platform tenant: the write would land on the
+                            baseline itself (live 2026-11-19: "克隆" minted a byte-identical
+                            platform v3, so every workspace's newest baseline moved). */}
+                        {canManage && !platformTenant && group.newest.source === "platform" && (
                           <Button
                             variant="ghost"
                             size="sm"

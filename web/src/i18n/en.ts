@@ -2913,7 +2913,8 @@ const enMessages = {
     template_editor_title: "Edit template structure (%{key})",
     template_create: "New template",
     template_editor_title_create: "New template",
-    template_create_platform_blocked: "The platform tenant's catalogue ships with releases; create a template from inside the workspace that needs it.",
+    template_create_platform_blocked:
+      "The platform tenant's catalogue ships with releases: nothing here can be created or cloned (a clone only means something inside a workspace); create the template from the workspace that needs it.",
     template_editor_hint: "Saving publishes a new version: a published version is never rewritten, and historical reports keep resolving by their own version number.",
     template_editor_key: "Template key",
     template_editor_key_note: "The key is a contract: reports, export file names and audit details all resolve through it. Do not rename it later — a new key is a new template.",

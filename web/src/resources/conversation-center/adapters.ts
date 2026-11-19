@@ -33,7 +33,7 @@ import {
   type ReportJobSnapshot,
   type ReportTemplateView,
 } from "./report/report-run";
-import { isReportTerminalEvent } from "./report/report-contract";
+import { isReportTerminalEvent, type ReportExportFormat } from "./report/report-contract";
 
 interface PageEnvelope<T> {
   items: T[];
@@ -654,7 +654,12 @@ export interface ReportAdapter extends ConversationAdapter {
   cancelReport(reportId: string): Promise<unknown>;
   loadSnapshot(reportId: string, jobId: string, options?: { signal?: AbortSignal }): Promise<ReportJobSnapshot>;
   confirmOutline(reportId: string, revisionNo: number, sections: Array<{ section_key: string; title: string }>): Promise<unknown>;
-  createExport(reportId: string, revisionNo: number, format: "md" | "docx" | "pdf"): Promise<ReportExportSuccess>;
+  /**
+   * `format` is the report delivery closed set (`REPORT_EXPORT_FORMATS`), not the
+   * old three-name alias: the drawer and this panel must offer the same five, and a
+   * wire name here keeps one vocabulary for the artifact row we render back.
+   */
+  createExport(reportId: string, revisionNo: number, format: ReportExportFormat): Promise<ReportExportSuccess>;
   artifactDownloadUrl(reportId: string, revisionNo: number, artifactId: string): string;
 }
 
@@ -758,7 +763,7 @@ export function createReportAdapter(): ReportAdapter {
     ));
   }
 
-  async function createExport(reportId: string, revisionNo: number, format: "md" | "docx" | "pdf"): Promise<ReportExportSuccess> {
+  async function createExport(reportId: string, revisionNo: number, format: ReportExportFormat): Promise<ReportExportSuccess> {
     return unwrap<ReportExportSuccess>(api.post(
       `/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/artifacts`,
       { format },
