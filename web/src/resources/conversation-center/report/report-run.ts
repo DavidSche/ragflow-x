@@ -100,6 +100,12 @@ export interface ReportSectionSnapshot {
   requires_evidence: boolean;
   /** Absent on rows written before v175: render 未评估, never 充足. */
   evidence_preview?: ReportEvidencePreview | null;
+  /**
+   * R17 (doc/295 §2.1): compiled-artifact locators, already worded by the server.
+   * Navigation only — they never become citations, and the server sends no score,
+   * excerpt or chunk id with them, so nothing here can be joined onto evidence.
+   */
+  location_hints?: string[];
   citation_count: number;
   claim_count: number;
   attempt: number;
@@ -177,6 +183,27 @@ export interface CreateReportResult {
   revision: ReportRevisionRecord;
   job: { id: string; status: string; job_kind: string };
   created: boolean;
+}
+
+/**
+ * One derived follow-up chip (`GET /reports/:id/follow-ups`, A14).
+ *
+ * `kind` is a closed set the server chooses from stored facts; the browser prints the
+ * server's sentence as-is. Re-writing it here would fork the wording that the audit
+ * and the prompt both refer to.
+ */
+export interface ReportFollowUpSuggestion {
+  text: string;
+  kind: string;
+  section_key: string;
+  section_ord: number;
+}
+
+export interface ReportFollowUpView {
+  report_id: string;
+  revision: number;
+  completeness: string;
+  items: ReportFollowUpSuggestion[];
 }
 
 export interface ReportTemplateSection {

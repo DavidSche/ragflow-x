@@ -170,12 +170,12 @@ export function AgentChat({ agentId, sessions, createSession, messageListClassNa
       className={messageListClassName ?? "max-h-64 min-h-40"}
       messages={messages}
       busy={busy}
-      emptyText="选择会话后输入问题开始对话。"
+      emptyText={t("agents.chat_empty")}
       scrollRef={scrollRef}
       legacyScrollBehavior="force-bottom"
       scrollSessionKey={sessionId}
       messageListClassName="space-y-3"
-      messagesAriaLabel="Agent 对话消息"
+      messagesAriaLabel={t("agents.chat_messages_aria")}
       toolbar={
         <>
           <select
@@ -183,7 +183,7 @@ export function AgentChat({ agentId, sessions, createSession, messageListClassNa
             value={sessionId}
             onChange={(e) => setSessionId(e.target.value)}
           >
-            <option value="">选择会话</option>
+            <option value="">{t("agents.chat_select_session")}</option>
             {sessions.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name || s.id}
@@ -192,7 +192,7 @@ export function AgentChat({ agentId, sessions, createSession, messageListClassNa
           </select>
           {!sessionId && (
             <Button size="sm" variant="outline" onClick={() => void createSession(`session-${Date.now()}`)}>
-              新建会话
+              {t("agents.new_session")}
             </Button>
           )}
           {sessions.length > 0 ? (
@@ -207,7 +207,7 @@ export function AgentChat({ agentId, sessions, createSession, messageListClassNa
       input={
         <div className="flex gap-2">
           <Input
-            placeholder="输入问题"
+            placeholder={t("agents.chat_input_placeholder")}
             value={input}
             disabled={!sessionId || busy}
             onChange={(e) => setInput(e.target.value)}
@@ -225,12 +225,12 @@ export function AgentChat({ agentId, sessions, createSession, messageListClassNa
           {busy ? (
             <Button onClick={stopStreaming} size="sm" variant="destructive">
               <Square className="size-4" aria-hidden="true" />
-              停止
+              {t("agents.chat_stop")}
             </Button>
           ) : (
             <Button onClick={() => void send()} disabled={!sessionId || busy} size="sm">
               <Send className="size-4" aria-hidden="true" />
-              发送
+              {t("agents.chat_send")}
             </Button>
           )}
         </div>
@@ -238,9 +238,9 @@ export function AgentChat({ agentId, sessions, createSession, messageListClassNa
       onCopy={async (content) => {
         try {
           await navigator.clipboard.writeText(content);
-          notify("已复制", { type: "success" });
+          notify(t("agents.chat_copied"), { type: "success" });
         } catch {
-          notify("复制失败", { type: "error" });
+          notify(t("agents.chat_copy_failed"), { type: "error" });
         }
       }}
     />

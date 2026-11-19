@@ -6,11 +6,36 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { api, ApiError, unwrap } from "../../lib/api";
 import {
+  REPORT_AUTO_CONFIRM_POLICIES,
+  REPORT_BUDGET_POLICIES,
   RETENTION_FIELDS,
+  reportAutoConfirmPolicyLabel,
+  reportBudgetPolicyLabel,
   retentionPatch,
   type RetentionKey,
   type RetentionView,
 } from "./report-center-api";
+
+/**
+ * The two governance switches (doc/296 §2.2/§2.3), with the JSON name and the
+ * inherited counterpart so "inherit" can be rendered with its current value.
+ */
+const SWITCHES = [
+  {
+    key: "budget_policy",
+    inherited: "system_budget_policy",
+    options: REPORT_BUDGET_POLICIES,
+    label: reportBudgetPolicyLabel,
+  },
+  {
+    key: "auto_confirm_policy",
+    inherited: "system_auto_confirm_policy",
+    options: REPORT_AUTO_CONFIRM_POLICIES,
+    label: reportAutoConfirmPolicyLabel,
+  },
+] as const;
+
+type SwitchKey = (typeof SWITCHES)[number]["key"];
 
 interface ReportRetentionCardProps {
   canManage: boolean;
@@ -37,6 +62,10 @@ export function ReportRetentionCard({ canManage }: ReportRetentionCardProps) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<Partial<Record<RetentionKey, string>>>({});
+  // Empty string means "inherit", exactly like a blank clock: the server reads an
+  // omitted switch as "keep following the system", and sending the inherited value
+  // would pin it and freeze this workspace out of a later system change.
+  const [switchDraft, setSwitchDraft] = useState<Partial<Record<SwitchKey, string>>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,6 +92,11 @@ export function ReportRetentionCard({ canManage }: ReportRetentionCardProps) {
       if (view?.overridden.includes(field.key)) seeded[field.key] = String(view[field.key]);
     }
     setDraft(seeded);
+    const switched: Partial<Record<SwitchKey, string>> = {};
+    for (const item of SWITCHES) {
+      if (view?.overridden.includes(item.key)) switched[item.key] = String(view[item.key]);
+    }
+    setSwitchDraft(switched);
     setEditing(true);
   };
 
@@ -73,7 +107,18 @@ export function ReportRetentionCard({ canManage }: ReportRetentionCardProps) {
       // The server answers with the resolved view, so the card renders the new
       // numbers without a second read (and cannot disagree with what was stored).
       const patch = retentionPatch(draft);
-      setView(await unwrap<RetentionView>(api.put("/report-retention", patch)));
+      setView(
+        await unwrap<RetentionView>(
+          api.put("/report-retention", {
+            ...patch,
+            // Always sent, empty included: leaving the key out means "inherit" for the
+            // clocks but is indistinguishable from "no opinion" for a switch, and the
+            // editor has to be able to *revert* one to inheriting too.
+            budget_policy: switchDraft.budget_policy ?? "",
+            auto_confirm_policy: switchDraft.auto_confirm_policy ?? "",
+          }),
+        ),
+      );
       setEditing(false);
     } catch (err) {
       setError(err);
@@ -138,6 +183,27 @@ export function ReportRetentionCard({ canManage }: ReportRetentionCardProps) {
         </dl>
       )}
 
+      {view && !loading && (
+        <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2" data-testid="retention-switches">
+          {SWITCHES.map((item) => {
+            const pinned = view.overridden.includes(item.key);
+            return (
+              <div key={item.key}>
+                <dt className="text-xs text-muted-foreground">{t(`reportCenter.retention_${item.key}`)}</dt>
+                <dd className="font-medium" data-testid={`retention-switch-${item.key}`}>
+                  {item.label(t, String(view[item.key]))}
+                  {!pinned && (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      {t("reportCenter.retention_inherited")}
+                    </span>
+                  )}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      )}
+
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -160,6 +226,35 @@ export function ReportRetentionCard({ canManage }: ReportRetentionCardProps) {
                 />
               </label>
             ))}
+            {/* The two switches belong in the same dialog as the clocks: they are the
+                same kind of decision (one workspace-wide answer), and an operator who
+                has to look in two places for "what does this tenant allow" will
+                eventually read a stale one. */}
+            {SWITCHES.map((item) => (
+              <label key={item.key} className="flex items-center justify-between gap-3">
+                <span>{t(`reportCenter.retention_${item.key}`)}</span>
+                <select
+                  className="h-9 rounded-md border bg-background px-2"
+                  value={switchDraft[item.key] ?? ""}
+                  onChange={(event) =>
+                    setSwitchDraft((current) => ({ ...current, [item.key]: event.target.value }))
+                  }
+                  data-testid={`retention-switch-input-${item.key}`}
+                >
+                  <option value="">
+                    {t("reportCenter.retention_switch_inherit", {
+                      value: item.label(t, String(view?.[item.inherited] ?? "")),
+                    })}
+                  </option>
+                  {item.options.map((option) => (
+                    <option key={option} value={option}>
+                      {item.label(t, option)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            <p className="text-xs text-muted-foreground">{t("reportCenter.retention_switch_hint")}</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(false)} disabled={saving}>

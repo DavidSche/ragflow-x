@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../lib/api";
-import { createAgentAdapter, createChatAdapter, createSearchAdapter } from "./adapters";
+import {
+  createAgentAdapter,
+  createChatAdapter,
+  createReportAdapter,
+  createSearchAdapter,
+} from "./adapters";
 import { contextTitle } from "./logic";
 
 vi.mock("../../lib/api", async (importOriginal) => ({
@@ -241,6 +246,82 @@ describe("conversation adapters", () => {
     expect(createChatAdapter().capabilities().attachments).toBe(true);
     expect(createSearchAdapter().capabilities().attachments).toBe(false);
     expect(createAgentAdapter().capabilities().attachments).toBe(true);
+  });
+
+  it("asks for the bindable datasets inside this workspace, not the platform catalogue", async () => {
+    // A report is created in the caller's workspace and `freezeReportDatasets`
+    // resolves each id there. The governance catalogue (`useGetList("datasets")`)
+    // sends `scope=all` for a user with governance.read, which offered other
+    // workspaces' datasets and ended in 404 `dataset not found` after the click
+    // (live 4.151, 2026-11-18).
+    vi.mocked(api.get).mockReturnValueOnce(
+      envelope({ items: [{ id: "ds-1", name: "安全生产制度" }, { id: "", name: "broken" }] }),
+    );
+    const rows = await createReportAdapter().listReportDatasets();
+    expect(api.get).toHaveBeenCalledWith("/datasets?scope=current&page=1&page_size=200", {
+      signal: undefined,
+    });
+    // A row without an id cannot be bound, so it is dropped instead of rendered as
+    // a chip whose click creates a 400.
+    expect(rows).toEqual([{ id: "ds-1", name: "安全生产制度" }]);
+  });
+
+  it("sends a report follow-up as three keys, never as report text", async () => {
+    // A14: the browser may only say *which* report/revision/section. If it could send
+    // the body, the prompt would rest on an unverifiable second source of truth.
+    const fetchMock = vi.fn().mockRejectedValue(new Error("no network"));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const adapter = createChatAdapter();
+      const stream = adapter.start({
+        target: { id: "chat-1", kind: "chat" },
+        text: "第 2 节的结论站得住吗？",
+        requestId: "req-1",
+        conversationKey: "k",
+        reportContext: { report_id: "rep1", revision: 3, section_key: "compliance" },
+      });
+      for await (const _event of stream.events) {
+        // The transport failure is irrelevant here; the payload was already sent.
+      }
+      const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+      expect(body.report_context).toEqual({ report_id: "rep1", revision: 3, section_key: "compliance" });
+      expect(Object.keys(body.report_context)).toEqual(["report_id", "revision", "section_key"]);
+      expect(body.messages).toEqual([{ role: "user", content: "第 2 节的结论站得住吗？" }]);
+
+      fetchMock.mockClear();
+      const plain = adapter.start({
+        target: { id: "chat-1", kind: "chat" },
+        text: "hi",
+        requestId: "req-2",
+        conversationKey: "k",
+      });
+      for await (const _event of plain.events) {
+        // ditto
+      }
+      const plainBody = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+      // A turn without an attachment must not send an empty object: the server would
+      // have to distinguish "absent" from "present but blank".
+      expect("report_context" in plainBody).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reads follow-up chips for a revision and keeps the scope in the query", async () => {
+    vi.mocked(api.get).mockReturnValueOnce(
+      envelope({
+        report_id: "rep1",
+        revision: 3,
+        completeness: "partial",
+        items: [{ text: "第 2 节的两个来源冲突吗？", kind: "evidence_conflict", section_key: "compliance", section_ord: 2 }],
+      }),
+    );
+    const view = await createReportAdapter().loadFollowUps("rep1", { revision: 3, sectionKey: "compliance" });
+    expect(api.get).toHaveBeenCalledWith("/reports/rep1/follow-ups?revision=3&section_key=compliance", {
+      signal: undefined,
+    });
+    expect(view.items).toHaveLength(1);
+    expect(view.completeness).toBe("partial");
   });
 
   it("creates chat sessions through the chat session endpoint", async () => {

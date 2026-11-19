@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Clock,
   Download,
+  FileStack,
   Loader2,
   Plus,
   RefreshCw,
@@ -19,7 +20,6 @@ import {
 import { api, ApiError } from "../../lib/api";
 import { AgentCanvas } from "./AgentCanvas";
 import { AgentChat } from "./AgentChat";
-import { UserNameLabel } from "@/components/admin/ReferenceLabel";
 import { computeDslDiff } from "./dslDiff";
 import { DiffView } from "./DiffView";
 import {
@@ -29,12 +29,17 @@ import {
   inferIsAgentFromImport,
 } from "./dslUtils";
 import { VersionPreview } from "./VersionPreview";
+import { formatEpoch } from "@/lib/epoch";
 
 interface SessionLike {
   id: string;
   name?: string;
+  // Engine user id — not a platform user, so it must never feed UserNameLabel
+  // (that lookup misses and renders "已删除" for a live session).
   user_id?: string;
   source?: string;
+  update_time?: number;
+  message?: { role?: string }[];
 }
 interface VersionLike {
   id: string;
@@ -92,6 +97,9 @@ export const AgentShow = () => {
   };
 
   const [metaError, setMetaError] = useState<string | null>(null);
+  // Pipeline canvases parse documents; they have no chat semantics, so the
+  // sessions/run tabs are not offered (see the notice rendered above the canvas).
+  const isPipeline = canvasCategory === DATAFLOW_CANVAS_CATEGORY;
 
   const loadMeta = async () => {
     if (!id) return;
@@ -133,6 +141,10 @@ export const AgentShow = () => {
     metaLoadedRef.current = true;
     setMetaLoading(false);
   };
+
+  useEffect(() => {
+    if (isPipeline && (pageTab === "sessions" || pageTab === "run")) setPageTab("config");
+  }, [isPipeline, pageTab]);
 
   useEffect(() => {
     if (pageTab !== "config" && !metaLoadedRef.current) void loadMeta();
@@ -384,8 +396,15 @@ export const AgentShow = () => {
           <TabsList className="h-8">
             <TabsTrigger value="config" className="text-xs">{t("agents.tab_config")}</TabsTrigger>
             <TabsTrigger value="versions" className="text-xs">{t("agents.tab_versions")}</TabsTrigger>
-            <TabsTrigger value="sessions" className="text-xs">{t("agents.tab_sessions")}</TabsTrigger>
-            <TabsTrigger value="run" className="text-xs">{t("agents.tab_run")}</TabsTrigger>
+            {/* A data-pipeline canvas has no conversation: its run surface is a
+                dataset parse. Offering sessions/run here invited users into an
+                engine node error rendered as an assistant answer (defect ㊳). */}
+            {!isPipeline && (
+              <TabsTrigger value="sessions" className="text-xs">{t("agents.tab_sessions")}</TabsTrigger>
+            )}
+            {!isPipeline && (
+              <TabsTrigger value="run" className="text-xs">{t("agents.tab_run")}</TabsTrigger>
+            )}
           </TabsList>
           <span
             className={`flex min-w-[72px] items-center gap-1.5 text-xs text-muted-foreground transition-opacity ${
@@ -405,6 +424,15 @@ export const AgentShow = () => {
 
       {/* ── Content area (fills remaining height, scrollable) ── */}
       <div className="min-h-0 flex-1 overflow-auto">
+        {isPipeline && (
+          <div className="mx-4 mt-4 rounded border border-dashed bg-muted/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+            <div className="mb-1 flex items-center gap-1.5 text-sm font-medium text-foreground">
+              <FileStack className="size-4" aria-hidden="true" />
+              {t("agents.pipeline_notice_title")}
+            </div>
+            {t("agents.pipeline_notice_body")}
+          </div>
+        )}
         <TabsContent value="config" className="h-full m-0 mt-0 p-4 data-[state=inactive]:hidden">
           <div className="flex h-full flex-col rounded border">
             <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
@@ -417,7 +445,7 @@ export const AgentShow = () => {
                     editorTab === "canvas" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  画布
+                  {t("agents.editor_canvas")}
                 </button>
                 <button
                   type="button"
@@ -474,13 +502,15 @@ export const AgentShow = () => {
                         >
                           {expandedVersionId === v.id ? "▼" : "▶"}
                         </button>
-                        {v.update_time ? (
+                        {formatEpoch(v.update_time) ? (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock className="size-3" aria-hidden="true" />
-                            {new Date(v.update_time * 1000).toLocaleString()}
+                            {formatEpoch(v.update_time)}
                           </span>
                         ) : (
-                          <span className="truncate text-xs text-muted-foreground">{v.id}</span>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {t("agents.version_no_time")}
+                          </span>
                         )}
                         {v.release && (
                           <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
@@ -601,7 +631,10 @@ export const AgentShow = () => {
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{s.name || s.id}</div>
                       <div className="text-xs text-muted-foreground">
-                        <UserNameLabel id={s.user_id} />
+                        {t("agents.session_meta", {
+                          count: (s.message ?? []).filter((m) => m.role).length,
+                          time: formatEpoch(s.update_time) || t("agents.version_no_time"),
+                        })}
                       </div>
                     </div>
                     <Button

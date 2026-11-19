@@ -29,6 +29,7 @@ import {
   type CreateReportResult,
   type ExportArtifactRecord,
   type ReportDetailRecord,
+  type ReportFollowUpView,
   type ReportJobSnapshot,
   type ReportTemplateView,
 } from "./report/report-run";
@@ -506,13 +507,16 @@ export function createChatAdapter(): ConversationAdapter {
       const record = await unwrap<Record<string, unknown>>(api.post(`/chats/${encodeURIComponent(targetId)}/sessions`, {}));
       return contextFromRecord("chat", record, targetId);
     },
-    start({ target, context, text, attachments, requestId, conversationKey: key }) {
+    start({ target, context, text, attachments, requestId, conversationKey: key, reportContext }) {
       const payload: Record<string, unknown> = {
         chat_id: target.id,
-      messages: [{ role: "user", content: text, ...(attachments?.length ? { files: attachments.map((item) => item.meta) } : {}) }],
+        messages: [{ role: "user", content: text, ...(attachments?.length ? { files: attachments.map((item) => item.meta) } : {}) }],
         stream: true,
       };
       if (context?.type === "session") payload.session_id = context.id;
+      // A14: only the three keys travel. The server reads the report body itself, so
+      // an attachment here is a *reference*, not a copy of the document.
+      if (reportContext?.report_id) payload.report_context = reportContext;
       return startStream("/api/v1/chat/completions", payload, target, context ?? null, key, requestId, `stream-${requestId}`);
     },
   };
@@ -623,19 +627,65 @@ export interface ReportExportSuccess {
 export interface ReportAdapter extends ConversationAdapter {
   kind: "report";
   listTemplates(): Promise<ReportTemplateView[]>;
+  /** Datasets the run may bind: the caller's workspace, never the platform-wide list. */
+  listReportDatasets(signal?: AbortSignal): Promise<ReportDatasetOption[]>;
   loadDetail(reportId: string, options?: { signal?: AbortSignal }): Promise<ReportDetailRecord>;
+  /**
+   * A14: the chips a reader may click to start the next turn.
+   *
+   * Derived server-side from the stored revision, so two loads of the same revision
+   * agree — which is what makes them cacheable and testable. `revision` 0 asks for
+   * whatever the report currently shows.
+   */
+  loadFollowUps(reportId: string, options?: { revision?: number; sectionKey?: string; signal?: AbortSignal }): Promise<ReportFollowUpView>;
   createReport(body: {
     title: string;
     question: string;
     template_key: string;
+    /** R18's retrieval depth (`standard` / `deep`), frozen on the revision. */
+    research_depth?: string;
     datasets?: Array<{ dataset_id: string; engine_dataset_id?: string; role?: string; engine_id?: string }>;
     outline_confirmation?: string;
+    /** The chat/target this run was started from (`origin_chat_id`). */
+    origin_chat_id?: string;
+    /** The session inside that chat (`origin_session_id`). */
+    origin_session_id?: string;
   }): Promise<CreateReportResult>;
   cancelReport(reportId: string): Promise<unknown>;
   loadSnapshot(reportId: string, jobId: string, options?: { signal?: AbortSignal }): Promise<ReportJobSnapshot>;
   confirmOutline(reportId: string, revisionNo: number, sections: Array<{ section_key: string; title: string }>): Promise<unknown>;
   createExport(reportId: string, revisionNo: number, format: "md" | "docx" | "pdf"): Promise<ReportExportSuccess>;
   artifactDownloadUrl(reportId: string, revisionNo: number, artifactId: string): string;
+}
+
+/**
+ * Datasets a report run may bind.
+ *
+ * Deliberately *not* `useGetList("datasets")`: that is the governance catalogue, and
+ * for a user with `governance.read` it asks for `scope=all` — every workspace in the
+ * platform. A report is created inside the caller's workspace and
+ * `freezeReportDatasets` resolves each id there, so offering the platform catalogue
+ * hands the user rows the run must reject. Picking one used to end in a toast that
+ * said only "报告任务启动失败。" (found live on 4.151, 2026-11-18: the POST answered
+ * 404 `dataset not found` for a dataset displayed one click earlier).
+ *
+ * `scope=current` is the server's default and answers the caller's own workspace.
+ */
+export interface ReportDatasetOption {
+  id: string;
+  name: string;
+}
+
+async function listReportDatasets(signal?: AbortSignal): Promise<ReportDatasetOption[]> {
+  const data = await unwrap<unknown>(
+    api.get("/datasets?scope=current&page=1&page_size=200", { signal }),
+  );
+  const rows = Array.isArray(data)
+    ? (data as Array<Record<string, unknown>>)
+    : ((data as { items?: Array<Record<string, unknown>> })?.items ?? []);
+  return rows
+    .map((row) => ({ id: String(row.id ?? ""), name: String(row.name ?? row.id ?? "") }))
+    .filter((row) => row.id !== "");
 }
 
 export function createReportAdapter(): ReportAdapter {
@@ -646,16 +696,43 @@ export function createReportAdapter(): ReportAdapter {
     return templateList();
   }
 
+  async function listReportDatasetsForAdapter(signal?: AbortSignal): Promise<ReportDatasetOption[]> {
+    try {
+      return await listReportDatasets(signal);
+    } catch {
+      // An unreadable dataset list is not a broken workspace: the template step and
+      // the rest of the panel still work, and the user sees "no bindable datasets"
+      // instead of a dead screen.
+      return [];
+    }
+  }
+
   async function loadDetail(reportId: string, options: { signal?: AbortSignal } = {}): Promise<ReportDetailRecord> {
     return unwrap<ReportDetailRecord>(api.get(`/reports/${encodeURIComponent(reportId)}`, { signal: options.signal }));
+  }
+
+  async function loadFollowUps(
+    reportId: string,
+    options: { revision?: number; sectionKey?: string; signal?: AbortSignal } = {},
+  ): Promise<ReportFollowUpView> {
+    const query = new URLSearchParams();
+    if (options.revision && options.revision > 0) query.set("revision", String(options.revision));
+    if (options.sectionKey) query.set("section_key", options.sectionKey);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return unwrap<ReportFollowUpView>(
+      api.get(`/reports/${encodeURIComponent(reportId)}/follow-ups${suffix}`, { signal: options.signal }),
+    );
   }
 
   async function createReport(body: {
     title: string;
     question: string;
     template_key: string;
+    research_depth?: string;
     datasets?: Array<{ dataset_id: string; engine_dataset_id?: string; role?: string; engine_id?: string }>;
     outline_confirmation?: string;
+    origin_chat_id?: string;
+    origin_session_id?: string;
   }): Promise<CreateReportResult> {
     return unwrap<CreateReportResult>(api.post("/reports", body, {
       headers: { "Idempotency-Key": createIdempotencyKey() },
@@ -847,7 +924,9 @@ export function createReportAdapter(): ReportAdapter {
     },
     start,
     listTemplates,
+    listReportDatasets: listReportDatasetsForAdapter,
     loadDetail,
+    loadFollowUps,
     createReport,
     cancelReport,
     loadSnapshot,

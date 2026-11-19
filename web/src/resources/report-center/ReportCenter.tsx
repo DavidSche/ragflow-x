@@ -16,11 +16,16 @@ import { api, ApiError, unwrap } from "../../lib/api";
 import { ReportDetailDrawer } from "./ReportDetailDrawer";
 import { ReportReader } from "./ReportReader";
 import { ReportRetentionCard } from "./ReportRetentionCard";
+import { ReportTemplatePanel } from "./ReportTemplatePanel";
+import type { ReportTemplateView } from "../conversation-center/report/report-run";
 import {
   formatRatio,
   reportOpenPath,
-  reportStatusLabel,
+  reportDeliveryLabel,
+  reportListViewLabel,
+  REPORT_LIST_VIEWS,
   trendPoints,
+  type ReportListView,
   type ReportRow,
   type TrendResult,
 } from "./report-center-api";
@@ -73,20 +78,46 @@ export function ReportCenter() {
   // Without a page cursor the centre would silently hide report 21 onwards: the
   // list is the only discovery surface, so "there are more" has to be reachable.
   const [page, setPage] = useState(1);
+  // Which lifecycle view the list is asking for (doc/297 §2.3). The default is
+  // `active`, mirroring the server: an archived report leaves the daily list, and a
+  // list that kept showing it would make the archive button do nothing visible.
+  const [view, setView] = useState<ReportListView>("active");
   const [trendView, setTrendView] = useState<TrendView>("own");
+  // The list carries only `template_key`, which is an identifier for machines. A
+  // column headed 「模板」 has to show the template's name, so the catalogue is read
+  // once and the key is kept as the hover title. A failed read degrades to the key
+  // rather than blanking the column: an identifier is ugly, an empty cell is wrong.
+  const [templateNames, setTemplateNames] = useState<Record<string, string>>({});
   // The workspace view is a governance read (`manage:report`); the server enforces
   // it, and asking the same question here stops the toggle being offered to a
   // caller who could only get 403. `useCanAccess` is the client mirror of the RBAC
   // rule, not a second policy.
   const { canAccess: canManageReports } = useCanAccess({ resource: "report", action: "manage" });
   const canManage = canManageReports === true;
+  // R19 governance is its own resource: a workspace may let someone manage report
+  // clocks without letting them author templates, so the panel follows the same gate
+  // the publish/retire routes carry.
+  const { canAccess: canManageTemplates } = useCanAccess({
+    resource: "report-template",
+    action: "manage",
+  });
+  const canManageTemplate = canManageTemplates === true;
+  // Reading the list is `read:report-template` — every report author needs it (the
+  // creation flow picks a template), so the panel is shown and its actions are not.
+  const { canAccess: canReadTemplates } = useCanAccess({
+    resource: "report-template",
+    action: "read",
+  });
+  const canReadTemplate = canReadTemplates === true;
 
-  const loadList = useCallback(async (pageNo: number) => {
+  const loadList = useCallback(async (pageNo: number, status: ReportListView) => {
     setLoading(true);
     setError(null);
     try {
       const result = await unwrap<ReportPage>(
-        api.get("/reports", { params: { page: pageNo, page_size: PAGE_SIZE } }),
+        api.get("/reports", {
+          params: { page: pageNo, page_size: PAGE_SIZE, status },
+        }),
       );
       setRows(result.items ?? []);
       setTotal(result.total ?? 0);
@@ -119,8 +150,26 @@ export function ReportCenter() {
   }, [loadTrend, trendView]);
 
   useEffect(() => {
-    void loadList(page);
-  }, [loadList, page]);
+    let alive = true;
+    void (async () => {
+      const views = await unwrap<ReportTemplateView[]>(api.get("/report-templates")).catch(() => null);
+      if (!alive || !Array.isArray(views)) return;
+      const names: Record<string, string> = {};
+      for (const view of views) {
+        const key = String(view.template_key ?? "");
+        const name = view.payload?.name?.zh || view.payload?.name?.en || key;
+        if (key) names[key] = name;
+      }
+      setTemplateNames(names);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    void loadList(page, view);
+  }, [loadList, page, view]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -129,9 +178,10 @@ export function ReportCenter() {
       (row) =>
         row.title.toLowerCase().includes(needle) ||
         (row.question ?? "").toLowerCase().includes(needle) ||
-        row.template_key.toLowerCase().includes(needle),
+        row.template_key.toLowerCase().includes(needle) ||
+        (templateNames[row.template_key] ?? "").toLowerCase().includes(needle),
     );
-  }, [rows, query]);
+  }, [rows, query, templateNames]);
 
   const points = trendPoints(trend);
   const peak = points.reduce((max, point) => Math.max(max, point.revisions), 0);
@@ -146,7 +196,7 @@ export function ReportCenter() {
       setLastDeleted(pendingDelete);
       setPendingDelete(null);
       notify(t("reportCenter.deleted"));
-      void loadList(page);
+      void loadList(page, view);
       void loadTrend(trendView);
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("reportCenter.delete_fail"), { type: "error" });
@@ -162,7 +212,7 @@ export function ReportCenter() {
       await unwrap(api.post(`/reports/${encodeURIComponent(lastDeleted.id)}/restore`));
       notify(t("reportCenter.restored"));
       setLastDeleted(null);
-      void loadList(page);
+      void loadList(page, view);
       void loadTrend(trendView);
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("reportCenter.restore_fail"), { type: "error" });
@@ -179,7 +229,7 @@ export function ReportCenter() {
           <p className="text-sm text-muted-foreground">{t("reportCenter.subtitle")}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => {
-            void loadList(page);
+            void loadList(page, view);
             void loadTrend(trendView);
           }}
           disabled={loading}>
@@ -189,11 +239,13 @@ export function ReportCenter() {
       </header>
 
       <section
-        aria-label={t("reportCenter.trend_title")}
+        aria-label={t("reportCenter.trend_title", { days: String(TREND_DAYS) })}
         className="rounded-lg border p-4"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-medium">{t("reportCenter.trend_title")}</h2>
+          <h2 className="text-sm font-medium">
+            {t("reportCenter.trend_title", { days: String(TREND_DAYS) })}
+          </h2>
           <div className="flex items-center gap-3">
             {canManage && (
               // `view=tenant` is the governance ladder: it needs `manage:report`
@@ -215,7 +267,7 @@ export function ReportCenter() {
               </div>
             )}
             <span className="text-xs text-muted-foreground">
-              {t("reportCenter.trend_window", { days: String(TREND_DAYS) })}
+              {t(`reportCenter.trend_scope_${trendView}`)}
             </span>
           </div>
         </div>
@@ -226,11 +278,11 @@ export function ReportCenter() {
               <Metric label={t("reportCenter.metric_published")} value={String(trend.totals.published ?? 0)} />
               <Metric
                 label={t("reportCenter.metric_pass_rate")}
-                value={formatRatio(trend.totals.quality_gate_pass_rate)}
+                value={formatRatio(t, trend.totals.quality_gate_pass_rate)}
               />
               <Metric
                 label={t("reportCenter.metric_citation")}
-                value={formatRatio(trend.totals.citation_coverage as number | null | undefined)}
+                value={formatRatio(t, trend.totals.citation_coverage as number | null | undefined)}
               />
             </dl>
             {points.length > 0 ? (
@@ -277,6 +329,33 @@ export function ReportCenter() {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+        {/* The three views are a closed set from the contract, and the server owns
+            the list query: pressing 「已归档」 re-reads with `?status=archived`
+            instead of filtering the page in the browser, which would only ever
+            archive-search the twenty rows that happened to be loaded. */}
+        <div
+          className="flex items-center gap-1"
+          role="group"
+          aria-label={t("reportCenter.view_label")}
+        >
+          {REPORT_LIST_VIEWS.map((option) => (
+            <Button
+              key={option}
+              variant={view === option ? "secondary" : "ghost"}
+              size="sm"
+              aria-pressed={view === option}
+              onClick={() => {
+                setView(option);
+                // A view change is a new query, so the page cursor goes back to 1:
+                // staying on page 3 of a view with two rows shows an empty table.
+                setPage(1);
+              }}
+              data-testid={`report-view-${option}`}
+            >
+              {reportListViewLabel(t, option)}
+            </Button>
+          ))}
+        </div>
         <span className="text-sm text-muted-foreground">
           {t("reportCenter.count", { count: String(total) })}
         </span>
@@ -295,7 +374,19 @@ export function ReportCenter() {
       ) : visible.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
           <FileText className="mx-auto mb-2 size-6" />
-          {query ? t("reportCenter.no_match") : t("reportCenter.empty")}
+          {query ? (
+            t("reportCenter.no_match")
+          ) : view === "archived" ? (
+            // An empty archived view is the normal state of a workspace that never
+            // archived anything, so it explains the feature instead of saying "no
+            // data" and leaving the button looking broken.
+            <span data-testid="report-empty-archived">
+              {t("reportCenter.empty_archived")}
+              <span className="mt-1 block text-xs">{t("reportCenter.empty_archived_hint")}</span>
+            </span>
+          ) : (
+            t("reportCenter.empty")
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -324,14 +415,26 @@ export function ReportCenter() {
                       >
                         {row.title}
                       </button>
+                      {row.status === "archived" && (
+                        // In the `all` view an archived row has to say so, or it looks
+                        // like any other report that simply will not accept a rerun.
+                        <span
+                          className="ml-2 rounded bg-muted px-1 text-[10px] text-muted-foreground align-middle"
+                          data-testid={`report-archived-badge-${row.id}`}
+                        >
+                          {t("reportCenter.archived_badge")}
+                        </span>
+                      )}
                       {row.question && (
                         <div className="truncate text-xs text-muted-foreground" title={row.question}>
                           {row.question}
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs">{row.template_key}</td>
-                    <td className="px-3 py-2">{reportStatusLabel(row.status)}</td>
+                    <td className="px-3 py-2" title={row.template_key}>
+                      {templateNames[row.template_key] ?? row.template_key}
+                    </td>
+                    <td className="px-3 py-2">{reportDeliveryLabel(t, row)}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{formatTime(row.created_at)}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{formatTime(row.expires_at)}</td>
                     <td className="px-3 py-2">
@@ -401,6 +504,8 @@ export function ReportCenter() {
       )}
 
       <ReportRetentionCard canManage={canManage} />
+
+      {canReadTemplate && <ReportTemplatePanel canManage={canManageTemplate} />}
 
       <ReportDetailDrawer
         report={detailRow}

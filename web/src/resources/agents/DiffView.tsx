@@ -1,6 +1,7 @@
 // DiffView — renders a structured DSL diff between the current canvas and a
 // saved version. Color-coded: green = added, red = removed, amber = modified.
 
+import { useTranslate } from "ra-core";
 import type { DslDiff } from "./dslDiff";
 
 interface Props {
@@ -33,11 +34,12 @@ function Stat({ label, added, removed, modified }: { label: string; added: numbe
 }
 
 export function DiffView({ diff }: Props) {
+  const t = useTranslate();
   if (diff.isEmpty) {
     return (
       <div className="flex items-center gap-2 rounded border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
         <span className="text-green-500">✓</span>
-        <span>当前画布与该版本完全一致，无差异</span>
+        <span>{t("agents.diff_identical")}</span>
       </div>
     );
   }
@@ -46,15 +48,15 @@ export function DiffView({ diff }: Props) {
     <div className="space-y-2 text-[11px]">
       {/* Summary stats */}
       <div className="flex flex-wrap gap-3">
-        <Stat label="节点" added={diff.stats.nodesAdded} removed={diff.stats.nodesRemoved} modified={diff.stats.nodesModified} />
-        <Stat label="连线" added={diff.stats.edgesAdded} removed={diff.stats.edgesRemoved} modified={diff.stats.edgesModified} />
-        <Stat label="组件" added={diff.stats.componentsAdded} removed={diff.stats.componentsRemoved} modified={diff.stats.componentsModified} />
+        <Stat label={t("agents.diff_nodes")} added={diff.stats.nodesAdded} removed={diff.stats.nodesRemoved} modified={diff.stats.nodesModified} />
+        <Stat label={t("agents.diff_edges")} added={diff.stats.edgesAdded} removed={diff.stats.edgesRemoved} modified={diff.stats.edgesModified} />
+        <Stat label={t("agents.diff_components")} added={diff.stats.componentsAdded} removed={diff.stats.componentsRemoved} modified={diff.stats.componentsModified} />
       </div>
 
       {/* Node changes */}
       {diff.nodes.length > 0 && (
         <div>
-          <div className="mb-1 font-medium text-slate-600">节点变更</div>
+          <div className="mb-1 font-medium text-slate-600">{t("agents.diff_node_changes")}</div>
           <div className="space-y-0.5">
             {diff.nodes.map((n) => (
               <div key={n.id} className={`flex items-start gap-1.5 rounded border px-2 py-1 ${CHANGE_STYLES[n.change]}`}>
@@ -82,7 +84,7 @@ export function DiffView({ diff }: Props) {
       {/* Edge changes */}
       {diff.edges.length > 0 && (
         <div>
-          <div className="mb-1 font-medium text-slate-600">连线变更</div>
+          <div className="mb-1 font-medium text-slate-600">{t("agents.diff_edge_changes")}</div>
           <div className="space-y-0.5">
             {diff.edges.map((e) => (
               <div key={e.id} className={`flex items-center gap-1.5 rounded border px-2 py-1 ${CHANGE_STYLES[e.change]}`}>
@@ -97,7 +99,7 @@ export function DiffView({ diff }: Props) {
       {/* Component changes */}
       {diff.components.length > 0 && (
         <div>
-          <div className="mb-1 font-medium text-slate-600">引擎组件变更</div>
+          <div className="mb-1 font-medium text-slate-600">{t("agents.diff_component_changes")}</div>
           <div className="space-y-0.5">
             {diff.components.map((c) => (
               <div key={c.id} className={`flex items-start gap-1.5 rounded border px-2 py-1 ${CHANGE_STYLES[c.change]}`}>

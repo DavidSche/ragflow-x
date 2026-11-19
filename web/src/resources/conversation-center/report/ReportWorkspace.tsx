@@ -16,12 +16,13 @@
  * this gate keeps the P0-A screen honest without claiming a policy it lacks.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useCanAccess, useGetList, useNotify, useTranslate } from "ra-core";
+import { useCanAccess, useNotify, useTranslate } from "ra-core";
 import {
   ArrowLeft,
   Database,
   FileText,
   Loader2,
+  Radar,
   RefreshCw,
   Sparkles,
   XCircle,
@@ -34,6 +35,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ApiError } from "../../../lib/api";
+import {
+  reportJobStatusLabel,
+  reportStageLabel,
+} from "../../report-center/report-center-api";
 import type { ReportAdapter } from "../adapters";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { OutlineEditor } from "./OutlineEditor";
@@ -46,6 +52,7 @@ import {
   type CreateReportResult,
   type ReportArtifactEntry,
   type ReportEvidencePreview,
+  type ReportFollowUpSuggestion,
   type ReportJobSnapshot,
   type ReportTemplateView,
 } from "./report-run";
@@ -65,6 +72,28 @@ export interface ReportWorkspaceProps {
   adapter: ReportAdapter;
   identity?: Record<string, unknown> | null;
   onClose: () => void;
+  /**
+   * Where this run was started from. The report row's 「打开」 navigates back with
+   * `origin_chat_id`/`origin_session_id`; a run that does not record them leaves the
+   * centre's jump-back button permanently disabled (live 2026-11-18: every report
+   * said "该报告没有关联对话记录，无法从这里打开").
+   */
+  originChatId?: string;
+  originSessionId?: string;
+  /**
+   * A14: what a follow-up chip click should do. Only supplied when this workspace was
+   * opened *inside* a conversation that can take the turn — a chip that cannot be
+   * sent is not rendered at all, rather than offering a button that dead-ends.
+   */
+  onFollowUp?: (request: ReportFollowUpRequest) => void;
+}
+
+/** One follow-up chip click, in the three keys the chat turn needs. */
+export interface ReportFollowUpRequest {
+  text: string;
+  reportId: string;
+  revision: number;
+  sectionKey?: string;
 }
 
 interface DatasetOption {
@@ -72,10 +101,27 @@ interface DatasetOption {
   name: string;
 }
 
+/**
+ * The workspace label the footer prints. `tenant_name` comes from `/me`; when a
+ * deployment predates that field (or the name is blank) fall back to the id, so
+ * the line degrades to the previous behaviour instead of printing "undefined".
+ */
+export function workspaceName(identity: Record<string, unknown> | null | undefined): string {
+  if (!identity) return "";
+  for (const key of ["tenant_name", "tenant_id", "user_id"]) {
+    const value = identity[key];
+    if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return "";
+}
+
 export function ReportWorkspace({
   adapter,
   identity,
   onClose,
+  originChatId,
+  originSessionId,
+  onFollowUp,
 }: ReportWorkspaceProps) {
   const t = useTranslate();
   const notify = useNotify();
@@ -85,10 +131,34 @@ export function ReportWorkspace({
   const [templates, setTemplates] = useState<ReportTemplateView[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplateView | null>(null);
   const [selectedDatasetIds, setSelectedDatasetIds] = useState<string[]>([]);
+  // R18's depth, defaulted to the cheaper standard run: deep research costs an extra
+  // planning call per section, so it is opted into rather than assumed.
+  const [researchDepth, setResearchDepth] = useState<"standard" | "deep">("standard");
   const [titleEdit, setTitleEdit] = useState("");
   const [creating, setCreating] = useState(false);
   const [report, setReport] = useState<CreateReportResult | null>(null);
   const [snapshot, setSnapshot] = useState<ReportJobSnapshot | null>(null);
+
+  /**
+   * The snapshot only ever moves forward.
+   *
+   * The follow loop and every manual refresh read the snapshot over HTTP while
+   * the stream keeps pushing frames, so two reads can land out of order: a read
+   * issued before the job finished used to overwrite the terminal snapshot that
+   * arrived meanwhile, and the badge flipped back from 已生成 to 汇总成文 under a
+   * finished report (live, 2026-11-18). Two rules keep that from happening —
+   * a terminal snapshot is never replaced by a non-terminal one, and a read with
+   * an older `event_seq` is dropped.
+   */
+  const applySnapshot = useCallback((next: ReportJobSnapshot | null) => {
+    if (!next) return;
+    setSnapshot((current) => {
+      if (!current) return next;
+      if (isReportJobTerminal(current.status) && !isReportJobTerminal(next.status)) return current;
+      if (next.event_seq < current.event_seq) return current;
+      return next;
+    });
+  }, []);
   // Delivery history of the published revision (A11). Loaded from the read, never
   // held only in the panel's memory: that is what makes an export survive F5.
   const [artifacts, setArtifacts] = useState<ReportArtifactEntry[]>([]);
@@ -98,16 +168,38 @@ export function ReportWorkspace({
   const [refreshing, setRefreshing] = useState(false);
   const [phase, setPhase] = useState<WorkspacePhase>("loading");
 
-  const datasetQuery = useGetList<DatasetOption>("datasets", {
-    pagination: { page: 1, perPage: 200 },
-    sort: { field: "updated_at", order: "DESC" },
-  });
-  const datasets: DatasetOption[] = useMemo(
-    () => (datasetQuery.data ?? []).map((d) => ({ id: String(d.id), name: String(d.name ?? d.id) })),
-    [datasetQuery.data],
-  );
+  const [datasets, setDatasets] = useState<DatasetOption[]>([]);
 
   const jobId = report?.job.id ?? rememberedReportJob(report?.report.id ?? "") ?? snapshot?.job_id;
+
+  // A14's chips. Derived from the stored revision, so they are re-read rather than
+  // remembered: a body that was rewritten since the last look must not offer the
+  // sentence about the old one.
+  const [followUps, setFollowUps] = useState<ReportFollowUpSuggestion[]>([]);
+  const followUpReportId = report?.report.id ?? "";
+  const followUpRevision = report?.revision.revision ?? 0;
+  useEffect(() => {
+    if (!onFollowUp || !followUpReportId || followUpRevision <= 0) {
+      setFollowUps([]);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    void adapter
+      .loadFollowUps(followUpReportId, { revision: followUpRevision, signal: controller.signal })
+      .then((view) => {
+        if (!cancelled) setFollowUps(view.items ?? []);
+      })
+      .catch(() => {
+        // A chip list is a convenience: if it cannot be read the document is still
+        // readable, so this stays silent instead of taking over the workspace.
+        if (!cancelled) setFollowUps([]);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [adapter, followUpReportId, followUpRevision, onFollowUp]);
 
   const loadTemplates = useCallback(async () => {
     try {
@@ -123,6 +215,20 @@ export function ReportWorkspace({
       setTemplates([]);
     }
   }, [adapter, notify, t]);
+
+  useEffect(() => {
+    if (canAccess !== true) return;
+    // The bindable datasets come from the adapter, scoped to this workspace: the
+    // governance catalogue lists every tenant, and a dataset from another workspace
+    // is rejected by the run itself (404 dataset not found, found live 2026-11-18).
+    let cancelled = false;
+    void adapter.listReportDatasets().then((rows) => {
+      if (!cancelled) setDatasets(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [adapter, canAccess]);
 
   useEffect(() => {
     if (canAccess === false) {
@@ -151,6 +257,14 @@ export function ReportWorkspace({
 
   const backToTemplates = () => setSelectedTemplate(null);
 
+  // R18 (doc/295 §2.2): the depth is frozen on the revision at creation and a
+  // regeneration inherits it, so it is chosen here — once — and not offered again.
+  // `deep` widens this run's own retrieval through a planner; it never relaxes what a
+  // sentence may claim, which is why it is not presented as a quality setting.
+  const toggleResearchDepth = () => {
+    setResearchDepth((current) => (current === "deep" ? "standard" : "deep"));
+  };
+
   const toggleDataset = (id: string) => {
     setSelectedDatasetIds((previous) =>
       previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id],
@@ -170,13 +284,27 @@ export function ReportWorkspace({
         title,
         question: title,
         template_key: selectedTemplate.template_key,
+        research_depth: researchDepth,
         datasets: selectedDatasetIds.map((id) => ({ dataset_id: id, role: "primary" })),
+        // Omitted when the workspace was opened outside a conversation: an empty
+        // string is not an origin, and the server would store one.
+        ...(originChatId ? { origin_chat_id: originChatId } : {}),
+        ...(originSessionId ? { origin_session_id: originSessionId } : {}),
       });
       rememberReportJob(result.report.id, result.job.id);
       setReport(result);
       setPhase("confirm_outline");
     } catch (error) {
-      notify(t("conversationCenter.report_create_error"), { type: "error" });
+      // A bare "启动失败" made a server answer ("dataset not found") invisible: the
+      // user could not tell a bad dataset from an outage. Show the reason when the
+      // server gave one.
+      const reason = error instanceof ApiError ? error.displayMessage : "";
+      notify(
+        reason
+          ? `${t("conversationCenter.report_create_error")} ${reason}`
+          : t("conversationCenter.report_create_error"),
+        { type: "error" },
+      );
     } finally {
       setCreating(false);
     }
@@ -215,10 +343,10 @@ export function ReportWorkspace({
       const jid = jobId;
       if (!id || !jid) return null;
       const snap = await adapter.loadSnapshot(id, jid, options).catch(() => null);
-      if (snap) setSnapshot(snap);
+      applySnapshot(snap);
       return snap;
     },
-    [adapter, report, jobId],
+    [adapter, report, jobId, applySnapshot],
   );
 
   const reloadArtifacts = useCallback(
@@ -271,7 +399,7 @@ export function ReportWorkspace({
       }).catch(() => null);
       if (disposed) return;
       if (snap) {
-        setSnapshot(snap);
+        applySnapshot(snap);
         if (isReportJobTerminal(snap.status)) return;
       }
       const poller = openReportEventPoller(activeJobId, {
@@ -289,7 +417,7 @@ export function ReportWorkspace({
             signal: controller.signal,
           }).catch(() => null);
           if (fresh) {
-            setSnapshot(fresh);
+            applySnapshot(fresh);
             if (isReportJobTerminal(fresh.status)) {
               poller.abort();
               return;
@@ -308,7 +436,7 @@ export function ReportWorkspace({
       disposed = true;
       controller.abort();
     };
-  }, [adapter, report, phase, notify, t]);
+  }, [adapter, report, phase, notify, t, applySnapshot]);
 
   const status = snapshot?.status ?? (report ? (phase === "confirm_outline" ? "awaiting_outline" : undefined) : undefined);
 
@@ -353,8 +481,11 @@ export function ReportWorkspace({
           />
         </div>
         {status && (
+          // The badge speaks about the revision the server reports. It used to
+          // build `conversationCenter.report_job_<status>`, a key family that does
+          // not exist, so the badge printed `awaiting_outline` verbatim.
           <Badge variant="secondary" data-testid="report-status">
-            {t(`conversationCenter.report_job_${status}`, { _: status })}
+            {reportJobStatusLabel(t, status)}
           </Badge>
         )}
         <div className="flex items-center gap-2">
@@ -471,6 +602,24 @@ export function ReportWorkspace({
                   </ul>
                 )}
               </div>
+              <div>
+                <h3 className="mb-2 flex items-center gap-2 text-sm font-medium">
+                  <Radar className="size-4 text-muted-foreground" />
+                  {t("conversationCenter.report_research_depth_title")}
+                </h3>
+                <button
+                  type="button"
+                  onClick={toggleResearchDepth}
+                  aria-pressed={researchDepth === "deep"}
+                  className={`rounded-full border px-3 py-1 text-xs ${researchDepth === "deep" ? "border-primary bg-primary text-primary-foreground" : "bg-card hover:border-primary"}`}
+                  data-testid="research-depth-toggle"
+                >
+                  {t(`conversationCenter.report_research_depth_${researchDepth}`)}
+                </button>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t("conversationCenter.report_research_depth_hint")}
+                </p>
+              </div>
               <div className="flex items-center justify-end gap-2 border-t pt-3">
                 <Button variant="ghost" size="sm" onClick={backToTemplates}>
                   {t("conversationCenter.report_back_templates")}
@@ -498,12 +647,43 @@ export function ReportWorkspace({
 
           {(phase === "running" || phase === "published" || phase === "failed" || phase === "cancelled") && (
             <>
+              {onFollowUp && report && followUps.length > 0 && (
+                <section className="space-y-2" data-testid="report-follow-ups">
+                  <h3 className="flex items-center gap-2 text-sm font-medium">
+                    <Sparkles className="size-4 text-muted-foreground" />
+                    {t("conversationCenter.report_followup_title")}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {t("conversationCenter.report_followup_hint")}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {followUps.map((item, index) => (
+                      <button
+                        key={`${item.kind}-${item.section_key}-${index}`}
+                        type="button"
+                        onClick={() =>
+                          onFollowUp({
+                            text: item.text,
+                            reportId: report.report.id,
+                            revision: report.revision.revision,
+                            ...(item.section_key ? { sectionKey: item.section_key } : {}),
+                          })
+                        }
+                        className="rounded-full border px-3 py-1 text-left text-xs hover:border-primary"
+                        data-testid={`report-followup-${item.kind}`}
+                      >
+                        {item.text}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
               {snapshot && (
                 <section className="space-y-4" data-testid="progress-step">
                   {phase === "running" && snapshot.progress_total > 0 && (
                     <div role="progressbar" aria-valuemin={0} aria-valuemax={snapshot.progress_total} aria-valuenow={snapshot.progress_done}>
                       <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                        <span>{t(`conversationCenter.report_stage_${snapshot.stage}`, { _: snapshot.stage })}</span>
+                        <span>{reportStageLabel(t, snapshot.stage)}</span>
                         <span>
                           {snapshot.progress_done}/{snapshot.progress_total}
                         </span>
@@ -516,7 +696,7 @@ export function ReportWorkspace({
                       </div>
                     </div>
                   )}
-                  <SectionDrawer sections={snapshot.sections ?? []} evidenceBySection={undefined} />
+                  <SectionDrawer sections={snapshot.sections ?? []} />
                   {phase === "running" && (
                     <p className="text-xs text-muted-foreground">{t("conversationCenter.report_running_hint")}</p>
                   )}
@@ -546,7 +726,7 @@ export function ReportWorkspace({
                     {t("conversationCenter.report_failed_banner")}
                   </p>
                   {snapshot && snapshot.gaps && snapshot.gaps.length > 0 && (
-                    <SectionDrawer sections={snapshot.sections ?? []} evidenceBySection={undefined} />
+                    <SectionDrawer sections={snapshot.sections ?? []} />
                   )}
                 </div>
               )}
@@ -561,7 +741,10 @@ export function ReportWorkspace({
       <footer className="border-t pt-2 text-xs text-muted-foreground">
         {identity
           ? t("conversationCenter.report_workspace_footer", {
-              workspace: String(identity.tenant_id ?? identity.user_id ?? ""),
+              // The footer names the workspace. Printing `tenant_id` put a
+              // 32-char hex string in front of the reader (live, 2026-11-18);
+              // `/me` now carries `tenant_name` for exactly this line.
+              workspace: workspaceName(identity),
             })
           : ""}
       </footer>
