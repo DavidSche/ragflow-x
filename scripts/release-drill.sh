@@ -112,9 +112,16 @@ echo "==> [5/6] Integrity gate: sha256sum -c SHA256SUMS"
 echo "==> [6/6] Render release notes (logic inlined in release.yml)"
 TAG="$VERSION"
 PREV="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+HIGHLIGHTS=".github/release-notes/${TAG}.md"
 {
   echo "## ragflow-x ${TAG}"
   echo
+  if [ -f "$HIGHLIGHTS" ]; then
+    cat "$HIGHLIGHTS"
+    echo
+    echo "---"
+    echo
+  fi
   if [ -n "$PREV" ]; then
     echo "自 **${PREV}** 以来的变更（共 $(git rev-list --count "${PREV}..${TAG}") 个提交）："
     echo
