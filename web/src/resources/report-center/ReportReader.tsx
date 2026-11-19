@@ -19,7 +19,19 @@ import { useTranslate } from "ra-core";
 import { FileText, Loader2, ListTree, TriangleAlert } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api, ApiError, unwrap } from "../../lib/api";
-import type { ReportDetailRecord, ReportRow } from "./report-center-api";
+import { ReportSectionBody } from "./ReportSectionBody";
+import { ReportSectionDisclosure } from "./ReportSectionDisclosure";
+import {
+  reportClaimSupportLabel,
+  reportClaimTypeLabel,
+  reportEvidenceStatusLabel,
+  reportGapReasonLabel,
+  reportQualityStatusLabel,
+  reportSectionStatusLabel,
+  type ReportClaimView,
+  type ReportDetailRecord,
+  type ReportRow,
+} from "./report-center-api";
 
 /** One section as `GET /reports/:id/revisions/:revision/sections` answers it. */
 export interface ReportSectionView {
@@ -33,8 +45,90 @@ export interface ReportSectionView {
   evidence_status: string;
   requires_evidence: boolean;
   citation_count: number;
+  /** `reuse` when the body was carried over from an earlier revision (R14). */
+  rewrite_reason?: string;
+  /** R11 claim list; absent on revisions written before the claim table existed. */
+  claims?: ReportClaimView[];
   content_md: string;
   gap_reason: string;
+  /** R17 locators as display lines; never evidence (doc/295 §2.1). */
+  location_hints?: string[];
+  /** R18 disclosure; absent for a standard-depth section and for pre-P2 revisions. */
+  research_plan?: { depth: string; planning: string; merged: number; duplicates: number };
+}
+
+/**
+ * Claim-supporter tones, fixed by doc/288 §9.3: green only when every number and
+ * date of the sentence was found in the cited chunks; amber for "not checked out";
+ * red for the two states where the evidence speaks against the sentence.
+ * `not_required` gets no badge — an opinion is not an unverified fact.
+ */
+function claimSupportClass(support: string): string {
+  switch (support) {
+    case "supported":
+      return "border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300";
+    case "partially_supported":
+    case "unsupported":
+      return "border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-300";
+    case "conflicting":
+    case "outdated":
+      return "border-destructive/40 text-destructive";
+    default:
+      return "border-muted text-muted-foreground";
+  }
+}
+
+/**
+ * The claim list of one section (R11, doc/288 §9.2).
+ *
+ * Every claim is printed, uncited ones included: the whole reason this table exists
+ * is that a reader should be able to see which sentences the report could not tie to
+ * a source. The preamble is not decoration either — `可核实` is a rule check on the
+ * numbers, and without saying so the list would read as a truth certificate.
+ */
+function SectionClaims({ claims }: { claims: ReportClaimView[] }) {
+  const t = useTranslate();
+  if (claims.length === 0) return null;
+  return (
+    <details className="mt-2 rounded border bg-muted/30 px-2 py-1" data-testid="report-reader-claims">
+      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+        {t("reportCenter.reader_claims_title")} · {claims.length}
+      </summary>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {t("reportCenter.reader_claims_preamble")}
+      </p>
+      <ul className="mt-1 space-y-1">
+        {claims.map((claim) => {
+          const badge = claim.support_status !== "not_required";
+          return (
+            <li
+              key={claim.ord}
+              className="flex flex-wrap items-baseline gap-1 text-xs"
+              data-testid={`report-reader-claim-${claim.ord}`}
+            >
+              {badge && (
+                <span
+                  className={`rounded border px-1 text-[10px] ${claimSupportClass(claim.support_status)}`}
+                  data-testid={`report-reader-claim-support-${claim.ord}`}
+                >
+                  {reportClaimSupportLabel(t, claim.support_status)}
+                </span>
+              )}
+              <span className="text-muted-foreground">
+                {reportClaimTypeLabel(t, claim.claim_type)}
+              </span>
+              <span className="min-w-0 flex-1">{claim.claim_text}</span>
+              {claim.markers.length === 0 && claim.support_status !== "not_required" && (
+                <span className="text-[10px] text-muted-foreground">
+                  {t("reportCenter.reader_claims_uncited")}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
 }
 
 export interface ReportReaderProps {
@@ -174,13 +268,29 @@ export function ReportReader({ report, revision, onOpenChange }: ReportReaderPro
                       {section.ord}. {section.title || section.section_key}
                     </span>
                     <span className="rounded bg-muted px-1 text-[10px] font-normal text-muted-foreground">
-                      {section.status} · {section.quality_status} · {section.evidence_status}
+                      {reportSectionStatusLabel(t, section.status)} ·{" "}
+                      {reportQualityStatusLabel(t, section.quality_status)} ·{" "}
+                      {reportEvidenceStatusLabel(t, section.evidence_status)}
                     </span>
+                    {/* R14: a paragraph carried over from an earlier revision is
+                        still this revision's body, but the reader deserves to know
+                        it was not written against this run's evidence. */}
+                    {section.rewrite_reason === "reuse" && (
+                      <span
+                        className="rounded border px-1 text-[10px] font-normal text-muted-foreground"
+                        data-testid={`report-reader-reused-${section.ord}`}
+                      >
+                        {t("reportCenter.reader_reused_body")}
+                      </span>
+                    )}
                   </h2>
                   {section.content_md ? (
-                    <div className="whitespace-pre-wrap break-words leading-relaxed">
-                      {section.content_md}
-                    </div>
+                    // `content_md` is Markdown, not plain text: rendering it as a
+                    // pre-wrap string printed the markup itself (pipes, `**`, `---`).
+                    <ReportSectionBody
+                      content={section.content_md}
+                      testId={`report-reader-body-${section.ord}`}
+                    />
                   ) : (
                     // An empty section says why: gap_reason when the server gave one,
                     // otherwise the honest "this section produced no text".
@@ -188,7 +298,9 @@ export function ReportReader({ report, revision, onOpenChange }: ReportReaderPro
                       <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
                       <span data-testid={`report-reader-gap-${section.ord}`}>
                         {section.gap_reason
-                          ? `${t("reportCenter.reader_section_gap")}: ${section.gap_reason}`
+                          ? t("reportCenter.reader_section_gap", {
+                              reason: reportGapReasonLabel(t, section.gap_reason),
+                            })
                           : t("reportCenter.reader_section_empty")}
                       </span>
                     </p>
@@ -199,6 +311,12 @@ export function ReportReader({ report, revision, onOpenChange }: ReportReaderPro
                       {t("reportCenter.reader_citations", { count: section.citation_count })}
                     </p>
                   )}
+                  {/* R17 / R18 disclosures sit after the body and before the claim
+                      table: they explain how the section was found and researched, and
+                      a locator must never be adjacent to the citation count as if it
+                      were one of them. */}
+                  <ReportSectionDisclosure section={section} />
+                  <SectionClaims claims={section.claims ?? []} />
                 </section>
               ))}
             </div>

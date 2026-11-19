@@ -40,55 +40,55 @@ export interface OperatorMeta {
 }
 
 const META: Record<string, OperatorMeta> = {
-  Begin: { label: "Begin", color: "#16a34a", nodeType: "beginNode", category: "输入", description: "会话起点，定义对话模式与输入参数" },
-  Generate: { label: "Generate", color: "#2563eb", nodeType: "generalNode", category: "大模型", description: "LLM 生成：模型、温度、提示词模板" },
-  LLM: { label: "LLM", color: "#2563eb", nodeType: "generalNode", category: "大模型", description: "LLM 生成节点（别名）" },
-  Knowledge: { label: "Knowledge", color: "#7c3aed", nodeType: "retrievalNode", category: "知识库", description: "从知识库检索并召回内容" },
-  Retrieval: { label: "Retrieval", color: "#7c3aed", nodeType: "retrievalNode", category: "知识库", description: "知识库检索节点（别名）" },
-  Categorize: { label: "Categorize", color: "#be123c", nodeType: "categorizeNode", category: "流程", description: "按规则/分类把问题路由到不同分支" },
-  Chunker: { label: "Chunker", color: "#0891b2", nodeType: "chunkerNode", category: "文档", description: "文档分块：方法、块大小与重叠" },
-  Tool: { label: "Tool", color: "#b45309", nodeType: "toolNode", category: "工具", description: "调用外部工具 / OpenAPI 接口" },
-  Code: { label: "Code", color: "#4f46e5", nodeType: "ragNode", category: "处理", description: "执行 Python 代码片段" },
-  Answer: { label: "Answer", color: "#0f766e", nodeType: "generalNode", category: "输出", description: "最终回答输出节点（末端，无后继）" },
-  Switch: { label: "Switch", color: "#c2410c", nodeType: "switchNode", category: "流程", description: "条件路由：按变量值把流量分到不同分支" },
-  Message: { label: "Message", color: "#0d9488", nodeType: "generalNode", category: "输出", description: "消息输出：静态文本或模板拼接" },
-  RewriteQuestion: { label: "RewriteQuestion", color: "#7c3aed", nodeType: "generalNode", category: "大模型", description: "问题改写：用 LLM 优化检索查询" },
-  Iteration: { label: "Iteration", color: "#b45309", nodeType: "iterationNode", category: "流程", description: "循环：对列表逐项执行子工作流" },
-  IterationItem: { label: "IterationItem", color: "#b45309", nodeType: "iterationStartNode", category: "内部", description: "循环起点：迭代体内的入口节点" },
-  LoopItem: { label: "LoopItem", color: "#b45309", nodeType: "loopStartNode", category: "内部", description: "循环起点（Loop 别名）" },
-  ExitLoop: { label: "ExitLoop", color: "#b45309", nodeType: "exitLoopNode", category: "内部", description: "循环出口：退出迭代体" },
-  Note: { label: "Note", color: "#64748b", nodeType: "generalNode", category: "辅助", description: "便签：不参与执行，仅做备注" },
-  WaitingDialogue: { label: "WaitingDialogue", color: "#4338ca", nodeType: "generalNode", category: "流程", description: "等待用户输入后继续执行" },
-  Agent: { label: "Agent", color: "#be185d", nodeType: "agentNode", category: "工具", description: "子 Agent：调用另一个 Agent 画布" },
+  Begin: { label: "Begin", color: "#16a34a", nodeType: "beginNode", category: "agents.op_cat_input", description: "agents.op_desc_begin" },
+  Generate: { label: "Generate", color: "#2563eb", nodeType: "generalNode", category: "agents.op_cat_llm", description: "agents.op_desc_generate" },
+  LLM: { label: "LLM", color: "#2563eb", nodeType: "generalNode", category: "agents.op_cat_llm", description: "agents.op_desc_llm" },
+  Knowledge: { label: "Knowledge", color: "#7c3aed", nodeType: "retrievalNode", category: "agents.op_cat_kb", description: "agents.op_desc_knowledge" },
+  Retrieval: { label: "Retrieval", color: "#7c3aed", nodeType: "retrievalNode", category: "agents.op_cat_kb", description: "agents.op_desc_retrieval" },
+  Categorize: { label: "Categorize", color: "#be123c", nodeType: "categorizeNode", category: "agents.op_cat_flow", description: "agents.op_desc_categorize" },
+  Chunker: { label: "Chunker", color: "#0891b2", nodeType: "chunkerNode", category: "agents.op_cat_document", description: "agents.op_desc_chunker" },
+  Tool: { label: "Tool", color: "#b45309", nodeType: "toolNode", category: "agents.op_cat_tool", description: "agents.op_desc_tool" },
+  Code: { label: "Code", color: "#4f46e5", nodeType: "ragNode", category: "agents.op_cat_processing", description: "agents.op_desc_code" },
+  Answer: { label: "Answer", color: "#0f766e", nodeType: "generalNode", category: "agents.op_cat_output", description: "agents.op_desc_answer" },
+  Switch: { label: "Switch", color: "#c2410c", nodeType: "switchNode", category: "agents.op_cat_flow", description: "agents.op_desc_switch" },
+  Message: { label: "Message", color: "#0d9488", nodeType: "generalNode", category: "agents.op_cat_output", description: "agents.op_desc_message" },
+  RewriteQuestion: { label: "RewriteQuestion", color: "#7c3aed", nodeType: "generalNode", category: "agents.op_cat_llm", description: "agents.op_desc_rewrite_question" },
+  Iteration: { label: "Iteration", color: "#b45309", nodeType: "iterationNode", category: "agents.op_cat_flow", description: "agents.op_desc_iteration" },
+  IterationItem: { label: "IterationItem", color: "#b45309", nodeType: "iterationStartNode", category: "agents.op_cat_internal", description: "agents.op_desc_iteration_item" },
+  LoopItem: { label: "LoopItem", color: "#b45309", nodeType: "loopStartNode", category: "agents.op_cat_internal", description: "agents.op_desc_loop_item" },
+  ExitLoop: { label: "ExitLoop", color: "#b45309", nodeType: "exitLoopNode", category: "agents.op_cat_internal", description: "agents.op_desc_exit_loop" },
+  Note: { label: "Note", color: "#64748b", nodeType: "generalNode", category: "agents.op_cat_auxiliary", description: "agents.op_desc_note" },
+  WaitingDialogue: { label: "WaitingDialogue", color: "#4338ca", nodeType: "generalNode", category: "agents.op_cat_flow", description: "agents.op_desc_waiting_dialogue" },
+  Agent: { label: "Agent", color: "#be185d", nodeType: "agentNode", category: "agents.op_cat_tool", description: "agents.op_desc_agent" },
 
   // ── Data-pipeline operators (dataflow_canvas) ─────────────────────
-  File: { label: "File", color: "#16a34a", nodeType: "beginNode", category: "数据管道", description: "数据管道起点：接收上传文件" },
-  Parser: { label: "Parser", color: "#0284c7", nodeType: "parserNode", category: "数据管道", description: "解析文件（PDF/Office/图片等），输出格式化内容" },
-  Tokenizer: { label: "Tokenizer", color: "#0891b2", nodeType: "chunkerNode", category: "数据管道", description: "检索入口 / 混合检索分块" },
-  TokenChunker: { label: "TokenChunker", color: "#0891b2", nodeType: "chunkerNode", category: "数据管道", description: "按 Token 数分块" },
-  TitleChunker: { label: "TitleChunker", color: "#0891b2", nodeType: "chunkerNode", category: "数据管道", description: "按标题层级分块" },
-  Extractor: { label: "Extractor", color: "#db2777", nodeType: "extractorNode", category: "数据管道", description: "按规则/字段从内容抽取信息（实体、概念、主题）" },
-  Compiler: { label: "Compiler", color: "#4f46e5", nodeType: "compilerNode", category: "数据管道", description: "知识编译：把 Chunk 编译为结构化知识单元" },
-  Loop: { label: "Loop", color: "#b45309", nodeType: "loopNode", category: "数据管道", description: "循环控制（筛选 / 遍历）" },
-  ExcelProcessor: { label: "ExcelProcessor", color: "#047857", nodeType: "generalNode", category: "数据管道", description: "处理表格文件（Excel/CSV）" },
+  File: { label: "File", color: "#16a34a", nodeType: "beginNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_file" },
+  Parser: { label: "Parser", color: "#0284c7", nodeType: "parserNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_parser" },
+  Tokenizer: { label: "Tokenizer", color: "#0891b2", nodeType: "chunkerNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_tokenizer" },
+  TokenChunker: { label: "TokenChunker", color: "#0891b2", nodeType: "chunkerNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_token_chunker" },
+  TitleChunker: { label: "TitleChunker", color: "#0891b2", nodeType: "chunkerNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_title_chunker" },
+  Extractor: { label: "Extractor", color: "#db2777", nodeType: "extractorNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_extractor" },
+  Compiler: { label: "Compiler", color: "#4f46e5", nodeType: "compilerNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_compiler" },
+  Loop: { label: "Loop", color: "#b45309", nodeType: "loopNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_loop" },
+  ExcelProcessor: { label: "ExcelProcessor", color: "#047857", nodeType: "generalNode", category: "agents.op_cat_dataflow", description: "agents.op_desc_excel_processor" },
 };
 
 /** Palette groups rendered in the left panel. */
 export const OPERATOR_PALETTE: { category: string; items: OperatorMeta[] }[] = [
-  { category: "输入", items: [META.Begin] },
-  { category: "大模型", items: [META.Generate, META.RewriteQuestion] },
-  { category: "知识库", items: [META.Knowledge, META.Categorize] },
-  { category: "文档", items: [META.Chunker] },
-  { category: "流程", items: [META.Switch, META.Iteration, META.WaitingDialogue] },
-  { category: "处理/工具", items: [META.Code, META.Tool, META.Agent] },
-  { category: "输出", items: [META.Answer, META.Message] },
-  { category: "辅助", items: [META.Note] },
+  { category: "agents.op_cat_input", items: [META.Begin] },
+  { category: "agents.op_cat_llm", items: [META.Generate, META.RewriteQuestion] },
+  { category: "agents.op_cat_kb", items: [META.Knowledge, META.Categorize] },
+  { category: "agents.op_cat_document", items: [META.Chunker] },
+  { category: "agents.op_cat_flow", items: [META.Switch, META.Iteration, META.WaitingDialogue] },
+  { category: "agents.op_cat_processing_tools", items: [META.Code, META.Tool, META.Agent] },
+  { category: "agents.op_cat_output", items: [META.Answer, META.Message] },
+  { category: "agents.op_cat_auxiliary", items: [META.Note] },
 ];
 
 /** Palette for data-pipeline canvases (dataflow_canvas). */
 export const PIPELINE_PALETTE: { category: string; items: OperatorMeta[] }[] = [
-  { category: "输入", items: [META.File] },
-  { category: "数据管道", items: [META.Parser, META.Tokenizer, META.TokenChunker, META.TitleChunker, META.Extractor, META.Compiler, META.Loop, META.ExcelProcessor] },
+  { category: "agents.op_cat_input", items: [META.File] },
+  { category: "agents.op_cat_dataflow", items: [META.Parser, META.Tokenizer, META.TokenChunker, META.TitleChunker, META.Extractor, META.Compiler, META.Loop, META.ExcelProcessor] },
 ];
 
 /** Pick the operator palette for a canvas category (default: agent/workflow). */
@@ -655,9 +655,20 @@ export function detectCycle(
   return { hasCycle: order.length !== nodes.length, topologicalOrder: order };
 }
 
+// Machine-readable rejection cause. The canvas renders
+// `agents.canvas_connect_<reason>` so the message follows the UI language; the
+// Chinese sentence that used to live here was untranslatable from the UI.
+export type ConnectRejection =
+  | "missing_endpoint"
+  | "self_loop"
+  | "duplicate_edge"
+  | "terminal_source"
+  | "begin_target"
+  | "cycle";
+
 export interface ConnectCheck {
   ok: boolean;
-  reason?: string;
+  reason?: ConnectRejection;
 }
 
 /** Reject self-loops, duplicate edges, cycles, and Begin/Answer boundary breaks. */
@@ -667,19 +678,19 @@ export function validateConnection(
   edges: { source: string; target: string }[],
   nodes: { id: string }[],
 ): ConnectCheck {
-  if (!source || !target) return { ok: false, reason: "缺少连线的起点或终点" };
-  if (source.id === target.id) return { ok: false, reason: "不允许自环连线" };
+  if (!source || !target) return { ok: false, reason: "missing_endpoint" };
+  if (source.id === target.id) return { ok: false, reason: "self_loop" };
   if (edges.some((e) => e.source === source.id && e.target === target.id)) {
-    return { ok: false, reason: "两个节点之间已存在连线" };
+    return { ok: false, reason: "duplicate_edge" };
   }
   if (isTerminalLabel(source.label)) {
-    return { ok: false, reason: "Answer 是最终输出节点，不能再作为后续步骤的起点" };
+    return { ok: false, reason: "terminal_source" };
   }
   if (isBeginLikeLabel(target.label)) {
-    return { ok: false, reason: "Begin/File 是起点节点，不能作为其他节点的下游" };
+    return { ok: false, reason: "begin_target" };
   }
   if (detectCycle(nodes, [...edges, { source: source.id, target: target.id }]).hasCycle) {
-    return { ok: false, reason: "添加此连线会形成环路（DAG 必须无环）" };
+    return { ok: false, reason: "cycle" };
   }
   return { ok: true };
 }

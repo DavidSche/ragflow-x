@@ -1,4 +1,5 @@
 import { useGetList, useTranslate } from "ra-core";
+import { PLATFORM_TENANT_ID } from "@/lib/tenant";
 
 interface ReferenceLike {
   id: string;
@@ -31,6 +32,7 @@ export function WorkspaceLabel({ id }: { id?: string | null }) {
     sort: { field: "name", order: "ASC" },
   });
   if (!id) return <>{t("common.unspecified")}</>;
+  if (id === PLATFORM_TENANT_ID) return <>{t("common.platform_tenant")}</>;
   const name = displayName(data as ReferenceLike[] | undefined, id);
   if (isLoading && !name) return <>{t("common.loading")}</>;
   return <>{name ?? t("common.deleted_reference")}</>;

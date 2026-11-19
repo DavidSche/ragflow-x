@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { tZh } from "../../test/translate";
 import { ReportCenter } from "./ReportCenter";
 
 const mocks = vi.hoisted(() => ({
@@ -17,14 +18,18 @@ vi.mock("ra-core", () => ({
   useNavigate: () => mocks.navigate,
   // The RBAC mirror the page asks before offering governance actions. The server
   // still decides; this only keeps the toggle off a 403 path.
-  useCanAccess: () => ({ canAccess: mocks.canManage }),
-  useTranslate: () => (key: string, options?: Record<string, string>) => {
-    if (!options) return key;
-    return Object.entries(options).reduce(
-      (text, [name, value]) => text.split(`%{${name}}`).join(value),
-      key,
-    );
-  },
+  // R19 governance has its own resource. The page asks three questions, so the
+  // double answers by resource: an unreachable template read keeps these tests on
+  // the report surfaces they were written for.
+  useCanAccess: ({ resource, action }: { resource?: string; action?: string }) => ({
+    canAccess:
+      resource === "report-template"
+        ? action === "manage"
+          ? mocks.canManage
+          : false
+        : mocks.canManage,
+  }),
+  useTranslate: () => tZh,
 }));
 
 vi.mock("../../lib/api", () => ({
@@ -78,6 +83,18 @@ function trend(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const templates = [
+  {
+    template_id: "tpl-1",
+    template_key: "analysis",
+    version: 1,
+    tenant_id: "t-1",
+    status: "active",
+    retired: false,
+    payload: { name: { zh: "制度符合性分析报告", en: "Compliance analysis" } },
+  },
+];
+
 const retention = {
   tenant_id: "t-1",
   report_days: 90,
@@ -107,6 +124,9 @@ function mockReads(reports: unknown[] = [report], trendBody: unknown = trend()) 
     if (url === "/report-retention") {
       return Promise.resolve({ data: { code: 0, data: retention } });
     }
+    if (url === "/report-templates") {
+      return Promise.resolve({ data: { code: 0, data: templates } });
+    }
     return Promise.reject(new Error(`unexpected GET ${url}`));
   });
 }
@@ -124,7 +144,7 @@ describe("ReportCenter", () => {
 
     expect(await screen.findByText("动火作业风险分析")).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "reportCenter.open" }));
+    await user.click(screen.getByRole("button", { name: "打开" }));
     expect(mocks.navigate).toHaveBeenCalledWith(
       "/conversation-center?kind=chat&targetId=chat-9&contextId=session-3",
     );
@@ -136,9 +156,13 @@ describe("ReportCenter", () => {
     // drawer had exactly that defect, and a page-level list would hammer the API.
     render(<ReportCenter />);
     await screen.findByText("动火作业风险分析");
-    // Three reads: the page, the trend and the retention card — each exactly once.
-    await waitFor(() => expect(mocks.apiGet).toHaveBeenCalledTimes(3));
-    expect(mocks.apiGet).toHaveBeenCalledTimes(3);
+    // Four reads: the page, the trend, the retention card and the template
+    // catalogue — each exactly once. A loader that depended on `t` would loop.
+    await waitFor(() => expect(mocks.apiGet).toHaveBeenCalledTimes(4));
+    expect(mocks.apiGet).toHaveBeenCalledTimes(4);
+    for (const url of ["/reports", "/report-metrics/trend", "/report-retention", "/report-templates"]) {
+      expect(mocks.apiGet.mock.calls.filter(([called]) => called === url)).toHaveLength(1);
+    }
   });
 
   it("shows an unjudged pass rate as 暂无判定 instead of 0%", async () => {
@@ -162,17 +186,17 @@ describe("ReportCenter", () => {
     render(<ReportCenter />);
 
     await screen.findByText("动火作业风险分析");
-    await user.click(screen.getByRole("button", { name: "reportCenter.delete" }));
-    await user.click(await screen.findByRole("button", { name: "reportCenter.delete" }));
+    await user.click(screen.getByRole("button", { name: "删除" }));
+    await user.click(await screen.findByRole("button", { name: "删除" }));
 
     await waitFor(() => expect(mocks.apiDelete).toHaveBeenCalledWith("/reports/rep-1"));
-    expect(mocks.notify).toHaveBeenCalledWith("reportCenter.deleted");
+    expect(mocks.notify).toHaveBeenCalledWith("已删除，可在提示条里撤销。");
 
     // The recovery window is only real if it is pressable.
-    await user.click(screen.getByRole("button", { name: "reportCenter.undo_action" }));
+    await user.click(screen.getByRole("button", { name: "撤销删除" }));
     await waitFor(() => expect(mocks.apiPost).toHaveBeenCalledWith("/reports/rep-1/restore"));
-    expect(mocks.notify).toHaveBeenCalledWith("reportCenter.restored");
-    await waitFor(() => expect(screen.queryByRole("button", { name: "reportCenter.undo_action" })).toBeNull());
+    expect(mocks.notify).toHaveBeenCalledWith("已恢复。");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "撤销删除" })).toBeNull());
   });
 
   it("reads the report in place, resolving the live revision from the server", async () => {
@@ -252,10 +276,10 @@ describe("ReportCenter", () => {
     render(<ReportCenter />);
 
     await screen.findByText("动火作业风险分析");
-    await user.click(screen.getByRole("button", { name: "reportCenter.delete" }));
-    await user.click(await screen.findByRole("button", { name: "reportCenter.delete" }));
+    await user.click(screen.getByRole("button", { name: "删除" }));
+    await user.click(await screen.findByRole("button", { name: "删除" }));
 
-    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith("reportCenter.delete_fail", { type: "error" }));
+    await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith("删除失败。", { type: "error" }));
     expect(screen.getByText("动火作业风险分析")).toBeTruthy();
   });
 
@@ -268,7 +292,7 @@ describe("ReportCenter", () => {
     render(<ReportCenter />);
 
     await screen.findByText("动火作业风险分析");
-    await user.type(screen.getByPlaceholderText("reportCenter.search_placeholder"), "compliance");
+    await user.type(screen.getByPlaceholderText("搜索标题 / 问题 / 模板"), "compliance");
     expect(screen.queryByText("动火作业风险分析")).toBeNull();
     expect(screen.getByText("受限空间作业")).toBeTruthy();
   });
@@ -292,7 +316,7 @@ describe("ReportCenter", () => {
     render(<ReportCenter />);
 
     expect(await screen.findByText("动火作业风险分析")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "reportCenter.next_page" }));
+    await user.click(screen.getByRole("button", { name: "下一页" }));
 
     // The request carries the cursor — page 2 must be a server read, not a slice
     // of page 1 (the list is the only place a report can be found).
@@ -302,9 +326,9 @@ describe("ReportCenter", () => {
     ).toBe(true);
     // The double echoes keys, so this only proves the indicator is rendered with the
     // page cursor; the behavioural proof is the page=2 request above.
-    expect(screen.getByText("reportCenter.page_indicator")).toBeTruthy();
+    expect(screen.getByText(/第 \d+ \/ \d+ 页/)).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "reportCenter.next_page" }).hasAttribute("disabled"),
+      screen.getByRole("button", { name: "下一页" }).hasAttribute("disabled"),
     ).toBe(true);
   });
 
@@ -331,15 +355,112 @@ describe("ReportCenter", () => {
     render(<ReportCenter />);
 
     await screen.findByText("动火作业风险分析");
-    await user.click(screen.getByRole("button", { name: "reportCenter.next_page" }));
+    await user.click(screen.getByRole("button", { name: "下一页" }));
     await screen.findByText("第二十一份报告");
 
-    await user.click(screen.getByRole("button", { name: "reportCenter.delete" }));
-    await user.click(screen.getByRole("button", { name: "reportCenter.delete" }));
+    await user.click(screen.getByRole("button", { name: "删除" }));
+    await user.click(screen.getByRole("button", { name: "删除" }));
 
     // An emptied page must not stay on screen as "0 of N": the page steps back.
     expect(await screen.findByText("动火作业风险分析")).toBeTruthy();
     expect(screen.queryByText("第二十一份报告")).toBeNull();
+  });
+
+  it("asks the server for one lifecycle view at a time and returns the cursor to page 1", async () => {
+    // The list is a server query, not a client filter: pressing 「已归档」 must re-read
+    // with `?status=archived`, because filtering the loaded page would only ever
+    // archive-search the twenty rows that happened to be in memory.
+    const calls: Array<{ page: number; status: string }> = [];
+    const archivedRows: Record<string, unknown[]> = {
+      active: [report],
+      archived: [{ ...report, id: "rep-7", title: "去年的年度合规报告", status: "archived" }],
+      all: [report],
+    };
+    mocks.apiGet.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === "/reports") {
+        const pageNo = Number(config?.params?.page ?? 1);
+        const status = String(config?.params?.status ?? "");
+        calls.push({ page: pageNo, status });
+        const items = status === "archived" ? archivedRows.archived : status === "all" ? archivedRows.all : archivedRows.active;
+        return Promise.resolve({
+          data: { code: 0, data: { items, total: items.length, page: pageNo, page_size: 20 } },
+        });
+      }
+      if (url === "/report-metrics/trend") {
+        return Promise.resolve({ data: { code: 0, data: trend() } });
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+    const user = userEvent.setup();
+    render(<ReportCenter />);
+
+    await screen.findByText("动火作业风险分析");
+    // The default view is `active`, the same default the server applies.
+    expect(calls[0]).toEqual({ page: 1, status: "active" });
+    expect(screen.getByTestId("report-view-active").getAttribute("aria-pressed")).toBe("true");
+
+    await user.click(screen.getByTestId("report-view-archived"));
+    expect(await screen.findByText("去年的年度合规报告")).toBeTruthy();
+    expect(calls.at(-1)).toEqual({ page: 1, status: "archived" });
+    expect(screen.queryByText("动火作业风险分析")).toBeNull();
+
+    await user.click(screen.getByTestId("report-view-all"));
+    await screen.findByText("动火作业风险分析");
+    expect(calls.at(-1)).toEqual({ page: 1, status: "all" });
+  });
+
+  it("explains an empty archived view instead of printing that there is no data", async () => {
+    mocks.apiGet.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === "/reports") {
+        const status = String(config?.params?.status ?? "");
+        const items = status === "active" ? [report] : [];
+        return Promise.resolve({
+          data: { code: 0, data: { items, total: items.length, page: 1, page_size: 20 } },
+        });
+      }
+      if (url === "/report-metrics/trend") {
+        return Promise.resolve({ data: { code: 0, data: trend() } });
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+    const user = userEvent.setup();
+    render(<ReportCenter />);
+
+    await screen.findByText("动火作业风险分析");
+    await user.click(screen.getByTestId("report-view-archived"));
+    // A workspace that never archived anything sees the feature described, not a
+    // bare "no data" that makes the new view look broken.
+    expect(await screen.findByTestId("report-empty-archived")).toBeTruthy();
+    expect(screen.getByText("还没有归档的报告")).toBeTruthy();
+  });
+
+  it("badges an archived row in the view that mixes both lifecycles", async () => {
+    const archivedRow = { ...report, id: "rep-7", title: "去年的年度合规报告", status: "archived" };
+    mocks.apiGet.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === "/reports") {
+        const status = String(config?.params?.status ?? "");
+        const items = status === "archived" ? [archivedRow] : status === "all" ? [report, archivedRow] : [report];
+        return Promise.resolve({
+          data: { code: 0, data: { items, total: items.length, page: 1, page_size: 20 } },
+        });
+      }
+      if (url === "/report-metrics/trend") {
+        return Promise.resolve({ data: { code: 0, data: trend() } });
+      }
+      return Promise.reject(new Error(`unexpected GET ${url}`));
+    });
+    const user = userEvent.setup();
+    render(<ReportCenter />);
+
+    await screen.findByText("动火作业风险分析");
+    // No badge in the active view: there is nothing to disambiguate there.
+    expect(screen.queryByTestId("report-archived-badge-rep-7")).toBeNull();
+
+    await user.click(screen.getByTestId("report-view-all"));
+    // …and in 「全部」 the archived row says so, otherwise it looks like any other
+    // report that simply refuses to be rerun.
+    expect(await screen.findByTestId("report-archived-badge-rep-7")).toBeTruthy();
+    expect(screen.queryByTestId("report-archived-badge-rep-1")).toBeNull();
   });
 
   it("offers the workspace trend only to a caller who may manage reports", async () => {
@@ -349,7 +470,7 @@ describe("ReportCenter", () => {
     const { unmount } = render(<ReportCenter />);
     await screen.findByText("动火作业风险分析");
     expect(screen.queryByTestId("trend-view-tenant")).toBeNull();
-    expect(screen.queryByRole("button", { name: "reportCenter.retention_edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "调整保留期" })).toBeNull();
     unmount();
 
     mocks.canManage = true;
@@ -357,7 +478,7 @@ describe("ReportCenter", () => {
     await screen.findByText("动火作业风险分析");
     expect(screen.getByTestId("trend-view-own")).toBeTruthy();
     expect(screen.getByTestId("trend-view-tenant")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "reportCenter.retention_edit" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "调整保留期" })).toBeTruthy();
   });
 
   it("re-reads the trend for the workspace instead of re-labelling the own numbers", async () => {
@@ -381,11 +502,59 @@ describe("ReportCenter", () => {
     });
   });
 
+  it("states the trend window and the scope it is reading, never a raw placeholder", async () => {
+    // Live 2026-11-18: the heading printed `近 %{days} 天质量趋势` because the card
+    // called `t()` without the interpolation params, and the subtitle said
+    // `view=own` even after the reader switched to the workspace.
+    mocks.canManage = true;
+    mockReads();
+    const user = userEvent.setup();
+    const { container } = render(<ReportCenter />);
+    await screen.findByText("动火作业风险分析");
+
+    expect(screen.getByText("近 14 天质量趋势")).toBeTruthy();
+    expect(screen.getByText("仅统计你自己的报告。")).toBeTruthy();
+    expect(container.textContent).not.toContain("%{");
+
+    await user.click(screen.getByTestId("trend-view-tenant"));
+    expect(await screen.findByText("统计整个工作区已交付的报告。")).toBeTruthy();
+    expect(screen.queryByText("仅统计你自己的报告。")).toBeNull();
+  });
+
+  it("names the template in the list column instead of printing its key", async () => {
+    // Live 2026-11-19: the 模板 column printed `report-compliance` — a machine id in a
+    // Chinese table. The name comes from the catalogue; the key stays as the title.
+    mockReads();
+    const { container } = render(<ReportCenter />);
+    await screen.findByText("动火作业风险分析");
+
+    expect(await screen.findByText("制度符合性分析报告")).toBeTruthy();
+    const cells = Array.from(container.querySelectorAll("td")).map((td) => (td.textContent ?? "").trim());
+    expect(cells).not.toContain("analysis");
+    const cell = screen.getByText("制度符合性分析报告").closest("td");
+    expect(cell?.getAttribute("title")).toBe("analysis");
+  });
+
+  it("falls back to the template key when the catalogue cannot be read", async () => {
+    // The name is a nicety; a failed catalogue read must not blank the column or
+    // take the list down with it.
+    mockReads();
+    const reads = mocks.apiGet.getMockImplementation();
+    mocks.apiGet.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === "/report-templates") return Promise.reject(new Error("catalogue down"));
+      return reads!(url, config);
+    });
+    render(<ReportCenter />);
+
+    expect(await screen.findByText("动火作业风险分析")).toBeTruthy();
+    expect(await screen.findByText("analysis")).toBeTruthy();
+  });
+
   it("renders the trend even when the report list is empty, and flags truncation", async () => {
     mockReads([], trend({ truncated: true, totals: { revisions: 0, published: 0, quality_gate_pass_rate: 0 } }));
     render(<ReportCenter />);
 
-    await waitFor(() => expect(screen.getByText("reportCenter.trend_truncated")).toBeTruthy());
-    expect(screen.getByText("reportCenter.empty")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("数据量超过统计上限，趋势只覆盖最近的部分。")).toBeTruthy());
+    expect(screen.getByText("还没有报告。在对话中心提一个需要成文的问题，就会生成报告。")).toBeTruthy();
   });
 });

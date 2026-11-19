@@ -143,8 +143,27 @@ export const EXPORT_FORMATS = [
   "json",
   "docx",
   "pdf",
+  "xlsx",
 ] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
+
+/**
+ * The formats a *report* delivery may ask for (`validReportExportFormat`).
+ *
+ * A subset of the model set, and deliberately so: `json` is absent because the
+ * frozen payload is already persisted as `rgx_export_snapshot.payload_json`, so a
+ * JSON delivery would be a second schema for the same bytes. Listing the subset
+ * here rather than inline in the drawer is what keeps the buttons and the server's
+ * gate from drifting: the drawer renders exactly this array.
+ */
+export const REPORT_EXPORT_FORMATS = [
+  "markdown",
+  "docx",
+  "pdf",
+  "html",
+  "xlsx",
+] as const;
+export type ReportExportFormat = (typeof REPORT_EXPORT_FORMATS)[number];
 
 export const EXPORT_JOB_STATUSES = [
   "QUEUED",

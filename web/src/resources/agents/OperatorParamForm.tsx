@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslate } from "ra-core";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { FieldDef } from "./operatorForms";
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function OperatorParamForm({ fields, values, disabled, onChange }: Props) {
+  const t = useTranslate();
   const [jsonTexts, setJsonTexts] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -25,7 +27,7 @@ export function OperatorParamForm({ fields, values, disabled, onChange }: Props)
   }, [fields]);
 
   if (fields.length === 0) {
-    return <p className="text-sm text-muted-foreground">该算子无配置参数。</p>;
+    return <p className="text-sm text-muted-foreground">{t("agents.operator_no_params")}</p>;
   }
 
   const setJson = (f: FieldDef, raw: string) => {
@@ -41,9 +43,9 @@ export function OperatorParamForm({ fields, values, disabled, onChange }: Props)
     <div className="space-y-3">
       {fields.map((f) => (
         <div key={f.name} className="space-y-1">
-          <Label className="text-xs">{f.label}</Label>
+          <Label className="text-xs">{t(f.label)}</Label>
           {f.type === "text" && (
-            <Input className="h-8 text-sm" value={values[f.name] ?? f.default ?? ""} disabled={disabled} onChange={(e) => onChange(f.name, e.target.value)} placeholder={f.placeholder} />
+            <Input className="h-8 text-sm" value={values[f.name] ?? f.default ?? ""} disabled={disabled} onChange={(e) => onChange(f.name, e.target.value)} placeholder={f.placeholder ? t(f.placeholder) : undefined} />
           )}
           {f.type === "textarea" && (
             <textarea
@@ -90,7 +92,7 @@ export function OperatorParamForm({ fields, values, disabled, onChange }: Props)
             >
               {(f.options ?? []).map((o) => (
                 <option key={o.value} value={o.value}>
-                  {o.label}
+                  {t(o.label)}
                 </option>
               ))}
             </select>
@@ -98,7 +100,7 @@ export function OperatorParamForm({ fields, values, disabled, onChange }: Props)
           {f.type === "switch" && (
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" className="size-4" checked={!!(values[f.name] ?? f.default)} disabled={disabled} onChange={(e) => onChange(f.name, e.target.checked)} />
-              {f.label}
+              {t(f.label)}
             </label>
           )}
           {f.type === "jsonArray" && (
@@ -110,7 +112,7 @@ export function OperatorParamForm({ fields, values, disabled, onChange }: Props)
                 onChange={(e) => setJson(f, e.target.value)}
                 spellCheck={false}
               />
-              {f.help ? <p className="text-xs text-muted-foreground">{f.help}</p> : null}
+              {f.help ? <p className="text-xs text-muted-foreground">{t(f.help)}</p> : null}
             </>
           )}
         </div>

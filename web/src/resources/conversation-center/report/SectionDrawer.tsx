@@ -16,7 +16,6 @@ import {
   Clock,
   FileText,
   ShieldAlert,
-  TriangleAlert,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -24,28 +23,44 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  reportEvidenceStatusLabel,
+  reportQualityStatusLabel,
+  reportSectionStatusLabel,
+} from "../../report-center/report-center-api";
+import { ReportSectionDisclosure } from "../../report-center/ReportSectionDisclosure";
 import type { ReportSectionSnapshot } from "./report-run";
-
-export interface SectionEvidenceEntry {
-  section_key: string;
-  /** disclosure status: supported / partially_supported / conflicting / outdated / unsupported */
-  status: string;
-  claims?: string[];
-  citations?: Array<{ id: string; snippet?: string }>;
-  reason?: string;
-}
 
 export interface SectionDrawerProps {
   sections: ReportSectionSnapshot[];
-  /** evidence disclosures, keyed by section key (job snapshot `evidence` surface). */
-  evidenceBySection?: Record<string, SectionEvidenceEntry[]>;
+}
+
+/**
+ * Evidence tone per doc/288 §9.3, and it is deliberately not the same colour as the
+ * execution status: `succeeded` + `conflicting` is a section that ran fine and whose
+ * sources disagree, so a green execution badge next to a red evidence badge is the
+ * honest picture. `outdated` and `conflicting` both mean "do not quote this as-is";
+ * `partially_supported`/`unsupported` are amber because they are actionable in the
+ * text, `not_required` carries no colour at all.
+ */
+function evidenceStatusClass(status: string): string {
+  switch (status) {
+    case "supported":
+      return "text-emerald-600 dark:text-emerald-400";
+    case "partially_supported":
+    case "unsupported":
+      return "text-amber-600 dark:text-amber-400";
+    case "conflicting":
+    case "outdated":
+      return "text-destructive";
+    default:
+      return "text-muted-foreground";
+  }
 }
 
 function SectionStatusBadge({ status }: { status: string }) {
   const t = useTranslate();
-  const label = t(`conversationCenter.report_section_${status}`, {
-    _: status,
-  });
+  const label = reportSectionStatusLabel(t, status);
   switch (status) {
     case "succeeded":
       return (
@@ -81,10 +96,7 @@ function SectionStatusBadge({ status }: { status: string }) {
   }
 }
 
-export function SectionDrawer({
-  sections,
-  evidenceBySection = {},
-}: SectionDrawerProps) {
+export function SectionDrawer({ sections }: SectionDrawerProps) {
   const t = useTranslate();
   const [openKey, setOpenKey] = useState<string | null>(null);
 
@@ -99,7 +111,6 @@ export function SectionDrawer({
   return (
     <ul className="space-y-2" role="list" data-testid="section-drawer">
       {sections.map((section) => {
-        const evidence = evidenceBySection[section.section_key] ?? [];
         const open = openKey === section.section_key;
         return (
           <li
@@ -118,7 +129,7 @@ export function SectionDrawer({
               <span className="min-w-0 flex-1 truncate">
                 <span className="text-sm font-medium">{section.title}</span>
                 <span className="ml-2 text-xs text-muted-foreground">
-                  {section.ord + 1}
+                  {section.ord}
                 </span>
               </span>
               {section.requires_evidence && (
@@ -145,12 +156,16 @@ export function SectionDrawer({
                     <dt className="text-muted-foreground">
                       {t("conversationCenter.report_section_evidence")}
                     </dt>
-                    <dd>
+                    <dd
+                      className={
+                        section.requires_evidence
+                          ? evidenceStatusClass(section.evidence_status)
+                          : "text-muted-foreground"
+                      }
+                      data-testid={`section-evidence-${section.section_key}`}
+                    >
                       {section.requires_evidence
-                        ? t(
-                            `conversationCenter.report_evidence_status_${section.evidence_status}`,
-                            { _: section.evidence_status },
-                          )
+                        ? reportEvidenceStatusLabel(t, section.evidence_status)
                         : t("conversationCenter.report_section_not_required")}
                     </dd>
                   </div>
@@ -159,10 +174,7 @@ export function SectionDrawer({
                       {t("conversationCenter.report_section_quality")}
                     </dt>
                     <dd>
-                      {t(
-                        `conversationCenter.report_quality_status_${section.quality_status}`,
-                        { _: section.quality_status },
-                      )}
+                      {reportQualityStatusLabel(t, section.quality_status)}
                     </dd>
                   </div>
                   <div>
@@ -177,42 +189,35 @@ export function SectionDrawer({
                     </dt>
                     <dd>{section.attempt}</dd>
                   </div>
+                  {/* R11's count rides on the section row. Only shown when there is
+                      something to count: `claim_count = 0` on a row written before
+                      the claim table existed is "not measured", and printing 0 would
+                      read as "this section asserts nothing". */}
+                  {section.claim_count > 0 && (
+                    <div>
+                      <dt className="text-muted-foreground">
+                        {t("conversationCenter.report_section_claims")}
+                      </dt>
+                      <dd data-testid={`section-claims-${section.section_key}`}>
+                        {section.claim_count}
+                      </dd>
+                    </div>
+                  )}
                 </dl>
-                {evidence.length > 0 && (
-                  <div
-                    className="mt-2 space-y-1"
-                    data-testid={`section-evidence-${section.section_key}`}
-                  >
-                    {evidence.map((entry, index) => (
-                      <div
-                        key={`${section.section_key}:${index}`}
-                        className="flex items-start gap-2 rounded border bg-muted/40 px-2 py-1.5 text-xs"
-                      >
-                        {entry.status === "conflicting" ||
-                        entry.status === "outdated" ||
-                        entry.status === "unsupported" ? (
-                          <TriangleAlert className="mt-0.5 size-3 shrink-0 text-amber-500" />
-                        ) : (
-                          <BadgeCheck className="mt-0.5 size-3 shrink-0 text-emerald-600" />
-                        )}
-                        <div className="min-w-0">
-                          <p className="text-muted-foreground">
-                            {t(
-                              `conversationCenter.report_evidence_status_${entry.status}`,
-                              { _: entry.status },
-                            )}
-                          </p>
-                          {entry.reason && <p>{entry.reason}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {evidence.length === 0 && section.requires_evidence && (
+                {/* The "no evidence" line is a claim about the run, so it may only
+                    be made when the count says so. It used to key off a per-section
+                    evidence list the snapshot never carries, which made a section
+                    with 8 citations and `evidence_status=supported` say
+                    "本节未采集到证据。" (live 2026-11-18). */}
+                {section.requires_evidence && section.citation_count === 0 && (
                   <p className="mt-2 text-xs text-muted-foreground">
                     {t("conversationCenter.report_section_no_evidence")}
                   </p>
                 )}
+                {/* R17 locators, worded and labelled by the one component the reader
+                    uses: a compiled page index helps the reviewer find the source
+                    page, and must never be counted as evidence for this section. */}
+                <ReportSectionDisclosure section={section} />
               </div>
             )}
           </li>

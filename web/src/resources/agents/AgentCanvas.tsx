@@ -23,7 +23,7 @@ import {
   type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useNotify } from "ra-core";
+import { useNotify, useTranslate } from "ra-core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,6 +109,7 @@ function AgentCanvasInner({
   onAgentTitleChange,
   viewportClassName,
 }: Props) {
+  const t = useTranslate();
   const notify = useNotify();
   const reactFlow = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -175,7 +176,10 @@ function AgentCanvasInner({
       const targetNode = nodes.find((n) => n.id === conn.target);
       const check = validateConnection(sourceNode, targetNode, edges, nodes);
       if (!check.ok) {
-        notify(check.reason ?? "无法添加连线", { type: "error" });
+        notify(
+          check.reason ? t(`agents.canvas_connect_${check.reason}`) : t("agents.canvas_connect_rejected"),
+          { type: "error" },
+        );
         return;
       }
       const edge: Edge = {
@@ -353,18 +357,26 @@ function AgentCanvasInner({
 
   const applyDraft = useCallback(() => {
     if (!selectedId || disabled) return;
-    const nds = nodes.map((n) =>
-      n.id === selectedId
-        ? {
-            ...n,
-            data: {
-              ...n.data,
-              ...(titleDraft.trim() ? { title: titleDraft.trim() } : {}),
-              form: { ...((n.data?.form as Record<string, any>) ?? {}), ...formValues },
-            },
-          }
-        : n,
-    );
+    // 只写回用户真正改过的字段：种子默认值不落盘，否则一次编辑会让差异视图冒出
+    // 一堆与用户无关的 form.* 变更（也把默认值固化进了版本 DSL）。
+    const nds = nodes.map((n) => {
+      if (n.id !== selectedId) return n;
+      const existing = (n.data?.form as Record<string, any>) ?? {};
+      const seed = seedFormFor(String((n.data as any)?.label ?? ""));
+      const changed: Record<string, any> = { ...existing };
+      for (const [k, v] of Object.entries(formValues)) {
+        const before = k in existing ? existing[k] : seed[k];
+        if (JSON.stringify(v) !== JSON.stringify(before)) changed[k] = v;
+      }
+      return {
+        ...n,
+        data: {
+          ...n.data,
+          ...(titleDraft.trim() ? { title: titleDraft.trim() } : {}),
+          form: changed,
+        },
+      };
+    });
     setNodes(nds);
     emit(nds, edges);
   }, [selectedId, disabled, nodes, edges, titleDraft, formValues, setNodes, emit]);
@@ -384,7 +396,9 @@ function AgentCanvasInner({
           <button
             type="button"
             onClick={() => setPaletteCollapsed(false)}
-            title={isDataflow ? "展开组件库" : "展开算子库"}
+            title={t("agents.canvas_palette_expand", {
+              name: t(isDataflow ? "agents.canvas_library_components" : "agents.canvas_library_operators"),
+            })}
             className="mb-1 flex size-8 items-center justify-center rounded border hover:bg-muted"
           >
             <ChevronRight className="size-4" aria-hidden="true" />
@@ -395,7 +409,7 @@ function AgentCanvasInner({
               type="button"
               disabled={disabled}
               onClick={() => addOperator(op.label)}
-              title={op.description}
+              title={t(op.description)}
               className="flex size-8 items-center justify-center rounded border hover:bg-muted disabled:opacity-50"
             >
               <AgentIcon label={op.label} color={op.color} className="size-4" />
@@ -406,12 +420,16 @@ function AgentCanvasInner({
         <aside className="overflow-y-auto rounded border bg-background p-2">
           <div className="flex items-center justify-between gap-2 px-1 pb-2">
             <span className="text-xs font-semibold text-muted-foreground">
-              {isDataflow ? "组件库" : "算子库"}（点击或拖入）
+              {t("agents.canvas_palette_hint", {
+                name: t(isDataflow ? "agents.canvas_library_components" : "agents.canvas_library_operators"),
+              })}
             </span>
             <button
               type="button"
               onClick={() => setPaletteCollapsed(true)}
-              title={isDataflow ? "收起组件库" : "收起算子库"}
+              title={t("agents.canvas_palette_collapse", {
+                name: t(isDataflow ? "agents.canvas_library_components" : "agents.canvas_library_operators"),
+              })}
               className="rounded p-0.5 hover:bg-muted"
             >
               <ChevronLeft className="size-4" aria-hidden="true" />
@@ -420,7 +438,7 @@ function AgentCanvasInner({
           {paletteFor(category).map((group) => (
             <div key={group.category} className="mb-2">
               <div className="px-1 py-0.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                {group.category}
+                {t(group.category)}
               </div>
               <div className="flex flex-col gap-1">
                 {group.items.map((op) => (
@@ -434,7 +452,7 @@ function AgentCanvasInner({
                       e.dataTransfer.effectAllowed = "copy";
                     }}
                     onClick={() => addOperator(op.label)}
-                    title={op.description}
+                    title={t(op.description)}
                     className="flex items-center gap-2.5 rounded border px-2 py-1.5 text-left text-xs hover:bg-muted disabled:opacity-50"
                   >
                     <AgentIcon label={op.label} color={op.color} className="size-4" />
@@ -450,10 +468,10 @@ function AgentCanvasInner({
       {/* Toolbar + canvas */}
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded border px-2 py-1.5 text-xs text-muted-foreground">
-          <span>节点 {nodes.length}</span>
-          <span>连线 {edges.length}</span>
+          <span>{t("agents.canvas_nodes_count", { count: nodes.length })}</span>
+          <span>{t("agents.canvas_edges_count", { count: edges.length })}</span>
           <span className={cycleInfo.hasCycle ? "font-semibold text-red-500" : "text-green-600"}>
-            {cycleInfo.hasCycle ? "存在环路" : "无环合法"}
+            {cycleInfo.hasCycle ? t("agents.canvas_cycle_detected") : t("agents.canvas_cycle_ok")}
           </span>
           <div className="ml-auto flex gap-1">
             <Button
@@ -463,11 +481,11 @@ function AgentCanvasInner({
               disabled={disabled}
             >
               <Maximize2 className="size-3.5" aria-hidden="true" />
-              适应视图
+              {t("agents.canvas_fit_view")}
             </Button>
             <Button variant="outline" size="sm" onClick={autoLayout} disabled={disabled}>
               <LayoutGrid className="size-3.5" aria-hidden="true" />
-              自动布局
+              {t("agents.canvas_auto_layout")}
             </Button>
             <Button
               variant="outline"
@@ -477,7 +495,7 @@ function AgentCanvasInner({
               className="text-destructive"
             >
               <Trash2 className="size-3.5" aria-hidden="true" />
-              删除
+              {t("agents.canvas_delete")}
             </Button>
           </div>
         </div>
@@ -529,7 +547,11 @@ function AgentCanvasInner({
       {/* Inspector */}
       <aside className="space-y-3 rounded border bg-background p-3">
         <div className="flex items-center justify-between">
-          <Label className="text-sm">{selectedNode ? "节点属性" : isDataflow ? "管道属性" : "智能体属性"}</Label>
+          <Label className="text-sm">
+            {selectedNode
+              ? t("agents.canvas_node_props")
+              : t(isDataflow ? "agents.canvas_pipeline_props" : "agents.canvas_agent_props")}
+          </Label>
           {selectedNode ? (
             <span
               className="text-[11px] font-medium"
@@ -542,7 +564,7 @@ function AgentCanvasInner({
         {selectedNode ? (
           <>
             <div className="space-y-1">
-              <Label className="text-xs">标题</Label>
+              <Label className="text-xs">{t("agents.canvas_title")}</Label>
               <Input
                 className="h-8 text-sm"
                 value={titleDraft}
@@ -567,7 +589,7 @@ function AgentCanvasInner({
             )}
             <div className="grid grid-cols-2 gap-2">
               <Button className="w-full" onClick={applyDraft} disabled={disabled}>
-                应用属性
+                {t("agents.canvas_apply")}
               </Button>
               <Button
                 variant="destructive"
@@ -576,7 +598,7 @@ function AgentCanvasInner({
                 disabled={disabled}
               >
                 <Trash2 className="size-3" aria-hidden="true" />
-                删除
+                {t("agents.canvas_delete")}
               </Button>
             </div>
           </>
@@ -584,22 +606,22 @@ function AgentCanvasInner({
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <AgentIcon label="Agent" color="#64748b" className="size-5" />
-              <span className="text-xs text-muted-foreground">{isDataflow ? "管道级配置" : "智能体级配置"}</span>
+              <span className="text-xs text-muted-foreground">
+                {t(isDataflow ? "agents.canvas_pipeline_scope" : "agents.canvas_agent_scope")}
+              </span>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">名称</Label>
+              <Label className="text-xs">{t("agents.canvas_name")}</Label>
               <Input
                 className="h-8 text-sm"
                 value={agentTitle}
                 disabled={disabled}
                 onChange={(e) => onAgentTitleChange?.(e.target.value)}
-                placeholder="智能体名称"
+                placeholder={t("agents.canvas_name_placeholder")}
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {isDataflow
-                ? "从左侧组件库点击或拖拽添加节点；拖动节点把手连线；选中节点后在右侧编辑属性。"
-                : "从左侧算子库点击或拖拽添加节点；拖动节点把手连线；选中节点后在右侧编辑组件属性。"}
+              {t(isDataflow ? "agents.canvas_empty_hint_pipeline" : "agents.canvas_empty_hint_agent")}
             </p>
           </div>
         )}
@@ -609,6 +631,7 @@ function AgentCanvasInner({
 }
 
 function AgentFlowNode({ data, selected }: NodeProps) {
+  const t = useTranslate();
   const label = String((data as any)?.label ?? "Node");
   const color = nodeColor(label);
   const isBegin = isBeginLikeLabel(label);
@@ -671,10 +694,16 @@ function AgentFlowNode({ data, selected }: NodeProps) {
       {(label === "Knowledge" || label === "Retrieval") && (
         <div className="mt-1.5 space-y-0.5 text-[10px] text-slate-500">
           {form.retrieval_from && (
-            <div><span className="text-slate-400">来源:</span> {form.retrieval_from === "memory" ? "记忆" : "知识库"}</div>
+            <div>
+              <span className="text-slate-400">{t("agents.canvas_retrieval_source")}</span>{" "}
+              {t(form.retrieval_from === "memory" ? "agents.canvas_source_memory" : "agents.canvas_source_kb")}
+            </div>
           )}
           {Array.isArray(form.kb_ids) && form.kb_ids.length > 0 && (
-            <div className="truncate"><span className="text-slate-400">KB:</span> {form.kb_ids.length} 个</div>
+            <div className="truncate">
+              <span className="text-slate-400">{t("agents.canvas_kb_label")}</span>{" "}
+              {t("agents.canvas_kb_count", { count: form.kb_ids.length })}
+            </div>
           )}
           {form.top_n && (
             <div><span className="text-slate-400">TopN:</span> {form.top_n}</div>
@@ -685,7 +714,7 @@ function AgentFlowNode({ data, selected }: NodeProps) {
       {/* Form summary for Generate/LLM node */}
       {(label === "Generate" || label === "LLM") && form.llm_id && (
         <div className="mt-1.5 text-[10px] text-slate-500 truncate">
-          <span className="text-slate-400">模型:</span> {form.llm_id}
+          <span className="text-slate-400">{t("agents.canvas_model")}</span> {form.llm_id}
         </div>
       )}
 
@@ -695,7 +724,7 @@ function AgentFlowNode({ data, selected }: NodeProps) {
           {categorizeItems.map((item: any, i: number) => (
             <div key={item.uuid || i} className="relative">
               <div className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 truncate">
-                {item.name || `分支 ${i + 1}`}
+                {item.name || t("agents.canvas_branch", { index: i + 1 })}
               </div>
               <Handle
                 type="source"
@@ -775,6 +804,7 @@ function AgentFlowNode({ data, selected }: NodeProps) {
  * by ReactFlow's built-in group node support.
  */
 function IterationNodeComponent({ id, data, selected }: NodeProps) {
+  const t = useTranslate();
   const color = nodeColor("Iteration");
   const form = (data as any)?.form ?? {};
   return (
@@ -806,7 +836,7 @@ function IterationNodeComponent({ id, data, selected }: NodeProps) {
         <Handle type="source" position={Position.Right} className="!h-2.5 !w-2.5 !border !border-slate-300 !bg-slate-400" />
         {/* Hint text when empty */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] text-slate-300">
-          拖入节点到循环体
+          {t("agents.canvas_loop_body_hint")}
         </div>
       </div>
     </div>
@@ -818,6 +848,7 @@ function IterationNodeComponent({ id, data, selected }: NodeProps) {
  * This is the "IterationItem" / "LoopItem" that marks where the loop body begins.
  */
 function IterationStartNodeComponent({ data, selected }: NodeProps) {
+  const t = useTranslate();
   return (
     <div
       className="flex items-center gap-1.5 rounded border bg-white px-2 py-1 text-[10px] text-slate-600 shadow-sm"
@@ -827,7 +858,7 @@ function IterationStartNodeComponent({ data, selected }: NodeProps) {
       }}
     >
       <span className="text-[10px]">▸</span>
-      <span className="font-medium">{(data as any)?.title || "开始"}</span>
+      <span className="font-medium">{(data as any)?.title || t("agents.canvas_node_begin")}</span>
       <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border !border-slate-300 !bg-slate-400" />
     </div>
   );
@@ -838,6 +869,7 @@ function IterationStartNodeComponent({ data, selected }: NodeProps) {
  * Marks where the loop body ends.
  */
 function ExitLoopNodeComponent({ data, selected }: NodeProps) {
+  const t = useTranslate();
   return (
     <div
       className="flex items-center gap-1.5 rounded border bg-white px-2 py-1 text-[10px] text-slate-600 shadow-sm"
@@ -847,7 +879,7 @@ function ExitLoopNodeComponent({ data, selected }: NodeProps) {
       }}
     >
       <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border !border-slate-300 !bg-slate-400" />
-      <span className="font-medium">{(data as any)?.title || "退出"}</span>
+      <span className="font-medium">{(data as any)?.title || t("agents.canvas_node_exit")}</span>
     </div>
   );
 }

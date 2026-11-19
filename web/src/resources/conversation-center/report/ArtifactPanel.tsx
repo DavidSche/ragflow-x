@@ -21,6 +21,7 @@ import { useNotify, useTranslate } from "ra-core";
 import { Download, FileDown, FileText, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { reportArtifactStatusLabel } from "../../report-center/report-center-api";
 import type { ReportAdapter, ReportExportSuccess } from "../adapters";
 import type { ExportArtifactRecord, ReportArtifactEntry } from "./report-run";
 
@@ -46,9 +47,8 @@ export function artifactStatusLabel(
   t: (key: string, options?: Record<string, unknown>) => string,
   artifact: ExportArtifactRecord,
 ): string {
-  return t(`conversationCenter.report_artifact_status_${artifact.artifact_status}`, {
-    _: artifact.artifact_status,
-  });
+  // One vocabulary for artifact status across the workspace and the reader.
+  return reportArtifactStatusLabel(t, artifact.artifact_status);
 }
 
 /**

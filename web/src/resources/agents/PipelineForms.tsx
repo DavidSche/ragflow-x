@@ -8,6 +8,7 @@
 // else in the DSL bridge changes.
 
 import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useTranslate } from "ra-core";
 import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,11 +22,11 @@ interface FormProps {
 
 const FILE_FORMATS = [
   { value: "pdf", label: "PDF" },
-  { value: "spreadsheet", label: "表格（Excel/CSV）" },
-  { value: "image", label: "图片" },
-  { value: "email", label: "邮件" },
+  { value: "spreadsheet", label: "agents.pipe_fmt_spreadsheet" },
+  { value: "image", label: "agents.pipe_fmt_image" },
+  { value: "email", label: "agents.pipe_fmt_email" },
   { value: "markdown", label: "Markdown" },
-  { value: "text&code", label: "文本 / 代码" },
+  { value: "text&code", label: "agents.pipe_fmt_text_code" },
   { value: "html", label: "HTML" },
   { value: "doc", label: "Word (doc)" },
   { value: "docx", label: "Word (docx)" },
@@ -41,19 +42,19 @@ const OUTPUT_FORMAT_OPTIONS: Record<string, { value: string; label: string }[]> 
     { value: "json", label: "JSON" },
     { value: "html", label: "HTML" },
   ],
-  image: [{ value: "text", label: "文本" }],
+  image: [{ value: "text", label: "agents.pipe_text" }],
   email: [
-    { value: "text", label: "文本" },
+    { value: "text", label: "agents.pipe_text" },
     { value: "json", label: "JSON" },
   ],
   markdown: [{ value: "json", label: "JSON" }],
   "text&code": [
     { value: "json", label: "JSON" },
-    { value: "text", label: "文本" },
+    { value: "text", label: "agents.pipe_text" },
   ],
   html: [
     { value: "json", label: "JSON" },
-    { value: "text", label: "文本" },
+    { value: "text", label: "agents.pipe_text" },
   ],
   doc: [{ value: "json", label: "JSON" }],
   docx: [{ value: "json", label: "JSON" }],
@@ -61,10 +62,10 @@ const OUTPUT_FORMAT_OPTIONS: Record<string, { value: string; label: string }[]> 
 };
 
 const PREPROCESS_OPTIONS = [
-  { value: "main_content", label: "正文" },
-  { value: "title", label: "标题" },
-  { value: "abstract", label: "摘要" },
-  { value: "author", label: "作者" },
+  { value: "main_content", label: "agents.pipe_body" },
+  { value: "title", label: "agents.pipe_title" },
+  { value: "abstract", label: "agents.pipe_summary" },
+  { value: "author", label: "agents.pipe_author" },
 ];
 
 const EMAIL_FIELDS = ["from", "to", "cc", "bcc", "date", "subject", "body", "attachments"];
@@ -90,6 +91,7 @@ function SelectField({
   disabled?: boolean;
   onChange: (v: string) => void;
 }) {
+  const t = useTranslate();
   return (
     <select
       className="w-full rounded border bg-background px-2 py-1 text-sm"
@@ -99,7 +101,7 @@ function SelectField({
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>
-          {o.label}
+          {t(o.label)}
         </option>
       ))}
     </select>
@@ -119,6 +121,7 @@ function NumberField({
   max?: number;
   onChange: (v: number) => void;
 }) {
+  const t = useTranslate();
   return (
     <NumericRangeField
       className="h-8"
@@ -127,7 +130,7 @@ function NumberField({
       min={min ?? 0}
       max={max ?? 100000}
       disabled={disabled}
-      ariaLabel="数值"
+      ariaLabel={t("agents.pipe_number")}
       onChange={(next) => onChange(next ?? 0)}
     />
   );
@@ -144,6 +147,7 @@ function ToggleField({
   disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
+  const t = useTranslate();
   return (
     <label className="flex cursor-pointer items-center gap-2 text-sm">
       <input type="checkbox" className="size-4" checked={!!checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
@@ -165,6 +169,7 @@ function editableSetups(values: Record<string, any>): Record<string, any>[] {
 // ─── Parser ─────────────────────────────────────────────────────────────
 
 function ParserForm({ values, disabled, onChange }: FormProps) {
+  const t = useTranslate();
   const [rows, setRows] = useState<Record<string, any>[]>(() => editableSetups(values));
 
   const sync = (next: Record<string, any>[]) => {
@@ -191,7 +196,7 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
 
   return (
     <div className="space-y-3">
-      <Field label="输出汇总" hint="解析后统一输出 html / json / markdown / text 四种字段（只读）。">
+      <Field label={t("agents.pipe_outputs")} hint={t("agents.pipe_outputs_hint")}>
         <div className="grid grid-cols-2 gap-1.5 rounded border bg-muted/40 p-2 text-xs">
           {Object.keys(values?.outputs ?? {}).map((k) => (
             <div key={k} className="flex items-center justify-between">
@@ -214,16 +219,16 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
                   options={FILE_FORMATS}
                   onChange={(v) => updateRow(i, { fileFormat: v, output_format: OUTPUT_FORMAT_OPTIONS[v]?.[0]?.value })}
                 />
-                <button type="button" disabled={disabled || rows.length <= 1} onClick={() => sync(rows.filter((_, idx) => idx !== i))} className="rounded p-1 text-destructive disabled:opacity-40" title="删除该格式">
+                <button type="button" disabled={disabled || rows.length <= 1} onClick={() => sync(rows.filter((_, idx) => idx !== i))} className="rounded p-1 text-destructive disabled:opacity-40" title={t("agents.pipe_remove_format")}>
                   <Trash2 className="size-3.5" aria-hidden="true" />
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="输出格式">
+                <Field label={t("agents.pipe_output_format")}>
                   <SelectField value={row.output_format} disabled={disabled} options={OUTPUT_FORMAT_OPTIONS[fmt] ?? [{ value: "json", label: "JSON" }]} onChange={(v) => updateRow(i, { output_format: v })} />
                 </Field>
                 {(fmt === "pdf" || fmt === "spreadsheet" || fmt === "slides" || fmt === "image") && (
-                  <Field label="解析方式">
+                  <Field label={t("agents.pipe_parse_method")}>
                     <SelectField
                       value={row.parse_method}
                       disabled={disabled}
@@ -235,11 +240,11 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
                     />
                   </Field>
                 )}
-                <Field label="预处理">
+                <Field label={t("agents.pipe_preprocess")}>
                   <SelectField value={row.preprocess} disabled={disabled} options={PREPROCESS_OPTIONS} onChange={(v) => updateRow(i, { preprocess: v })} />
                 </Field>
                 {fmt === "pdf" && (
-                  <Field label="页范围 (from / to)">
+                  <Field label={t("agents.pipe_pages")}>
                     <div className="flex items-center gap-1.5">
                       <NumberField value={row.pages?.[0]?.from ?? 1} disabled={disabled} min={1} onChange={(v) => updateRow(i, { pages: [{ from: v, to: row.pages?.[0]?.to ?? 100000 }] })} />
                       <span className="text-muted-foreground">～</span>
@@ -249,7 +254,7 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
                 )}
                 {fmt === "email" && (
                   <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">提取字段</Label>
+                    <Label className="text-xs">{t("agents.pipe_email_fields")}</Label>
                     <div className="flex flex-wrap gap-2">
                       {EMAIL_FIELDS.map((f) => (
                         <label key={f} className="flex cursor-pointer items-center gap-1 text-xs">
@@ -272,15 +277,15 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
                 )}
                 {fmt === "image" && (
                   <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">系统提示词（OCR）</Label>
+                    <Label className="text-xs">{t("agents.pipe_ocr_prompt")}</Label>
                     <textarea className="min-h-12 w-full rounded border bg-background p-2 text-xs" value={row.system_prompt ?? ""} disabled={disabled} onChange={(e) => updateRow(i, { system_prompt: e.target.value })} />
                   </div>
                 )}
                 {(fmt === "pdf" || fmt === "spreadsheet" || fmt === "markdown" || fmt === "doc" || fmt === "docx") && (
                   <div className="col-span-2 flex flex-wrap gap-3">
-                    <ToggleField label="图片转文本" checked={row.flatten_media_to_text} disabled={disabled} onChange={(v) => updateRow(i, { flatten_media_to_text: v })} />
+                    <ToggleField label={t("agents.pipe_flatten_media")} checked={row.flatten_media_to_text} disabled={disabled} onChange={(v) => updateRow(i, { flatten_media_to_text: v })} />
                     {(fmt === "pdf" || fmt === "html" || fmt === "doc" || fmt === "docx") && (
-                      <ToggleField label="去除页眉页脚" checked={row.remove_header_footer} disabled={disabled} onChange={(v) => updateRow(i, { remove_header_footer: v })} />
+                      <ToggleField label={t("agents.pipe_remove_header_footer")} checked={row.remove_header_footer} disabled={disabled} onChange={(v) => updateRow(i, { remove_header_footer: v })} />
                     )}
                   </div>
                 )}
@@ -292,7 +297,7 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
 
       <button type="button" disabled={disabled} onClick={addRow} className="flex w-full items-center justify-center gap-1 rounded border border-dashed px-2 py-1.5 text-xs hover:bg-muted disabled:opacity-50">
         <Plus className="size-3.5" aria-hidden="true" />
-        添加文件格式
+        {t("agents.pipe_add_format")}
       </button>
     </div>
   );
@@ -301,29 +306,30 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
 // ─── TokenChunker / Tokenizer ───────────────────────────────────────────
 
 function TokenChunkerForm({ values, disabled, onChange }: FormProps) {
+  const t = useTranslate();
   const delimiters: string[] = Array.isArray(values?.delimiters) ? values.delimiters : ["\n"];
   return (
     <div className="space-y-3">
-      <Field label="分块 Token 数">
+      <Field label={t("agents.pipe_chunk_tokens")}>
         <NumberField value={values?.chunk_token_size ?? 512} disabled={disabled} min={16} max={2048} onChange={(v) => onChange("chunk_token_size", v)} />
       </Field>
-      <Field label="重叠比例（%）">
+      <Field label={t("agents.pipe_chunk_overlap")}>
         <NumberField value={values?.overlapped_percent ?? 0} disabled={disabled} min={0} max={100} onChange={(v) => onChange("overlapped_percent", v)} />
       </Field>
-      <Field label="分隔方式">
+      <Field label={t("agents.pipe_delimiter_mode")}>
         <SelectField
           value={values?.delimiter_mode ?? "delimiter"}
           disabled={disabled}
           options={[
-            { value: "delimiter", label: "分隔符" },
-            { value: "one", label: "纯 Token" },
+            { value: "delimiter", label: "agents.pipe_delimiter" },
+            { value: "one", label: "agents.pipe_token_only" },
           ]}
           onChange={(v) => onChange("delimiter_mode", v)}
         />
       </Field>
       {values?.delimiter_mode !== "one" && (
         <div className="space-y-1.5">
-          <Label className="text-xs">分隔符</Label>
+          <Label className="text-xs">{t("agents.pipe_delimiter")}</Label>
           {delimiters.map((d, i) => (
             <div key={i} className="flex items-center gap-1.5">
               <Input className="h-8 flex-1 font-mono text-xs" value={d} disabled={disabled} onChange={(e) => onChange("delimiters", delimiters.map((x, idx) => (idx === i ? e.target.value : x)))} />
@@ -334,7 +340,7 @@ function TokenChunkerForm({ values, disabled, onChange }: FormProps) {
           ))}
           <button type="button" disabled={disabled} onClick={() => onChange("delimiters", [...delimiters, "。"])} className="flex items-center gap-1 text-xs text-primary hover:underline">
             <Plus className="size-3.5" aria-hidden="true" />
-            添加分隔符
+            {t("agents.pipe_add_delimiter")}
           </button>
         </div>
       )}
@@ -343,32 +349,33 @@ function TokenChunkerForm({ values, disabled, onChange }: FormProps) {
 }
 
 function TokenizerForm({ values, disabled, onChange }: FormProps) {
+  const t = useTranslate();
   const methods: string[] = Array.isArray(values?.search_method) ? values.search_method : [];
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <Label className="text-xs">检索方式</Label>
+        <Label className="text-xs">{t("agents.pipe_retrieval_mode")}</Label>
         {["embedding", "full_text"].map((m) => (
           <ToggleField
             key={m}
-            label={m === "embedding" ? "向量检索（Embedding）" : "全文检索（Full Text）"}
+            label={t(m === "embedding" ? "agents.pipe_retrieval_embedding" : "agents.pipe_retrieval_fulltext")}
             checked={methods.includes(m)}
             disabled={disabled}
             onChange={(v) => onChange("search_method", v ? [...new Set([...methods, m])] : methods.filter((x) => x !== m))}
           />
         ))}
       </div>
-      <Field label="文件名校验权重">
+      <Field label={t("agents.pipe_filename_weight")}>
         <NumberField value={values?.filename_embd_weight ?? 0.1} disabled={disabled} min={0} max={1} onChange={(v) => onChange("filename_embd_weight", v)} />
       </Field>
-      <Field label="索引字段">
+      <Field label={t("agents.pipe_index_field")}>
         <SelectField
           value={values?.fields ?? "text"}
           disabled={disabled}
           options={[
-            { value: "text", label: "正文" },
-            { value: "questions", label: "问题" },
-            { value: "summary", label: "摘要" },
+            { value: "text", label: "agents.pipe_body" },
+            { value: "questions", label: "agents.pipe_question" },
+            { value: "summary", label: "agents.pipe_summary" },
           ]}
           onChange={(v) => onChange("fields", v)}
         />
@@ -380,21 +387,22 @@ function TokenizerForm({ values, disabled, onChange }: FormProps) {
 // ─── TitleChunker ───────────────────────────────────────────────────────
 
 function TitleChunkerForm({ values, disabled, onChange }: FormProps) {
+  const t = useTranslate();
   return (
     <div className="space-y-3">
-      <Field label="分块方法">
+      <Field label={t("agents.pipe_chunk_method")}>
         <SelectField
           value={values?.method ?? "hierarchy"}
           disabled={disabled}
           options={[
-            { value: "hierarchy", label: "标题层级（H1…H4）" },
-            { value: "group", label: "分组" },
+            { value: "hierarchy", label: "agents.pipe_chunk_hierarchy" },
+            { value: "group", label: "agents.pipe_chunk_group" },
           ]}
           onChange={(v) => onChange("method", v)}
         />
       </Field>
       <p className="text-xs text-muted-foreground">
-        层级规则（每组标题正则表达式）可在“JSON”页签中精确编辑，本表单用于常用设置。
+        {t("agents.pipe_hierarchy_hint")}
       </p>
     </div>
   );
@@ -403,6 +411,7 @@ function TitleChunkerForm({ values, disabled, onChange }: FormProps) {
 // ─── Extractor ──────────────────────────────────────────────────────────
 
 function ExtractorForm({ values, disabled, onChange }: FormProps) {
+  const t = useTranslate();
   const rules: { meta?: string; list?: string[] }[] = Array.isArray(values?.extraction_rules)
     ? values.extraction_rules
     : [{ meta: "", list: [] }];
@@ -412,14 +421,14 @@ function ExtractorForm({ values, disabled, onChange }: FormProps) {
       {rules.map((r, i) => (
         <div key={i} className="space-y-1.5 rounded border p-2">
           <div className="flex items-center gap-1.5">
-            <Input className="h-8 flex-1 text-xs" placeholder="字段名（meta），例如 keyword / 作者" value={r.meta ?? ""} disabled={disabled} onChange={(e) => sync(rules.map((x, idx) => (idx === i ? { ...x, meta: e.target.value } : x)))} />
+            <Input className="h-8 flex-1 text-xs" placeholder={t("agents.pipe_meta_placeholder")} value={r.meta ?? ""} disabled={disabled} onChange={(e) => sync(rules.map((x, idx) => (idx === i ? { ...x, meta: e.target.value } : x)))} />
             <button type="button" disabled={disabled || rules.length <= 1} onClick={() => sync(rules.filter((_, idx) => idx !== i))} className="rounded p-1 text-destructive disabled:opacity-40">
               <Trash2 className="size-3.5" aria-hidden="true" />
             </button>
           </div>
           <textarea
             className="min-h-14 w-full rounded border bg-background p-2 font-mono text-xs"
-            placeholder="每行一条抽取表达式（正则）"
+            placeholder={t("agents.pipe_regex_placeholder")}
             value={(r.list ?? []).join("\n")}
             disabled={disabled}
             onChange={(e) =>
@@ -439,7 +448,7 @@ function ExtractorForm({ values, disabled, onChange }: FormProps) {
       ))}
       <button type="button" disabled={disabled} onClick={() => sync([...rules, { meta: "", list: [] }])} className="flex w-full items-center justify-center gap-1 rounded border border-dashed px-2 py-1.5 text-xs hover:bg-muted disabled:opacity-50">
         <Plus className="size-3.5" aria-hidden="true" />
-        添加抽取字段
+        {t("agents.pipe_add_extract_field")}
       </button>
     </div>
   );
@@ -448,22 +457,23 @@ function ExtractorForm({ values, disabled, onChange }: FormProps) {
 // ─── Compiler ───────────────────────────────────────────────────────────
 
 function CompilerForm({ values, disabled, onChange }: FormProps) {
+  const t = useTranslate();
   return (
     <div className="space-y-3">
-      <Field label="知识模板">
+      <Field label={t("agents.pipe_knowledge_template")}>
         <SelectField
           value={values?.template ?? "general"}
           disabled={disabled}
           options={[
-            { value: "general", label: "通用模板" },
-            { value: "entity", label: "实体（Entity）" },
-            { value: "concept", label: "概念（Concept）" },
-            { value: "topic", label: "主题（Topic）" },
+            { value: "general", label: "agents.pipe_template_general" },
+            { value: "entity", label: "agents.pipe_template_entity" },
+            { value: "concept", label: "agents.pipe_template_concept" },
+            { value: "topic", label: "agents.pipe_template_topic" },
           ]}
           onChange={(v) => onChange("template", v)}
         />
       </Field>
-      <Field label="编译提示词">
+      <Field label={t("agents.pipe_compile_prompt")}>
         <textarea className="min-h-16 w-full rounded border bg-background p-2 text-xs" value={values?.subtask_prompt ?? ""} disabled={disabled} onChange={(e) => onChange("subtask_prompt", e.target.value)} />
       </Field>
     </div>
@@ -473,12 +483,13 @@ function CompilerForm({ values, disabled, onChange }: FormProps) {
 // ─── Loop / ExcelProcessor / File ───────────────────────────────────────
 
 function LoopForm({ values, disabled, onChange }: FormProps) {
+  const t = useTranslate();
   return (
     <div className="space-y-3">
-      <Field label="循环列表变量" hint="例如 {sys.files}">
+      <Field label={t("agents.pipe_loop_list")} hint={t("agents.pipe_loop_list_hint")}>
         <Input className="h-8 text-sm" value={values?.items_list ?? ""} disabled={disabled} onChange={(e) => onChange("items_list", e.target.value)} />
       </Field>
-      <Field label="输出目标">
+      <Field label={t("agents.pipe_output_target")}>
         <Input className="h-8 text-sm" value={values?.to ?? ""} disabled={disabled} onChange={(e) => onChange("to", e.target.value)} />
       </Field>
     </div>
@@ -486,15 +497,16 @@ function LoopForm({ values, disabled, onChange }: FormProps) {
 }
 
 function ExcelForm({ values, disabled, onChange }: FormProps) {
+  const t = useTranslate();
   return (
     <div className="space-y-3">
-      <Field label="处理操作">
+      <Field label={t("agents.pipe_operation")}>
         <SelectField
           value={values?.operation ?? "read"}
           disabled={disabled}
           options={[
-            { value: "read", label: "读取" },
-            { value: "write", label: "写入" },
+            { value: "read", label: "agents.pipe_read" },
+            { value: "write", label: "agents.pipe_write" },
           ]}
           onChange={(v) => onChange("operation", v)}
         />
@@ -504,10 +516,11 @@ function ExcelForm({ values, disabled, onChange }: FormProps) {
 }
 
 function FileForm({ values }: FormProps) {
+  const t = useTranslate();
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        数据管道起点：接收上传文件，输出 <code>name</code>（文件名）与 <code>file</code>（文件对象）。无需配置参数。
+        {t("agents.pipe_file_hint")}
       </p>
       <div className="rounded border bg-muted/40 p-2 text-xs">
         {Object.keys(values?.outputs ?? {}).map((k) => (

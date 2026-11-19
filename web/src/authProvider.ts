@@ -25,6 +25,7 @@ interface MePayload {
   username: string;
   email?: string;
   tenant_id: string;
+  tenant_name?: string;
   role: string;
   platform?: boolean;
   approval_enabled?: boolean;
@@ -208,7 +209,15 @@ export const authProvider: AuthProvider = {
     try {
       const me = await checkIdentity();
       if (!me) throw new ApiError(401, 401, "获取用户信息失败");
-      return { id: me.id, fullName: me.username, role: me.role, tenant_id: me.tenant_id };
+      // `tenant_name` is the human label the report workspace footer prints; an
+      // id is not a workspace name (live 2026-11-18).
+      return {
+        id: me.id,
+        fullName: me.username,
+        role: me.role,
+        tenant_id: me.tenant_id,
+        tenant_name: me.tenant_name,
+      };
     } catch (err) {
       if (err instanceof ApiError) throw err;
       console.error("[getIdentity] failed to resolve identity", err);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   EXPORT_ARTIFACT_STATUSES,
   EXPORT_FORMATS,
+  REPORT_EXPORT_FORMATS,
   isReportTerminalEvent,
   REPORT_ERROR_CODES,
   REPORT_EVENT_TYPES,
@@ -88,7 +89,20 @@ describe("report contract — status closed sets", () => {
       "json",
       "docx",
       "pdf",
+      "xlsx",
     ]);
+    // The report delivery subset: five formats, `json` excluded on purpose.
+    expect(REPORT_EXPORT_FORMATS).toEqual([
+      "markdown",
+      "docx",
+      "pdf",
+      "html",
+      "xlsx",
+    ]);
+    expect(new Set(REPORT_EXPORT_FORMATS).size).toBe(REPORT_EXPORT_FORMATS.length);
+    for (const format of REPORT_EXPORT_FORMATS) {
+      expect(EXPORT_FORMATS).toContain(format);
+    }
     expect(EXPORT_ARTIFACT_STATUSES).toEqual([
       "pending",
       "ready",

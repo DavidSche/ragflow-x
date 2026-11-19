@@ -13,6 +13,7 @@ import {
   TextInput,
 } from "@/components/admin";
 import { IconButtonWithTooltip } from "@/components/admin/icon-button-with-tooltip";
+import { PLATFORM_TENANT_ID } from "@/lib/tenant";
 import {
   required,
   useListContext,
@@ -39,7 +40,6 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { FormField, useFieldValidation } from "../../components/FormField";
 import { api, ApiError } from "../../lib/api";
 
-const PLATFORM_TENANT_ID = "00000000000000000000000000000000";
 
 interface TenantLike {
   id: string;

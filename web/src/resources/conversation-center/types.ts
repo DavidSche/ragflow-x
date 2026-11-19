@@ -49,6 +49,22 @@ export interface ConversationMessagePage {
   nextCursor?: string;
 }
 
+/**
+ * A14's three-key attachment (doc/288 §14.3 A14).
+ *
+ * The turn says *which* report, *which* revision and *which* section, and the server
+ * reads the title, the body, the claims and the citations from its own rows. Sending
+ * the document text from the browser would create a second, unverifiable source of
+ * truth — a client could attach any prose it liked and the answer would look
+ * authoritative.
+ */
+export interface ReportContextRef {
+  report_id: string;
+  /** `0`/absent means "the revision this report currently shows", resolved server-side. */
+  revision?: number;
+  section_key?: string;
+}
+
 export interface ConversationStartInput {
   target: Pick<ConversationTargetRef, "id" | "kind">;
   context?: ConversationContext;
@@ -56,6 +72,8 @@ export interface ConversationStartInput {
   attachments?: AttachmentDraft[];
   requestId: string;
   conversationKey: string;
+  /** A14: attach the report the reader is looking at to *this* turn only. */
+  reportContext?: ReportContextRef;
 }
 
 export type RunFinalStatus = "completed" | "failed" | "cancelled";

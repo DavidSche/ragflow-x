@@ -25,7 +25,7 @@ import { ConversationCenterInput } from "./ConversationCenterInput";
 import { RouteDecisionCard } from "./RouteDecisionCard";
 import { AssistantEmptyState } from "./AssistantEmptyState";
 import { AssistantHeader } from "./AssistantHeader";
-import { ReportWorkspace } from "./report/ReportWorkspace";
+import { ReportWorkspace, type ReportFollowUpRequest } from "./report/ReportWorkspace";
 import { CrossAppSessionIndex } from "../workbench/CrossAppSessionIndex";
 import type {
   AttachmentDraft,
@@ -84,6 +84,7 @@ import type {
   ConversationTargetStatus,
   ConversationCenterTelemetryEventName,
   RecentTargetEntry,
+  ReportContextRef,
   RunFinalStatus,
 } from "./types";
 import { noopTelemetrySink, type ConversationTelemetrySink } from "./types";
@@ -219,6 +220,12 @@ export function ConversationCenter({
   const [lastSubmission, setLastSubmission] = useState<{
     text: string;
     context: ConversationContext | null;
+    /**
+     * A14: the attachment this turn carried. Kept so 「重试」 replays the *same*
+     * question — a retry that silently dropped the report would answer a different
+     * one and look like a model failure.
+     */
+    reportContext: ReportContextRef | null;
   } | null>(null);
   const [agentSessionUnknown, setAgentSessionUnknown] = useState(false);
 
@@ -232,6 +239,7 @@ export function ConversationCenter({
         text?: string,
         context?: ConversationContext,
         target?: ConversationTargetRef,
+        reportContext?: ReportContextRef,
       ) => Promise<void>)
     | null
   >(null);
@@ -1197,6 +1205,7 @@ export function ConversationCenter({
     requestedText?: string,
     requestedContext?: ConversationContext,
     requestedTarget?: ConversationTargetRef,
+    requestedReportContext?: ReportContextRef,
   ) => {
     const pendingBeforePlainText = requestState.getPending();
     const attachmentBlocked =
@@ -1340,7 +1349,11 @@ export function ConversationCenter({
     setMessages(nextMessages);
     setInput("");
     setAttachments([]);
-    setLastSubmission({ text, context: runContext });
+    setLastSubmission({
+      text,
+      context: runContext,
+      reportContext: requestedReportContext ?? null,
+    });
     trackEvent("message_submitted", {
       conversationKey: draftKey,
       target: targetForSubmission,
@@ -1379,6 +1392,9 @@ export function ConversationCenter({
         attachments: readyAttachments,
         requestId,
         conversationKey: draftKey,
+        ...(requestedReportContext
+          ? { reportContext: requestedReportContext }
+          : {}),
       });
       abortRef.current = stream;
       trackEvent("run_started", {
@@ -1598,6 +1614,33 @@ export function ConversationCenter({
   };
   submitRef.current = submit;
 
+  /**
+   * A14: a chip in the report workspace becomes a real chat turn in *this* session.
+   *
+   * Not a new conversation and not a new report: the answer has to see the same
+   * history the reader saw, or the follow-up would be a fresh question about a
+   * document the assistant has never discussed. The attachment travels as three keys
+   * — the server reads the body, so the browser cannot put words in the report.
+   */
+  const sendReportFollowUp = useCallback(
+    (request: ReportFollowUpRequest) => {
+      if (busy) {
+        notify(t("conversationCenter.report_followup_busy"), {
+          type: "warning",
+        });
+        return;
+      }
+      const chatContext = context?.kind === "chat" ? context : undefined;
+      closeReportWorkspace();
+      void submitRef.current?.(request.text, chatContext, undefined, {
+        report_id: request.reportId,
+        revision: request.revision,
+        ...(request.sectionKey ? { section_key: request.sectionKey } : {}),
+      });
+    },
+    [busy, closeReportWorkspace, context, notify, t],
+  );
+
   const retry = () => {
     const activePending = requestState.getPending();
     if (
@@ -1612,7 +1655,12 @@ export function ConversationCenter({
       target: target ?? undefined,
       attributes: { kind },
     });
-    void submit(lastSubmission.text);
+    void submit(
+      lastSubmission.text,
+      undefined,
+      undefined,
+      lastSubmission.reportContext ?? undefined,
+    );
   };
 
   const retryMessage = (turnId: string) => {
@@ -1825,6 +1873,16 @@ export function ConversationCenter({
           adapter={adapters.report}
           identity={identity}
           onClose={closeReportWorkspace}
+          // A run started from this conversation records where it came from, so the
+          // report centre can hand the reader back to the same chat and session.
+          originChatId={context?.targetId ?? target?.id ?? ""}
+          originSessionId={context?.id ?? ""}
+          // Only a chat can answer a follow-up: from any other surface the chips are
+          // not rendered at all, so there is no button that looks clickable and does
+          // nothing.
+          onFollowUp={
+            (target?.kind ?? "chat") === "chat" ? sendReportFollowUp : undefined
+          }
         />
       </div>
     );
