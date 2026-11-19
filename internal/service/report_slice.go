@@ -92,7 +92,11 @@ func (p ReportSlicePayload) owns(job *model.ReportJob, runtimeJobID string) bool
 // `superseded` row is finished history (its live replacement carries the real
 // status), so it never anchors a resume either.
 func reportNextStartOrd(sections []model.ReportSection) int {
+	next := 1
 	for _, section := range sections {
+		if section.Ord >= next {
+			next = section.Ord + 1
+		}
 		if section.Status == model.ReportSectionSuperseded {
 			continue
 		}
@@ -100,7 +104,10 @@ func reportNextStartOrd(sections []model.ReportSection) int {
 			return section.Ord
 		}
 	}
-	return len(sections)
+	// Nothing is unfinished, so the resume point is one past the last section. `ord`
+	// is 1-based, which is why this cannot be `len(sections)`: with five sections that
+	// would point at the fifth, and a resumed slice would redo work it just finished.
+	return next
 }
 
 // DispatchReportJob arms the first runtime slice of a queued job.
@@ -115,6 +122,25 @@ func (s *Service) DispatchReportJob(ctx context.Context, tenantID, jobID string)
 	}
 	if job == nil || job.FinalizedAt != nil || job.Status != model.ReportJobQueued ||
 		job.CurrentRuntimeJobID != "" {
+		return "", false, nil
+	}
+	// Admission control (doc/297 §3). This is the single door from `queued` to
+	// `running`, so the workspace's concurrency limit lives here and nowhere else:
+	// creation, replay, retry, the schedule tick and the crash-recovery sweep all
+	// pass through it, and none of them can start a fourth run by taking a different
+	// path.
+	//
+	// A run over the limit is NOT an error and never a 429: it stays `queued` with no
+	// runtime pointer, `applied=false` describes "nothing was armed", and the
+	// reconcile sweep asks again on its next pass. That is the whole point of a limit
+	// that "only defers": the request is accepted, the aggregate exists, the token
+	// envelope is frozen, and the work starts as soon as a slot frees. Killing or
+	// rejecting it would turn a capacity fact into a lost report.
+	admitted, err := s.reportAdmissionAllows(ctx, tenantID)
+	if err != nil {
+		return "", false, err
+	}
+	if !admitted {
 		return "", false, nil
 	}
 	now := time.Now().UTC()
@@ -134,6 +160,48 @@ func (s *Service) DispatchReportJob(ctx context.Context, tenantID, jobID string)
 		return "", false, nil
 	}
 	return start.RuntimeJobID, true, nil
+}
+
+// ReportMaxConcurrentRuns is how many report runs one workspace may have executing
+// at the same time (doc/297 §3).
+//
+// It is a product number rather than an environment knob: a report run holds a model,
+// a retrieval budget and a row of the engine's worker pool for minutes, and the number
+// that keeps a workspace honest about that is a decision about the product, not about
+// the host. Operators who genuinely need more are changing the shape of the feature,
+// and a variable would have let that happen silently in one environment.
+//
+// The count is of *execution slices*, not of reports: each running report holds
+// exactly one `report_generate` runtime job at a time (a yield replaces it, a parked
+// `awaiting_outline` run holds none), so this is the number of runs actually burning
+// engine time. A report waiting for outline confirmation therefore does not consume a
+// slot — it is waiting on a human, not on the worker.
+const ReportMaxConcurrentRuns = 3
+
+// reportAdmissionAllows answers "may another run start in this workspace now".
+//
+// `active` counts the workspace's queued and running `report_generate` slices, which
+// is what the engine is committed to; stale `running` rows from a dead worker hold a
+// slot only until the stale sweep finalizes them, and that bound is deliberate — a
+// limit that could be exceeded by guessing races is not a limit.
+func (s *Service) reportAdmissionAllows(ctx context.Context, tenantID string) (bool, error) {
+	active, err := s.Store.CountActiveJobsExcept(ctx, model.JobKindReportGenerate, tenantID, "")
+	if err != nil {
+		return false, err
+	}
+	return active < int64(ReportMaxConcurrentRuns), nil
+}
+
+// reportConcurrencyOf snapshots the limit for a caller that must explain a deferral.
+// It is read after the fact on purpose: the numbers describe the workspace at the
+// moment the answer is written, and a deferral is only ever explained by "what was
+// already running".
+func (s *Service) reportConcurrencyOf(ctx context.Context, tenantID string) (*ReportConcurrencyView, error) {
+	active, err := s.Store.CountActiveJobsExcept(ctx, model.JobKindReportGenerate, tenantID, "")
+	if err != nil {
+		return nil, err
+	}
+	return &ReportConcurrencyView{Limit: ReportMaxConcurrentRuns, Active: active}, nil
 }
 
 // YieldReportSlice hands the job to its next slice at a checkpoint (the

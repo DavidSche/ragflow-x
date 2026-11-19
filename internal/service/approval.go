@@ -1288,6 +1288,53 @@ func (s *Service) resolveApprovalTarget(ctx context.Context, tenantID, actorID s
 		}
 		attrs["knowledge_task_title"] = task.Title
 		attrs["knowledge_task_owner"] = task.OwnerID
+	case model.ApprovalObjectReport:
+		if req.Action != model.ApprovalActionExtendBudget {
+			return nil, nil, nil, httperr.BadRequest(codeReportOutlineInvalid, "unsupported report approval action")
+		}
+		// Submitting an extension is an action on *your own* report, so the gate is
+		// the same one the rest of the report surface uses: `execute:report` plus
+		// ownership. A workspace administrator cannot start one on somebody else's
+		// behalf — that would let governance raise a limit the owner never asked for.
+		report, reportErr := s.Store.GetReport(ctx, tenantID, req.ObjectID)
+		if reportErr != nil {
+			return nil, nil, nil, reportErr
+		}
+		if report == nil {
+			return nil, nil, nil, errReportNotFound()
+		}
+		if authorizeErr := s.AuthorizeObject(ctx, actorID, "execute", "report", tenantID, ""); authorizeErr != nil {
+			return nil, nil, nil, authorizeErr
+		}
+		if ownerErr := s.assertReportOwner(ctx, actorID, report); ownerErr != nil {
+			return nil, nil, nil, ownerErr
+		}
+		job, jobErr := s.Store.GetLatestReportJob(ctx, tenantID, report.ID)
+		if jobErr != nil {
+			return nil, nil, nil, jobErr
+		}
+		if job == nil || job.FinalizedAt != nil {
+			return nil, nil, nil, httperr.New(409, codeReportInvalidTransition,
+				"only a running report can be granted more budget")
+		}
+		// The payload may carry the increment as an int (the service builds it) or as
+		// a JSON float (a client posts it), so it is decoded through the same helper
+		// every other numeric approval field uses.
+		tokens := approvalAnyToFloat(req.Payload["tokens"])
+		if tokens <= 0 {
+			return nil, nil, nil, httperr.BadRequest(codeReportOutlineInvalid, "tokens must be positive")
+		}
+		req.Payload["job_id"] = job.ID
+		req.Payload["report_id"] = report.ID
+		target.Snapshot = map[string]any{
+			"report_id": report.ID, "job_id": job.ID, "report_title": report.Title,
+			"budget_tokens": job.ReservedTokens, "spent_tokens": job.ChargedTokens,
+			"budget_policy": job.ReportBudgetPolicy, "added_tokens": int64(tokens),
+		}
+		attrs = map[string]any{
+			"report_id": report.ID, "report_title": report.Title,
+			"added_tokens": int64(tokens),
+		}
 	case model.ApprovalObjectCompilationRun:
 		if req.Action != model.ApprovalActionConfirmDownstreamAbsent && req.Action != model.ApprovalActionCreate {
 			return nil, nil, nil, httperr.BadRequest(40152, "unsupported compilation recovery action")

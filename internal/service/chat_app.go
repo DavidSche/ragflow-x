@@ -83,6 +83,15 @@ func (s *Service) ChatAppCompletion(ctx context.Context, key *model.APIKey, chat
 		return nil, err
 	}
 	req.Messages = applyPreModelMemoryContext(req.Messages, memoryMessages)
+	// A14: an optional `report_context` attaches the report the user is reading to
+	// this turn. Resolved server-side (the client sends three keys), authorized with
+	// the report's own read predicate, and prepended as data — not instructions.
+	followUp, err := s.buildReportFollowUpForTurn(ctx, key, rawReq)
+	if err != nil {
+		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
+		return nil, err
+	}
+	req.Messages = applyReportFollowUpContext(req.Messages, followUp)
 
 	// Retrieval-layer metadata pushdown (doc/123 §8.1): the evidence rides
 	// into the projection regardless of pushdown success.
@@ -161,6 +170,15 @@ func (s *Service) StreamChatAppCompletion(ctx context.Context, key *model.APIKey
 		return 0, "", err
 	}
 	req.Messages = applyPreModelMemoryContext(req.Messages, memoryMessages)
+	// A14, stream half: the same attachment as the non-streaming path, resolved
+	// before the first byte is written so a refusal is a real HTTP status rather than
+	// an error frame inside a 200 SSE stream.
+	followUp, err := s.buildReportFollowUpForTurn(ctx, key, rawReq)
+	if err != nil {
+		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
+		return 0, "", err
+	}
+	req.Messages = applyReportFollowUpContext(req.Messages, followUp)
 
 	pushdown := s.applyChatPushdownForChat(ctx, key.TenantID, chatID, &req)
 

@@ -155,7 +155,7 @@ var endpointRegistry = []EndpointRecord{
 	// datasets reject creation unless pipeline_version_id pins a published
 	// canvas snapshot, so publishing is the only way to bind a user pipeline.
 	// Verified live 2026-11-10 during the v1.0.0 contract run (doc/262 §7).
-	{Method: "POST", Path: "/agents/{agent_id}/publish", Stability: EndpointInternal, Evidence: "source: internal/handler/agent.go PublishAgent + internal/router/router.go RegisterAgentRoutes (not in docs v0.27.2); live-verified v1.0.0 2026-11-10", ClientMethods: []string{"PublishPipelineVersion"}, UsedByCapability: []string{"knowledge_strategy"}, MaxVerified: "v1.0.0"},
+	{Method: "POST", Path: "/agents/{agent_id}/publish", Stability: EndpointInternal, Evidence: "source: internal/handler/agent.go PublishAgent + internal/router/router.go RegisterAgentRoutes (not in docs v0.27.2); live-verified v1.0.0 2026-11-10", ClientMethods: []string{"PublishPipelineVersion", "PublishAgentVersion"}, UsedByCapability: []string{"knowledge_strategy", "agent"}, MaxVerified: "v1.0.0"},
 	// RollbackAgentVersion is a client-side composite (GetAgentVersion +
 	// UpdateAgent); it performs no upstream call of its own, so it is
 	// attributed to the GET version endpoint that fetches the DSL.

@@ -25,6 +25,10 @@ type ReportRepo interface {
 	CreateReportTemplate(ctx context.Context, template *model.ReportTemplate) error
 	GetReportTemplate(ctx context.Context, tenantID, templateKey string, version int64) (*model.ReportTemplate, error)
 	ListReportTemplates(ctx context.Context, tenantID string) ([]model.ReportTemplate, error)
+	// UpdateReportTemplate writes back only the governance columns (status,
+	// retired_at). A version row's payload is immutable, so a caller cannot turn
+	// an "edit" into a silent rewrite of a version a report already pinned.
+	UpdateReportTemplate(ctx context.Context, template *model.ReportTemplate) error
 	// TenantReportPolicy is the T20b overlay on the four report clocks. A nil row
 	// (or a nil field) means "inherit the system value".
 	GetTenantReportPolicy(ctx context.Context, tenantID string) (*model.TenantReportPolicy, error)
@@ -98,16 +102,46 @@ type ReportRepo interface {
 	// SupersedeReportSection retires a `failed` section row whose version is being
 	// replaced by a retried row. `applied=false` means the row already moved.
 	SupersedeReportSection(ctx context.Context, sectionID string, now time.Time) (bool, error)
+	// ReuseReportSection carries one base section into a new revision (§7.4 / R14):
+	// it copies the body, the citation rows and the claim rows under the new
+	// revision, marks the row `succeeded` with `rewrite_reason=reuse` and advances
+	// the progress counter — one transaction, so an inherited section can never
+	// exist without the citations that justify it. `applied=false` means "not
+	// reused" (already written, or its evidence is gone), and the section is then
+	// written normally rather than inheriting an appendix that cannot be printed.
+	ReuseReportSection(ctx context.Context, plan ReportSectionReuse) (bool, error)
 
 	// Reads.
 	GetReport(ctx context.Context, tenantID, reportID string) (*model.Report, error)
 	GetLatestReportJob(ctx context.Context, tenantID, reportID string) (*model.ReportJob, error)
+	// ExtendReportBudget raises a live job's frozen envelope by the approved amount
+	// (doc/296 §2.2 / A71). It is the *only* writer of `reserved_tokens` after
+	// creation, it never lowers it, and it refuses a finalized job: the envelope is
+	// a permission, the ledger is the record, and an approval may only widen the
+	// former. `nil` means "nothing to extend" (terminal, or the job is gone).
+	ExtendReportBudget(ctx context.Context, tenantID, jobID string, addTokens int64, now time.Time) (*model.ReportJob, error)
 	GetReportJob(ctx context.Context, tenantID, jobID string) (*model.ReportJob, error)
 	GetReportJobByIdempotencyKey(ctx context.Context, tenantID, idempotencyKey string) (*model.ReportJob, error)
 	GetReportRevision(ctx context.Context, tenantID, reportID string, revision int64) (*model.ReportRevision, error)
 	GetReportRevisionByID(ctx context.Context, tenantID, revisionID string) (*model.ReportRevision, error)
+	// MarkReportRevisionScheduled stamps the `trigger`/`schedule_id` of a revision a
+	// robot started (doc/295 §2.4). Only those two columns change: who created the
+	// revision, what template it pinned and its datasets stay exactly as the
+	// regeneration wrote them.
+	MarkReportRevisionScheduled(
+		ctx context.Context, tenantID, revisionID, scheduleID string, now time.Time,
+	) error
+	// ListReportRevisionsByID loads the current revision of each listed report in
+	// one query, so the report list can state where each report stands without a
+	// query per row. An id with no row is absent from the result, not an error:
+	// a report whose pointer dangles is answered by the caller's fallback.
+	ListReportRevisionsByID(ctx context.Context, tenantID string, ids []string) ([]model.ReportRevision, error)
 	ListReportSections(ctx context.Context, tenantID, revisionID string) ([]model.ReportSection, error)
 	ListReportCitations(ctx context.Context, tenantID, revisionID string) ([]model.ReportCitation, error)
+	// ListReportClaims loads one revision's claims (doc/288 §9.2). They are read by
+	// the assembly appendix (R11) and by the consistency metrics (R16), always for a
+	// whole revision: a per-section read would make the cross-section check N+1.
+	ListReportClaims(ctx context.Context, tenantID, revisionID string) ([]model.ReportClaim, error)
 	// ListReportEvidenceByIDs loads the frozen snapshots an export appendix needs.
 	// A missing id is *absent from the result*, not an error: the caller decides
 	// whether absence means "no citations" or "the snapshot was purged" (A43).
@@ -116,6 +150,25 @@ type ReportRepo interface {
 	// past its clock: the read-side half of A43.
 	CountUnverifiableReportEvidence(ctx context.Context, tenantID, revisionID string, now time.Time) (int64, error)
 	ListReports(ctx context.Context, tenantID, ownerUserID string, limit, offset int) ([]model.Report, error)
+	// Shared access predicate (doc/296 §2.1 / A65). The list and the detail answer
+	// from these three methods so one policy change cannot make them disagree; see
+	// report_access.go for the predicate itself.
+	ListVisibleReports(ctx context.Context, visibility ReportVisibility, ownerUserID string, limit, offset int) ([]model.Report, error)
+	CountVisibleReports(ctx context.Context, visibility ReportVisibility, ownerUserID string) (int64, error)
+	ReportVisibleTo(ctx context.Context, visibility ReportVisibility, reportID string) (bool, error)
+	// Grants of the two `selected_*` policies. They are replaced wholesale on every
+	// policy write: a merge would leave a revoked grant answering.
+	ListReportAccessGrants(ctx context.Context, tenantID, reportID string) ([]model.ReportAccessGrant, error)
+	ListReportAccessGrantsFor(ctx context.Context, tenantID, reportID, grantKind, grantID string) ([]model.ReportAccessGrant, error)
+	// ListReportTeamsOfUser resolves the reader's teams inside one tenant. It is what
+	// turns `selected_groups` into a set of ids the SQL predicate can compare.
+	ListReportTeamsOfUser(ctx context.Context, tenantID, userID string) ([]string, error)
+	// ReportAccessWrite replaces the policy, the scope payload and the grant rows in
+	// one transaction. `false` means the report is gone.
+	ReportAccessWrite(
+		ctx context.Context, tenantID, reportID, policy, scopeJSON string,
+		grants []model.ReportAccessGrant, now time.Time,
+	) (bool, error)
 	// GetReportIncludingDeleted is the restore path's read (A47). It is separate from
 	// GetReport on purpose: the deleted filter must not become a parameter of the
 	// normal read, or it eventually gets passed as "true" somewhere it shouldn't.
@@ -182,6 +235,12 @@ type ReportRepo interface {
 	// extension (doc/288 §7.6).
 	SoftDeleteReport(ctx context.Context, tenantID, reportID string, now, holdUntil time.Time) error
 
+	// SetReportStatus flips `status` under a compare-and-swap on the previous
+	// value (doc/297 §2). `from` is part of the UPDATE, so two clients racing
+	// archive and un-archive cannot both succeed silently; `deleted_at IS NULL`
+	// keeps a row in its recovery window out of the lifecycle entirely.
+	SetReportStatus(ctx context.Context, tenantID, reportID, from, to string, now time.Time) (bool, error)
+
 	// RestoreReport clears the soft-delete marker inside the recovery window
 	// (A47). The compare-and-swap lives here rather than in the service so a
 	// concurrent janitor purge and a restore cannot both win: whichever update
@@ -189,6 +248,32 @@ type ReportRepo interface {
 	// reports a row change. `false` means "nothing to restore", and the service
 	// re-reads to explain why.
 	RestoreReport(ctx context.Context, tenantID, reportID string, now time.Time) (bool, error)
+
+	// Schedules (doc/295 §2.4 / R20). One plan per report, addressed by report id
+	// in every write: a schedule has no meaning apart from the report it runs, and
+	// a standalone id would be one more thing to authorize.
+	GetReportSchedule(ctx context.Context, tenantID, reportID string) (*model.ReportSchedule, error)
+	CreateReportSchedule(ctx context.Context, schedule *model.ReportSchedule) error
+	// UpdateReportSchedule rewrites the plan and recomputes `next_run_at` from the
+	// caller's value. It never touches `last_*`: those describe what happened, not
+	// what is planned.
+	UpdateReportSchedule(ctx context.Context, schedule *model.ReportSchedule) error
+	DeleteReportSchedule(ctx context.Context, tenantID, reportID string) (bool, error)
+	// ClaimDueReportSchedules returns the schedules whose `next_run_at` has passed
+	// and advances each one's `next_run_at` in the same transaction, before any
+	// work is attempted (doc/295 §2.4). A crash between claim and trigger therefore
+	// delays the next occurrence instead of firing the same one twice.
+	// The caller supplies the advance rule (`advance`, a pure function of the plan
+	// and the tick's clock) so the cadence arithmetic lives in exactly one place.
+	ClaimDueReportSchedules(
+		ctx context.Context, now time.Time, limit int,
+		advance func(row *model.ReportSchedule, from time.Time) time.Time,
+	) ([]model.ReportSchedule, error)
+	// FinishReportScheduleRun writes back the outcome of one claimed tick.
+	FinishReportScheduleRun(ctx context.Context, finish ReportScheduleFinish) (bool, error)
+	// ListReportSchedulesByDueAt is the test/observability read: it answers "what
+	// is armed for this tenant" without claiming anything.
+	ListReportSchedules(ctx context.Context, tenantID string) ([]model.ReportSchedule, error)
 
 	// Retention surface (doc/288 §7.6).
 	ListExpiredReportIDs(ctx context.Context, now time.Time, limit int) ([]model.Report, error)
@@ -414,6 +499,21 @@ func (s *store) GetReportTemplate(ctx context.Context, tenantID, templateKey str
 		return nil, err
 	}
 	return &template, nil
+}
+
+// UpdateReportTemplate persists the retirement decision. Payload columns are
+// deliberately excluded: a published version is immutable (doc/295 A58), and a
+// blanket Save() would let a stale in-memory payload overwrite the row.
+func (s *store) UpdateReportTemplate(ctx context.Context, template *model.ReportTemplate) error {
+	if template == nil || template.ID == "" {
+		return fmt.Errorf("report template is required")
+	}
+	return s.WithContext(ctx).Model(&model.ReportTemplate{}).
+		Where("tenant_id = ? AND id = ?", template.TenantID, template.ID).
+		Updates(map[string]interface{}{
+			"status":     template.Status,
+			"retired_at": template.RetiredAt,
+		}).Error
 }
 
 // ListReportTemplates returns every version visible to one tenant, ordered by
@@ -682,6 +782,40 @@ func (s *store) GetReportRevision(ctx context.Context, tenantID, reportID string
 	return &row, nil
 }
 
+// ListReportRevisionsByID loads the revisions behind a set of ids in one query.
+//
+// It is the list surface's read: `GET /reports` returns at most one page (bounded
+// by maxPageSize), and asking "where does each of these stand" one row at a time
+// would turn a 50-row page into 50 round trips for a column the user reads at a
+// glance. Missing ids simply do not come back.
+func (s *store) ListReportRevisionsByID(
+	ctx context.Context, tenantID string, ids []string,
+) ([]model.ReportRevision, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	unique := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return nil, nil
+	}
+	var rows []model.ReportRevision
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND id IN ?", tenantID, unique).
+		Find(&rows).Error
+	return rows, err
+}
+
 // ListReportRevisions returns the report's revision rows, newest first.
 //
 // Superseded rows are included on purpose: A41 says a historical revision's body
@@ -841,6 +975,26 @@ func (s *store) SoftDeleteReport(ctx context.Context, tenantID, reportID string,
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// SetReportStatus flips `status` under a compare-and-swap on the value it had.
+//
+// `from` is part of the WHERE clause rather than a preceding read, because two
+// clients can archive and un-archive at the same instant and the loser must be told
+// so (44104 "state does not allow") instead of silently overwriting the winner.
+// `deleted_at IS NULL` is part of the guard too: a row in its recovery window is not
+// a lifecycle a caller may flip, and after `RestoreReport` the status it had is
+// still there — that is the whole reason archive lives in its own column.
+func (s *store) SetReportStatus(
+	ctx context.Context, tenantID, reportID, from, to string, now time.Time,
+) (bool, error) {
+	result := s.WithContext(ctx).Model(&model.Report{}).
+		Where("tenant_id = ? AND id = ? AND status = ? AND deleted_at IS NULL", tenantID, reportID, from).
+		Updates(map[string]interface{}{"status": to, "updated_at": now})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // RestoreReport re-opens a soft-deleted report whose recovery window is still
@@ -1675,6 +1829,48 @@ func (s *store) GetLatestReportJob(ctx context.Context, tenantID, reportID strin
 	}
 	if err != nil {
 		return nil, err
+	}
+	return &job, nil
+}
+
+// ExtendReportBudget raises the envelope of a job that is still spending.
+//
+// The guard is "not finalized", not "running": a run parked in `awaiting_outline`
+// with budget left for nothing is exactly the case an approval exists for, and it is
+// not finalized yet. Lowering is not offered at all — an approver who could shrink an
+// envelope mid-run would be killing calls that are already paid for.
+func (s *store) ExtendReportBudget(ctx context.Context, tenantID, jobID string, addTokens int64, now time.Time) (*model.ReportJob, error) {
+	if addTokens <= 0 {
+		return nil, nil
+	}
+	var job model.ReportJob
+	err := s.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err := tx.Where("tenant_id = ? AND id = ? AND finalized_at IS NULL", tenantID, jobID).
+			First(&job).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		// `reserved_tokens + ?` in SQL rather than a read-modify-write: two approvals
+		// applied concurrently must both land, and a stale read would silently drop
+		// one of them.
+		if err := tx.Model(&model.ReportJob{}).
+			Where("tenant_id = ? AND id = ?", tenantID, jobID).
+			Updates(map[string]interface{}{
+				"reserved_tokens": gorm.Expr("reserved_tokens + ?", addTokens),
+				"updated_at":      now,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Where("tenant_id = ? AND id = ?", tenantID, jobID).First(&job).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	if job.ID == "" {
+		return nil, nil
 	}
 	return &job, nil
 }

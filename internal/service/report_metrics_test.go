@@ -88,11 +88,15 @@ func unjudgedMetrics() string {
 func TestMetricsTrendLeavesUndeliveredRevisionsOutOfTheRatios(t *testing.T) {
 	fx := newReportFixture(t, "metrics-rollup")
 	ctx := context.Background()
+	// Both revisions must share one day bucket. Anchor them at noon of *today* instead
+	// of "now minus N hours": run between 00:00 and 03:00 UTC and the 3-hour offset
+	// silently lands on the previous day, turning this into a clock-dependent test.
 	now := time.Now().UTC()
+	base := time.Date(now.Year(), now.Month(), now.Day(), 12, 0, 0, 0, time.UTC)
 	seedMetricsRevision(t, fx.gdb, fx.tenantID, fx.owner.ID, "rep-metrics-ok", "rev-metrics-ok",
-		model.ReportRevisionPublished, model.ReportCompletenessFull, now.Add(-2*time.Hour), deliveredMetrics())
+		model.ReportRevisionPublished, model.ReportCompletenessFull, base.Add(-time.Hour), deliveredMetrics())
 	seedMetricsRevision(t, fx.gdb, fx.tenantID, fx.owner.ID, "rep-metrics-bad", "rev-metrics-bad",
-		model.ReportRevisionFailed, model.ReportCompletenessPartial, now.Add(-3*time.Hour), unjudgedMetrics())
+		model.ReportRevisionFailed, model.ReportCompletenessPartial, base.Add(-2*time.Hour), unjudgedMetrics())
 
 	view, err := fx.svc.ReportMetricsTrend(ctx, fx.owner.ID, fx.tenantID, ReportMetricsTrendRequest{})
 	if err != nil {
@@ -121,7 +125,7 @@ func TestMetricsTrendLeavesUndeliveredRevisionsOutOfTheRatios(t *testing.T) {
 	if totals.QualityNotChecked != 1 {
 		t.Fatalf("undelivered revisions must not feed the gate counts: %d", totals.QualityNotChecked)
 	}
-	if len(view.Buckets) != 1 || view.Buckets[0].Date != now.Format("2006-01-02") {
+	if len(view.Buckets) != 1 || view.Buckets[0].Date != base.Format("2006-01-02") {
 		t.Fatalf("two same-day revisions must share one bucket: %+v", view.Buckets)
 	}
 }

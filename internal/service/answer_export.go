@@ -567,6 +567,8 @@ func exportExtension(format string) string {
 		return "json"
 	case model.ExportFormatPDF:
 		return "pdf"
+	case model.ExportFormatXLSX:
+		return "xlsx"
 	default:
 		return "docx"
 	}
@@ -582,6 +584,8 @@ func exportMime(format string) string {
 		return "application/json; charset=utf-8"
 	case model.ExportFormatPDF:
 		return "application/pdf"
+	case model.ExportFormatXLSX:
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 	default:
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	}
@@ -592,12 +596,28 @@ func xmlEscape(value string) string {
 	return replacer.Replace(value)
 }
 
+// docxRuns renders one paragraph's text as runs, styling the `**bold**` spans.
+//
+// Without this the characters reached the delivered file: a generated section
+// opened in Word as `**1. 《山东省…》**`, asterisks and all (live, 2026-11-18).
+func docxRuns(text string) string {
+	var builder strings.Builder
+	for _, run := range emphasisRuns(text) {
+		if run.bold {
+			builder.WriteString(`<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">` + xmlEscape(run.text) + `</w:t></w:r>`)
+			continue
+		}
+		builder.WriteString(`<w:r><w:t xml:space="preserve">` + xmlEscape(run.text) + `</w:t></w:r>`)
+	}
+	return builder.String()
+}
+
 func docxParagraph(text string, style string) string {
 	paragraphProperties := ""
 	if style != "" {
 		paragraphProperties = `<w:pPr><w:pStyle w:val="` + style + `"/></w:pPr>`
 	}
-	return `<w:p>` + paragraphProperties + `<w:r><w:t xml:space="preserve">` + xmlEscape(text) + `</w:t></w:r></w:p>`
+	return `<w:p>` + paragraphProperties + docxRuns(text) + `</w:p>`
 }
 
 func renderDocx(snapshot *model.AnswerSnapshot, projection *model.AuthorizationProjection, job *model.ExportJob, exportSnapshotID string) ([]byte, error) {

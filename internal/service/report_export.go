@@ -45,6 +45,28 @@ import (
 //     when a newer revision lands (doc/288 §7.10 / §12).
 const reportDefaultArtifactDays = 30
 
+// reportExportIdempotencyKey names one export request: this revision, this format,
+// this frozen content, **and this renderer**.
+//
+// The artifact is the delivered *file*, and `rgx_export_artifact` is insert-only, so
+// the key must change whenever the bytes would. Numbering was wrong (every section
+// exported as `ord+1`, 2026-11-18); fixing the renderer left the broken file in place
+// because the content hash was unchanged, and a re-export only replayed it. The
+// renderer version is the identity of "how these bytes were produced", so it belongs
+// in the key next to the content it renders. Two consequences, both intended: a
+// renderer fix mints one new version for an already exported revision, and the old
+// artifact stays downloadable and truthful (A41).
+//
+// The tag is a 4-hex digest, not the version string: the key column is 128 bytes and
+// the renewal suffix `:renew10` has to fit too.
+func reportExportIdempotencyKey(revisionID, format, canonicalHash string) string {
+	tag := sha256Hex(reportExportRendererVersion)
+	if len(tag) > 4 {
+		tag = tag[:4]
+	}
+	return "report:" + tag + ":" + revisionID + ":" + format + ":" + canonicalHash
+}
+
 // reportArtifactRenewalLimit bounds the replay→renew loop: each turn asks the store
 // for one more key, so an unbounded loop would be a query storm behind a page reload.
 const reportArtifactRenewalLimit = 10
@@ -89,8 +111,16 @@ type ReportArtifactView struct {
 // The check runs on the *normalized* value (see normalizeReportExportFormat), so
 // the catalogue's `md` spelling is already `markdown` by the time it arrives.
 func validReportExportFormat(format string) bool {
-	return format == model.ExportFormatMarkdown || format == model.ExportFormatDOCX ||
-		format == model.ExportFormatPDF
+	switch format {
+	case model.ExportFormatMarkdown, model.ExportFormatDOCX, model.ExportFormatPDF,
+		model.ExportFormatHTML, model.ExportFormatXLSX:
+		return true
+	default:
+		// `json` stays out on purpose: the frozen payload is already persisted in
+		// `rgx_export_snapshot.payload_json`, and a second JSON delivery would be a
+		// second schema for the same bytes.
+		return false
+	}
 }
 
 // normalizeReportExportFormat maps the spelling a client legitimately sends onto
@@ -169,13 +199,14 @@ func (s *Service) CreateReportExport(
 		return nil, err
 	}
 	canonicalHash := sha256Hex(string(payload))
-	idempotencyKey := "report:" + revision.ID + ":" + request.Format + ":" + canonicalHash
+	idempotencyKey := reportExportIdempotencyKey(revision.ID, request.Format, canonicalHash)
 	if len(idempotencyKey) > 128 {
 		return nil, httperr.BadRequest(40130, "report export idempotency key is too long")
 	}
 
 	// A repeated export of the same frozen content is the same request, not a new
-	// version (§7.7 / A30b). The replay returns whatever state the earlier
+	// version (§7.7 / A30b). What "the same content" does *not* cover is the
+	// renderer: see reportExportIdempotencyKey. The replay returns whatever state the earlier
 	// artifact is in — pending, ready or failed — because the artifact's own
 	// status is the honest progress signal.
 	//
@@ -577,9 +608,28 @@ func renderReportExport(document *reportDocument, format string, now time.Time) 
 		return renderReportDocx(document, now)
 	case model.ExportFormatPDF:
 		return renderReportPdf(document, now)
+	case model.ExportFormatHTML:
+		return []byte(renderReportHTML(document, now)), nil
+	case model.ExportFormatXLSX:
+		return renderReportXlsx(document, now)
 	default:
 		return nil, httperr.BadRequest(40130, "unsupported report export format")
 	}
+}
+
+// reportSectionNumber turns a stored ord into the number a reader sees.
+//
+// `ord` is 1-based in the model and on disk (`rgx_report_section.ord` starts at 1,
+// `rgx_report_citation.ord` likewise). The renderers used to print `ord+1`, so
+// every DOCX/PDF/Markdown export numbered its first section "2" while the reader
+// in the product said "1." — and the evidence appendix numbered its first citation
+// "[2]" while the body cited "[1]" (live, 2026-11-18). The reader was right; the
+// renderers were not. Keep the rule in one place so no renderer re-derives it.
+func reportSectionNumber(ord int) int {
+	if ord < 1 {
+		return 1
+	}
+	return ord
 }
 
 // renderReportMarkdown produces the report as one Markdown document. The
@@ -591,13 +641,13 @@ func renderReportMarkdown(document *reportDocument, now time.Time) string {
 	builder.WriteString(fmt.Sprintf("- 报告版本：r%d（模板 %s v%d）\n",
 		document.Revision, document.TemplateKey, document.TemplateVersion))
 	builder.WriteString(fmt.Sprintf("- 生成时间：%s\n", now.UTC().Format("2006-01-02 15:04:05Z")))
-	builder.WriteString(fmt.Sprintf("- 完整性：%s\n\n", document.Completeness))
+	builder.WriteString(fmt.Sprintf("- 完整性：%s\n\n", reportCompletenessLabel(document.Completeness)))
 
 	if document.Completeness == model.ReportCompletenessPartial || len(document.Gaps) > 0 {
 		builder.WriteString("> **完整性声明**：本报告为部分完成。\n>\n")
 		for _, gap := range document.Gaps {
 			builder.WriteString(fmt.Sprintf("> - 第 %d 节「%s」未生成：%s（影响：%s）\n",
-				gap.Ord+1, gap.Title, gap.Reason, gap.Impact))
+				reportSectionNumber(gap.Ord), gap.Title, gap.Reason, gap.Impact))
 			if gap.ErrorCode != "" {
 				builder.WriteString(fmt.Sprintf(">   - 错误码：`%s`\n", gap.ErrorCode))
 			}
@@ -610,10 +660,13 @@ func renderReportMarkdown(document *reportDocument, now time.Time) string {
 	// can compute is a number that will be wrong.
 	builder.WriteString("## 目录\n\n")
 	for _, section := range document.Sections {
-		builder.WriteString(fmt.Sprintf("%d. %s\n", section.Ord+1, section.Title))
+		builder.WriteString(fmt.Sprintf("%d. %s\n", reportSectionNumber(section.Ord), section.Title))
 	}
 	if len(document.EvidenceAppendix) > 0 {
 		builder.WriteString("证据附录\n")
+	}
+	if len(document.Claims) > 0 {
+		builder.WriteString("结论清单\n")
 	}
 	builder.WriteString("\n")
 
@@ -621,18 +674,137 @@ func renderReportMarkdown(document *reportDocument, now time.Time) string {
 		if index > 0 {
 			builder.WriteString("\n")
 		}
-		builder.WriteString(fmt.Sprintf("## %d. %s\n\n", section.Ord+1, section.Title))
+		builder.WriteString(fmt.Sprintf("## %d. %s\n\n", reportSectionNumber(section.Ord), section.Title))
 		builder.WriteString(section.ContentMD + "\n")
+		if line := reportLocationHintsLine(section.LocationHints); line != "" {
+			builder.WriteString("\n*" + line + "*\n")
+		}
+		if plan := reportResearchPlanLine(section.ResearchPlan); plan != "" {
+			builder.WriteString("\n*" + plan + "*\n")
+		}
 		if section.EvidenceStatus != "" && section.CitationCount > 0 {
 			builder.WriteString(fmt.Sprintf("\n*依据：%d 条引用，证据状态 %s。*\n",
-				section.CitationCount, section.EvidenceStatus))
+				section.CitationCount, reportEvidenceStatusLabel(section.EvidenceStatus)))
 		}
 	}
 	builder.WriteString(renderReportEvidenceAppendixMarkdown(document))
+	builder.WriteString(renderReportClaimAppendixMarkdown(document))
+	builder.WriteString(renderReportConsistencyMarkdown(document))
 	builder.WriteString("\n---\n")
 	builder.WriteString(fmt.Sprintf("\n_本报告由 RAGFlow-X 报告渲染器（%s，%s）生成。_\n",
 		reportExportLayoutID(document.TemplateKey, model.ExportFormatMarkdown), reportExportRendererVersion))
 	return builder.String()
+}
+
+// reportConsistencyLine renders one R16 issue in the words a reader needs: the
+// label, the chapters that disagree, and the values each of them states.
+func reportConsistencyLine(issue reportConsistencyIssue) string {
+	ords := make([]string, 0, len(issue.Ords))
+	for _, ord := range issue.Ords {
+		ords = append(ords, fmt.Sprintf("第 %d 节", reportSectionNumber(ord)))
+	}
+	return fmt.Sprintf("「%s」：%s 分别为 %s",
+		issue.Label, strings.Join(ords, "、"), strings.Join(issue.Values, "、"))
+}
+
+// renderReportClaimAppendixMarkdown prints R11's claim list (doc/288 §9.2).
+//
+// Every claim is printed, not a sample: a 5–10 section report produces tens of
+// sentences, and "we showed you the sentences we happened to pick" is exactly the
+// opacity the claim table exists to remove. The preamble is fixed wording, because
+// what the support status does *not* certify matters more than what it does.
+func renderReportClaimAppendixMarkdown(document *reportDocument) string {
+	if len(document.Claims) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("\n## 结论清单\n\n")
+	builder.WriteString(reportClaimAppendixPreamble + "\n\n")
+	builder.WriteString(reportClaimSummary(document) + "\n")
+	for _, group := range reportClaimGroups(document) {
+		builder.WriteString(fmt.Sprintf("\n### %d. %s\n\n", reportSectionNumber(group.Ord), group.Title))
+		for _, line := range group.Headings {
+			builder.WriteString("- " + line + "\n")
+		}
+	}
+	return builder.String()
+}
+
+// renderReportConsistencyMarkdown prints R16's cross-section disagreements.
+func renderReportConsistencyMarkdown(document *reportDocument) string {
+	if len(document.ConsistencyIssues) == 0 {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString("\n## 跨章节一致性提示\n\n")
+	builder.WriteString("以下同一事实在不同章节出现不同说法，请核实后再对外使用。\n\n")
+	for _, issue := range document.ConsistencyIssues {
+		builder.WriteString("- " + reportConsistencyLine(issue) + "\n")
+	}
+	return builder.String()
+}
+
+// claimSupportedCount is the numerator of the printed rate. It is derived from the
+// list rather than stored separately so the two can never disagree.
+func claimSupportedCount(document *reportDocument) int {
+	supported := 0
+	for _, claim := range document.Claims {
+		if claim.Support == model.ReportClaimSupportSupported {
+			supported++
+		}
+	}
+	return supported
+}
+
+// reportClaimLines groups the claim appendix into per-chapter lines, so the three
+// renderers print the same words. Each group is a chapter title plus its claims;
+// keeping this shared is what stops the DOCX and the PDF from disagreeing about
+// what a 部分可核实 sentence says.
+type reportClaimGroup struct {
+	Ord      int
+	Title    string
+	Headings []string
+}
+
+// reportClaimGroups is the claim list as chapters. A claim with no title still gets
+// a group: dropping it would make the appendix shorter than the report.
+func reportClaimGroups(document *reportDocument) []reportClaimGroup {
+	groups := make([]reportClaimGroup, 0, 6)
+	for _, claim := range document.Claims {
+		if len(groups) == 0 || groups[len(groups)-1].Ord != claim.SectionOrd {
+			title := claim.SectionTitle
+			if title == "" {
+				title = fmt.Sprintf("第 %d 节", reportSectionNumber(claim.SectionOrd))
+			}
+			groups = append(groups, reportClaimGroup{Ord: claim.SectionOrd, Title: title})
+		}
+		markers := make([]string, 0, len(claim.Markers))
+		for _, marker := range claim.Markers {
+			markers = append(markers, fmt.Sprintf("[%d]", reportSectionNumber(marker)))
+		}
+		line := fmt.Sprintf("%s · %s：%s", reportClaimTypeLabel(claim.Type),
+			reportClaimSupportLabel(claim.Support), strings.TrimSpace(claim.Text))
+		if len(markers) > 0 {
+			line += " " + strings.Join(markers, " ")
+		} else if claim.Support != model.ReportClaimSupportNotRequired {
+			// A factual claim with no markers is the case the appendix exists for:
+			// say so rather than leaving a blank where a reference should be.
+			line += " （未引用证据）"
+		}
+		groups[len(groups)-1].Headings = append(groups[len(groups)-1].Headings, line)
+	}
+	return groups
+}
+
+// reportClaimSummary is the one-line denominator statement printed above the list.
+func reportClaimSummary(document *reportDocument) string {
+	if document.ClaimSupportRate == nil {
+		return fmt.Sprintf("本报告共 %d 句结论，其中 %d 句无需核实。",
+			len(document.Claims), document.ClaimNotRequired)
+	}
+	return fmt.Sprintf("可核实的结论句 %d / %d（%.0f%%），另有 %d 句无需核实。",
+		claimSupportedCount(document), document.ClaimScored,
+		*document.ClaimSupportRate*100, document.ClaimNotRequired)
 }
 
 // renderReportEvidenceAppendixMarkdown prints the frozen appendix (doc/288 §12 /
@@ -655,9 +827,9 @@ func renderReportEvidenceAppendixMarkdown(document *reportDocument) string {
 			currentSection = entry.SectionOrd
 			title := entry.SectionTitle
 			if title == "" {
-				title = fmt.Sprintf("第 %d 节", entry.SectionOrd+1)
+				title = fmt.Sprintf("第 %d 节", reportSectionNumber(entry.SectionOrd))
 			}
-			builder.WriteString(fmt.Sprintf("### %d. %s\n\n", entry.SectionOrd+1, title))
+			builder.WriteString(fmt.Sprintf("### %d. %s\n\n", reportSectionNumber(entry.SectionOrd), title))
 		}
 		locator := entry.DocumentName
 		if locator == "" {
@@ -666,7 +838,7 @@ func renderReportEvidenceAppendixMarkdown(document *reportDocument) string {
 		if locator == "" {
 			locator = entry.ChunkID
 		}
-		builder.WriteString(fmt.Sprintf("- **[%d] %s**（%s）\n", entry.Ord+1, locator, scoreLabel(entry)))
+		builder.WriteString(fmt.Sprintf("- **[%d] %s**（%s）\n", reportSectionNumber(entry.Ord), locator, scoreLabel(entry)))
 		if entry.Truncated {
 			builder.WriteString("  - 快照已按策略截断，仅保留关键片段\n")
 		}

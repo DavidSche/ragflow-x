@@ -39,6 +39,13 @@ type KnowledgeCompilationRepo interface {
 	TransitionCompilationRun(ctx context.Context, tenantID, runID string, fromStates []string, updates map[string]interface{}) (bool, error)
 	ListArtifactProjections(ctx context.Context, tenantID, datasetID, runID string, page, pageSize int) ([]model.ArtifactProjection, int64, error)
 	UpsertArtifactProjection(ctx context.Context, projection *model.ArtifactProjection) error
+	// ListReadyArtifactProjectionsByDatasets is doc/295 R17's read: the ready
+	// projections of the datasets a report is bound to. It is deliberately narrow —
+	// only `state='ready'` rows, only the named datasets, capped — because locators
+	// are an enhancement and must not turn one outline step into a table scan.
+	ListReadyArtifactProjectionsByDatasets(
+		ctx context.Context, tenantID string, datasetIDs []string, limit int,
+	) ([]model.ArtifactProjection, error)
 }
 
 func (s *store) CreateKnowledgeProfile(ctx context.Context, profile *model.KnowledgeProfile) error {
@@ -239,6 +246,28 @@ func (s *store) ListArtifactProjections(
 		ctx, s.DB, &[]model.ArtifactProjection{}, query,
 		"created_at DESC, id DESC", page, pageSize, args...,
 	)
+}
+
+// ListReadyArtifactProjectionsByDatasets returns at most `limit` ready projections.
+// Ordering is newest-first per (dataset, kind) so a recompiled artifact wins over
+// its superseded projection without a second query.
+func (s *store) ListReadyArtifactProjectionsByDatasets(
+	ctx context.Context, tenantID string, datasetIDs []string, limit int,
+) ([]model.ArtifactProjection, error) {
+	if tenantID == "" || len(datasetIDs) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	var rows []model.ArtifactProjection
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND dataset_id IN ? AND state = ?", tenantID, datasetIDs, model.ArtifactProjectionReady).
+		Order("updated_at DESC, id DESC").Limit(limit).Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
 
 func (s *store) UpsertArtifactProjection(ctx context.Context, projection *model.ArtifactProjection) error {

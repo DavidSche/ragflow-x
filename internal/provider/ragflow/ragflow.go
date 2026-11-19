@@ -229,6 +229,9 @@ type Client interface {
 	UpdateAgent(ctx context.Context, agentID string, req UpdateAgentRequest) error
 	// DeleteAgent deletes an agent.
 	DeleteAgent(ctx context.Context, agentID string) error
+	// PublishAgentVersion publishes the canvas as a new immutable version row and
+	// marks the agent released (the only call that writes version history).
+	PublishAgentVersion(ctx context.Context, agentID string) (*AgentVersion, error)
 	// ListAgentVersions lists the saved versions of an agent.
 	ListAgentVersions(ctx context.Context, agentID string) ([]AgentVersion, error)
 	// GetAgentVersion returns a single version of an agent by its ID.

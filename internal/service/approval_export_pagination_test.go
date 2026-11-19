@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
 	"github.com/ragflow-x/ragflow-x/internal/model"

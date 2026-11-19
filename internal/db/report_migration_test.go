@@ -65,6 +65,16 @@ func TestMigrationV168ReportTablesExist(t *testing.T) {
 		t.Fatal("rgx_report_section.evidence_preview_json missing after v175")
 	}
 
+	// v176: the reuse plan is frozen on the revision row, so a retried slice cannot
+	// inherit a different set than the caller asked for. Nullable on purpose — every
+	// revision created before P1 reuses nothing, and "no plan" is not "reuse all".
+	if !gdb.Migrator().HasColumn("rgx_report_revision", "reuse_plan_json") {
+		t.Fatal("rgx_report_revision.reuse_plan_json missing after v176")
+	}
+	if nullable, ok := columnNullable(t, gdb, "rgx_report_revision", "reuse_plan_json"); ok && !nullable {
+		t.Fatal("rgx_report_revision.reuse_plan_json must be nullable")
+	}
+
 	// The frozen clocks: a row that could be inserted without expires_at would
 	// never be purged and would silently violate the TTL contract.
 	for _, target := range []struct{ table, column string }{

@@ -79,6 +79,10 @@ func (s *Service) ConfirmReportOutline(
 	if err := s.assertReportOwner(ctx, actorID, report); err != nil {
 		return nil, err
 	}
+	// An archived report produces nothing new (doc/297 §2): unarchive first.
+	if err := s.assertReportArchivedBlocksWork(report); err != nil {
+		return nil, err
+	}
 	revision, err := s.Store.GetReportRevision(ctx, tenantID, reportID, revisionNo)
 	if err != nil {
 		return nil, err
@@ -189,7 +193,14 @@ func (s *Service) ConfirmReportOutline(
 }
 
 // assertReportOwner enforces `owner_only` on a write that is not a governance read.
+//
+// A missing row is the same 44109 the read path gives: a write handler that forgot to
+// pre-check the report must not panic on a guessed id, and must not answer "forbidden"
+// either (that would confirm the id shape to a caller who owns nothing here).
 func (s *Service) assertReportOwner(ctx context.Context, actorID string, report *model.Report) error {
+	if report == nil {
+		return errReportNotFound()
+	}
 	if report.OwnerUserID == actorID {
 		return nil
 	}

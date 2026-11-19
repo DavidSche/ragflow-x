@@ -604,9 +604,16 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		// A47 restore: undoing one's own delete is the same act, so the same action.
 		// A `force=true` delete (no window) is refused by the service with 44104.
 		{Method: "POST", Path: "/api/v1/reports/:id/restore", Action: "delete:own", Resource: "report"},
+		// Lifecycle (doc/297 §2): putting a report away is the same authority that
+		// closes one — whoever may remove it from the workspace may also decide it
+		// stops being a working document. Row ownership is the service's check.
+		{Method: "POST", Path: "/api/v1/reports/:id/archive", Action: "delete:own", Resource: "report"},
+		{Method: "POST", Path: "/api/v1/reports/:id/unarchive", Action: "delete:own", Resource: "report"},
 		// Cancel is `execute`, not `manage`: it stops the caller's own run. The row
 		// level owner check (44109 for anyone else) is in Service.CancelReport, the
 		// same split as DELETE above.
+		{Method: "PUT", Path: "/api/v1/reports/:id/access", Action: "execute", Resource: "report"},
+		{Method: "POST", Path: "/api/v1/reports/:id/budget-extension", Action: "execute", Resource: "report"},
 		{Method: "POST", Path: "/api/v1/reports/:id/cancel", Action: "execute", Resource: "report"},
 		// Regeneration is `execute` (a new run on one's own report). The row-level
 		// owner check (44109 for anyone else) and its own idempotency namespace are in
@@ -621,6 +628,20 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		// Reading a revision's bodies is `read`: it is the document itself, not a new
 		// execution. Owner check inside Service.ListReportSections (44109).
 		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision/sections", Action: "read", Resource: "report"},
+		// A14: the follow-up chips are `read` — the very same predicate as the section
+		// list they sit under. A chip is a suggested question about a document the
+		// caller can already read; making it `execute` would deny a grantee the one
+		// action a read-only share is supposed to enable.
+		{Method: "GET", Path: "/api/v1/reports/:id/follow-ups", Action: "read", Resource: "report"},
+
+		// A recurring plan lives on the report (doc/295 §2.4 / R20). Reading it is
+		// `read` — "when will this run next" is part of understanding the report — and
+		// arming/changing/removing it is `execute`: it spends the owner's budget on a
+		// timer. The row-level owner check (44109 for anyone else, including a
+		// colleague) is in Service.UpsertReportSchedule / DeleteReportSchedule.
+		{Method: "GET", Path: "/api/v1/reports/:id/schedule", Action: "read", Resource: "report"},
+		{Method: "PUT", Path: "/api/v1/reports/:id/schedule", Action: "execute", Resource: "report"},
+		{Method: "DELETE", Path: "/api/v1/reports/:id/schedule", Action: "execute", Resource: "report"},
 		// Outline confirmation is `execute`, not `manage`: §8.4 gives the decision to
 		// the report owner, and the row-level owner check (44109 for everyone else) is
 		// in Service.ConfirmReportOutline.
@@ -639,6 +660,12 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/report-templates", Action: "read", Resource: "report-template"},
 		{Method: "POST", Path: "/api/v1/report-templates/:key/capability-check", Action: "read", Resource: "report-template"},
 		{Method: "POST", Path: "/api/v1/report-templates/:key/clone", Action: "manage", Resource: "report-template"},
+		// R19 authoring verbs. Both are `manage`: publishing a version changes what
+		// every future report in the workspace is built on, and retiring one can
+		// stop a template from being used at all.
+		{Method: "POST", Path: "/api/v1/report-templates", Action: "manage", Resource: "report-template"},
+		{Method: "PUT", Path: "/api/v1/report-templates/:key", Action: "manage", Resource: "report-template"},
+		{Method: "POST", Path: "/api/v1/report-templates/:key/retire", Action: "manage", Resource: "report-template"},
 		// The job surface (doc/288 §11.4 / T5): the snapshot and its SSE stream. Both
 		// are `read` — subscribing to your own report is not an execution — and both
 		// resolve the row through the report, whose owner check answers 44109 for a

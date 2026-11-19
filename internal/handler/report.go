@@ -56,17 +56,66 @@ func createReport(c *gin.Context) {
 // listReports returns the caller's own live reports. The owner narrowing is the
 // service's decision, not a query parameter: P0-A has no shared reports, so
 // `?owner_user_id=` would be an invitation to add one without a policy.
+//
+// `?status=` selects the lifecycle view (doc/297 §2.3): absent means `active`, so an
+// archived report leaves the daily list by default. The value is passed through
+// unvalidated and the service answers 400/44105 for anything outside its closed set —
+// the same split every other report parameter uses (shape is the service's contract).
 func listReports(c *gin.Context) {
 	tenantID, userID := reportContext(c)
 	page, pageSize := pageParams(c)
 	items, total, err := handlerFrom(c).Service.ListReports(
 		c.Request.Context(), userID, tenantID, page, pageSize,
+		strings.TrimSpace(c.Query("status")),
 	)
 	if err != nil {
 		response.Err(c, err)
 		return
 	}
 	response.OKPage(c, items, total, page, pageSize)
+}
+
+// archiveReportRequest is the archive body. `reason` is free text for the audit
+// trail and optional for the same reason the delete body's is: a required field the
+// caller has nothing to say about gets filled with "x".
+type archiveReportRequest struct {
+	Reason string `json:"reason"`
+}
+
+// archiveReport puts a finished report away (doc/297 §2). 200 with the detail view:
+// the state changed on a resource that already existed, and the client's next action
+// is to render it — the same answer `restore` gives.
+func archiveReport(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	var input archiveReportRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&input); err != nil {
+			response.Fail(c, 400, 40070, "invalid request body")
+			return
+		}
+	}
+	detail, err := handlerFrom(c).Service.ArchiveReport(
+		c.Request.Context(), userID, tenantID, c.Param("id"), input.Reason,
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, detail)
+}
+
+// unarchiveReport returns a report to the daily list. No body: the only thing to say
+// is "not archived any more".
+func unarchiveReport(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	detail, err := handlerFrom(c).Service.UnarchiveReport(
+		c.Request.Context(), userID, tenantID, c.Param("id"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, detail)
 }
 
 func getReport(c *gin.Context) {
@@ -204,6 +253,66 @@ func capabilityCheckReportTemplate(c *gin.Context) {
 // and is never overwritten by a later platform upgrade; re-forking after an
 // upgrade mints the workspace's next version instead. `created=false` on the
 // body means the request replayed an already-committed identical fork.
+// publishReportTemplate creates a workspace-authored template version (doc/295
+// R19). POST is the create form; PUT :key is the edit form, and both land on the
+// same service call because "edit" means "publish version N+1" — there is no
+// in-place update of a version a report may already have pinned.
+func publishReportTemplate(c *gin.Context) {
+	republishReportTemplate(c, "")
+}
+
+func updateReportTemplate(c *gin.Context) {
+	republishReportTemplate(c, c.Param("key"))
+}
+
+func republishReportTemplate(c *gin.Context, key string) {
+	if err := authorizeResource(c, "report-template", "manage"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	var req service.ReportTemplatePublishRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// A malformed body is the caller's structural error, the same code the
+		// outline and reuse validators answer with (44105 / 400).
+		response.Fail(c, 400, 44105, "template payload must be a JSON object")
+		return
+	}
+	if key != "" {
+		if req.Key != "" && req.Key != key {
+			// The path is the address; a body key that disagrees would publish under
+			// a name the caller did not address.
+			response.Fail(c, 400, 44105, "template key in body must match the path")
+			return
+		}
+		req.Key = key
+	}
+	tenantID, userID := reportContext(c)
+	result, err := handlerFrom(c).Service.PublishReportTemplate(
+		c.Request.Context(), userID, tenantID, req)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, result)
+}
+
+// retireReportTemplate takes the newest workspace version out of service. It is
+// not a delete: the row stays so historical reports keep their provenance.
+func retireReportTemplate(c *gin.Context) {
+	if err := authorizeResource(c, "report-template", "manage"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, userID := reportContext(c)
+	result, err := handlerFrom(c).Service.RetireReportTemplate(
+		c.Request.Context(), userID, tenantID, c.Param("key"))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, result)
+}
+
 func cloneReportTemplate(c *gin.Context) {
 	if err := authorizeResource(c, "report-template", "manage"); err != nil {
 		response.Err(c, err)
@@ -323,8 +432,18 @@ func downloadReportExport(c *gin.Context) {
 // body: P0-A's "重新生成（同条件）" has nothing a caller may change.
 func createReportRevision(c *gin.Context) {
 	tenantID, userID := reportContext(c)
+	// The body is optional and only names the sections to inherit (doc/288 §9.8).
+	// An absent body is the P0-B "same conditions" rerun; a malformed one is a 400
+	// rather than a silently ignored reuse request.
+	var req service.RegenerateReportRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.Fail(c, 400, 44105, "reuse_sections must be a list of section numbers")
+			return
+		}
+	}
 	result, err := handlerFrom(c).Service.RegenerateReport(
-		c.Request.Context(), userID, tenantID, c.Param("id"), c.GetHeader("Idempotency-Key"),
+		c.Request.Context(), userID, tenantID, c.Param("id"), c.GetHeader("Idempotency-Key"), req,
 	)
 	if err != nil {
 		response.Err(c, err)
@@ -333,6 +452,58 @@ func createReportRevision(c *gin.Context) {
 	location := "/api/v1/reports/" + c.Param("id") +
 		"/revisions/" + strconv.FormatInt(result.Revision.Revision, 10)
 	response.AcceptedAt(c, location, result)
+}
+
+// getReportSchedule answers the report's recurring plan, or `{"schedule":null}`
+// when it has none. A null is not a 404: "this report does not run on a timer" is a
+// successful answer to "when does it run", and a client should not have to catch an
+// error to render an empty card.
+func getReportSchedule(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	view, err := handlerFrom(c).Service.GetReportSchedule(
+		c.Request.Context(), userID, tenantID, c.Param("id"))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, gin.H{"schedule": view})
+}
+
+// putReportSchedule creates or replaces the plan (idempotent on the report). 201 on
+// the first arming, 200 afterwards, so a client can tell "armed" from "changed".
+func putReportSchedule(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	var req service.ReportScheduleRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.Fail(c, 400, 44105, "invalid schedule body")
+			return
+		}
+	}
+	view, created, err := handlerFrom(c).Service.UpsertReportSchedule(
+		c.Request.Context(), userID, tenantID, c.Param("id"), req)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	if created {
+		response.Created(c, view)
+		return
+	}
+	response.OK(c, view)
+}
+
+// deleteReportSchedule removes the plan. 204 either way: the caller's intent was
+// "this report does not run on a timer", and after the call it does not. Deleting
+// twice is therefore not an error, which keeps a retried request harmless.
+func deleteReportSchedule(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	if _, err := handlerFrom(c).Service.DeleteReportSchedule(
+		c.Request.Context(), userID, tenantID, c.Param("id")); err != nil {
+		response.Err(c, err)
+		return
+	}
+	c.Status(204)
 }
 
 // listReportSections is the reading surface: one revision's sections with bodies.
@@ -410,6 +581,57 @@ func getReportRetention(c *gin.Context) {
 	response.OK(c, view)
 }
 
+// putReportAccess replaces one report's sharing policy (doc/296 §2.1).
+//
+// `execute:report` is the route's RBAC gate — sharing is an action on a report you
+// own, not a governance decision — and the row-level rule (owner, or platform
+// `manage`) lives in the service, so a colleague's report answers 44109 rather than
+// an existence oracle.
+//
+// The response is the new sharing view, not 204: the panel must show what the server
+// actually stored (a grantee the server skipped, a policy it normalised) instead of
+// echoing what the client sent.
+func putReportAccess(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	var request service.SetReportAccessRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		// 44105: the body itself is wrong, which is a 400, not the 409 that a
+		// disallowed state gets.
+		response.Fail(c, 400, 44105, "invalid report access payload")
+		return
+	}
+	view, err := handlerFrom(c).Service.SetReportAccess(
+		c.Request.Context(), userID, tenantID, c.Param("id"), request)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
+// postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2).
+//
+// `execute:report` is the gate and ownership is the row-level rule, the same union the
+// rest of the surface uses: raising a limit is an action on your own run, not a
+// governance decision. When the workspace has an approval policy the answer is 200 with
+// `status=pending_approval` — the request was accepted and nothing has changed yet,
+// which is a different thing from a failure and must not be reported as one.
+func postReportBudgetExtension(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	var request service.ReportBudgetExtensionRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.Fail(c, 400, 44105, "invalid report budget extension payload")
+		return
+	}
+	view, err := handlerFrom(c).Service.RequestReportBudgetExtension(
+		c.Request.Context(), userID, tenantID, c.Param("id"), request)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
 // putReportRetention sets the tenant-level overlay. `manage` is the right action:
 // retention decides when compliance evidence disappears, which is governance, not
 // a per-user preference (`execute` is not enough).
@@ -470,6 +692,35 @@ func getReportMetricsTrend(c *gin.Context) {
 	response.OK(c, view)
 }
 
+// getReportFollowUps answers A14's read half: the chips a reader may click to start
+// the next turn.
+//
+// `revision` absent/0 means "whatever this report currently shows", resolved from
+// `current_revision_id` by the service — never "the highest number". A present but
+// non-positive revision is refused with 44105 instead of being read as "current":
+// a client that asked for `revision=0` after a regenerate would silently get the
+// published base (or the running draft) and never learn it asked for nothing.
+func getReportFollowUps(c *gin.Context) {
+	tenantID, userID := reportContext(c)
+	revision := int64(0)
+	if raw := strings.TrimSpace(c.Query("revision")); raw != "" {
+		value, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || value <= 0 {
+			response.Fail(c, 400, 44105, "revision must be a positive number")
+			return
+		}
+		revision = value
+	}
+	view, err := handlerFrom(c).Service.ReportFollowUpSuggestions(
+		c.Request.Context(), userID, tenantID, c.Param("id"), revision,
+		strings.TrimSpace(c.Query("section_key")))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, view)
+}
+
 // RegisterReportRoutes wires the P0-A/P0-B report surface. The remaining §11.4
 // routes (capability-check) land with the capability-probe slice; registering a
 // route before its handler exists would be a 500 waiting to happen.
@@ -479,17 +730,42 @@ func RegisterReportRoutes(group *gin.RouterGroup) {
 	group.GET("/reports/:id", getReport)
 	group.DELETE("/reports/:id", deleteReport)
 	group.POST("/reports/:id/restore", restoreReport)
+	// Lifecycle (doc/297 §2): putting a report away and taking it back out. Two verbs
+	// rather than one `PUT ?archived=`, because "archive" and "unarchive" are the two
+	// sentences the audit log needs, and a boolean in a body is the kind of flag a
+	// client copies along with something else.
+	group.POST("/reports/:id/archive", archiveReport)
+	group.POST("/reports/:id/unarchive", unarchiveReport)
 	group.POST("/reports/:id/cancel", cancelReport)
 	group.POST("/reports/:id/revisions", createReportRevision)
 	group.GET("/reports/:id/revisions", listReportRevisions)
 	group.GET("/reports/:id/revisions/:revision", getReportRevision)
 	group.GET("/reports/:id/revisions/:revision/sections", listReportSections)
+	// A14 follow-up closed loop: the suggestion chips under a section. Cheap, derived
+	// from stored facts and cached by the client per revision — see
+	// service.ReportFollowUpSuggestions for why this is not a model call.
+	group.GET("/reports/:id/follow-ups", getReportFollowUps)
+	// A recurring plan (doc/295 §2.4 / R20): one per report, addressed by report id.
+	group.GET("/reports/:id/schedule", getReportSchedule)
+	group.PUT("/reports/:id/schedule", putReportSchedule)
+	group.DELETE("/reports/:id/schedule", deleteReportSchedule)
+	// Sharing (doc/296 §2.1): the four access policies of §13. Read is part of the
+	// detail aggregate; only the write has its own route.
+	group.PUT("/reports/:id/access", putReportAccess)
+	// The one governed decision of this surface: raising a frozen token envelope.
+	group.POST("/reports/:id/budget-extension", postReportBudgetExtension)
 	group.POST("/reports/:id/revisions/:revision/outline/confirm", confirmReportOutline)
 	group.POST("/reports/:id/revisions/:revision/artifacts", createReportExport)
 	group.GET("/reports/:id/revisions/:revision/artifacts/:artifactId/download", downloadReportExport)
 	group.GET("/report-templates", listReportTemplates)
 	group.POST("/report-templates/:key/capability-check", capabilityCheckReportTemplate)
 	group.POST("/report-templates/:key/clone", cloneReportTemplate)
+	// R19 authoring: a workspace may publish its own versions and retire the
+	// newest one. Both are `manage:report-template`; the platform baseline is not
+	// editable through these routes (that is a release, not a runtime action).
+	group.POST("/report-templates", publishReportTemplate)
+	group.PUT("/report-templates/:key", updateReportTemplate)
+	group.POST("/report-templates/:key/retire", retireReportTemplate)
 	// Job surface (§11.4 / T5): the snapshot carries `event_seq`, and the stream
 	// replays from `?after=`. Both are `read:report`; the row-level owner check lives
 	// in the service, so a colleague's job id is 44109 rather than an existence

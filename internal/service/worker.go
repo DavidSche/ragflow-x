@@ -491,6 +491,10 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	// `pollOnce` would fail every `report_generate` job with "no worker registered
 	// for kind", which is exactly the failure the slice comment warns about.
 	runner.Register(&reportGenerateWorker{svc: s})
+	// The recurring-report tick (doc/295 §2.4). It claims due plans, advances their
+	// `next_run_at` and mints the next revision — one job for every tenant, because
+	// the due scan is already global.
+	runner.Register(&reportScheduleTickWorker{svc: s})
 	runner.Register(&connectorSyncWorker{svc: s})
 	runner.Register(&connectorRetentionWorker{svc: s})
 	s.SetupApprovalWorker(runner)
@@ -506,6 +510,9 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	}
 	if _, scheduleErr := s.ScheduleReportFinalizeReconciler(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("report finalize reconcile schedule failed", "error", scheduleErr)
+	}
+	if _, scheduleErr := s.ScheduleReportScheduleTick(context.Background(), ""); scheduleErr != nil {
+		logger.Warn("report schedule tick schedule failed", "error", scheduleErr)
 	}
 	if _, scheduleErr := s.ScheduleConnectorRetention(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("connector retention schedule failed", "error", scheduleErr)

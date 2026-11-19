@@ -44,15 +44,22 @@ func (h *Handler) UserChatCompletion(c *gin.Context) {
 	}
 	_ = json.Unmarshal(body, &meta)
 	if meta.Stream {
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Writer.WriteHeader(200)
-		_, _, err := h.Service.StreamChatAppCompletion(ctx, userKey, chatID, sessionID, body, c.Writer, requestID)
+		// A14: the attachment is validated inside the service, before the first byte.
+		// Committing the 200 here would turn `400/44105` into an error frame inside a
+		// stream that the client already considers started.
+		stream := newDeferredStreamWriter(c.Writer)
+		_, _, err := h.Service.StreamChatAppCompletion(ctx, userKey, chatID, sessionID, body, stream, requestID)
 		if err != nil {
 			logger.Error("workbench chat stream failed", "tenant_id", tenantID, "user_id", userID, "request_id", requestID, "error", err)
 			h.RecordAudit(ctx, &model.AuditLog{
 				TenantID: tenantID, UserID: userID, Action: "gateway.stream_error", Resource: "chat", ResourceID: chatID,
 				DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 			})
+			if !stream.Committed() {
+				// Nothing was written: this was a refused request, not a broken stream.
+				response.Err(c, err)
+				return
+			}
 			gatewayStreamError(c.Writer, err)
 		}
 		return

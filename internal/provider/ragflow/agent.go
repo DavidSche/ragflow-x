@@ -49,11 +49,14 @@ type UpdateAgentRequest struct {
 
 // AgentVersion is a saved agent canvas version.
 type AgentVersion struct {
-	ID         string                 `json:"id"`
-	Title      string                 `json:"title"`
-	Release    bool                   `json:"release"`
-	Dsl        map[string]interface{} `json:"dsl,omitempty"`
-	UpdateTime int64                  `json:"update_time,omitempty"`
+	ID           string                 `json:"id"`
+	UserCanvasID string                 `json:"user_canvas_id,omitempty"`
+	Title        string                 `json:"title"`
+	Release      bool                   `json:"release"`
+	Dsl          map[string]interface{} `json:"dsl,omitempty"`
+	// UpdateTime is the engine's millisecond epoch (the engine stores ms, not
+	// seconds). Consumers must not multiply it by 1000.
+	UpdateTime int64 `json:"update_time,omitempty"`
 }
 
 // AgentSession is an agent conversation session.
@@ -122,11 +125,13 @@ func (c *HTTPClient) GetAgent(ctx context.Context, agentID string) (*Agent, erro
 	if err := c.do(ctx, http.MethodGet, path, nil, "", &out); err != nil {
 		return nil, err
 	}
+	out.Dsl = canvasAgentDsl(out.Dsl)
 	return &out, nil
 }
 
 // CreateAgent creates an agent.
 func (c *HTTPClient) CreateAgent(ctx context.Context, req CreateAgentRequest) (*Agent, error) {
+	req.Dsl = engineAgentDsl(req.Dsl)
 	body, _ := json.Marshal(req)
 	var out Agent
 	if err := c.do(ctx, http.MethodPost, "/agents", bytes.NewReader(body), "application/json", &out); err != nil {
@@ -137,6 +142,7 @@ func (c *HTTPClient) CreateAgent(ctx context.Context, req CreateAgentRequest) (*
 
 // UpdateAgent updates an agent (title/dsl/release -> publish or unpublish).
 func (c *HTTPClient) UpdateAgent(ctx context.Context, agentID string, req UpdateAgentRequest) error {
+	req.Dsl = engineAgentDsl(req.Dsl)
 	body, _ := json.Marshal(req)
 	path := "/agents/" + url.PathEscape(agentID)
 	return c.do(ctx, http.MethodPut, path, bytes.NewReader(body), "application/json", nil)
@@ -148,12 +154,38 @@ func (c *HTTPClient) DeleteAgent(ctx context.Context, agentID string) error {
 	return c.do(ctx, http.MethodDelete, path, nil, "", nil)
 }
 
+// PublishAgentVersion publishes the agent canvas as a new immutable version
+// row (POST /agents/{id}/publish) and returns it.
+//
+// Publishing must go through this endpoint rather than PUT /agents/{id} with
+// release=true: RAGFlow only writes the user_canvas_version row here, so a plain
+// update flips the release flag while leaving the version history empty — the
+// version tab and rollback would then have nothing to show.
+func (c *HTTPClient) PublishAgentVersion(ctx context.Context, agentID string) (*AgentVersion, error) {
+	if strings.TrimSpace(agentID) == "" {
+		return nil, protocolError("agent id is required to publish a version")
+	}
+	var out AgentVersion
+	path := "/agents/" + url.PathEscape(agentID) + "/publish"
+	if err := c.do(ctx, http.MethodPost, path, bytes.NewReader([]byte("{}")), "application/json", &out); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out.ID) == "" {
+		return nil, protocolError("ragflow publish agent version returned an empty version id")
+	}
+	out.Dsl = canvasAgentDsl(out.Dsl)
+	return &out, nil
+}
+
 // ListAgentVersions lists the saved versions of an agent.
 func (c *HTTPClient) ListAgentVersions(ctx context.Context, agentID string) ([]AgentVersion, error) {
 	var out []AgentVersion
 	path := "/agents/" + url.PathEscape(agentID) + "/versions"
 	if err := c.do(ctx, http.MethodGet, path, nil, "", &out); err != nil {
 		return nil, err
+	}
+	for i := range out {
+		out[i].Dsl = canvasAgentDsl(out[i].Dsl)
 	}
 	return out, nil
 }
@@ -165,6 +197,7 @@ func (c *HTTPClient) GetAgentVersion(ctx context.Context, agentID, versionID str
 	if err := c.do(ctx, http.MethodGet, path, nil, "", &out); err != nil {
 		return nil, err
 	}
+	out.Dsl = canvasAgentDsl(out.Dsl)
 	return &out, nil
 }
 

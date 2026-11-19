@@ -139,6 +139,9 @@ func (h *Handler) Me(c *gin.Context) {
 	response.OK(c, gin.H{
 		"id": u.ID, "username": u.Username, "email": u.Email,
 		"tenant_id": u.TenantID, "role": u.Role,
+		// The UI shows this instead of the 32-char id (report workspace footer):
+		// an id is not a workspace name.
+		"tenant_name":      h.Service.TenantDisplayName(c.Request.Context(), u.TenantID),
 		"permissions":      mp.Permissions,
 		"platform":         mp.Platform,
 		"approval_enabled": h.Service.ApprovalConfig().Enabled,

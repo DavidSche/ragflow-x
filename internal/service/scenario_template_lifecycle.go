@@ -290,4 +290,3 @@ func (s *Service) recordTemplateAudit(ctx context.Context, tenantID, userID, act
 		logger.Warn("scenario template audit failed", "action", action, "error", err)
 	}
 }
-

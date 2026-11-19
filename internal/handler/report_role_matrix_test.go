@@ -61,6 +61,13 @@ func reportMatrixRoutes(reportID, jobID, key string) []reportMatrixRoute {
 		// the delete itself.
 		{"restore", http.MethodPost, "/api/v1/reports/" + reportID + "/restore", "delete:own", "", nil},
 		{"cancel", http.MethodPost, "/api/v1/reports/" + reportID + "/cancel", "execute", "", nil},
+		// Sharing and the governed budget request (doc/296 §2.1–§2.2) are both
+		// `execute` on the report resource, so they must answer the same role matrix
+		// as a rerun: a guessed id is 44109 for a permitted role, 403 for `viewer`.
+		{"access", http.MethodPut, "/api/v1/reports/" + reportID + "/access", "execute", "",
+			map[string]interface{}{"policy": "owner_only"}},
+		{"budget-extension", http.MethodPost, "/api/v1/reports/" + reportID + "/budget-extension", "execute", "",
+			map[string]interface{}{"tokens": 100}},
 		{"regenerate", http.MethodPost, "/api/v1/reports/" + reportID + "/revisions", "execute", key, nil},
 		{"revision", http.MethodGet, "/api/v1/reports/" + reportID + "/revisions/1", "read", "", nil},
 		// v2.11: the reading surface is two more read routes. They belong in the same

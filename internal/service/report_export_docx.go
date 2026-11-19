@@ -71,7 +71,7 @@ func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 		body.WriteString(docxParagraph("本报告为部分完成，以下节未生成：", ""))
 		for _, gap := range document.Gaps {
 			line := fmt.Sprintf("第 %d 节「%s」未生成：%s（影响：%s）",
-				gap.Ord+1, gap.Title, gap.Reason, gap.Impact)
+				reportSectionNumber(gap.Ord), gap.Title, gap.Reason, gap.Impact)
 			if gap.ErrorCode != "" {
 				line += fmt.Sprintf("；错误码 %s", gap.ErrorCode)
 			}
@@ -87,10 +87,16 @@ func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 	// the reader's own tool).
 	body.WriteString(docxParagraph("目录", "Heading1"))
 	for _, section := range document.Sections {
-		body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", section.Ord+1, section.Title), ""))
+		body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", reportSectionNumber(section.Ord), section.Title), ""))
 	}
 	if len(document.EvidenceAppendix) > 0 {
 		body.WriteString(docxParagraph("证据附录", ""))
+	}
+	if len(document.Claims) > 0 {
+		body.WriteString(docxParagraph("结论清单", ""))
+	}
+	if len(document.ConsistencyIssues) > 0 {
+		body.WriteString(docxParagraph("跨章节一致性提示", ""))
 	}
 
 	captions := &docxCaptionNumbers{}
@@ -98,16 +104,22 @@ func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 		if index > 0 {
 			body.WriteString(docxParagraph("", ""))
 		}
-		body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", section.Ord+1, section.Title), "Heading1"))
+		body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", reportSectionNumber(section.Ord), section.Title), "Heading1"))
 		for _, block := range parseAnswerContent(section.ContentMD) {
 			if caption := captions.next(block.kind); caption != "" {
 				body.WriteString(docxParagraph(caption, ""))
 			}
 			body.WriteString(docxBlock(block))
 		}
+		if line := reportLocationHintsLine(section.LocationHints); line != "" {
+			body.WriteString(docxParagraph(line, ""))
+		}
+		if plan := reportResearchPlanLine(section.ResearchPlan); plan != "" {
+			body.WriteString(docxParagraph(plan, ""))
+		}
 		if section.EvidenceStatus != "" && section.CitationCount > 0 {
 			body.WriteString(docxParagraph(fmt.Sprintf("依据：%d 条引用，证据状态 %s。",
-				section.CitationCount, section.EvidenceStatus), ""))
+				section.CitationCount, reportEvidenceStatusLabel(section.EvidenceStatus)), ""))
 		}
 	}
 
@@ -126,9 +138,9 @@ func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 				currentSection = entry.SectionOrd
 				title := entry.SectionTitle
 				if title == "" {
-					title = fmt.Sprintf("第 %d 节", entry.SectionOrd+1)
+					title = fmt.Sprintf("第 %d 节", reportSectionNumber(entry.SectionOrd))
 				}
-				body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", entry.SectionOrd+1, title), "Heading2"))
+				body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", reportSectionNumber(entry.SectionOrd), title), "Heading2"))
 				// The column header repeats per chapter on purpose: a reader who
 				// opens the appendix at random should not have to scroll up to know
 				// what the columns mean.
@@ -148,8 +160,31 @@ func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 				note = "（快照已按策略截断）"
 			}
 			body.WriteString(docxTable([][]string{{
-				fmt.Sprintf("%d", entry.Ord+1), locator, scoreLabel(entry), entry.Content + note,
+				fmt.Sprintf("%d", reportSectionNumber(entry.Ord)), locator, scoreLabel(entry), entry.Content + note,
 			}}))
+		}
+	}
+
+	// 结论清单 (R11, doc/288 §9.2): what the report asserts, and what the mechanical
+	// support check could say about each assertion. Printed for the same reason as the
+	// evidence appendix — a forwarded file must keep saying which of its own sentences
+	// it could not substantiate.
+	if len(document.Claims) > 0 {
+		body.WriteString(docxParagraph("结论清单", "Heading1"))
+		body.WriteString(docxParagraph(reportClaimAppendixPreamble, ""))
+		body.WriteString(docxParagraph(reportClaimSummary(document), ""))
+		for _, group := range reportClaimGroups(document) {
+			body.WriteString(docxParagraph(fmt.Sprintf("%d. %s", reportSectionNumber(group.Ord), group.Title), "Heading2"))
+			for _, line := range group.Headings {
+				body.WriteString(docxParagraph("· "+line, ""))
+			}
+		}
+	}
+	if len(document.ConsistencyIssues) > 0 {
+		body.WriteString(docxParagraph("跨章节一致性提示", "Heading1"))
+		body.WriteString(docxParagraph("以下同一事实在不同章节出现不同说法，请核实后再对外使用。", ""))
+		for _, issue := range document.ConsistencyIssues {
+			body.WriteString(docxParagraph(reportConsistencyLine(issue), ""))
 		}
 	}
 

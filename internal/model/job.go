@@ -65,6 +65,12 @@ const (
 	// JobKindConnectorRetention prunes expired connector run history (doc/225
 	// §6.2 F4) on a self-rescheduling daily cadence.
 	JobKindConnectorRetention = "connector_retention"
+	// JobKindReportScheduleTick is R20's scheduler tick (doc/295 §2.4): one job
+	// that claims the schedules whose `next_run_at` has passed and starts their
+	// report runs. It advances `next_run_at` *before* doing any work, so a crash
+	// delays the next occurrence instead of firing the same one twice; the run
+	// itself is deduplicated by `schedule:<schedule_id>:<due_at>`.
+	JobKindReportScheduleTick = "report_schedule_tick"
 )
 
 // Job lifecycle states (doc/21 §2).

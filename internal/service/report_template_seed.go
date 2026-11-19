@@ -418,6 +418,21 @@ type ReportTemplateView struct {
 	Payload  ReportTemplatePayload `json:"payload"`
 	Status   string                `json:"status"`
 	Retired  bool                  `json:"retired"`
+	// Source is `platform` or `workspace` (R19): the UI must be able to say why
+	// a template cannot be edited here rather than offering a button that 400s.
+	Source string `json:"source"`
+	// Editable is true only for a workspace row that is not retired: the platform
+	// baseline ships with the release, and a retired version has no next version
+	// to edit into (publishing under the key still works and mints a new one).
+	Editable              bool   `json:"editable"`
+	SourceTemplateID      string `json:"source_template_id,omitempty"`
+	SourceTemplateVersion int64  `json:"source_template_version,omitempty"`
+	// Versions is how many versions of this key the caller can see, and only the
+	// list fills it in; 0 means "not counted" (a single-row answer from publish or
+	// retire). The list itself is one row per key, so without this field the UI
+	// could only ever print "1 version" — a label that would be wrong the moment
+	// anyone edits a template (live 2026-11-19: v2 was displayed as "共 1 个版本").
+	Versions int `json:"versions,omitempty"`
 }
 
 // resolveReportTemplate picks the template version a new report must pin.
@@ -519,6 +534,26 @@ func (s *Service) ListReportTemplates(ctx context.Context, tenantID string) ([]R
 	if err != nil {
 		return nil, err
 	}
+	counts := make(map[string]int, len(platformRows)+len(tenantRows))
+	platformCounts := make(map[string]int, len(platformRows))
+	for _, row := range platformRows {
+		platformCounts[row.TemplateKey]++
+	}
+	// The workspace's own fork replaces the baseline wholesale, so the count must
+	// come from the same side the row came from: "3 versions" that include the
+	// platform's v1 next to a workspace v2 would be arithmetic across two number
+	// spaces (292 D4).
+	for key, count := range platformCounts {
+		counts[key] = count
+	}
+	forked := make(map[string]int, len(tenantRows))
+	for _, row := range tenantRows {
+		forked[row.TemplateKey]++
+	}
+	for key, count := range forked {
+		counts[key] = count
+	}
+
 	newest := make(map[string]model.ReportTemplate, len(platformRows)+len(tenantRows))
 	newestOf := func(rows []model.ReportTemplate) {
 		for _, row := range rows {
@@ -548,10 +583,14 @@ func (s *Service) ListReportTemplates(ctx context.Context, tenantID string) ([]R
 		if err != nil {
 			return nil, err
 		}
+		retired := row.RetiredAt != nil || row.Status == model.ReportTemplateStatusRetired
+		source := reportTemplateSourceOf(&row)
 		views = append(views, ReportTemplateView{
 			TemplateID: row.ID, Key: row.TemplateKey, Version: row.Version,
 			TenantID: row.TenantID, Payload: *payload, Status: row.Status,
-			Retired: row.RetiredAt != nil || row.Status == model.ReportTemplateStatusRetired,
+			Retired: retired, Source: source, Editable: source == "workspace" && !retired,
+			SourceTemplateID: row.SourceTemplateID, SourceTemplateVersion: row.SourceTemplateVersion,
+			Versions: counts[row.TemplateKey],
 		})
 	}
 	return views, nil

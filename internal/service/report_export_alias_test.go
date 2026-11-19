@@ -61,15 +61,17 @@ func TestReportExportTreatsMdAndMarkdownAsOneFormat(t *testing.T) {
 	}
 }
 
-// TestReportExportRejectsFormatsOutsideTheReportSet keeps the alias from
-// widening the set: `html` and `json` are answer-side formats, and a report export
-// asking for them must still be refused with the one code that says so.
+// TestReportExportRejectsFormatsOutsideTheReportSet keeps the alias from widening
+// the set. `json` stays outside it on purpose: the frozen payload is already
+// `rgx_export_snapshot.payload_json`, so a JSON delivery would be a second schema
+// for the same bytes. `html` moved *into* the set with the fourth-format slice, and
+// the positive half of that change is asserted in report_export_html_test.go.
 func TestReportExportRejectsFormatsOutsideTheReportSet(t *testing.T) {
 	fx := newReportFixture(t, "export-closed-set")
 	ctx := context.Background()
 	revision := publishReport(t, fx, successSeeds())
 
-	for _, format := range []string{"html", "json", "", "MDX"} {
+	for _, format := range []string{"json", "", "MDX", "csv"} {
 		_, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
 			ReportID: revision.ReportID, Revision: revision.Revision, Format: format,
 		})

@@ -33,6 +33,9 @@ type reportSectionSeed struct {
 
 func (fx *reportFixture) seedSections(t *testing.T, revisionID string, seeds []reportSectionSeed) {
 	t.Helper()
+	// `ord` is 1-based on disk (`report_generate_prompt.go` writes `index+1`). The
+	// fixture used to write 0..n, which made every renderer's `ord+1` look correct
+	// in tests while the delivered files were numbered from 2 in production.
 	for ord, seed := range seeds {
 		required := seed.RequiresEvi
 		quality := seed.QualityStatus
@@ -40,7 +43,7 @@ func (fx *reportFixture) seedSections(t *testing.T, revisionID string, seeds []r
 			quality = model.ReportQualityNotChecked
 		}
 		row := &model.ReportSection{
-			ID: id.New(), TenantID: fx.tenantID, RevisionID: revisionID, Ord: ord,
+			ID: id.New(), TenantID: fx.tenantID, RevisionID: revisionID, Ord: ord + 1,
 			SectionKey: seed.Key, SectionVersion: 1, Title: seed.Key,
 			RequiresEvidence: required, Status: seed.Status, QualityStatus: quality,
 			EvidenceStatus: seed.EvidenceStatus, CitationCount: seed.CitationCount,

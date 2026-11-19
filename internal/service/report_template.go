@@ -77,11 +77,20 @@ type ReportTemplateEvidencePolicy struct {
 // ReportTemplatePayload is the stored template body.
 type ReportTemplatePayload struct {
 	Name ReportTemplateName `json:"name"`
-	// OutputFormats is the closed set the report may be rendered to: docx, md and
-	// pdf. PDF became legal in P0-B when the renderer landed; a template that omits
-	// it simply does not advertise the format (the export endpoint still accepts it
-	// for any published revision, because the rendering contract is the frozen
-	// document, not the template's list).
+	// OutputFormats is the closed set of formats a template *advertises*: docx, md,
+	// pdf, html and xlsx. A template that omits one simply does not advertise it —
+	// this list is a declaration, not an authorization gate: the export endpoint
+	// accepts every format in `validReportExportFormat` for any published revision,
+	// because the rendering contract is the frozen document, not the template's list
+	// (the two lists are therefore deliberately separate, and the report delivery
+	// subset lives in one place on each side: `validReportExportFormat` in Go,
+	// `REPORT_EXPORT_FORMATS` in `report-contract.ts`).
+	//
+	// pdf became legal in P0-B, html and xlsx with the fourth-format slice. The three
+	// seeded templates still advertise docx/md/pdf: widening a *stored* payload would
+	// mint a template version every workspace forks from, and a format nobody asked
+	// for is not a reason to change what an already-published report was written
+	// for.
 	OutputFormats       []string                     `json:"output_formats"`
 	Sections            []ReportTemplateSection      `json:"sections"`
 	Limits              ReportTemplateLimits         `json:"limits"`
@@ -96,7 +105,7 @@ type ReportTemplatePayload struct {
 
 // Closed sets of the template payload (doc/288 §11.1 / §9.4 / §9.5).
 var (
-	reportOutputFormats        = []string{"docx", "md", "pdf"}
+	reportOutputFormats        = []string{"docx", "md", "pdf", "html", "xlsx"}
 	reportThresholdPolicies    = []string{"dataset_calibrated"}
 	reportConflictHandlings    = []string{"disclose", "block", "prefer_latest"}
 	reportOutdatedEvidence     = []string{"flag", "exclude"}

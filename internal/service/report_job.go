@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,12 +65,18 @@ type CreateReportRequest struct {
 	// Datasets binds the knowledge the report may cite. The capability recheck
 	// runs against exactly this list (A10).
 	Datasets []CapabilityCheckDataset `json:"datasets"`
-	// OutlineConfirmation lets the owner skip the outline review. P0-A only
-	// accepts `required`; `auto` stays frozen in the contract until P0-B opens
-	// the permission (292 D2).
+	// OutlineConfirmation lets the owner skip the outline review. `auto` is accepted
+	// only when the pinned template allows it *and* the owner asks for it explicitly
+	// (doc/288 §8.4 / 292 D2); an omitted field never means `auto`, even for an
+	// auto-template, because the server must not make that choice for the user.
 	OutlineConfirmation string `json:"outline_confirmation"`
-	OriginChatID        string `json:"origin_chat_id"`
-	OriginSessionID     string `json:"origin_session_id"`
+	// ResearchDepth is R18's revision-level switch (`standard` default, `deep`
+	// opts into the retrieval planner). It is frozen on the revision at creation
+	// and inherited by regenerations, so a template edit or a schedule cannot
+	// deepen a report that is already running (doc/295 §2.2).
+	ResearchDepth   string `json:"research_depth"`
+	OriginChatID    string `json:"origin_chat_id"`
+	OriginSessionID string `json:"origin_session_id"`
 }
 
 // CreateReportResult is what the handler answers. `Created=false` means an
@@ -80,6 +87,23 @@ type CreateReportResult struct {
 	Revision *model.ReportRevision `json:"revision"`
 	Job      *model.ReportJob      `json:"job"`
 	Created  bool                  `json:"created"`
+	// Concurrency is present only when the run was accepted but not started: the
+	// workspace already had `limit` runs executing (doc/297 §3). The job is
+	// `queued`, the envelope is frozen, and the reconcile sweep arms it as soon as a
+	// slot frees — so the client is told "accepted, waiting behind N runs" instead of
+	// inventing a status of its own or being told nothing at all.
+	//
+	// It is omitted otherwise rather than filled in: a number that is already
+	// changing when the client reads it is worse than no number.
+	Concurrency *ReportConcurrencyView `json:"concurrency,omitempty"`
+}
+
+// ReportConcurrencyView is the admission snapshot behind a deferral. Both numbers are
+// facts at write time, not a queue position: a position would be a promise we cannot
+// keep once a run is cancelled or a second workspace member clicks faster.
+type ReportConcurrencyView struct {
+	Limit  int   `json:"limit"`
+	Active int64 `json:"active"`
 }
 
 // CreateReport validates, rechecks and freezes one report aggregate.
@@ -110,6 +134,12 @@ func (s *Service) CreateReport(
 	if len([]rune(title)) > 255 {
 		return nil, httperr.BadRequest(40105, "title must be at most 255 characters")
 	}
+	// R18: the depth switch is validated here, before any row or job exists. An
+	// unknown word is a 400 (44105) rather than a silent `standard`.
+	researchDepth := researchDepthRequested(req.ResearchDepth)
+	if researchDepth == "" {
+		return nil, errReportOutlineInvalid("research_depth must be standard or deep")
+	}
 	datasets, err := normalizeReportDatasets(req.Datasets)
 	if err != nil {
 		return nil, err
@@ -128,7 +158,9 @@ func (s *Service) CreateReport(
 		logger.Warn("report template payload invalid", "template_id", templateRow.ID, "error", err)
 		return nil, httperr.Internal("report template is invalid")
 	}
-	if err := s.requireReportOutlineConfirmation(actorID, req.OutlineConfirmation, payload, templateRow); err != nil {
+	outlineMode, err := s.requireReportOutlineConfirmation(
+		ctx, actorID, tenantID, req.OutlineConfirmation, payload, templateRow)
+	if err != nil {
 		return nil, err
 	}
 
@@ -175,7 +207,8 @@ func (s *Service) CreateReport(
 	}
 	revision := &model.ReportRevision{
 		ID: revisionID, ReportID: reportID, TenantID: tenantID, Revision: 1,
-		OutlineConfirmation: model.ReportOutlineRequired,
+		OutlineConfirmation: outlineMode,
+		ResearchDepth:       researchDepth,
 		TemplateKey:         templateRow.TemplateKey, TemplateVersion: templateRow.Version,
 		DatasetsJSON: datasetsJSON,
 		// The execution snapshot is written by the outline step (Slice E), not here,
@@ -191,6 +224,7 @@ func (s *Service) CreateReport(
 	if err != nil {
 		return nil, err
 	}
+	budgetPolicy := s.reportBudgetPolicyFor(ctx, tenantID)
 	job := &model.ReportJob{
 		ID: jobID, TenantID: tenantID, ReportID: reportID, RevisionID: revisionID,
 		JobKind: model.ReportJobKindGenerate, Status: model.ReportJobQueued,
@@ -205,8 +239,11 @@ func (s *Service) CreateReport(
 		// the pinned template and must not move when an admin edits the template
 		// while this report runs (doc/288 §8.6).
 		ReservedTokens: reportBudgetReservation(payload.Limits, len(payload.Sections)),
-		IdempotencyKey: storedKey,
-		UpdatedAt:      now,
+		// The policy is frozen beside the envelope it governs (doc/296 §2.2): a tenant
+		// that flips to `observe` next week must not retroactively unmeter this run.
+		ReportBudgetPolicy: budgetPolicy,
+		IdempotencyKey:     storedKey,
+		UpdatedAt:          now,
 	}
 	eventPayload, err := json.Marshal(map[string]interface{}{
 		"attempt_seq": job.AttemptSeq, "slice_seq": job.SliceSeq,
@@ -252,12 +289,30 @@ func (s *Service) CreateReport(
 	if err != nil {
 		return nil, err
 	}
+	// Arming is allowed to leave the job exactly as it was: the workspace is at its
+	// concurrency limit (doc/297 §3). "Still queued with no runtime pointer after a
+	// dispatch" can only mean that, because the dispatch is the only writer of the
+	// pointer and it either armed the slice or found the row no longer dispatchable.
+	concurrency, err := s.reportDeferralOf(ctx, tenantID, job)
+	if err != nil {
+		return nil, err
+	}
 
-	detail, err := json.Marshal(map[string]interface{}{
+	detailMap := map[string]interface{}{
 		"report_id": reportID, "job_id": jobID, "revision_id": revisionID,
 		"template_key": templateRow.TemplateKey, "template_version": templateRow.Version,
 		"datasets": len(datasets), "budget_tokens": job.ReservedTokens, "idempotent": false,
-	})
+		"outline_confirmation": outlineMode, "budget_policy": job.ReportBudgetPolicy,
+		"access_policy": report.AccessPolicy,
+	}
+	if concurrency != nil {
+		// The audit is where "why did this report not start" survives a page reload:
+		// the 202 body is gone by then, and the event stream only ever says `queued`.
+		detailMap["deferred"] = true
+		detailMap["concurrency_limit"] = concurrency.Limit
+		detailMap["active_runs"] = concurrency.Active
+	}
+	detail, err := json.Marshal(detailMap)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +326,43 @@ func (s *Service) CreateReport(
 		logger.Warn("report creation audit failed", "report_id", reportID, "error", auditErr)
 		return nil, auditErr
 	}
-	return &CreateReportResult{Report: report, Revision: revision, Job: job, Created: true}, nil
+	if outlineMode == model.ReportOutlineAuto {
+		// §8.4 requires its own action for this: "a report skipped the structure
+		// review" is the sentence an auditor searches for, and burying it inside
+		// `report.job.created` would make it unfindable.
+		if auditErr := s.RecordAudit(ctx, &model.AuditLog{
+			TenantID: tenantID, UserID: actorID, Action: "report.outline.auto_confirmed",
+			Resource: "report", ResourceID: reportID, Result: "SUCCESS",
+			DetailJSON: `{"template_key":"` + templateRow.TemplateKey +
+				`","template_version":` + strconv.FormatInt(templateRow.Version, 10) +
+				`,"policy":"self"}`,
+			At: now,
+		}); auditErr != nil {
+			// The report exists and will run as `auto`. Failing the request now would
+			// tell the owner nothing happened; the gap is logged loudly instead, the
+			// same way the retention overlay treats its audit.
+			logger.Warn("report outline auto audit failed", "report_id", reportID, "error", auditErr)
+		}
+	}
+	return &CreateReportResult{
+		Report: report, Revision: revision, Job: job, Created: true, Concurrency: concurrency,
+	}, nil
+}
+
+// reportDeferralOf answers the admission snapshot for a just-armed job, or nil when
+// the run actually started.
+//
+// The condition is deliberately narrow (`queued` and no pointer) rather than "ask the
+// admission function again": the question is not "is there room now" but "did this
+// particular dispatch arm anything", and re-asking the first question would label a
+// job that lost its dispatch to a cancel as deferred.
+func (s *Service) reportDeferralOf(
+	ctx context.Context, tenantID string, job *model.ReportJob,
+) (*ReportConcurrencyView, error) {
+	if job == nil || job.Status != model.ReportJobQueued || job.CurrentRuntimeJobID != "" {
+		return nil, nil
+	}
+	return s.reportConcurrencyOf(ctx, tenantID)
 }
 
 // replayReportCreation returns the aggregate of an already-created job.
@@ -427,37 +518,74 @@ func normalizeReportDatasets(input []CapabilityCheckDataset) ([]CapabilityCheckD
 	return out, nil
 }
 
-// requireReportOutlineConfirmation enforces the P0-A boundary. §8.4 allows a
-// template to declare `auto`, but the permission to skip the structure review is
-// the *owner's own* choice and belongs to P0-B; until then the API refuses to turn
-// it on instead of silently honouring it (292 D2, §7.2 permission table).
+// requireReportOutlineConfirmation resolves the outline mode a new revision is
+// created with (doc/288 §8.4 / 292 D2, opened by doc/296 §2.3).
+//
+// The rules, in the order the design states them:
+//
+//   - **No request field means `required`**, even when the template allows `auto`.
+//     §8.4 forbids the server deciding this for the user: a template may *permit*
+//     skipping the structure review, and only the owner may *choose* it.
+//   - **`auto` needs the template's permission** (`outline_confirmation=auto` on an
+//     `active` version) and the requester is the owner by construction — this runs
+//     during creation, and the requester becomes `owner_user_id` a few lines later,
+//     so `tenant_admin` cannot hand `auto` to somebody else through this path.
+//   - **The tenant's `auto_confirm_policy` is a governance stop, not a hint.** When
+//     it is `approval`, the request is refused with an explicit sentence naming the
+//     policy. It is deliberately *not* downgraded to `required`: a silent downgrade
+//     would deliver a report whose disclosure says "提纲未人工确认" while the run
+//     actually waited for a human, which is the kind of contradiction §9.4 bans.
+//
+// `auto_confirm_allowed_roles` (292 D2, default empty) is validated by the template
+// loader and not consulted here: its only purpose is to let someone *other than the
+// owner* grant `auto`, and no route can do that in this release.
 func (s *Service) requireReportOutlineConfirmation(
-	actorID, requested string, payload *ReportTemplatePayload, templateRow *model.ReportTemplate,
-) error {
+	ctx context.Context, actorID, tenantID, requested string,
+	payload *ReportTemplatePayload, templateRow *model.ReportTemplate,
+) (string, error) {
 	mode := strings.TrimSpace(requested)
-	if mode == "" {
-		if payload.OutlineConfirmation == model.ReportOutlineAuto {
-			return httperr.New(409, codeReportInvalidTransition,
-				"template "+templateRow.TemplateKey+" allows auto confirmation, which this release does not implement")
-		}
-		return nil
-	}
 	switch mode {
+	case "":
+		return model.ReportOutlineRequired, nil
 	case model.ReportOutlineRequired:
-		return nil
+		return model.ReportOutlineRequired, nil
 	case model.ReportOutlineAuto:
-		if payload.OutlineConfirmation != model.ReportOutlineAuto {
-			return httperr.New(409, codeReportInvalidTransition,
-				"template "+templateRow.TemplateKey+" requires outline confirmation")
-		}
-		if actorID == "" {
-			return httperr.Forbidden("outline auto confirmation requires an owner")
-		}
-		return httperr.New(409, codeReportInvalidTransition,
-			"auto outline confirmation is not implemented in this release")
 	default:
-		return httperr.New(400, codeReportOutlineInvalid, "outline_confirmation must be required or auto")
+		return "", httperr.New(400, codeReportOutlineInvalid,
+			"outline_confirmation must be required or auto")
 	}
+	if payload.OutlineConfirmation != model.ReportOutlineAuto {
+		return "", httperr.New(409, codeReportInvalidTransition,
+			"template "+templateRow.TemplateKey+" requires outline confirmation")
+	}
+	if templateRow.Status != model.ReportTemplateStatusActive {
+		// A retired template must not grant a permission, even if the caller pinned
+		// its version. Creation resolves only active rows, so reaching here means two
+		// requests raced a retirement.
+		return "", httperr.New(409, codeReportInvalidTransition,
+			"template "+templateRow.TemplateKey+" is not active")
+	}
+	if actorID == "" {
+		return "", httperr.Forbidden("outline auto confirmation requires an owner")
+	}
+	if s.reportAutoConfirmPolicyFor(ctx, tenantID) == model.ReportAutoConfirmApproval {
+		// Audited because it is a *refusal of a governance question*, not a malformed
+		// request: an operator who turns this on needs to see owners hitting it.
+		if err := s.RecordAudit(ctx, &model.AuditLog{
+			TenantID: tenantID, UserID: actorID, Action: "report.outline.auto_refused",
+			Resource: "report", ResourceID: templateRow.TemplateKey, Result: "DENIED",
+			DetailJSON: `{"reason":"tenant_requires_approval","template_key":"` +
+				templateRow.TemplateKey + `"}`,
+			At: time.Now().UTC(),
+		}); err != nil {
+			logger.Warn("report outline auto refusal audit failed",
+				"template_key", templateRow.TemplateKey, "error", err)
+		}
+		return "", httperr.New(409, codeReportInvalidTransition,
+			"this workspace requires an approval before a report may skip the outline review; "+
+				"create the report with outline_confirmation=required")
+	}
+	return model.ReportOutlineAuto, nil
 }
 
 // recheckReportCapability re-probes the bound datasets at creation time (A10).

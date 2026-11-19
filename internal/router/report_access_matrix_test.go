@@ -40,17 +40,42 @@ func reportMatrixRouteSpecs() []reportMatrixRouteSpec {
 		{"GET", "/api/v1/reports/:id", "read"},
 		{"DELETE", "/api/v1/reports/:id", "delete:own"},
 		{"POST", "/api/v1/reports/:id/restore", "delete:own"},
+		// doc/297 §2: archiving is a lifecycle change on a report you own, so it needs
+		// the same authority as closing it — not `execute`, which any report author
+		// holds and which would let a colleague put away someone else's work.
+		{"POST", "/api/v1/reports/:id/archive", "delete:own"},
+		{"POST", "/api/v1/reports/:id/unarchive", "delete:own"},
 		{"POST", "/api/v1/reports/:id/cancel", "execute"},
+		// Sharing (doc/296 §2.1): the write is an action on a report you own, so it is
+		// the same `execute` a rerun needs; the read half rides on `GET /reports/:id`.
+		{"PUT", "/api/v1/reports/:id/access", "execute"},
+		// The one governed decision (doc/296 §2.2): asking for more budget.
+		{"POST", "/api/v1/reports/:id/budget-extension", "execute"},
 		{"POST", "/api/v1/reports/:id/revisions", "execute"},
 		{"GET", "/api/v1/reports/:id/revisions", "read"},
 		{"GET", "/api/v1/reports/:id/revisions/:revision", "read"},
 		{"GET", "/api/v1/reports/:id/revisions/:revision/sections", "read"},
+		// A14: a follow-up chip is reading, not executing — it asks a question about a
+		// document the caller may already read, so the `viewer`-style split of the
+		// matrix must not treat it as a mutation.
+		{"GET", "/api/v1/reports/:id/follow-ups", "read"},
+		// R20 (doc/295 §2.4): reading the plan is `read`, arming/changing/removing it
+		// is `execute` — the same action a manual rerun needs, because a plan is a
+		// rerun on a timer. Ownership is enforced in the service (44109).
+		{"GET", "/api/v1/reports/:id/schedule", "read"},
+		{"PUT", "/api/v1/reports/:id/schedule", "execute"},
+		{"DELETE", "/api/v1/reports/:id/schedule", "execute"},
 		{"POST", "/api/v1/reports/:id/revisions/:revision/outline/confirm", "execute"},
 		{"POST", "/api/v1/reports/:id/revisions/:revision/artifacts", "execute"},
 		{"GET", "/api/v1/reports/:id/revisions/:revision/artifacts/:artifactId/download", "read"},
 		{"GET", "/api/v1/report-templates", "read"},
 		{"POST", "/api/v1/report-templates/:key/capability-check", "read"},
 		{"POST", "/api/v1/report-templates/:key/clone", "manage"},
+		// R19 authoring (doc/295 §2.3): publishing a version and retiring the newest
+		// one are both `manage` on the template resource.
+		{"POST", "/api/v1/report-templates", "manage"},
+		{"PUT", "/api/v1/report-templates/:key", "manage"},
+		{"POST", "/api/v1/report-templates/:key/retire", "manage"},
 		{"GET", "/api/v1/report-jobs/:jobId", "read"},
 		{"GET", "/api/v1/report-jobs/:jobId/events", "read"},
 		{"POST", "/api/v1/report-jobs/:jobId/sections/:ord/retry", "execute"},
@@ -117,9 +142,13 @@ func TestReportAccessRulesCoverEveryRouteWithOneRule(t *testing.T) {
 	}
 }
 
-// TestReportAccessMatrixMatchesBuiltinGrants walks the 6 × 18 matrix: for every role
-// and every route, the builtin matrix either grants the route's action or does not,
-// and the answer must equal `reportMatrixGrants`.
+// TestReportAccessMatrixMatchesBuiltinGrants walks the six-roles × every-report-route
+// matrix: for every role and every route, the builtin matrix either grants the
+// route's action or does not, and the answer must equal `reportMatrixGrants`.
+//
+// The row count is deliberately not written as a number here: it used to say 18 and
+// silently stopped being true the first time a route was added, which is the kind of
+// comment that makes a reader trust a stale fact.
 func TestReportAccessMatrixMatchesBuiltinGrants(t *testing.T) {
 	granted := map[string]map[string]bool{}
 	for _, grant := range db.BuiltinPermissionMatrix() {

@@ -365,18 +365,23 @@ func (h *Handler) gatewayStreamFailed(c *gin.Context, key *model.APIKey, resourc
 // gatewayChatApp routes to a RAGFlow chat assistant (retrieval-backed).
 func (h *Handler) gatewayChatApp(c *gin.Context, ctx context.Context, key *model.APIKey, chatID, sessionID string, body []byte, stream bool, requestID string, idempotencyState *service.GatewayIdempotencyState) {
 	if stream {
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Writer.WriteHeader(200)
+		// Commit on the first byte, for the same reason as the workbench route: a
+		// `report_context` refusal must be a real 400, not a frame inside a 200 stream.
+		streamWriter := newDeferredStreamWriter(c.Writer)
 		var captured bytes.Buffer
-		_, _, err := h.Service.StreamChatAppCompletion(ctx, key, chatID, sessionID, body, io.MultiWriter(c.Writer, &captured), requestID)
+		_, _, err := h.Service.StreamChatAppCompletion(ctx, key, chatID, sessionID, body, io.MultiWriter(streamWriter, &captured), requestID)
 		if err != nil {
 			logger.Error("gateway chat app stream failed", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", c.GetString("request_id"), "error", err)
 			h.RecordAudit(ctx, &model.AuditLog{
 				TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.stream_error", Resource: "chat", ResourceID: chatID,
 				DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 			})
-			gatewayStreamError(c.Writer, err)
 			h.Service.FailGatewayIdempotency(ctx, idempotencyState, requestID, err.Error())
+			if !streamWriter.Committed() {
+				response.Err(c, err)
+				return
+			}
+			gatewayStreamError(c.Writer, err)
 			return
 		}
 		h.Service.CompleteGatewayIdempotency(ctx, idempotencyState, requestID, captured.String())

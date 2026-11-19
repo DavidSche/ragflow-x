@@ -43,6 +43,11 @@ const (
 	ExportFormatJSON     = "json"
 	ExportFormatDOCX     = "docx"
 	ExportFormatPDF      = "pdf"
+	// ExportFormatXLSX is the report-only fourth delivery format (queue item 4).
+	// It is a spreadsheet of the same frozen payload, not a second document: the
+	// answer side never emits it, so the format's closed set is still one list and
+	// each surface names the subset it renders.
+	ExportFormatXLSX = "xlsx"
 
 	ExportJobQueued    = "QUEUED"
 	ExportJobRunning   = "RUNNING"

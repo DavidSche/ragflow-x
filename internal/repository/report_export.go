@@ -122,6 +122,19 @@ func (s *store) ListReportCitations(
 	return citations, err
 }
 
+// ListReportClaims returns the claim rows of one revision, ordered by section and
+// then by position inside the section — the order the appendix prints them in.
+func (s *store) ListReportClaims(
+	ctx context.Context, tenantID, revisionID string,
+) ([]model.ReportClaim, error) {
+	var claims []model.ReportClaim
+	err := s.WithContext(ctx).
+		Where("tenant_id = ? AND revision_id = ?", tenantID, revisionID).
+		Order("section_ord ASC, ord ASC").
+		Find(&claims).Error
+	return claims, err
+}
+
 // CountUnverifiableReportEvidence answers "can the citations of this revision still
 // be re-checked?" in one query (doc/288 §7.6 / A43).
 //

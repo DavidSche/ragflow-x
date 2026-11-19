@@ -159,8 +159,8 @@ func errReportArtifactVersionConflict(reason string) error {
 // (doc/288 §7.6 / A43). Rendering an empty appendix here would be a silent lie.
 func errReportEvidenceExpired(sectionOrd, citationOrd int) error {
 	return httperr.New(409, codeReportEvidenceExpired,
-		"evidence for section "+strconv.Itoa(sectionOrd+1)+
-			" citation "+strconv.Itoa(citationOrd+1)+
+		"evidence for section "+strconv.Itoa(reportSectionNumber(sectionOrd))+
+			" citation "+strconv.Itoa(reportSectionNumber(citationOrd))+
 			" has expired and cannot be re-verified; the previously delivered artifact keeps its frozen appendix")
 }
 
@@ -177,5 +177,16 @@ func errReportArtifactUnavailable(reason string) error {
 // that failed its structure gate, which is why it stays available outside the
 // handler layer.
 func errReportOutlineInvalid(reason string) error {
+	return httperr.New(400, codeReportOutlineInvalid, reason)
+}
+
+// errReportAccessInvalid is 44105 for the sharing surface (doc/296 §2.1).
+//
+// It reuses 44105 rather than minting 44117 for one reason: 44105 is already the
+// report surface's "a request parameter is invalid" answer (research depth, retention
+// days, revision addressing), and a second parameter-shape code would make the
+// frontend table carry two spellings of the same sentence. The closed set stays at
+// sixteen (`TestReportErrorCodeSetIsClosedAndContiguous`).
+func errReportAccessInvalid(reason string) error {
 	return httperr.New(400, codeReportOutlineInvalid, reason)
 }

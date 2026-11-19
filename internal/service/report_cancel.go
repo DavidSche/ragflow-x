@@ -45,9 +45,11 @@ type ReportCancelResult struct {
 
 // CancelReport asks the current job of one report to stop.
 //
-// Ownership is checked exactly like a read (`owner_only`, 44109 for anyone else),
-// because a cancel is an operation on the caller's own deliverable, not a
-// governance action.
+// Ownership is `owner_only` (44109 for anyone else), because a cancel is an
+// operation on the caller's own deliverable, not a governance action. It is *not*
+// `authorizeReportRead`: sharing widened the read side (doc/296 §2.1) and must not
+// have widened this one, and a shared reader who could stop the owner's run would
+// have been handed a write by a read permission.
 func (s *Service) CancelReport(ctx context.Context, actorID, tenantID, reportID string) (*ReportCancelResult, error) {
 	if err := s.AuthorizeObject(ctx, actorID, "execute", "report", tenantID, ""); err != nil {
 		return nil, err
@@ -56,7 +58,7 @@ func (s *Service) CancelReport(ctx context.Context, actorID, tenantID, reportID 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeReportRead(ctx, actorID, report); err != nil {
+	if err := s.assertReportOwner(ctx, actorID, report); err != nil {
 		return nil, err
 	}
 	job, err := s.Store.GetLatestReportJob(ctx, tenantID, reportID)

@@ -31,7 +31,8 @@ import (
 
 func regenerateReport(t *testing.T, fx *reportFixture, reportID, key string) (*CreateReportResult, error) {
 	t.Helper()
-	return fx.svc.RegenerateReport(context.Background(), fx.owner.ID, fx.tenantID, reportID, key)
+	return fx.svc.RegenerateReport(context.Background(), fx.owner.ID, fx.tenantID, reportID, key,
+		RegenerateReportRequest{})
 }
 
 func countRevisions(t *testing.T, fx *reportFixture, reportID string) int64 {
@@ -286,7 +287,8 @@ func TestRegenerateReportRefusesForeignTenant(t *testing.T) {
 
 	// A foreign workspace's user must get the same answer as "no such report":
 	// 404/44109, not 403 and not an existence oracle.
-	_, err := foreign.svc.RegenerateReport(ctx, foreign.owner.ID, foreign.tenantID, base.ReportID, "req-regen-foreign-0001")
+	_, err := foreign.svc.RegenerateReport(ctx, foreign.owner.ID, foreign.tenantID, base.ReportID,
+		"req-regen-foreign-0001", RegenerateReportRequest{})
 	var httpErr *httperr.Error
 	if !errors.As(err, &httpErr) || httpErr.Code != codeReportAccessDenied || httpErr.Status != 404 {
 		t.Fatalf("cross-tenant regeneration must refuse 404/44109, got %v", err)
@@ -297,7 +299,8 @@ func TestRegenerateReportRequiresIdempotencyKey(t *testing.T) {
 	fx := newReportFixture(t, "regen-key")
 	base := publishReport(t, fx, successSeeds())
 
-	if _, err := fx.svc.RegenerateReport(context.Background(), fx.owner.ID, fx.tenantID, base.ReportID, "   "); err == nil {
+	if _, err := fx.svc.RegenerateReport(context.Background(), fx.owner.ID, fx.tenantID, base.ReportID,
+		"   ", RegenerateReportRequest{}); err == nil {
 		t.Fatal("missing regeneration key must be refused")
 	}
 }
