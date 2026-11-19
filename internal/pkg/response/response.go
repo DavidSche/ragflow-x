@@ -27,6 +27,19 @@ func OK(c *gin.Context, data interface{}) {
 	c.Data(http.StatusOK, "application/json; charset=utf-8", payload)
 }
 
+// Created writes a successful 201 response with the standard envelope. It exists
+// for create-or-replace endpoints: 201 means "I made the resource", 200 means "it
+// already existed and I changed it", and a client that cannot tell those apart will
+// re-render a first-time setup as an edit.
+func Created(c *gin.Context, data interface{}) {
+	payload, err := json.Marshal(Body{Code: 0, Message: "created", Data: data, TraceID: traceID(c)})
+	if err != nil {
+		Fail(c, 500, 50000, "response serialization failed")
+		return
+	}
+	c.Data(http.StatusCreated, "application/json; charset=utf-8", payload)
+}
+
 // Accepted writes a successful 202 response with the standard envelope. The
 // Location header points at the compilation run, which is the only 202 resource
 // that predates AcceptedAt; new endpoints should call AcceptedAt directly rather

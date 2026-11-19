@@ -69,13 +69,13 @@ func (m *Mock) GetAgent(ctx context.Context, agentID string) (*Agent, error) {
 func (m *Mock) CreateAgent(ctx context.Context, req CreateAgentRequest) (*Agent, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	now := time.Now().Unix()
+	now := time.Now().UnixMilli()
+	// No version rows on create: the engine only writes user_canvas_version on
+	// POST /agents/{id}/publish. Inventing one here hid the fact that publishing
+	// through PUT (release=true) leaves the version history and rollback empty.
 	a := &mockAgent{
 		id: id.New(), title: req.Title, description: req.Description, canvasType: req.CanvasType,
 		canvasCategory: req.CanvasCategory, release: req.Release, dsl: req.Dsl, updateTime: now,
-		versions: []AgentVersion{{
-			ID: id.New(), Title: req.Title, Release: req.Release, Dsl: req.Dsl, UpdateTime: now,
-		}},
 	}
 	m.agents[a.id] = a
 	v := fromMockAgent(a)
@@ -95,16 +95,11 @@ func (m *Mock) UpdateAgent(ctx context.Context, agentID string, req UpdateAgentR
 	}
 	if req.Dsl != nil {
 		a.dsl = req.Dsl
-		now := time.Now().Unix()
-		a.versions = append(a.versions, AgentVersion{ID: id.New(), Title: a.title, Release: a.release, Dsl: req.Dsl, UpdateTime: now})
 	}
 	if req.Release != nil {
 		a.release = *req.Release
-		if len(a.versions) > 0 {
-			a.versions[len(a.versions)-1].Release = *req.Release
-		}
 	}
-	a.updateTime = time.Now().Unix()
+	a.updateTime = time.Now().UnixMilli()
 	return nil
 }
 
@@ -117,6 +112,31 @@ func (m *Mock) DeleteAgent(ctx context.Context, agentID string) error {
 	}
 	delete(m.agents, agentID)
 	return nil
+}
+
+// PublishAgentVersion snapshots a mock agent's DSL into a new version and marks
+// it released.
+func (m *Mock) PublishAgentVersion(ctx context.Context, agentID string) (*AgentVersion, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, err := m.agentMgr(agentID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UnixMilli()
+	v := AgentVersion{
+		ID:           id.New(),
+		UserCanvasID: a.id,
+		Title:        a.title,
+		Release:      true,
+		Dsl:          a.dsl,
+		UpdateTime:   now,
+	}
+	a.versions = append(a.versions, v)
+	a.release = true
+	a.updateTime = now
+	out := v
+	return &out, nil
 }
 
 // ListAgentVersions lists a mock agent's versions.

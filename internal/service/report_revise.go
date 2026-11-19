@@ -32,12 +32,20 @@ import (
 // while keeping regeneration unreachable by the creation key (§7.10 "不受创建
 // 幂等键拦截").
 
-// RegenerateReportRequest exists so the P0-A surface is explicit about what a
-// caller may NOT change: there are no fields. Re-running same conditions means the
-// request has nothing to say; a P0-B ability to override (rewrite only section X,
-// change evidence policy) would add fields here and re-freeze them onto the new
-// revision.
-type RegenerateReportRequest struct{}
+// RegenerateReportRequest carries the one thing a regeneration may change: which
+// sections it reuses instead of rewriting (doc/288 §9.8 / R14).
+//
+// Everything else stays frozen from the base revision — template, datasets, outline.
+// `ReuseSections` names base-revision section numbers (`ord`), not keys: the outline
+// is inherited, so the number is the stable identity a reader already sees. An empty
+// list means "同条件重生成", the P0-B behaviour, and is what an older caller gets.
+type RegenerateReportRequest struct {
+	ReuseSections []int `json:"reuse_sections"`
+	// ResearchDepth is optional on a rerun: empty inherits the base revision's
+	// depth. Changing it is allowed because the rerun writes a *new* revision, and
+	// §7.4 already treats "same report, different conditions" as a new version.
+	ResearchDepth string `json:"research_depth"`
+}
 
 // RegenerateReport starts one new run on an existing, already-published report.
 //
@@ -51,6 +59,7 @@ type RegenerateReportRequest struct{}
 // conflict it actually is.
 func (s *Service) RegenerateReport(
 	ctx context.Context, actorID, tenantID, reportID, idempotencyKey string,
+	req RegenerateReportRequest,
 ) (*CreateReportResult, error) {
 	if actorID == "" || tenantID == "" {
 		return nil, httperr.Forbidden("report regeneration requires an authenticated workspace")
@@ -66,7 +75,14 @@ func (s *Service) RegenerateReport(
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeReportRead(ctx, actorID, report); err != nil {
+	// A regeneration spends money and writes a new revision, so it stays owner-only:
+	// a share is a read grant, and `execute` on the surface is not a share grant
+	// (doc/296 §2.1).
+	if err := s.assertReportOwner(ctx, actorID, report); err != nil {
+		return nil, err
+	}
+	// An archived report produces nothing new (doc/297 §2): unarchive first.
+	if err := s.assertReportArchivedBlocksWork(report); err != nil {
 		return nil, err
 	}
 	if report.DeletedAt != nil {
@@ -108,6 +124,28 @@ func (s *Service) RegenerateReport(
 		return nil, httperr.Internal("report template is invalid")
 	}
 
+	// The reuse plan is validated against the base revision's *delivered* sections
+	// before anything is written: a request naming a section the base never wrote is
+	// a 400 (44105), not a quiet full rewrite. Freezing the plan on the revision row
+	// is what lets a retried slice inherit the same set (see report_reuse.go).
+	baseSections, err := s.Store.ListReportSections(ctx, tenantID, base.ID)
+	if err != nil {
+		return nil, err
+	}
+	reuseSections, err := normalizeReportReuseSections(req.ReuseSections, baseSections)
+	if err != nil {
+		return nil, err
+	}
+	reusePlanJSON, err := reportReusePlanJSON(reuseSections)
+	if err != nil {
+		return nil, err
+	}
+
+	// R18: empty inherits the base's depth; an explicit but unknown value is a 400.
+	researchDepth := researchDepthInherited(req.ResearchDepth, base.ResearchDepth)
+	if researchDepth == "" {
+		return nil, errReportOutlineInvalid("research_depth must be standard or deep")
+	}
 	now := time.Now().UTC()
 	eventClock := reportExpiry(now, s.ReportRetentionFor(ctx, tenantID).ReportEventDays, reportDefaultEventDays)
 	revisionID := id.New()
@@ -132,6 +170,14 @@ func (s *Service) RegenerateReport(
 		Status:              model.ReportRevisionDraft,
 		CreatedBy:           actorID,
 		CreatedAt:           now,
+		ReusePlanJSON:       reusePlanJSON,
+		// R18: depth is a revision property, and a regeneration inherits the base's
+		// baseline unless the request says otherwise. An empty request must not
+		// silently reset a deep report to standard (that would change every
+		// section's evidence set for free).
+		ResearchDepth: researchDepth,
+		Trigger:       base.Trigger,
+		ScheduleID:    base.ScheduleID,
 	}
 	job := &model.ReportJob{
 		ID:             jobID,
@@ -146,14 +192,16 @@ func (s *Service) RegenerateReport(
 		ProgressTotal:  len(payload.Sections),
 		BudgetJSON:     string(budgetJSON),
 		ReservedTokens: reportBudgetReservation(payload.Limits, len(payload.Sections)),
-		IdempotencyKey: storedKey,
-		UpdatedAt:      now,
+		// Frozen per revision (doc/296 §2.2): a regeneration is a new envelope.
+		ReportBudgetPolicy: s.reportBudgetPolicyFor(ctx, tenantID),
+		IdempotencyKey:     storedKey,
+		UpdatedAt:          now,
 	}
 	eventPayload, err := json.Marshal(map[string]interface{}{
 		"attempt_seq": job.AttemptSeq, "slice_seq": job.SliceSeq,
 		"template_key": base.TemplateKey, "template_version": base.TemplateVersion,
 		"revision": revision.Revision, "based_on_revision": base.Revision,
-		"regeneration": true,
+		"regeneration": true, "reuse_sections": reuseSections,
 	})
 	if err != nil {
 		return nil, err
@@ -198,6 +246,7 @@ func (s *Service) RegenerateReport(
 		"revision": revision.Revision, "based_on_revision": base.Revision,
 		"template_key": base.TemplateKey, "template_version": base.TemplateVersion,
 		"datasets_refresh": false, "budget_tokens": job.ReservedTokens, "idempotent": false,
+		"reuse_sections": reuseSections,
 	})
 	if err != nil {
 		return nil, err
@@ -297,5 +346,5 @@ func (s *Service) GetReportRevisionByNumber(
 	}
 	// Same aggregate as the current-revision read, so a superseded revision shows
 	// its own delivered files (A41) with the same derived `downloadable` flag.
-	return s.reportDetailWithEvidence(ctx, report, row)
+	return s.reportDetailWithEvidence(ctx, actorID, report, row)
 }

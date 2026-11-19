@@ -424,6 +424,92 @@ func TestCreateReportRefusesAutoOutlineWhileP0A(t *testing.T) {
 	}
 }
 
+// A70: `outline_confirmation=auto` needs two independent consents, and a refusal is
+// never a silent downgrade.
+//
+//  1. asking for `auto` against a template that says `required` is a 409 — the server
+//     will not decide for the owner, and it will not decide against the template;
+//  2. a workspace version may grant the permission, but only by naming who may use it
+//     (`auto_confirm_allowed_roles`), because permission without a role list hands it
+//     to everyone;
+//  3. when the workspace policy is `approval`, the same request is refused *and*
+//     audited — an operator who switched governance on needs to see owners hitting it;
+//  4. with template + policy both consenting, the revision freezes `auto` on the row.
+func TestReportAutoOutlineNeedsBothTemplateAndWorkspaceConsent(t *testing.T) {
+	fx := newReportFixture(t, "outline")
+	ctx := context.Background()
+	admin := fx.cloneActor(t)
+
+	autoRequest := func() CreateReportRequest {
+		req := reportCreateRequest("link-policy-outline")
+		req.OutlineConfirmation = model.ReportOutlineAuto
+		return req
+	}
+
+	// The platform baseline says `required`.
+	_, err := fx.svc.CreateReport(ctx, fx.owner.ID, fx.tenantID, "req-outline-0001", autoRequest())
+	var httpErr *httperr.Error
+	if !errors.As(err, &httpErr) || httpErr.Code != codeReportInvalidTransition || httpErr.Status != 409 {
+		t.Fatalf("want 409/%d, got %v", codeReportInvalidTransition, err)
+	}
+
+	// A workspace version may permit it — but not without naming the roles.
+	payload := templatePayloadWithName(t, fx, reportComplianceTemplateKey, "合规检查（自动）")
+	payload.OutlineConfirmation = model.ReportOutlineAuto
+	if _, err := fx.svc.PublishReportTemplate(ctx, admin.ID, fx.tenantID, ReportTemplatePublishRequest{
+		Key: reportComplianceTemplateKey, Payload: payload,
+	}); err == nil {
+		t.Fatal("auto without auto_confirm_allowed_roles must be rejected")
+	}
+	payload.AutoConfirmAllowedRoles = []string{model.RoleTenantAdmin}
+	if _, err := fx.svc.PublishReportTemplate(ctx, admin.ID, fx.tenantID, ReportTemplatePublishRequest{
+		Key: reportComplianceTemplateKey, Payload: payload,
+	}); err != nil {
+		t.Fatalf("publish an auto template: %v", err)
+	}
+
+	// Workspace policy `approval` is a governance stop: refused, audited, not downgraded.
+	if _, err := fx.svc.SetTenantReportPolicy(ctx, admin.ID, fx.tenantID, TenantReportPolicyRequest{
+		AutoConfirmPolicy: model.ReportAutoConfirmApproval,
+	}); err != nil {
+		t.Fatalf("set auto-confirm policy: %v", err)
+	}
+	_, err = fx.svc.CreateReport(ctx, fx.owner.ID, fx.tenantID, "req-outline-0002", autoRequest())
+	if !errors.As(err, &httpErr) || httpErr.Status != 409 {
+		t.Fatalf("a governed workspace must refuse auto, got %v", err)
+	}
+	refusals := fx.auditRows(t, "report.outline.auto_refused")
+	if len(refusals) != 1 {
+		t.Fatalf("the refusal must be audited once, got %d", len(refusals))
+	}
+	if refusals[0].Result != "DENIED" {
+		t.Fatalf("a refused governance question is a DENIED row, got %q", refusals[0].Result)
+	}
+
+	// Both consents present: the revision freezes `auto`, so a later policy flip cannot
+	// reinterpret a report that is already running.
+	if _, err := fx.svc.SetTenantReportPolicy(ctx, admin.ID, fx.tenantID, TenantReportPolicyRequest{
+		AutoConfirmPolicy: model.ReportAutoConfirmSelf,
+	}); err != nil {
+		t.Fatalf("reset auto-confirm policy: %v", err)
+	}
+	created, err := fx.svc.CreateReport(ctx, fx.owner.ID, fx.tenantID, "req-outline-0003", autoRequest())
+	if err != nil {
+		t.Fatalf("an owner asking for a permission the template grants must succeed: %v", err)
+	}
+	if created.Revision.OutlineConfirmation != model.ReportOutlineAuto {
+		t.Fatalf("the revision must freeze the chosen mode, got %q", created.Revision.OutlineConfirmation)
+	}
+	if _, err := fx.svc.SetTenantReportPolicy(ctx, admin.ID, fx.tenantID, TenantReportPolicyRequest{
+		AutoConfirmPolicy: model.ReportAutoConfirmApproval,
+	}); err != nil {
+		t.Fatalf("flip auto-confirm policy: %v", err)
+	}
+	if row := fx.reportRevision(t, created.Revision.ID); row.OutlineConfirmation != model.ReportOutlineAuto {
+		t.Fatalf("a policy flip must not rewrite a frozen revision, got %q", row.OutlineConfirmation)
+	}
+}
+
 func TestSoftDeleteReportKeepsTTLAndSecondDeleteIsNotFound(t *testing.T) {
 	fx := newReportFixture(t, "delete")
 	ctx := context.Background()

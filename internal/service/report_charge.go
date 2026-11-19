@@ -28,6 +28,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -88,6 +89,11 @@ type ReportChargeUsage struct {
 	// SoftLimited is true once spend passed the 95% mark: in-flight work may
 	// finish, but no new section starts.
 	SoftLimited bool `json:"soft_limited"`
+	// BudgetPolicy is the frozen policy of this job: `enforce` or `observe`.
+	BudgetPolicy string `json:"budget_policy"`
+	// Observing is true when the envelope is a measurement, not a limit. The UI must
+	// say so next to the numbers, otherwise "1.2× budget" reads as a violation.
+	Observing bool `json:"observing"`
 }
 
 // ReportChargeSweep reports one reconcile pass over the ledger.
@@ -331,10 +337,18 @@ func reportChargeUsageFrom(job *model.ReportJob, sums repository.ReportChargeSum
 	}
 	soft := job.ReservedTokens > 0 &&
 		float64(sums.Actual) >= float64(job.ReservedTokens)*reportBudgetSoftRatio
+	policy := strings.TrimSpace(job.ReportBudgetPolicy)
+	if policy == "" {
+		// A row written before the column existed is `enforce`: that is what it was
+		// actually billed under, and re-reading the tenant switch here would let an
+		// old job change rules.
+		policy = model.ReportBudgetEnforce
+	}
 	return ReportChargeUsage{
 		Budget: job.ReservedTokens, Held: sums.Held, Actual: sums.Actual,
 		Charged: sums.Charged, Pending: sums.Orphan,
 		Available: available, SoftLimited: soft,
+		BudgetPolicy: policy, Observing: policy == model.ReportBudgetObserve,
 	}
 }
 
@@ -342,8 +356,10 @@ func reportChargeUsageFrom(job *model.ReportJob, sums repository.ReportChargeSum
 //
 //  1. a job with no envelope cannot be charged at all — that is a bookkeeping bug,
 //     not a user-facing limit, so it is 44112 and fails closed;
-//  2. `budget − actual − held` must cover the call being reserved;
-//  3. once spend passes the soft ratio, no *new* section starts.
+//  2. [`observe` only] stop here: the envelope is being measured, so the call is
+//     recorded and never refused (doc/296 §2.2);
+//  3. `budget − actual − held` must cover the call being reserved;
+//  4. once spend passes the soft ratio, no *new* section starts.
 //
 // Pending (`orphan`, unverified) is disclosed but not subtracted: it may still turn
 // into an actual settle, and subtracting it twice would strand a budget that was
@@ -351,6 +367,12 @@ func reportChargeUsageFrom(job *model.ReportJob, sums repository.ReportChargeSum
 func reportChargeGate(usage ReportChargeUsage, reserve int64, jobID string) error {
 	if usage.Budget <= 0 {
 		return errReportLedgerInconsistent("report job " + jobID + " has no budget envelope")
+	}
+	// `observe` keeps every other step intact — the reservation is still written, the
+	// usage is still summed, the overage is still audited — and only drops the two
+	// refusals. It is a measurement mode, not an unmetered mode.
+	if usage.Observing {
+		return nil
 	}
 	if reserve > 0 && usage.Available < reserve {
 		return errReportBudgetExhausted(fmt.Sprintf(

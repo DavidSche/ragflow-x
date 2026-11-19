@@ -278,6 +278,169 @@ func (s *store) BeginReportSection(ctx context.Context, start ReportSectionStart
 	return applied, nil
 }
 
+// ReportSectionReuse carries one base section into a new revision (doc/288 §7.4 /
+// R14).
+//
+// The caller prepares the *new* rows — new ids, new `revision_id`/`section_id`,
+// same `evidence_snapshot_id` — because id minting is the service's job
+// (`reportRowID`); this type exists so the copy is one transaction instead of four
+// writes that can half-fail. The snapshot ids are deliberately *reused*: a snapshot
+// is an immutable observation of a source (§7.5.1), so two revisions citing the
+// same chunk should share it rather than freeze a second copy of the same bytes.
+type ReportSectionReuse struct {
+	TenantID   string
+	JobID      string
+	RevisionID string
+	// SectionID is the new revision's `pending` row to fill in.
+	SectionID string
+	// BaseSection is the live section row being inherited. It is read inside the
+	// transaction, not passed in: the caller's copy could be stale, and
+	// `based_on_section_version` must name the version that actually exists.
+	BaseSectionID string
+	Now           time.Time
+	Stage         string
+	// Citations and Claims are the copies to insert, already re-keyed onto the new
+	// section. An empty list is legitimate (a section written with no evidence).
+	Citations []model.ReportCitation
+	Claims    []model.ReportClaim
+	Event     *model.ReportJobEvent
+}
+
+// ReuseReportSection inherits one section body and its evidence links.
+//
+// `applied=false` is a *normal* answer with two causes, both handled by the caller
+// writing the section normally instead:
+//
+//   - the target row is no longer `pending` (a retried outline step, or a
+//     concurrent slice already wrote it) — the CAS declined;
+//   - a cited evidence snapshot is gone. This is the case that matters: inheriting
+//     the body and the citation *rows* while the snapshot they point at has expired
+//     produces a searchable-looking report whose appendix cannot be exported
+//     (§7.6 / A43 answer 44116). The copy is refused instead, so a reuse request can
+//     degrade to a fresh write but never to an unexportable report.
+func (s *store) ReuseReportSection(ctx context.Context, plan ReportSectionReuse) (bool, error) {
+	applied := false
+	err := s.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var base model.ReportSection
+		if err := tx.Where("tenant_id = ? AND id = ?", plan.TenantID, plan.BaseSectionID).
+			First(&base).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if base.Status != model.ReportSectionSucceeded {
+			// Only a written body is inheritable. A failed or skipped base row would
+			// copy a hole and label it as content.
+			return nil
+		}
+		if err := assertReportSnapshotsLiveInTx(tx, plan.TenantID, plan.Citations); err != nil {
+			if errors.Is(err, errReportReuseEvidenceMissing) {
+				// Evidence gone: decline the inheritance, let the caller write the
+				// section normally. Not an error — the request was fine.
+				return nil
+			}
+			return err
+		}
+		result := tx.Model(&model.ReportSection{}).
+			Where(`tenant_id = ? AND revision_id = ? AND id = ? AND status = ?`,
+				plan.TenantID, plan.RevisionID, plan.SectionID, model.ReportSectionPending).
+			Updates(map[string]interface{}{
+				"status":                   model.ReportSectionSucceeded,
+				"based_on_section_version": base.SectionVersion,
+				"rewrite_reason":           model.ReportRewriteReasonReuse,
+				"content_md":               base.ContentMD,
+				"content_hash":             base.ContentHash,
+				"prompt_hash":              base.PromptHash,
+				"tokens_in":                base.TokensIn,
+				"tokens_out":               base.TokensOut,
+				"citation_count":           len(plan.Citations),
+				"claim_count":              len(plan.Claims),
+				"evidence_status":          base.EvidenceStatus,
+				"quality_status":           base.QualityStatus,
+				"finished_at":              plan.Now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		if len(plan.Citations) > 0 {
+			if err := tx.Create(&plan.Citations).Error; err != nil {
+				return err
+			}
+		}
+		if len(plan.Claims) > 0 {
+			if err := tx.Create(&plan.Claims).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&model.ReportJob{}).
+			Where("tenant_id = ? AND id = ?", plan.TenantID, plan.JobID).
+			Updates(map[string]interface{}{
+				"progress_done":      gorm.Expr("CASE WHEN progress_done + 1 > progress_total THEN progress_total ELSE progress_done + 1 END"),
+				"stage":              plan.Stage,
+				"last_checkpoint_at": plan.Now,
+				"updated_at":         plan.Now,
+			}).Error; err != nil {
+			return err
+		}
+		if plan.Event != nil {
+			if _, err := appendReportEventInTx(tx, plan.Event); err != nil {
+				return err
+			}
+		}
+		applied = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return applied, nil
+}
+
+// assertReportSnapshotsLiveInTx refuses to copy citations whose snapshot is gone.
+//
+// One query for the whole set: the reuse path must not become a per-citation read,
+// and "all present" is the only answer that permits the copy — a partial answer
+// would silently drop a citation and leave a `[3]` marker pointing at nothing.
+func assertReportSnapshotsLiveInTx(
+	tx *gorm.DB, tenantID string, citations []model.ReportCitation,
+) error {
+	ids := make([]string, 0, len(citations))
+	seen := make(map[string]struct{}, len(citations))
+	for _, citation := range citations {
+		id := citation.EvidenceSnapshotID
+		if id == "" {
+			return errReportReuseEvidenceMissing
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var live int64
+	if err := tx.Model(&model.ReportEvidenceSnapshot{}).
+		Where("tenant_id = ? AND id IN ?", tenantID, ids).
+		Count(&live).Error; err != nil {
+		return err
+	}
+	if live != int64(len(ids)) {
+		return errReportReuseEvidenceMissing
+	}
+	return nil
+}
+
+// errReportReuseEvidenceMissing is the internal signal for "this section cannot be
+// inherited". It is mapped to `applied=false` by the caller, never returned to a
+// client: the reuse request was valid, the knowledge base simply moved on.
+var errReportReuseEvidenceMissing = errors.New("report section reuse: evidence snapshot is no longer available")
+
 // ReportSectionCommit writes the section, its citations and its evidence.
 type ReportSectionCommit struct {
 	TenantID string
@@ -288,9 +451,14 @@ type ReportSectionCommit struct {
 	// status or a key change through this path.
 	Section   model.ReportSection
 	Citations []model.ReportCitation
-	Evidence  []model.ReportEvidenceSnapshot
-	Stage     string
-	Event     *model.ReportJobEvent
+	// Claims are the R11 rows extracted from the body (§9.2). They are written in
+	// the same transaction as the content because a claim row that outlived its
+	// body, or a body whose claims were dropped, is exactly the unattributable
+	// report the claim table exists to prevent.
+	Claims   []model.ReportClaim
+	Evidence []model.ReportEvidenceSnapshot
+	Stage    string
+	Event    *model.ReportJobEvent
 }
 
 // CommitReportSection is the section's happy ending: content, hashes, tokens,
@@ -313,7 +481,11 @@ func (s *store) CommitReportSection(ctx context.Context, commit ReportSectionCom
 				"claim_count":     commit.Section.ClaimCount,
 				"evidence_status": commit.Section.EvidenceStatus,
 				"quality_status":  commit.Section.QualityStatus,
-				"finished_at":     commit.Now,
+				// R18: what the deep-research planner asked for and what it added.
+				// Written in the same statement as the body so a section can never
+				// claim a plan it was not written under.
+				"research_plan_json": commit.Section.ResearchPlanJSON,
+				"finished_at":        commit.Now,
 			})
 		if result.Error != nil {
 			return result.Error
@@ -338,6 +510,11 @@ func (s *store) CommitReportSection(ctx context.Context, commit ReportSectionCom
 		}
 		if len(commit.Citations) > 0 {
 			if err := tx.Create(&commit.Citations).Error; err != nil {
+				return err
+			}
+		}
+		if len(commit.Claims) > 0 {
+			if err := tx.Create(&commit.Claims).Error; err != nil {
 				return err
 			}
 		}

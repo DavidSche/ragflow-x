@@ -147,7 +147,7 @@ func TestDispatchReportJobArmsFirstSlice(t *testing.T) {
 		t.Fatalf("slice payload must parse: %v", err)
 	}
 	if payload.ReportJobID != created.Job.ID || payload.SliceSeq != 1 ||
-		payload.AttemptSeq != 1 || payload.StartOrd != 0 || payload.RevisionID != created.Revision.ID {
+		payload.AttemptSeq != 1 || payload.StartOrd != 1 || payload.RevisionID != created.Revision.ID {
 		t.Fatalf("slice payload must carry the business identity: %+v", payload)
 	}
 	if count := fx.countSlices(t, created.Job.ID); count != 1 {
@@ -304,8 +304,8 @@ func TestYieldReportSliceAdvancesPointerAndAnnouncesCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if payload.StartOrd != 2 {
-		t.Fatalf("the resumed slice must start at the first unfinished ord (2), got %d", payload.StartOrd)
+	if payload.StartOrd != 3 {
+		t.Fatalf("the resumed slice must start at the first unfinished ord (3), got %d", payload.StartOrd)
 	}
 	if count := fx.countSlices(t, created.Job.ID); count != 2 {
 		t.Fatalf("yield must map the new slice too, got %d mappings", count)
@@ -628,5 +628,38 @@ func TestReportSliceOwnershipRequiresCurrentPointer(t *testing.T) {
 	job.SliceSeq = 3
 	if payload.owns(job, "rt-2") {
 		t.Fatal("a bumped slice seq must not own the job")
+	}
+}
+
+// TestReportNextStartOrdCountsFromOne pins the resume pointer against the same
+// 1-based `ord` the rows carry.
+//
+// The fallback used to be `len(sections)`, which is only the resume point when the
+// first ordinal is 0 — i.e. in the old fixture, never in the database.
+func TestReportNextStartOrdCountsFromOne(t *testing.T) {
+	cases := []struct {
+		name     string
+		sections []model.ReportSection
+		want     int
+	}{
+		{"no sections yet", nil, 1},
+		{"all succeeded", []model.ReportSection{
+			{Ord: 1, Status: model.ReportSectionSucceeded},
+			{Ord: 2, Status: model.ReportSectionSucceeded},
+		}, 3},
+		{"first unfinished wins", []model.ReportSection{
+			{Ord: 1, Status: model.ReportSectionSucceeded},
+			{Ord: 2, Status: model.ReportSectionFailed},
+			{Ord: 3, Status: model.ReportSectionSucceeded},
+		}, 2},
+		{"superseded history is skipped but still counted", []model.ReportSection{
+			{Ord: 1, Status: model.ReportSectionSuperseded},
+			{Ord: 2, Status: model.ReportSectionSucceeded},
+		}, 3},
+	}
+	for _, test := range cases {
+		if got := reportNextStartOrd(test.sections); got != test.want {
+			t.Fatalf("%s: resume ord is %d, want %d", test.name, got, test.want)
+		}
 	}
 }

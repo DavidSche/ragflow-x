@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -176,7 +177,25 @@ func (s *Service) runReportOutlineStep(
 	// informed (doc/288 §9.6). Frozen on the section rows in the same transaction
 	// as the outline, so "what did the knowledge base hold when this was approved"
 	// stays answerable after the run.
-	s.attachReportEvidencePreview(ctx, tenantID, sections, bindings, templatePayload.Retrieval)
+	previews := s.attachReportEvidencePreview(ctx, tenantID, sections, bindings, templatePayload.Retrieval)
+	// R17: compiled artifacts become *locators* for the section that retrieved from
+	// the documents they were built from. They are frozen here, with the outline, and
+	// never reach the citation chain (doc/295 A54).
+	s.attachReportLocationHints(ctx, tenantID, sections, previews)
+	// The same locators are copied onto the outline payload the confirmation screen
+	// reads. The section rows are the source of truth (the writer reads them); the
+	// outline copy exists because the reviewer approves the outline, not the rows.
+	for index := range outline.Sections {
+		if index >= len(sections) {
+			break
+		}
+		for _, hint := range parseReportLocationHints(sections[index].LocationHintsJSON) {
+			if line := reportLocationHintText(hint); line != "" {
+				outline.Sections[index].LocationHints = append(
+					outline.Sections[index].LocationHints, line)
+			}
+		}
+	}
 
 	snapshot := reportExecutionSnapshot{
 		TemplateKey: templateRow.TemplateKey, TemplateVersion: templateRow.Version,
@@ -387,10 +406,35 @@ type reportSectionRun struct {
 	// `budget_exhausted` instead of "someone forgot them".
 	budgetBlocked bool
 	truncated     int
+	// reuseApplied reports how many sections this slice inherited from the base
+	// revision instead of writing them (R14). It is logged and disclosed in the
+	// slice checkpoint event; a section that was reused always says so on its own
+	// row (`rewrite_reason=reuse`), so the count is not the only evidence.
+	reuseApplied int
 }
 
 // execute drives the section loop.
 func (r *reportSectionRun) execute() error {
+	// Reuse happens before the first section is picked, not per section: inheriting a
+	// body after the writer already retrieved evidence for it would pay for the call
+	// and then throw the answer away. A declined reuse (`applied=false`) is normal —
+	// the section is simply written normally below.
+	reused, err := r.svc.applyReportSectionReuse(
+		r.ctx, r.tenantID, r.business.ID, r.stage, r.revision, r.sections, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	r.reuseApplied = reused
+	if reused > 0 {
+		// The working set is re-read: the rows this just filled in are now
+		// `succeeded`, and the loop's own status walk must see that rather than the
+		// stale `pending` copies it was handed.
+		fresh, err := r.svc.Store.ListReportSections(r.ctx, r.tenantID, r.revision.ID)
+		if err != nil {
+			return err
+		}
+		r.sections = reportActiveSections(fresh)
+	}
 	for {
 		if err := r.ctx.Err(); err != nil {
 			// The lease is gone. Nothing is rolled back: finished sections stay
@@ -595,7 +639,7 @@ func (r *reportSectionRun) writeSectionAttempt(section *model.ReportSection) (te
 		}
 		return false, false, false, err
 	}
-	evidence, truncated, retrieveErr := r.retrieve(section)
+	evidence, truncated, plan, retrieveErr := r.gatherEvidence(section)
 	if retrieveErr != nil {
 		// Nothing was sent to the model, so the reservation is refunded rather than
 		// written down as unknown spend.
@@ -610,7 +654,8 @@ func (r *reportSectionRun) writeSectionAttempt(section *model.ReportSection) (te
 	}
 	instruction := r.sectionInstruction(section.SectionKey)
 	prompt := reportSectionPrompt(r.report.Question, *section, instruction,
-		sectionMaxWords(r.template, section.SectionKey), r.priorSections(section), evidence)
+		sectionMaxWords(r.template, section.SectionKey), r.priorSections(section), evidence,
+		parseReportLocationHints(section.LocationHintsJSON))
 
 	applied, err := r.svc.Store.BeginReportSection(r.ctx, repository.ReportSectionStart{
 		TenantID: r.tenantID, JobID: r.business.ID, RevisionID: r.revision.ID,
@@ -618,6 +663,7 @@ func (r *reportSectionRun) writeSectionAttempt(section *model.ReportSection) (te
 		PromptHash: hashReportPrompt(prompt), Stage: model.ReportStageSectionWriting,
 		Event: r.event(reportEventSectionStarted, section, map[string]interface{}{
 			"attempt": section.Attempt + 1, "evidence": len(evidence), "truncated": truncated,
+			"research_depth": plan.Depth, "research_planning": plan.Planning,
 		}, now),
 	})
 	if err != nil {
@@ -661,12 +707,25 @@ func (r *reportSectionRun) writeSectionAttempt(section *model.ReportSection) (te
 	if !settled {
 		return false, false, false, fmt.Errorf("report charge %s could not be settled", charge.LedgerKey)
 	}
+	if detail, isEnvelope := reportModelErrorContent(reply.Text); isEnvelope {
+		// The provider answered — and was billed — but what came back is the engine's
+		// component-error envelope, not a section (see `reportModelErrorContent`).
+		// The charge stays settled because a call really happened; the *content* must
+		// not, so this is an unusable attempt that retries like any other, and a
+		// section that keeps getting envelopes closes `failed` and is disclosed as a
+		// gap. Either way the deliverable never carries the error string.
+		logger.Warn("report section answered with a provider error envelope",
+			"report_job_id", r.business.ID, "ord", section.Ord,
+			"section_key", section.SectionKey, "detail", detail)
+		return r.retryOrClose(section, fmt.Errorf(
+			"provider returned an error envelope instead of a section: %s", detail), now)
+	}
 	if reportNormalizeContent(reply.Text) == "" {
 		// The call happened and was billed, but the answer was empty: an unusable
 		// attempt, so it retries like any other (§7.9) instead of ending the section.
 		return r.retryOrClose(section, errors.New("model returned an empty section"), now)
 	}
-	terminal, blocked, err = r.commitSection(section, reply, evidence, now)
+	terminal, blocked, err = r.commitSection(section, reply, evidence, plan, now)
 	return terminal, blocked, false, err
 }
 
@@ -756,7 +815,7 @@ func (r *reportSectionRun) settleCall(
 // `quality_status=needs_review`.
 func (r *reportSectionRun) commitSection(
 	section *model.ReportSection, reply reportModelReply,
-	evidence []reportEvidenceItem, now time.Time,
+	evidence []reportEvidenceItem, plan reportResearchPlan, now time.Time,
 ) (bool, bool, error) {
 	content := reportNormalizeContent(reply.Text)
 	if content == "" {
@@ -777,8 +836,15 @@ func (r *reportSectionRun) commitSection(
 		}
 	}
 	cited := reportCitedIndexes(content, len(evidence))
-	evidenceStatus := reportEvidenceStatus(
+	baseEvidenceStatus := reportEvidenceStatus(
 		section.RequiresEvidence, len(evidence), len(cited), r.template.Retrieval.MinEvidence)
+	// R12 (doc/288 §9.3): the P0 rule says "did this section cite enough evidence";
+	// it cannot see that two cited documents disagree about a number. The signals are
+	// computed from the evidence the writer was shown and only ever *escalate* the
+	// disclosure — `unsupported` and `not_required` stay as they are, because a
+	// section that never claimed support cannot become "conflicting".
+	signals := reportEvidenceSignals(evidence)
+	evidenceStatus := reportEvidenceStatusWithSignals(baseEvidenceStatus, signals)
 	// The P0 quality gate is mechanical, and these are its only two rules (§14.2):
 	// the section cites evidence when its template requires evidence, and the
 	// citations actually resolve. Anything else — fewer citations than the template
@@ -797,6 +863,24 @@ func (r *reportSectionRun) commitSection(
 		}
 		citations = append(citations, r.citation(section, item, now))
 	}
+	// R11 (doc/288 §9.2): the claims are extracted from the body that was just
+	// written and stored beside it, so "which sentence asserted this, and did the
+	// cited chunk support it" stops being a re-read of the prose. The same pass
+	// supplies `citation.claim_id`, which is what makes 标记 ↔ 引用行 ↔ claim one
+	// chain instead of three agreements by convention.
+	drafts := reportExtractClaims(content, evidence)
+	claims := reportClaimRows(drafts, r.tenantID, r.revision.ID, section)
+	claimOfMarker := reportClaimCitationLinks(drafts)
+	claimIDOfOrd := make(map[int]string, len(claims))
+	for _, claim := range claims {
+		claimIDOfOrd[claim.Ord] = claim.ID
+	}
+	for index := range citations {
+		// The citation points at the claim that first used its marker: the unique
+		// index is `(section, ord)`, so "the first sentence to cite chunk 3" is the
+		// only stable answer when several sentences share a marker.
+		citations[index].ClaimID = claimIDOfOrd[claimOfMarker[citations[index].Ord]]
+	}
 	// The evidence clock is `max(report_days, report_evidence_days)`, never the
 	// report clock alone: a snapshot that expires before the report citing it turns
 	// "有据可查" into a false promise (doc/288 §7.6 invariant ②).
@@ -812,15 +896,25 @@ func (r *reportSectionRun) commitSection(
 			ID: section.ID, RevisionID: r.revision.ID, Attempt: section.Attempt,
 			ContentMD: content, ContentHash: hashReportContent(content),
 			TokensIn: reply.TokensIn, TokensOut: reply.TokensOut,
-			CitationCount: len(citations), ClaimCount: 0,
+			CitationCount: len(citations), ClaimCount: len(claims),
 			EvidenceStatus: evidenceStatus, QualityStatus: qualityStatus,
+			// R18's disclosure travels with the body: `standard` for a normal run,
+			// and one of the three fallback words when deep research degraded.
+			ResearchPlanJSON: researchPlanJSON(plan),
 		},
-		Citations: citations, Evidence: evidenceRows, Stage: model.ReportStageSectionWriting,
+		Citations: citations, Claims: claims, Evidence: evidenceRows,
+		Stage: model.ReportStageSectionWriting,
 		Event: r.event(reportEventSectionSucceeded, section, map[string]interface{}{
 			"citation_count": len(citations), "evidence_status": evidenceStatus,
 			"quality_status": qualityStatus, "tokens_in": reply.TokensIn,
 			"dangling_citations": dangling,
 			"tokens_out":         reply.TokensOut, "usage_estimated": !reply.UsageReported,
+			"claim_count":           len(claims),
+			"evidence_signal_count": len(signals),
+			"evidence_signals":      reportEvidenceSignalKinds(signals),
+			"research_depth":        plan.Depth,
+			"research_planning":     plan.Planning,
+			"research_merged":       plan.Merged,
 		}, now),
 	}
 	applied, err := r.svc.Store.CommitReportSection(r.ctx, commit)
@@ -838,11 +932,13 @@ func (r *reportSectionRun) commitSection(
 	section.Status = model.ReportSectionSucceeded
 	section.ContentMD = content
 	section.CitationCount = len(citations)
+	section.ClaimCount = len(claims)
 	section.EvidenceStatus = evidenceStatus
 	section.QualityStatus = qualityStatus
 	logger.Info("report section written",
 		"report_job_id", r.business.ID, "ord", section.Ord, "section_key", section.SectionKey,
-		"citations", len(citations), "evidence_status", evidenceStatus)
+		"citations", len(citations), "claims", len(claims),
+		"evidence_status", evidenceStatus)
 	return true, false, nil
 }
 
@@ -1027,12 +1123,21 @@ func (r *reportSectionRun) reservedTokens() int64 {
 
 // retrieve fetches the section's evidence from the frozen dataset bindings.
 func (r *reportSectionRun) retrieve(section *model.ReportSection) ([]reportEvidenceItem, bool, error) {
+	return r.retrieveQuery(section, section.Query)
+}
+
+// retrieveQuery is one retrieval against the frozen bindings. R18's planner supplies
+// the query; the standard path passes the section query itself, so both depths go
+// through one code path and one bounding rule.
+func (r *reportSectionRun) retrieveQuery(
+	section *model.ReportSection, query string,
+) ([]reportEvidenceItem, bool, error) {
 	engineDatasetIDs := make([]string, 0, len(r.snapshot.Datasets))
 	for _, binding := range r.snapshot.Datasets {
 		engineDatasetIDs = append(engineDatasetIDs, binding.EngineDatasetID)
 	}
 	req := ragflow.RetrieveDatasetsRequest{
-		DatasetIDs: engineDatasetIDs, Question: section.Query,
+		DatasetIDs: engineDatasetIDs, Question: query,
 		Page: 1, PageSize: r.snapshot.Retrieval.TopK,
 		// `nil` is the honest value: the workspace holds no calibrated cutoff, so the
 		// engine applies its own. The snapshot records the policy and the absence.
@@ -1078,12 +1183,12 @@ func (r *reportSectionRun) retrieve(section *model.ReportSection) ([]reportEvide
 			DocumentID:    documentID,
 			EngineDataset: engineDataset,
 			DatasetLabel:  r.datasetLabel(engineDataset),
-			DocumentLabel: firstNonEmptyString(
-				stringFromAny(chunk["document_name"]), stringFromAny(chunk["doc_name"]), documentID),
+			DocumentLabel: reportChunkDocumentLabel(chunk, documentID),
 			Content:       content,
 			SourceContent: strings.TrimSpace(content),
 			ContentHash:   sha256Hex(strings.TrimSpace(content)),
 			Score:         reportChunkScore(chunk),
+			ScoreType:     reportChunkScoreType(chunk),
 		})
 	}
 	bounded, truncated := boundReportEvidence(items)
@@ -1155,7 +1260,7 @@ func (r *reportSectionRun) citation(
 		ReferencedAt:          now,
 		ReferencedBy:          r.report.OwnerUserID,
 		RetrievalScore:        item.Score,
-		RetrievalScoreType:    "similarity",
+		RetrievalScoreType:    reportScoreTypeOrHybrid(item.ScoreType),
 		Snippet:               snippet,
 		UsedInText:            true,
 		// EvidenceUsage (doc/288 §7.5.1, A37). The snapshot row is deduplicated by
@@ -1498,6 +1603,43 @@ func reportChunkScore(chunk map[string]interface{}) float64 {
 	return 0
 }
 
+// reportChunkScoreType names the signal behind the score the engine reported.
+//
+// The engine answers all three keys (`similarity`, `vector_similarity`,
+// `term_similarity`), so the components are what tell the cases apart: both present
+// means the number is a fused ranking, only one present means the other contributed
+// nothing. A lone `similarity` is still the engine's fused score — labelling it
+// `vector` would claim a comparability with a raw cosine score that the number does
+// not have (§7.5: the three values are kept apart precisely because the numbers are
+// not comparable).
+func reportChunkScoreType(chunk map[string]interface{}) string {
+	_, vector := chunk["vector_similarity"].(float64)
+	_, term := chunk["term_similarity"].(float64)
+	switch {
+	case vector && term:
+		return model.ReportRetrievalScoreHybrid
+	case term:
+		return model.ReportRetrievalScoreTerm
+	case vector:
+		return model.ReportRetrievalScoreVector
+	default:
+		return model.ReportRetrievalScoreHybrid
+	}
+}
+
+// reportScoreTypeOrHybrid keeps the closed set closed: a citation row must never
+// carry an empty or unknown type, because the appendix prints it and a blank there
+// reads as "unit unknown" rather than "unrecorded".
+func reportScoreTypeOrHybrid(kind string) string {
+	switch kind {
+	case model.ReportRetrievalScoreVector, model.ReportRetrievalScoreTerm,
+		model.ReportRetrievalScoreHybrid:
+		return kind
+	default:
+		return model.ReportRetrievalScoreHybrid
+	}
+}
+
 // sectionMaxWords is the section's length budget from the pinned template.
 func sectionMaxWords(payload *ReportTemplatePayload, sectionKey string) int {
 	for _, declared := range payload.Sections {
@@ -1533,4 +1675,41 @@ func reportRowID(prefix string, parts ...string) string {
 		keep = 1
 	}
 	return prefix + "-" + digest[:keep]
+}
+
+// reportClaimRows shapes the extracted claims into rows of the new section version.
+//
+// The ids are derived from `(section_id, ord)`, which is exactly the unique index of
+// the table: a commit replayed after a transport failure would try to insert the
+// same ids and fail loudly instead of writing a second claim set for the same body.
+func reportClaimRows(
+	drafts []reportClaimDraft, tenantID, revisionID string, section *model.ReportSection,
+) []model.ReportClaim {
+	rows := make([]model.ReportClaim, 0, len(drafts))
+	for _, draft := range drafts {
+		rows = append(rows, model.ReportClaim{
+			ID:         reportRowID("claim", section.ID, strconv.Itoa(draft.Ord)),
+			TenantID:   tenantID,
+			RevisionID: revisionID,
+			SectionID:  section.ID, SectionOrd: section.Ord,
+			SectionVersion: section.SectionVersion,
+			Ord:            draft.Ord, ClaimText: draft.Text,
+			ClaimType: draft.Type, SupportStatus: draft.Support,
+		})
+	}
+	return rows
+}
+
+// reportEvidenceSignalKinds lists the signal kinds for the event payload. The
+// payload is what an SSE reader shows while the report is still being written, and
+// "this section's sources disagree" belongs there: it is the disclosure the user can
+// still act on, unlike the finished appendix.
+func reportEvidenceSignalKinds(signals []reportEvidenceSignal) []string {
+	kinds := make([]string, 0, len(signals))
+	for _, signal := range signals {
+		if !containsString(kinds, signal.Kind) {
+			kinds = append(kinds, signal.Kind)
+		}
+	}
+	return kinds
 }

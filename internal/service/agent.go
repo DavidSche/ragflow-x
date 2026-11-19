@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -13,6 +15,46 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
+
+// agentUpstreamError maps a provider failure onto the platform error space.
+//
+// An upstream "not found" means the resource behind this call is gone (deleted
+// session, deleted version), not that the gateway failed. Flattening it into
+// 502/5028x made a user-deleted session look like an engine outage: the UI showed
+// a gateway error and kept the row on screen instead of removing it.
+//
+// The engine signals a missing resource in the envelope, often with HTTP 200:
+// `GET /v1/agents/{id}/sessions/{gone}` answers `200 {"code":404,"message":
+// "agent session not found"}`. Checking only the HTTP status missed exactly the
+// case this helper exists for.
+func agentUpstreamError(err error, code int, msg, notFoundMsg string) error {
+	var re *ragflow.Error
+	if errors.As(err, &re) && (re.HTTPStatus == http.StatusNotFound || re.Code == http.StatusNotFound) {
+		return httperr.NotFound(notFoundMsg)
+	}
+	return httperr.New(502, code, msg)
+}
+
+// rejectPipelineCanvasChat refuses chat traffic aimed at a data-pipeline canvas.
+//
+// A dataflow_canvas has no conversation: it parses documents (File -> Parser ->
+// Chunker -> Tokenizer) and its run surface is a dataset parse, not a chat turn.
+// Without this guard the engine answers 200 plus a node-level failure frame
+// (`component "File" invoke: File: file: inputs missing doc_id or file[0].name`),
+// which the UI renders inside the answer bubble as if the assistant said it.
+// Refuse with a translatable 4xx instead, and never let the guard block a
+// legitimate chat when the upstream read itself fails.
+func (s *Service) rejectPipelineCanvasChat(ctx context.Context, agentID string) error {
+	live, err := s.RAGFlow.GetAgent(ctx, agentID)
+	if err != nil || live == nil {
+		return nil
+	}
+	if live.CanvasCategory != model.AgentCanvasCategoryDataflow {
+		return nil
+	}
+	return httperr.BadRequest(40162,
+		"this canvas is a data pipeline, not a conversational agent: bind it to a dataset parse instead of sending chat messages")
+}
 
 // ListAgents returns the tenant's agents (or all tenants for scopeAll).
 func (s *Service) ListAgents(ctx context.Context, tenantID string, scopeAll bool, filter repository.AgentFilter, page, pageSize int) ([]model.AgentShadow, int64, error) {
@@ -237,9 +279,31 @@ func (s *Service) UpdateAgent(ctx context.Context, tenantID, agentID, title stri
 }
 
 // PublishAgent is the dedicated publish/unpublish toggle (release).
+//
+// Publishing goes through RAGFlow's POST /agents/{id}/publish because that is
+// the only call that writes an immutable version row; an update with
+// release=true flips the flag but leaves the version history empty. Unpublish
+// has no dedicated endpoint, so it stays a release=false update.
 func (s *Service) PublishAgent(ctx context.Context, tenantID, agentID string, release bool, scopeAll bool) (*model.AgentShadow, error) {
-	r := release
-	return s.UpdateAgent(ctx, tenantID, agentID, "", nil, &r, scopeAll)
+	if !release {
+		return s.UpdateAgent(ctx, tenantID, agentID, "", nil, &release, scopeAll)
+	}
+	a, err := s.Store.GetAgentShadow(ctx, tenantID, agentID, scopeAll)
+	if err != nil {
+		return nil, err
+	}
+	if a == nil {
+		return nil, httperr.NotFound("agent not found")
+	}
+	if _, err := s.RAGFlow.PublishAgentVersion(ctx, agentID); err != nil {
+		return nil, agentUpstreamError(err, 50290, "ragflow publish agent version failed", "agent not found")
+	}
+	a.Release = true
+	a.UpdatedAt = time.Now().UTC()
+	if err := s.Store.UpsertAgentShadow(ctx, a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // DeleteAgent deletes an agent the caller owns.
@@ -252,7 +316,7 @@ func (s *Service) DeleteAgent(ctx context.Context, tenantID, agentID string, sco
 		return httperr.NotFound("agent not found")
 	}
 	if err := s.RAGFlow.DeleteAgent(ctx, agentID); err != nil {
-		return httperr.New(502, 50283, "ragflow delete agent failed")
+		return agentUpstreamError(err, 50283, "ragflow delete agent failed", "agent not found")
 	}
 	if err := s.Store.DeleteAssistantCatalog(ctx, a.TenantID, model.AssistantKindAgent, agentID); err != nil {
 		return err
@@ -271,7 +335,7 @@ func (s *Service) ListAgentVersions(ctx context.Context, tenantID, agentID strin
 	}
 	versions, err := s.RAGFlow.ListAgentVersions(ctx, agentID)
 	if err != nil {
-		return nil, httperr.New(502, 50284, "ragflow list agent versions failed")
+		return nil, agentUpstreamError(err, 50284, "ragflow list agent versions failed", "agent not found")
 	}
 	return versions, nil
 }
@@ -287,7 +351,7 @@ func (s *Service) GetAgentVersion(ctx context.Context, tenantID, agentID, versio
 	}
 	ver, err := s.RAGFlow.GetAgentVersion(ctx, agentID, versionID)
 	if err != nil {
-		return nil, httperr.New(502, 50284, "ragflow get agent version failed")
+		return nil, agentUpstreamError(err, 50284, "ragflow get agent version failed", "agent version not found")
 	}
 	return ver, nil
 }
@@ -302,7 +366,7 @@ func (s *Service) RollbackAgentVersion(ctx context.Context, tenantID, agentID, v
 		return httperr.NotFound("agent not found")
 	}
 	if err := s.RAGFlow.RollbackAgentVersion(ctx, agentID, versionID); err != nil {
-		return httperr.New(502, 50282, "ragflow rollback agent version failed")
+		return agentUpstreamError(err, 50282, "ragflow rollback agent version failed", "agent version not found")
 	}
 	a.UpdatedAt = time.Now().UTC()
 	return s.Store.UpsertAgentShadow(ctx, a)
@@ -319,7 +383,7 @@ func (s *Service) ListAgentSessions(ctx context.Context, tenantID, agentID strin
 	}
 	sessions, total, err := s.RAGFlow.ListAgentSessions(ctx, agentID, opts)
 	if err != nil {
-		return nil, 0, httperr.New(502, 50285, "ragflow list agent sessions failed")
+		return nil, 0, agentUpstreamError(err, 50285, "ragflow list agent sessions failed", "agent not found")
 	}
 	return sessions, total, nil
 }
@@ -335,7 +399,7 @@ func (s *Service) CreateAgentSession(ctx context.Context, tenantID, agentID, nam
 	}
 	sess, err := s.RAGFlow.CreateAgentSession(ctx, agentID, name)
 	if err != nil {
-		return nil, httperr.New(502, 50286, "ragflow create agent session failed: "+err.Error())
+		return nil, agentUpstreamError(err, 50286, "ragflow create agent session failed: "+err.Error(), "agent not found")
 	}
 	return sess, nil
 }
@@ -351,7 +415,7 @@ func (s *Service) GetAgentSession(ctx context.Context, tenantID, agentID, sessio
 	}
 	sess, err := s.RAGFlow.GetAgentSession(ctx, agentID, sessionID)
 	if err != nil {
-		return nil, httperr.New(502, 50287, "ragflow get agent session failed")
+		return nil, agentUpstreamError(err, 50287, "ragflow get agent session failed", "agent session not found")
 	}
 	return sess, nil
 }
@@ -363,7 +427,7 @@ func (s *Service) ListAgentSessionMessages(ctx context.Context, tenantID, agentI
 	}
 	items, next, err := s.RAGFlow.ListAgentSessionMessages(ctx, agentID, sessionID, opts)
 	if err != nil {
-		return nil, "", httperr.New(502, 50291, "ragflow list agent session messages failed")
+		return nil, "", agentUpstreamError(err, 50291, "ragflow list agent session messages failed", "agent session not found")
 	}
 	return s.traceSessionMessages(ctx, tenantID, agentID, sessionID, items), next, nil
 }
@@ -378,7 +442,7 @@ func (s *Service) DeleteAgentSession(ctx context.Context, tenantID, agentID, ses
 		return httperr.NotFound("agent not found")
 	}
 	if err := s.RAGFlow.DeleteAgentSession(ctx, agentID, sessionID); err != nil {
-		return httperr.New(502, 50288, "ragflow delete agent session failed")
+		return agentUpstreamError(err, 50288, "ragflow delete agent session failed", "agent session not found")
 	}
 	return nil
 }
@@ -391,6 +455,9 @@ func (s *Service) AgentChatCompletion(ctx context.Context, tenantID, agentID, us
 	}
 	if a == nil {
 		return nil, httperr.NotFound("agent not found")
+	}
+	if err := s.rejectPipelineCanvasChat(ctx, agentID); err != nil {
+		return nil, err
 	}
 	files, err = s.resolveAgentAttachmentTickets(tenantID, agentID, userID, files)
 	if err != nil {
@@ -417,7 +484,7 @@ func (s *Service) AgentChatCompletion(ctx context.Context, tenantID, agentID, us
 	if err != nil {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, "", 0, 0, 0, time.Since(startedAt).Milliseconds()))
 		s.recordFailedAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, "", err.Error())
-		return nil, httperr.New(502, 50289, "ragflow agent completion failed")
+		return nil, agentUpstreamError(err, 50289, "ragflow agent completion failed", "agent session not found")
 	}
 	if resp != nil {
 		for index := range resp.Choices {
@@ -452,6 +519,9 @@ func (s *Service) StreamAgentChatCompletion(ctx context.Context, tenantID, agent
 	}
 	if a == nil {
 		return httperr.NotFound("agent not found")
+	}
+	if err := s.rejectPipelineCanvasChat(ctx, agentID); err != nil {
+		return err
 	}
 	files, err = s.resolveAgentAttachmentTickets(tenantID, agentID, userID, files)
 	if err != nil {
@@ -495,7 +565,7 @@ func (s *Service) StreamAgentChatCompletion(ctx context.Context, tenantID, agent
 		// audit/idempotency bookkeeping matches reality, but mark the failure as
 		// already reported so the handler does not append a second frame
 		// (doc/227 C3.3).
-		return reportedStreamFailure(httperr.New(502, 50289, "ragflow agent completion failed"))
+		return reportedStreamFailure(agentUpstreamError(err, 50289, "ragflow agent completion failed", "agent session not found"))
 	}
 	s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), int64(capture.citations), capture.tokensIn, capture.tokensOut, time.Since(startedAt).Milliseconds()))
 	s.recordAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), citationsFromProviderReferences(capture.reference))

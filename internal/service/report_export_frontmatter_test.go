@@ -56,7 +56,7 @@ func tocTestDocument(sections int) *reportDocument {
 	}
 	for index := 0; index < sections; index++ {
 		document.Sections = append(document.Sections, reportDocumentSection{
-			Ord: index, Title: fmt.Sprintf("第 %d 章", index+1),
+			Ord: index + 1, Title: fmt.Sprintf("第 %d 章", index+1),
 			ContentMD: "本节正文，用于占据版面。",
 		})
 	}
@@ -74,7 +74,7 @@ func TestReportPdfCoverAndContentsPointAtRealPages(t *testing.T) {
 	}
 	// Cover = 1, contents = 2, body starts on 3. These numbers are discovered, so a
 	// renderer that forgot the contents page would report 2 and fail here.
-	for ord := 0; ord < 3; ord++ {
+	for ord := 1; ord <= 3; ord++ {
 		if pageOf[pdfSectionAnchorKey(ord)] != 3 {
 			t.Fatalf("section %d must start on page 3, got %d (map %v)",
 				ord, pageOf[pdfSectionAnchorKey(ord)], pageOf)
@@ -122,8 +122,8 @@ func TestReportPdfContentsSurvivesASpillingToc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first pass: %v", err)
 	}
-	first := pageOf[pdfSectionAnchorKey(0)]
-	last := pageOf[pdfSectionAnchorKey(89)]
+	first := pageOf[pdfSectionAnchorKey(1)]
+	last := pageOf[pdfSectionAnchorKey(90)]
 	if first == 3 {
 		t.Fatalf("a 90-row contents cannot fit on one page: first section on page %d", first)
 	}
@@ -140,7 +140,7 @@ func TestReportPdfContentsSurvivesASpillingToc(t *testing.T) {
 	// The body is contiguous: 90 short sections cannot skip a page between neighbours
 	// by more than one (each section is a heading + one line).
 	previous := first
-	for ord := 1; ord < 90; ord++ {
+	for ord := 2; ord <= 90; ord++ {
 		page := pageOf[pdfSectionAnchorKey(ord)]
 		if page < previous || page > previous+1 {
 			t.Fatalf("section %d jumped from page %d to %d", ord, previous, page)
@@ -155,8 +155,8 @@ func TestReportPdfAndDocxNumberTablesAndFiguresTheSameWay(t *testing.T) {
 		Title: "编号测试", Revision: 1, TemplateKey: "analysis", TemplateVersion: 1,
 		Completeness: model.ReportCompletenessFull,
 		Sections: []reportDocumentSection{
-			{Ord: 0, Title: "上", ContentMD: "| a | b |\n| --- | --- |\n| 1 | 2 |\n\n| c | d |\n| --- | --- |\n| 3 | 4 |"},
-			{Ord: 1, Title: "下", ContentMD: "![图注](img://chunk-1)"},
+			{Ord: 1, Title: "上", ContentMD: "| a | b |\n| --- | --- |\n| 1 | 2 |\n\n| c | d |\n| --- | --- |\n| 3 | 4 |"},
+			{Ord: 2, Title: "下", ContentMD: "![图注](img://chunk-1)"},
 		},
 	}
 
@@ -219,9 +219,9 @@ func TestReportPdfContentsListsTheEvidenceAppendix(t *testing.T) {
 	font := pdfFontBytesForTest(t)
 	document := tocTestDocument(2)
 	document.EvidenceAppendix = []reportEvidenceEntry{{
-		SectionOrd: 0, SectionTitle: "第 1 章", Ord: 0,
+		SectionOrd: 1, SectionTitle: "第 1 章", Ord: 1,
 		DocumentName: "制度汇编.md", Content: "住宿标准为每晚上限 600 元。",
-		RetrievalScore: 0.82, RetrievalScoreType: "similarity",
+		RetrievalScore: 0.82, RetrievalScoreType: model.ReportRetrievalScoreHybrid,
 	}}
 
 	pageOf, _, err := renderReportPdfPass(document, time.Now().UTC(), font, nil)

@@ -284,3 +284,92 @@ func TestHTTPClient_AgentAttachmentsContract(t *testing.T) {
 		t.Fatalf("completion body missing top-level files: %s", completionBody)
 	}
 }
+
+// TestHTTPClient_AgentPublishVersionContract pins the one call that actually
+// writes an immutable version row. Publishing through PUT /agents/{id} with
+// release=true only flips a flag: the version page stays empty and rollback has
+// no target. The provider must therefore POST /agents/{id}/publish and treat a
+// response without a version id as a protocol error (not as success).
+func TestHTTPClient_AgentPublishVersionContract(t *testing.T) {
+	var method, body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/agents/ag1/publish" {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		b, _ := io.ReadAll(r.Body)
+		method, body = r.Method, string(b)
+		writeEnvelope(t, w, map[string]interface{}{
+			"id": "v9", "user_canvas_id": "ag1", "title": "a_2026-11-19 08:30:52",
+			"release": true, "dsl": map[string]interface{}{"components": map[string]interface{}{}},
+			"create_time": 1795048252290, "update_time": 1795048252290,
+		})
+	}))
+	defer srv.Close()
+	client := NewHTTPClient(srv.URL, "key", 5*time.Second, 1)
+
+	version, err := client.PublishAgentVersion(context.Background(), "ag1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodPost {
+		t.Fatalf("publish must POST, got %s", method)
+	}
+	if strings.TrimSpace(body) != "{}" {
+		t.Fatalf("publish body must be an empty object, got %q", body)
+	}
+	if version.ID != "v9" || version.UserCanvasID != "ag1" || !version.Release {
+		t.Fatalf("unexpected version: %+v", version)
+	}
+	// 引擎时间是毫秒；把它当秒再乘 1000 会让界面印出 58852 年。
+	if version.UpdateTime != 1795048252290 {
+		t.Fatalf("update_time must stay in milliseconds, got %d", version.UpdateTime)
+	}
+
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(t, w, map[string]interface{}{"release": true})
+	}))
+	defer empty.Close()
+	if _, err := NewHTTPClient(empty.URL, "key", 5*time.Second, 1).PublishAgentVersion(context.Background(), "ag1"); err == nil {
+		t.Fatal("a publish response without a version id must be a protocol error")
+	}
+}
+
+// TestMock_AgentPublishWritesVersion keeps the mock honest: the service tests
+// assert "publish produces a version", which is only meaningful if the mock
+// implements the same contract as the engine.
+func TestMock_AgentPublishWritesVersion(t *testing.T) {
+	ctx := context.Background()
+	mock := NewMock()
+	a, err := mock.CreateAgent(ctx, CreateAgentRequest{
+		Title: "agent", Dsl: map[string]interface{}{"k": "v"}, Release: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if versions, err := mock.ListAgentVersions(ctx, a.ID); err != nil || len(versions) != 0 {
+		t.Fatalf("a fresh agent must have no versions: %+v err=%v", versions, err)
+	}
+	version, err := mock.PublishAgentVersion(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version.ID == "" || version.UserCanvasID != a.ID || !version.Release {
+		t.Fatalf("unexpected version: %+v", version)
+	}
+	if version.Dsl == nil {
+		t.Fatal("version must carry a DSL snapshot")
+	}
+	if version.UpdateTime < int64(1)<<40 {
+		t.Fatalf("version update_time must be in milliseconds, got %d", version.UpdateTime)
+	}
+	versions, err := mock.ListAgentVersions(ctx, a.ID)
+	if err != nil || len(versions) != 1 {
+		t.Fatalf("publish must leave one version: %+v err=%v", versions, err)
+	}
+	if got, _ := mock.GetAgent(ctx, a.ID); !got.Release {
+		t.Fatal("publish must mark the agent released")
+	}
+	if _, err := mock.PublishAgentVersion(ctx, "missing-agent"); err == nil {
+		t.Fatal("publishing an unknown agent must fail")
+	}
+}

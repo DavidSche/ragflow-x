@@ -12,6 +12,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
@@ -202,5 +203,183 @@ func TestARowWithoutAPreviewReadsAsUnjudged(t *testing.T) {
 	}
 	if decoded.Insufficient != nil {
 		t.Fatalf("null insufficient must stay unjudged, got %v", *decoded.Insufficient)
+	}
+}
+
+// TestThePreviewNamesTheFileNotTheId pins the shape RAGFlow v1.0.0 actually answers.
+//
+// `/retrieval` chunks carry `document_id` + `document_keyword` (the file name); the
+// `document_name`/`doc_name` keys the preview preferred are simply absent, so the
+// live screen read "命中 8 段 · 725ea28d… 9a9f2f77…" — hits counted, sources
+// unreadable (4.151, 2026-11-18). The id is still the last resort, but it must not
+// win over a name that is right there.
+func TestThePreviewNamesTheFileNotTheId(t *testing.T) {
+	fx, engine := newReportRunFixture(t, "evidence-preview-keyword")
+	created := fx.outlineJob(t, fx.datasetLink, "req-evidence-preview-keyword")
+	engine.mu.Lock()
+	engine.chunks = &ragflow.RetrieveDatasetsResult{Chunks: []map[string]interface{}{
+		{
+			"chunk_id": "c1", "document_id": "725ea28d000000000000000000000001",
+			"document_keyword": "差旅与费用报销制度.md", "dataset_id": "engine-ds",
+			"content": "差旅住宿标准为每晚上限 600 元。", "similarity": 0.8,
+		},
+		{
+			"chunk_id": "c2", "document_id": "725ea28d000000000000000000000001",
+			"document_keyword": "差旅与费用报销制度.md", "dataset_id": "engine-ds",
+			"content": "超标部分需部门负责人书面审批。", "similarity": 0.7,
+		},
+	}}
+	engine.mu.Unlock()
+
+	fx.runSlice(t, created.Job.ID)
+
+	sections := fx.reportSections(t, created.Revision.ID)
+	preview := reportSectionEvidencePreview(sections[0].EvidencePreviewJSON)
+	if preview == nil {
+		t.Fatal("no preview")
+	}
+	if len(preview.TopSources) != 1 || preview.TopSources[0] != "差旅与费用报销制度.md" {
+		t.Fatalf("top sources must name the file (document_keyword), got %v", preview.TopSources)
+	}
+}
+
+// TestTheCitationLedgerNamesTheFileNotTheId: the same retrieval feeds the evidence
+// rows a reader clicks in the PDF, so the label there must be the same name.
+func TestTheCitationLedgerNamesTheFileNotTheId(t *testing.T) {
+	if got := reportChunkDocumentLabel(map[string]interface{}{
+		"document_id":      "725ea28d000000000000000000000001",
+		"document_keyword": "差旅与费用报销制度.md",
+	}, "725ea28d000000000000000000000001"); got != "差旅与费用报销制度.md" {
+		t.Fatalf("document_keyword must win over the id, got %q", got)
+	}
+	// An explicit name beats the keyword (older engine builds).
+	if got := reportChunkDocumentLabel(map[string]interface{}{
+		"document_name": "制度汇编.md", "document_keyword": "制度汇编.md (1)",
+	}, ""); got != "制度汇编.md" {
+		t.Fatalf("document_name must stay the first choice, got %q", got)
+	}
+	// Nothing readable: the id is traceable, a blank label is not.
+	if got := reportChunkDocumentLabel(map[string]interface{}{"document_id": "doc-9"}, "doc-9"); got != "doc-9" {
+		t.Fatalf("the id is the last resort, got %q", got)
+	}
+	if got := reportChunkDocumentLabel(map[string]interface{}{}, ""); got != "" {
+		t.Fatalf("a chunk with no identifiers labels nothing, got %q", got)
+	}
+}
+
+// TestThePreviewShowsTheTopPassage is R13's cheap half: the reviewer decides whether
+// to spend the run, and "命中 3 段" alone does not say what the section would be
+// written from. The excerpt is clipped and flattened because the dialog renders it in
+// one row.
+func TestThePreviewShowsTheTopPassage(t *testing.T) {
+	fx, engine := newReportRunFixture(t, "evidence-preview-excerpt")
+	created := fx.outlineJob(t, fx.datasetLink, "req-evidence-preview-excerpt")
+	long := "差旅住宿标准为每晚上限 600 元。\n\n超标部分需部门负责人书面审批，并在报销单上注明事由与金额。" +
+		"本段故意写得很长，用来证明预览只保留开头，而不是把整段检索结果塞进确认对话框。"
+	engine.mu.Lock()
+	engine.chunks = &ragflow.RetrieveDatasetsResult{Chunks: []map[string]interface{}{
+		{
+			"chunk_id": "c1", "document_id": "doc-1", "document_keyword": "差旅制度.md",
+			"dataset_id": "engine-ds", "content": "第一段排序在前的命中内容。", "similarity": 0.9,
+		},
+		{
+			"chunk_id": "c2", "document_id": "doc-2", "document_keyword": "费用制度.md",
+			"dataset_id": "engine-ds", "content": long, "similarity": 0.5,
+		},
+	}}
+	engine.mu.Unlock()
+
+	fx.runSlice(t, created.Job.ID)
+
+	sections := fx.reportSections(t, created.Revision.ID)
+	preview := reportSectionEvidencePreview(sections[0].EvidencePreviewJSON)
+	if preview == nil {
+		t.Fatal("no preview")
+	}
+	// The engine answers in rank order, so the first chunk is the passage the writer
+	// would lean on most — not the longest one.
+	if preview.Excerpt != "第一段排序在前的命中内容。" {
+		t.Fatalf("the excerpt must be the best-ranked passage, got %q", preview.Excerpt)
+	}
+	// Same thing, built long enough to be clipped: the limit is a limit, and the
+	// ellipsis is the only thing that grows it.
+	oversized := strings.Repeat("住宿标准为每晚 600 元。", reportEvidencePreviewExcerptRunes)
+	clipped := reportPreviewExcerpt(oversized)
+	if got := len([]rune(clipped)); got != reportEvidencePreviewExcerptRunes+1 {
+		t.Fatalf("a long passage is clipped to %d runes plus the ellipsis, got %d: %q",
+			reportEvidencePreviewExcerptRunes, got, clipped)
+	}
+	if !strings.HasSuffix(clipped, "…") {
+		t.Fatalf("a clipped passage must say so: %q", clipped)
+	}
+	if got := reportPreviewExcerpt("短句。"); got != "短句。" {
+		t.Fatalf("a short passage is left alone, got %q", got)
+	}
+	if got := reportPreviewExcerpt("甲\n\n乙"); got != "甲 乙" {
+		t.Fatalf("newlines are flattened, got %q", got)
+	}
+}
+
+// TestThePreviewWarnsWhenItsSourcesDisagree is R13's P1 half (§9.6「P1 加支持度与
+// 冲突提示」): the same detector the written section uses, run early enough that the
+// reviewer can unbind a dataset before paying for the run.
+func TestThePreviewWarnsWhenItsSourcesDisagree(t *testing.T) {
+	fx, engine := newReportRunFixture(t, "evidence-preview-conflict")
+	created := fx.outlineJob(t, fx.datasetLink, "req-evidence-preview-conflict")
+	engine.mu.Lock()
+	engine.chunks = &ragflow.RetrieveDatasetsResult{Chunks: []map[string]interface{}{
+		{
+			"chunk_id": "c1", "document_id": "doc-1", "document_keyword": "差旅制度.md",
+			"dataset_id": "engine-ds", "content": "住宿标准为每晚 600 元。", "similarity": 0.9,
+		},
+		{
+			"chunk_id": "c2", "document_id": "doc-2", "document_keyword": "费用制度.md",
+			"dataset_id": "engine-ds", "content": "住宿标准为每晚 800 元。", "similarity": 0.8,
+		},
+	}}
+	engine.mu.Unlock()
+
+	fx.runSlice(t, created.Job.ID)
+
+	sections := fx.reportSections(t, created.Revision.ID)
+	preview := reportSectionEvidencePreview(sections[0].EvidencePreviewJSON)
+	if preview == nil {
+		t.Fatal("no preview")
+	}
+	if preview.ConflictCount != 1 || len(preview.ConflictLabels) != 1 {
+		t.Fatalf("the disagreeing sources must be disclosed, got %+v", preview)
+	}
+	if !strings.Contains(preview.ConflictLabels[0], "600") ||
+		!strings.Contains(preview.ConflictLabels[0], "800") {
+		t.Fatalf("the conflict line must name both values: %q", preview.ConflictLabels[0])
+	}
+	// It is a hint, not a verdict: the shortage judgement still comes from the hit
+	// count, because the writer may never cite either chunk.
+	if preview.Insufficient == nil {
+		t.Fatal("a successful preview must still judge shortage")
+	}
+}
+
+func TestPreviewConflictsKeepOnlyTheFirstFewAndIgnoreStaleness(t *testing.T) {
+	items := []reportEvidenceItem{
+		{Index: 1, DocumentLabel: "A.md", Content: "住宿标准为每晚 600 元。"},
+		{Index: 2, DocumentLabel: "B.md", Content: "住宿标准为每晚 800 元。"},
+	}
+	count, labels := reportPreviewConflicts(items)
+	if count != 1 || len(labels) != 1 {
+		t.Fatalf("want one conflict, got %d / %v", count, labels)
+	}
+	// One document holding two values is a stale copy of itself — the preview cannot
+	// tell that from a chunk quoting a superseded number, and a warning that cannot
+	// be acted on trains the reviewer to ignore the dialog.
+	stale := []reportEvidenceItem{
+		{Index: 1, DocumentLabel: "A.md", Content: "住宿标准为每晚 600 元。"},
+		{Index: 2, DocumentLabel: "A.md", Content: "住宿标准为每晚 800 元。"},
+	}
+	if count, labels := reportPreviewConflicts(stale); count != 0 || labels != nil {
+		t.Fatalf("staleness is not a preview conflict, got %d / %v", count, labels)
+	}
+	if count, labels := reportPreviewConflicts(items[:1]); count != 0 || labels != nil {
+		t.Fatalf("one source cannot disagree with itself, got %d / %v", count, labels)
 	}
 }

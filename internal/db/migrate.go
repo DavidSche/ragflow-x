@@ -3470,6 +3470,116 @@ var migrations = []Migration{
 			return tx.AutoMigrate(&model.ReportSection{})
 		},
 	},
+	{
+		Version: 176,
+		Name:    "report_revision_reuse_plan",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/288 §9.8 / R14: a revision can ask to inherit some of its base's
+			// sections. The request is frozen on the revision so a later reader can
+			// explain why paragraph 2 is byte-identical to version 2's — the section
+			// rows carry `based_on_section_version`, but only this column says whether
+			// anyone asked for that or the writer happened to say the same thing.
+			// Additive and nullable: older revisions read back empty, i.e. "no reuse".
+			return tx.AutoMigrate(&model.ReportRevision{})
+		},
+	},
+	{
+		Version: 177,
+		Name:    "report_section_location_hints",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/295 §2.1 / R17: a section may carry up to three compilation-artifact
+			// locators (page index / wiki / tree) that help a reader find the source
+			// page. Additive and nullable on purpose: a report generated before this
+			// column exists has no locators, and "no locators" is the ordinary answer
+			// when the bound datasets were never compiled. Nothing here is evidence, so
+			// a missing value must never look like a missing citation.
+			return tx.AutoMigrate(&model.ReportSection{})
+		},
+	},
+	{
+		Version: 178,
+		Name:    "report_research",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/295 §2.2 / R18: the planning switch lives on the revision (a deep run
+			// and a standard rerun are different conditions), the per-section plan lives
+			// on the section row next to `prompt_hash` because it describes that prompt's
+			// retrieval inputs. `default:standard` is what makes every existing revision
+			// read back as the behaviour it actually ran under.
+			if err := tx.AutoMigrate(&model.ReportRevision{}); err != nil {
+				return err
+			}
+			return tx.AutoMigrate(&model.ReportSection{})
+		},
+	},
+	{
+		Version: 179,
+		Name:    "report_schedule",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/295 §2.4 / R20: one recurring plan per report, plus the two revision
+			// columns that say who asked for a version (`trigger`) and from which plan
+			// (`schedule_id`). The backfill is not cosmetic: an empty `trigger` would be
+			// an unanswerable value, and `manual` is the true answer for every revision
+			// that existed before scheduling did.
+			if err := tx.AutoMigrate(&model.ReportSchedule{}); err != nil {
+				return err
+			}
+			if err := tx.AutoMigrate(&model.ReportRevision{}); err != nil {
+				return err
+			}
+			return tx.Model(&model.ReportRevision{}).
+				Where("trigger IS NULL OR trigger = ''").
+				Update("trigger", model.ReportTriggerManual).Error
+		},
+	},
+	{
+		Version: 180,
+		Name:    "report_access_grant",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/296 §3.1: the two `selected_*` access policies need a grantee list.
+			// A table, not a JSON column: the list endpoint must filter by "is this
+			// report shared with me", and that has to be one indexed predicate shared
+			// with the detail check (A65/A67).
+			//
+			// Additive: a database that never shares a report keeps this table empty,
+			// and every existing row stays `owner_only`.
+			return tx.AutoMigrate(&model.ReportAccessGrant{})
+		},
+	},
+	{
+		Version: 181,
+		Name:    "tenant_report_policy_switches",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/296 §3.2: the two governance switches of the report surface belong
+			// to the tenant overlay that already carries the clocks. Both are nullable
+			// on purpose: `NULL` means "inherit", which is what keeps a system default
+			// change flowing to a tenant that never overrode it (the same argument as
+			// `report_days`).
+			//
+			// Additive: existing rows read back empty, and empty resolves to `enforce`
+			// and `self`, i.e. exactly the behaviour those reports already had.
+			return tx.AutoMigrate(&model.TenantReportPolicy{})
+		},
+	},
+	{
+		Version: 182,
+		Name:    "report_job_budget_policy",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/296 §3.3: the budget policy is frozen on the job, next to the envelope
+			// it governs. The tenant switch decides what a *new* run freezes; a running
+			// job must not change from `enforce` to `observe` (or back) because an
+			// operator edited a tenant row, otherwise one report's spend could be
+			// measured against two different rules.
+			//
+			// The backfill is the identity of the old behaviour: every pre-existing job
+			// was enforced.
+			if err := tx.AutoMigrate(&model.ReportJob{}); err != nil {
+				return err
+			}
+			return tx.Model(&model.ReportJob{}).
+				Where("budget_policy IS NULL OR budget_policy = ''").
+				Update("budget_policy", model.ReportBudgetEnforce).Error
+		},
+	},
 }
 
 func evaluationScopeCondition(columnPrefix string) string {

@@ -32,8 +32,14 @@ type reportRunEngine struct {
 	*reportTestEngine
 	mu sync.Mutex
 	// replies are consumed in order; the last one repeats.
-	replies     []string
-	chatErrs    []error
+	replies  []string
+	chatErrs []error
+	// chatHook, when set, is consulted before the scripted queue: a non-empty reply
+	// becomes the answer, a non-nil error fails the call, and ("", nil) falls
+	// through. It exists so a test can target one call — the research planner's —
+	// without depending on how many writer calls the template's sections produce
+	// before it.
+	chatHook    func(prompt string) (string, error)
 	prompts     []string
 	retrievals  []ragflow.RetrieveDatasetsRequest
 	chunks      *ragflow.RetrieveDatasetsResult
@@ -46,6 +52,15 @@ func (e *reportRunEngine) ChatToModel(
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.prompts = append(e.prompts, message)
+	if e.chatHook != nil {
+		reply, err := e.chatHook(message)
+		if err != nil {
+			return "", err
+		}
+		if reply != "" {
+			return reply, nil
+		}
+	}
 	if len(e.chatErrs) > 0 {
 		err := e.chatErrs[0]
 		if len(e.chatErrs) > 1 {

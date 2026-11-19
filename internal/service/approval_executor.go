@@ -183,6 +183,13 @@ func (s *Service) approvalExecutorRegistry() *ApprovalExecutorRegistry {
 		svc: s, objectType: model.ApprovalObjectEnterpriseConnection, action: model.ApprovalActionDeprecate,
 		validate: validateEnterpriseConnectionApproval, execute: executeEnterpriseConnectionDeprecate,
 	})
+	// The report surface's single governed action (doc/296 §2.2): a frozen token
+	// envelope may only grow through an approval, and only for a run that is still
+	// spending.
+	registry.Register(fmt.Sprintf("%s.%s", model.ApprovalObjectReport, model.ApprovalActionExtendBudget), &serviceApprovalExecutor{
+		svc: s, objectType: model.ApprovalObjectReport, action: model.ApprovalActionExtendBudget,
+		validate: validateReportBudgetExtension, execute: executeReportBudgetExtension,
+	})
 	registry.Register(fmt.Sprintf("%s.%s", model.ApprovalObjectKnowledgeTask, model.ApprovalActionResolve), &serviceApprovalExecutor{
 		svc: s, objectType: model.ApprovalObjectKnowledgeTask, action: model.ApprovalActionResolve,
 		validate: validateKnowledgeTaskResolve, execute: executeKnowledgeTaskResolve,

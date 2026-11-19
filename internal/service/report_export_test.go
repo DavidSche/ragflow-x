@@ -94,9 +94,15 @@ func TestCreateReportExportFreezesPublishedRevision(t *testing.T) {
 		job.ReportRevisionID != revision.ID || job.RequestedBy != fx.owner.ID {
 		t.Fatalf("job wrong: %+v", job)
 	}
-	wantKey := "report:" + revision.ID + ":" + model.ExportFormatDOCX + ":" + result.Canonical
+	// The key is the request identity, so it is built by the same function the
+	// service uses rather than re-spelled here: a second spelling is a second
+	// definition of "the same request".
+	wantKey := reportExportIdempotencyKey(revision.ID, model.ExportFormatDOCX, result.Canonical)
 	if job.IdempotencyKey != wantKey {
 		t.Fatalf("idempotency key wrong: %q != %q", job.IdempotencyKey, wantKey)
+	}
+	if !strings.Contains(job.IdempotencyKey, sha256Hex(reportExportRendererVersion)[:4]) {
+		t.Fatalf("key %q must name the renderer that produced the bytes", job.IdempotencyKey)
 	}
 
 	// Snapshot: frozen payload is exactly the assembled document's JSON.
@@ -367,11 +373,11 @@ func TestCreateReportExportRejectsUnsupportedFormat(t *testing.T) {
 	report, _ := fx.svc.Store.GetReport(ctx, fx.tenantID, revision.ReportID)
 
 	_, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
-		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatHTML,
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatJSON,
 	})
 	var httpErr *httperr.Error
 	if !errors.As(err, &httpErr) || httpErr.Code != 40130 || httpErr.Status != 400 {
-		t.Fatalf("html must be refused as unsupported, got %v", err)
+		t.Fatalf("json must be refused as unsupported (the payload is already the snapshot), got %v", err)
 	}
 }
 
@@ -658,7 +664,7 @@ func TestReportArtifactsStayWithTheirOwnRevision(t *testing.T) {
 	}
 	fx.seedSections(t, regenerated.Revision.ID, successSeeds())
 	if err := fx.gdb.Model(&model.ReportSection{}).
-		Where("revision_id = ? AND ord = 0", regenerated.Revision.ID).
+		Where("revision_id = ? AND ord = 1", regenerated.Revision.ID).
 		Updates(map[string]interface{}{
 			"content_md":   "内容：background（v2 改版）",
 			"content_hash": "hash-background-v2",
@@ -847,7 +853,7 @@ func TestReportExportArtifactVersionIncrementsWithNewContent(t *testing.T) {
 	// the (revision, format) allocation must hand out version 2 without touching
 	// the version-1 row.
 	var section model.ReportSection
-	if err := fx.gdb.Where("revision_id = ? AND ord = 0", revision.ID).First(&section).Error; err != nil {
+	if err := fx.gdb.Where("revision_id = ? AND ord = 1", revision.ID).First(&section).Error; err != nil {
 		t.Fatal(err)
 	}
 	section.ContentMD = "内容：background（修订后补充法规背景）"
@@ -888,7 +894,7 @@ func TestJsonBytesStableForCanonicalHash(t *testing.T) {
 		TemplateKey: reportComplianceTemplateKey, TemplateVersion: 1,
 		Completeness: model.ReportCompletenessFull, Gaps: []reportGapEntry{},
 		Sections: []reportDocumentSection{
-			{Ord: 0, SectionKey: "background", Title: "background", ContentMD: "内容：background", ContentHash: "hash-background"},
+			{Ord: 1, SectionKey: "background", Title: "background", ContentMD: "内容：background", ContentHash: "hash-background"},
 		},
 	}
 	data, err := json.Marshal(doc)

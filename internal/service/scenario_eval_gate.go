@@ -194,4 +194,3 @@ func canonicalOf(raw string) string {
 	}
 	return hash
 }
-

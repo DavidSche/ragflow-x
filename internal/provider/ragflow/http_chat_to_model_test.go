@@ -137,3 +137,60 @@ func TestChatToModelKeepsTheUpstreamReasonInItsError(t *testing.T) {
 		}
 	}
 }
+
+// TestChatToModelOutlastsTheInteractiveTimeout pins the deadline the report
+// section writer needs.
+//
+// The client-wide timeout (60 s in the test deployment) is tuned for
+// interactive calls. A section that has to cite half a dozen documents runs
+// longer, and on 2026-11-18 the same section timed out on both attempts of two
+// consecutive live runs: the report shipped as "部分章节未生成" with its key
+// section missing. The retry logic was correct; the ceiling was not.
+//
+// The facts this freezes:
+//  1. an answer slower than the configured client timeout still arrives, because
+//     ChatToModel raises its own ceiling;
+//  2. the ceiling is a ceiling, not a wait — a fast answer returns immediately
+//     (asserted in TestChatToModelUsesTheChatCompletionRoute, which answers at
+//     once against a 5 s client).
+func TestChatToModelOutlastsTheInteractiveTimeout(t *testing.T) {
+	const (
+		clientTimeout = 40 * time.Millisecond
+		answerDelay   = 160 * time.Millisecond
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(answerDelay)
+		writeEnvelope(t, w, map[string]interface{}{"answer": "## 逐条符合性判定\n\n符合。"})
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "key", clientTimeout, 1)
+	answer, err := client.ChatToModel(context.Background(),
+		"GPUStack", "gpustack-local", "deepseek-v4-flash-0731", "逐条判定", false, false)
+	if err != nil {
+		t.Fatalf("a long-form section must outlast the interactive timeout, got %v", err)
+	}
+	if !strings.Contains(answer, "逐条符合性判定") {
+		t.Fatalf("answer text lost, got %q", answer)
+	}
+}
+
+// TestTheLongFormCeilingDoesNotLeakIntoInteractiveCalls keeps the fix scoped:
+// the shared client still refuses an answer past the configured interactive
+// timeout, so a hanging chat cannot silently hold a request for three minutes.
+func TestTheLongFormCeilingDoesNotLeakIntoInteractiveCalls(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(160 * time.Millisecond)
+		writeEnvelope(t, w, map[string]interface{}{"answer": "ok"})
+	}))
+	defer srv.Close()
+
+	client := NewHTTPClient(srv.URL, "key", 40*time.Millisecond, 1)
+	_, err := client.ChatCompletion(context.Background(), "chat-1", CompletionRequest{
+		ChatID:   "chat-1",
+		Messages: []Message{{Role: "user", Content: "你好"}},
+	})
+	if err == nil {
+		t.Fatal("the shared client must keep the interactive timeout")
+	}
+}

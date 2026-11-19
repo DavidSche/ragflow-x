@@ -209,20 +209,63 @@ func docxTable(rows [][]string) string {
 	return table.String()
 }
 
+// emphasisRuns splits a paragraph into text runs and marks the `**bold**` spans
+// the section writer emits.
+//
+// The writer answers in Markdown, so a heading such as `**1. 《…》**` reached the
+// reader as literal asterisks in the delivered DOCX (live, 2026-11-18). Unbalanced
+// markers are returned as one plain run: a lone `**` is a typo, not emphasis, and
+// must be printed as typed rather than swallowed.
+func emphasisRuns(text string) []textRun {
+	if !strings.Contains(text, "**") || strings.Count(text, "**")%2 != 0 {
+		return []textRun{{text: text}}
+	}
+	parts := strings.Split(text, "**")
+	runs := make([]textRun, 0, len(parts))
+	for index, part := range parts {
+		if part == "" {
+			continue
+		}
+		runs = append(runs, textRun{text: part, bold: index%2 == 1})
+	}
+	if len(runs) == 0 {
+		return []textRun{{text: text}}
+	}
+	return runs
+}
+
+// plainEmphasis drops the markers from text that a renderer cannot style.
+func plainEmphasis(text string) string {
+	runs := emphasisRuns(text)
+	if len(runs) == 1 && !runs[0].bold {
+		return text
+	}
+	var builder strings.Builder
+	for _, run := range runs {
+		builder.WriteString(run.text)
+	}
+	return builder.String()
+}
+
+type textRun struct {
+	text string
+	bold bool
+}
+
 func pdfBlock(pdf *fpdf.Fpdf, block exportBlock) {
 	switch block.kind {
 	case exportBlockHeading1:
 		pdf.SetFont("cjk", "", 13)
-		pdf.MultiCell(0, 7, block.text, "", "L", false)
+		pdf.MultiCell(0, 7, plainEmphasis(block.text), "", "L", false)
 	case exportBlockHeading2:
 		pdf.SetFont("cjk", "", 11)
-		pdf.MultiCell(0, 6, block.text, "", "L", false)
+		pdf.MultiCell(0, 6, plainEmphasis(block.text), "", "L", false)
 	case exportBlockHeading3:
 		pdf.SetFont("cjk", "", 10)
-		pdf.MultiCell(0, 5, block.text, "", "L", false)
+		pdf.MultiCell(0, 5, plainEmphasis(block.text), "", "L", false)
 	case exportBlockBullet:
 		pdf.SetFont("cjk", "", 10)
-		pdf.MultiCell(0, 6, "• "+block.text, "", "L", false)
+		pdf.MultiCell(0, 6, "• "+plainEmphasis(block.text), "", "L", false)
 	case exportBlockCode:
 		pdf.SetFillColor(245, 245, 245)
 		pdf.SetFont("cjk", "", 9)
@@ -242,7 +285,7 @@ func pdfBlock(pdf *fpdf.Fpdf, block exportBlock) {
 		pdfTable(pdf, block.rows)
 	default:
 		pdf.SetFont("cjk", "", 10)
-		pdf.MultiCell(0, 6, block.text, "", "L", false)
+		pdf.MultiCell(0, 6, plainEmphasis(block.text), "", "L", false)
 	}
 }
 

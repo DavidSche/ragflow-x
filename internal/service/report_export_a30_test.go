@@ -36,7 +36,7 @@ func TestReportExportAllocatesOneVersionPerFrozenContent(t *testing.T) {
 		// canonical hash, so this is ten *different* requests for one revision.
 		body := fmt.Sprintf("内容：background（第 %d 轮修订）", index+1)
 		if err := fx.gdb.Model(&model.ReportSection{}).
-			Where("tenant_id = ? AND revision_id = ? AND ord = 0", fx.tenantID, revision.ID).
+			Where("tenant_id = ? AND revision_id = ? AND ord = 1", fx.tenantID, revision.ID).
 			Updates(map[string]interface{}{
 				"content_md": body, "content_hash": fmt.Sprintf("hash-background-%d", index+1),
 			}).Error; err != nil {

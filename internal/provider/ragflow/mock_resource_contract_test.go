@@ -112,8 +112,16 @@ func TestMockResourceGovernanceContract(t *testing.T) {
 	if err := mock.UpdateAgent(ctx, agent.ID, UpdateAgentRequest{Release: &release}); err != nil {
 		t.Fatalf("update agent err=%v", err)
 	}
+	// PUT {release:false} is not a publish: the engine only writes a version row
+	// on POST /agents/{id}/publish, so the mock must stay empty here too.
+	if versions, err := mock.ListAgentVersions(ctx, agent.ID); err != nil || len(versions) != 0 {
+		t.Fatalf("agent versions after update (want none): %+v err=%v", versions, err)
+	}
+	if published, err := mock.PublishAgentVersion(ctx, agent.ID); err != nil || published.Release != true {
+		t.Fatalf("publish agent version: %+v err=%v", published, err)
+	}
 	if versions, err := mock.ListAgentVersions(ctx, agent.ID); err != nil || len(versions) != 1 {
-		t.Fatalf("agent versions: %+v err=%v", versions, err)
+		t.Fatalf("agent versions after publish: %+v err=%v", versions, err)
 	}
 	versionID := ""
 	if versions, _ := mock.ListAgentVersions(ctx, agent.ID); len(versions) > 0 {

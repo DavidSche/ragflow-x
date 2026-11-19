@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -165,6 +166,24 @@ type reportQualityMetrics struct {
 	// EvidenceSections is `E` in §14.1 — the number of declared sections whose
 	// claims need citations, i.e. the denominator of every structural ratio.
 	EvidenceSections int `json:"evidence_sections"`
+	// Claim metrics (R16, §7.4 / §9.2). The denominator is `claim_scored`: claims that
+	// actually assert something about the sources. `not_required` claims (a
+	// recommendation, a stated limitation, an inference) are counted separately and
+	// never enter the rate — scoring them would manufacture a support rate out of
+	// sentences that never claimed support, which is the exact failure §9.2 warns
+	// about (“推断与建议部分不代表已核实事实”).
+	ClaimCount              int      `json:"claim_count"`
+	ClaimScored             int      `json:"claim_scored"`
+	ClaimSupported          int      `json:"claim_supported"`
+	ClaimPartiallySupported int      `json:"claim_partially_supported"`
+	ClaimUnsupported        int      `json:"claim_unsupported"`
+	ClaimNotRequired        int      `json:"claim_not_required"`
+	ClaimSupportRate        *float64 `json:"claim_support_rate"`
+	// CrossSectionConsistency (R16): how many `(fact, label)` keys were comparable
+	// across sections, and the disagreements found. `checked` is stored because "0
+	// inconsistencies" over 0 keys and over 40 keys are different statements.
+	ConsistencyKeysChecked int                      `json:"consistency_keys_checked"`
+	ConsistencyIssues      []reportConsistencyIssue `json:"consistency_issues"`
 }
 
 // BeginReportFinalization closes the current slice and durably asks for the
@@ -297,9 +316,17 @@ func (s *Service) FinalizeReportJob(
 	if err != nil {
 		return "", err
 	}
+	// The claims are read here and carried into the derivation rather than counted
+	// later: `metrics_json` is written in the same transaction as the terminal
+	// status, so a support rate computed after the fact would describe a different
+	// moment than the status it sits beside.
+	claims, err := s.Store.ListReportClaims(ctx, tenantID, revision.ID)
+	if err != nil {
+		return "", err
+	}
 	decision := deriveReportFinalDecision(reportFinalizeFacts{
 		Job: job, RuntimeStatus: runtimeStatus, Sections: sections,
-		TemplateKeys: templateKeys, EvidenceKeys: evidenceKeys,
+		TemplateKeys: templateKeys, EvidenceKeys: evidenceKeys, Claims: claims,
 	})
 	if decision.Pending > 0 || decision.Writing > 0 {
 		// Unreachable after `closeUnwritableReportSections` unless a concurrent
@@ -355,6 +382,10 @@ type reportFinalizeFacts struct {
 	// declares; EvidenceKeys marks the ones whose claims need citations (`E`).
 	TemplateKeys []string
 	EvidenceKeys map[string]bool
+	// Claims and Sections are what R16 scores: claims for the support rate, the
+	// section bodies for the cross-section consistency check. Both come from the
+	// same revision, so the two numbers describe one document.
+	Claims []model.ReportClaim
 }
 
 // reportFinalDecision is the outcome of the derivation, still pure: no clock, no
@@ -543,6 +574,46 @@ func deriveReportQualityMetrics(
 ) reportQualityMetrics {
 	total := len(facts.TemplateKeys)
 	metrics := reportQualityMetrics{QualityFlag: model.ReportQualityFlagOK}
+	// R16 runs before the structure early-return: "the sections disagree with each
+	// other" is a fact about the text, and a revision whose structure failed still
+	// has paragraphs a reviewer should not trust.
+	sources := make([]reportConsistencySource, 0, len(present))
+	for _, section := range present {
+		if section.Status != model.ReportSectionSucceeded {
+			continue
+		}
+		sources = append(sources, reportConsistencySource{Ord: section.Ord, Text: section.ContentMD})
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i].Ord < sources[j].Ord })
+	metrics.ConsistencyKeysChecked, metrics.ConsistencyIssues = reportCrossSectionConsistency(sources)
+	if metrics.ConsistencyIssues == nil {
+		metrics.ConsistencyIssues = []reportConsistencyIssue{}
+	}
+	metrics.ClaimCount = len(facts.Claims)
+	for _, claim := range facts.Claims {
+		switch claim.SupportStatus {
+		case model.ReportClaimSupportNotRequired:
+			metrics.ClaimNotRequired++
+			continue
+		case "":
+			// A claim with no verdict was never scored. Counting it as unsupported
+			// would blame the writer for a plumbing gap.
+			continue
+		}
+		metrics.ClaimScored++
+		switch claim.SupportStatus {
+		case model.ReportClaimSupportSupported:
+			metrics.ClaimSupported++
+		case model.ReportClaimSupportPartiallySupported:
+			metrics.ClaimPartiallySupported++
+		case model.ReportClaimSupportUnsupported:
+			metrics.ClaimUnsupported++
+		}
+	}
+	if metrics.ClaimScored > 0 {
+		rate := roundRatio(float64(metrics.ClaimSupported) / float64(metrics.ClaimScored))
+		metrics.ClaimSupportRate = &rate
+	}
 	if total > 0 {
 		metrics.StructureCompleteness = roundRatio(float64(total-missingCount) / float64(total))
 	}

@@ -79,6 +79,10 @@ func (s *Service) RetryReportSection(
 	if err := s.assertReportOwner(ctx, actorID, report); err != nil {
 		return nil, err
 	}
+	// An archived report produces nothing new (doc/297 §2): unarchive first.
+	if err := s.assertReportArchivedBlocksWork(report); err != nil {
+		return nil, err
+	}
 	// One running job per report (§7.10): the retry must not race a regenerate,
 	// another retry, or the original job still settling.
 	if active, err := s.Store.CountActiveReportJobs(ctx, tenantID, report.ID); err != nil {
@@ -163,8 +167,13 @@ func (s *Service) RetryReportSection(
 		// The envelope is the pinned template's per-section cap, frozen like every
 		// other report job's (doc/288 §8.6).
 		ReservedTokens: reportBudgetReservation(payload.Limits, 1),
-		IdempotencyKey: "",
-		UpdatedAt:      now,
+		// A retry is a fresh, freshly-metered call, so it freezes the policy in force
+		// now rather than inheriting the base job's (doc/296 §2.2). The two can differ
+		// legitimately: an operator may switch the workspace to `observe` precisely to
+		// find out what the retries cost.
+		ReportBudgetPolicy: s.reportBudgetPolicyFor(ctx, tenantID),
+		IdempotencyKey:     "",
+		UpdatedAt:          now,
 	}
 	eventPayload, err := json.Marshal(map[string]interface{}{
 		"attempt_seq": retryJob.AttemptSeq, "slice_seq": retryJob.SliceSeq,

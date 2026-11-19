@@ -58,12 +58,12 @@ func seedCitations(t *testing.T, fx *reportFixture, revision *model.ReportRevisi
 				ID:       "cite-" + section.SectionKey + "-" + string(rune('a'+index)),
 				TenantID: fx.tenantID, RevisionID: revision.ID,
 				SectionID: section.ID, SectionOrd: section.Ord, SectionVersion: section.SectionVersion,
-				Ord: index, EvidenceSnapshotID: snapshotID,
+				Ord: index + 1, EvidenceSnapshotID: snapshotID,
 				SourceDatasetID: "ds-1", SourceDocumentID: "doc-1", SourceDocumentRevision: 1,
 				DocumentLabel: "差旅制度-v3.pdf",
 				SourceChunkID: chunkID, SourceContentHash: "hash-" + snapshotID,
 				ReferencedAt: now, ReferencedBy: fx.owner.ID,
-				RetrievalScore: 0.812345, RetrievalScoreType: "similarity",
+				RetrievalScore: 0.812345, RetrievalScoreType: model.ReportRetrievalScoreHybrid,
 				Snippet:    "住宿标准为每晚上限 600 元人民币。",
 				UsedInText: true,
 			})
@@ -200,14 +200,14 @@ func TestReportExportFormatsAgreeOnStructure(t *testing.T) {
 		t.Fatal(err)
 	}
 	documentXML := docxDocumentXML(t, content)
-	for _, want := range []string{"证据附录", "差旅制度-v3.pdf", "similarity 0.81", "住宿标准为每晚上限 600 元人民币"} {
+	for _, want := range []string{"证据附录", "差旅制度-v3.pdf", "混合 0.81", "住宿标准为每晚上限 600 元人民币"} {
 		if !strings.Contains(documentXML, want) {
 			t.Fatalf("DOCX appendix must contain %q", want)
 		}
 	}
 	// Markdown carries the same appendix.
 	markdownBody := renderReportMarkdown(markdown.Document, time.Now().UTC())
-	for _, want := range []string{"证据附录", "差旅制度-v3.pdf", "similarity 0.81"} {
+	for _, want := range []string{"证据附录", "差旅制度-v3.pdf", "混合 0.81"} {
 		if !strings.Contains(markdownBody, want) {
 			t.Fatalf("Markdown appendix must contain %q", want)
 		}

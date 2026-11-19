@@ -50,7 +50,10 @@ func TestValidateReportTemplatePayloadRejectsContractViolations(t *testing.T) {
 		want   string
 	}{
 		{"no name", func(p *ReportTemplatePayload) { p.Name.En = "" }, "name.zh and name.en"},
-		{"unknown output format", func(p *ReportTemplatePayload) { p.OutputFormats = []string{"xlsx"} }, "unsupported output format"},
+		// `xlsx` was this case until it became a delivery format; `csv` is the format
+		// that must stay out — a CSV cannot carry the disclosure, and an undisclosed
+		// artifact is exactly what §11.3 forbids.
+		{"unknown output format", func(p *ReportTemplatePayload) { p.OutputFormats = []string{"csv"} }, "unsupported output format"},
 		{"absolute threshold", func(p *ReportTemplatePayload) {
 			// A hard-coded similarity drifts with the embedding model and silently
 			// empties the report, so the contract only accepts the policy name.

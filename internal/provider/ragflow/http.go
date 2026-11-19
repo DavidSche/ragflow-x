@@ -1018,6 +1018,33 @@ func (c *HTTPClient) VerifyConnection(ctx context.Context, providerName, apiKey,
 	return result, nil
 }
 
+// ChatToModelDeadline is how long one long-form answer may take.
+//
+// The client-wide timeout is tuned for interactive calls (60 s in the test
+// deployment). A report section that has to cite six documents routinely needs
+// more: on 2026-11-18 the flagship section (`逐条符合性判定`) hit the 60 s client
+// timeout on both attempts of two consecutive runs, so the template's key
+// section was delivered as "生成失败" and the whole report as "部分章节未生成".
+// The retry path was working exactly as designed — the deadline was the defect.
+//
+// This is a *ceiling*, not a wait: a caller that sets its own context deadline
+// still wins, and a fast answer returns as soon as it arrives.
+const ChatToModelDeadline = 180 * time.Second
+
+// withLongFormTimeout returns a copy of this client whose request timeout is at
+// least ChatToModelDeadline. The interactive client is shared with every other
+// call, so it is copied rather than mutated.
+func (c *HTTPClient) withLongFormTimeout() *HTTPClient {
+	if c.http.Timeout >= ChatToModelDeadline {
+		return c
+	}
+	clone := *c
+	shared := *c.http
+	shared.Timeout = ChatToModelDeadline
+	clone.http = &shared
+	return &clone
+}
+
 // ChatToModel asks the engine to answer one prompt with one named model, and
 // returns the answer text (never a transport envelope).
 //
@@ -1071,7 +1098,11 @@ func (c *HTTPClient) ChatToModel(ctx context.Context, providerName, instanceName
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/chat/completions", bytes.NewReader(body), "application/json", &out); err != nil {
+	// Long-form answers get the longer ceiling; everything else keeps the
+	// configured interactive timeout.
+	// Long-form answers get the longer ceiling; everything else keeps the
+	// configured interactive timeout.
+	if err := c.withLongFormTimeout().do(ctx, http.MethodPost, "/chat/completions", bytes.NewReader(body), "application/json", &out); err != nil {
 		return "", wrapError(fmt.Sprintf("chat to model %s via %s/%s", modelName, providerName, instanceName), err)
 	}
 	text := out.Answer

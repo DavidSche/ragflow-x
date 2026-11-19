@@ -26,6 +26,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
@@ -53,6 +54,15 @@ type ReportRetentionView struct {
 	SystemReportArtifactDays    int `json:"system_report_artifact_days"`
 	SystemReportEventDays       int `json:"system_report_event_days"`
 	SystemReportCleanupHoldDays int `json:"system_report_cleanup_hold_days"`
+	// The two governance switches of the report surface (doc/296 §2.2/§2.3). They
+	// live on this payload because they are the same kind of decision as the clocks:
+	// a tenant-wide answer an operator writes once. Splitting them into a second
+	// endpoint would give the workspace two places to look for "what does this tenant
+	// allow", and two chances for one of them to be stale.
+	BudgetPolicy            string `json:"budget_policy"`
+	AutoConfirmPolicy       string `json:"auto_confirm_policy"`
+	SystemBudgetPolicy      string `json:"system_budget_policy"`
+	SystemAutoConfirmPolicy string `json:"system_auto_confirm_policy"`
 	// Overridden flags name the fields the tenant pins.
 	Overridden []string  `json:"overridden"`
 	UpdatedBy  string    `json:"updated_by,omitempty"`
@@ -153,7 +163,14 @@ func (s *Service) ReportRetention(ctx context.Context, tenantID string) (*Report
 		SystemReportArtifactDays:    reportRetentionDays(system.ReportArtifactDays, reportDefaultArtifactDays),
 		SystemReportEventDays:       reportRetentionDays(system.ReportEventDays, reportDefaultEventDays),
 		SystemReportCleanupHoldDays: reportRetentionDays(system.ReportCleanupHoldDays, reportDefaultHoldDays),
-		Overridden:                  []string{},
+		// The switches resolve to their documented defaults; the "system" fields say
+		// what a tenant that overrides nothing gets, so the panel can render
+		// "observe (system enforce)" without guessing.
+		BudgetPolicy:            reportBudgetPolicyResolved(overlay),
+		AutoConfirmPolicy:       reportAutoConfirmPolicyResolved(overlay),
+		SystemBudgetPolicy:      model.ReportBudgetEnforce,
+		SystemAutoConfirmPolicy: model.ReportAutoConfirmSelf,
+		Overridden:              []string{},
 	}
 	if overlay != nil {
 		view.UpdatedBy = overlay.UpdatedBy
@@ -173,6 +190,12 @@ func (s *Service) ReportRetention(ctx context.Context, tenantID string) (*Report
 		if overlay.ReportCleanupHoldDays != nil {
 			view.Overridden = append(view.Overridden, "report_cleanup_hold_days")
 		}
+		if overlay.BudgetPolicy != "" {
+			view.Overridden = append(view.Overridden, "budget_policy")
+		}
+		if overlay.AutoConfirmPolicy != "" {
+			view.Overridden = append(view.Overridden, "auto_confirm_policy")
+		}
 	}
 	return view, nil
 }
@@ -183,11 +206,17 @@ func (s *Service) ReportRetention(ctx context.Context, tenantID string) (*Report
 // zeros — writing 0 would mean "purge everything immediately", which is not a
 // reachable state for a policy (validation rejects it).
 type TenantReportPolicyRequest struct {
-	ReportDays            *int `json:"report_days"`
-	ReportEvidenceDays    *int `json:"report_evidence_days"`
-	ReportArtifactDays    *int `json:"report_artifact_days"`
-	ReportEventDays       *int `json:"report_event_days"`
-	ReportCleanupHoldDays *int `json:"report_cleanup_hold_days"`
+	// BudgetPolicy and AutoConfirmPolicy are optional strings; empty means inherit.
+	// A pointer would also work, but "empty string = inherit" is already the
+	// convention of every other optional string on this surface, and a JSON `null`
+	// and an omitted field would then behave differently for no benefit.
+	BudgetPolicy          string `json:"budget_policy"`
+	AutoConfirmPolicy     string `json:"auto_confirm_policy"`
+	ReportDays            *int   `json:"report_days"`
+	ReportEvidenceDays    *int   `json:"report_evidence_days"`
+	ReportArtifactDays    *int   `json:"report_artifact_days"`
+	ReportEventDays       *int   `json:"report_event_days"`
+	ReportCleanupHoldDays *int   `json:"report_cleanup_hold_days"`
 }
 
 // validateReportTTLDays mirrors the system-level bounds from `settingKeyValidators`
@@ -248,9 +277,21 @@ func (s *Service) SetTenantReportPolicy(
 			return nil, err
 		}
 	}
+	budgetPolicy := strings.TrimSpace(req.BudgetPolicy)
+	if budgetPolicy != "" && !containsString(model.ReportBudgetPolicies, budgetPolicy) {
+		return nil, httperr.BadRequest(codeReportOutlineInvalid,
+			"budget_policy must be one of "+strings.Join(model.ReportBudgetPolicies, ", "))
+	}
+	autoConfirmPolicy := strings.TrimSpace(req.AutoConfirmPolicy)
+	if autoConfirmPolicy != "" && !containsString(model.ReportAutoConfirmPolicies, autoConfirmPolicy) {
+		return nil, httperr.BadRequest(codeReportOutlineInvalid,
+			"auto_confirm_policy must be one of "+strings.Join(model.ReportAutoConfirmPolicies, ", "))
+	}
 	now := time.Now().UTC()
 	policy := &model.TenantReportPolicy{
 		TenantID:              tenantID,
+		BudgetPolicy:          budgetPolicy,
+		AutoConfirmPolicy:     autoConfirmPolicy,
 		ReportDays:            req.ReportDays,
 		ReportEvidenceDays:    req.ReportEvidenceDays,
 		ReportArtifactDays:    req.ReportArtifactDays,
@@ -287,6 +328,8 @@ func reportRetentionAuditDetail(view *ReportRetentionView, at time.Time) string 
 		"report_artifact_days":     view.ReportArtifactDays,
 		"report_event_days":        view.ReportEventDays,
 		"report_cleanup_hold_days": view.ReportCleanupHoldDays,
+		"budget_policy":            view.BudgetPolicy,
+		"auto_confirm_policy":      view.AutoConfirmPolicy,
 		"applies_to":               "rows created after " + at.Format(time.RFC3339),
 		"existing_rows_recomputed": false,
 	})

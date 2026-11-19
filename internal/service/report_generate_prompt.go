@@ -186,6 +186,11 @@ type reportOutlineSection struct {
 	// paraphrase invented here.
 	Instruction string `json:"instruction"`
 	Query       string `json:"query"`
+	// LocationHints are R17's compiled-artifact locators, filled in after the
+	// evidence preview runs. They are frozen with the outline so the confirmation
+	// screen shows the same navigation the writer will receive, and they are
+	// *never* part of the evidence block, the citation rows or the appendix.
+	LocationHints []string `json:"location_hints,omitempty"`
 }
 
 // reportOutline is `rgx_report_revision.outline_json` (§11.1). P0-A generates it
@@ -280,7 +285,7 @@ Rules:
 // `hashReportPrompt` describes a stable text.
 func reportSectionPrompt(
 	question string, section model.ReportSection, instruction string, maxWords int,
-	prior []reportPriorSection, evidence []reportEvidenceItem,
+	prior []reportPriorSection, evidence []reportEvidenceItem, hints []reportLocationHint,
 ) string {
 	var builder strings.Builder
 	builder.WriteString(reportWriterSystemPrompt)
@@ -306,6 +311,22 @@ func reportSectionPrompt(
 		if previous.Excerpt != "" {
 			builder.WriteString(": ")
 			builder.WriteString(previous.Excerpt)
+		}
+	}
+	// R17 locators. They are labelled as navigation in the prompt and in the
+	// exported contracts, because the writer is a language model: anything placed
+	// next to the evidence block without a warning becomes a citation.
+	if len(hints) > 0 {
+		builder.WriteString("\n\n# Locators (navigation only — never cite these)\n")
+		builder.WriteString("These point at compiled structures over the same documents. ")
+		builder.WriteString("Use them to decide what to write about; every factual statement ")
+		builder.WriteString("still needs a citation from # Evidence.\n")
+		for _, hint := range hints {
+			if line := reportLocationHintText(hint); line != "" {
+				builder.WriteString("- ")
+				builder.WriteString(line)
+				builder.WriteString("\n")
+			}
 		}
 	}
 	builder.WriteString("\n\n# Evidence\n")
@@ -373,6 +394,11 @@ type reportEvidenceItem struct {
 	SourceContent string
 	ContentHash   string
 	Score         float64
+	// ScoreType is which retrieval signal produced `Score` (doc/288 §7.5: `vector`,
+	// `term`, `hybrid`). It travels with the evidence item because the citation row is
+	// written from it, and because the preview (R13) shows scores before any citation
+	// exists — a score without its type is a number nobody can compare.
+	ScoreType string
 }
 
 // boundReportEvidence caps the evidence block per section. It returns the kept
@@ -607,6 +633,41 @@ func decodeReportModelReply(raw string) (reportModelReply, error) {
 	// Tokens stay zero on purpose: the caller has the prompt text and owns the
 	// estimate (see `reportSectionRun.writeSection`).
 	return reportModelReply{Text: trimmed}, nil
+}
+
+// reportModelErrorPrefix is the engine's component-error convention: when a model
+// route times out or a component refuses its parameters, the engine reports it
+// *inside* the answer text — `**ERROR**: <detail>` — with a normal HTTP 200 chat
+// envelope. Downstream that is indistinguishable from prose unless the prefix is
+// named, and the cost of not naming it was measured live on 2026-11-19: an engine
+// whose model route hit its hard deadline published five section bodies, and ten
+// claim rows, that read `**ERROR**: API request failed with status 502: ...`. A
+// report is a deliverable; shipping a provider's error string as its body is not a
+// degraded report, it is a wrong one. It also cannot be fixed downstream — the
+// citation and claim checks see a normal answer and grade it `unsupported`.
+const reportModelErrorPrefix = "**ERROR**:"
+
+// reportModelErrorContent reads a reply that is the engine's error envelope rather
+// than an answer, and returns the provider's detail for the log.
+//
+// The gate is deliberately narrow: the envelope must be the *whole* reply and one
+// line, so a section that legitimately quotes an error string inside a table is not
+// mistaken for a failed call. Anything wider would turn a correct section into a
+// failed one — the opposite mistake, and a worse one, because a failed section is
+// lost content.
+func reportModelErrorContent(text string) (string, bool) {
+	trimmed := strings.TrimSpace(text)
+	if !strings.HasPrefix(trimmed, reportModelErrorPrefix) {
+		return "", false
+	}
+	detail := strings.TrimSpace(strings.TrimPrefix(trimmed, reportModelErrorPrefix))
+	if detail == "" || strings.Contains(detail, "\n") {
+		return "", false
+	}
+	if runes := []rune(detail); len(runes) > 200 {
+		detail = string(runes[:200]) + "…"
+	}
+	return detail, true
 }
 
 // estimateReportTokens is the fallback when a provider answers without `usage`:

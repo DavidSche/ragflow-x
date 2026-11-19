@@ -137,10 +137,12 @@ func (s *Service) reportTemplateViewOf(row *model.ReportTemplate) (*ReportTempla
 	if err != nil {
 		return nil, err
 	}
+	retired := row.RetiredAt != nil || row.Status == model.ReportTemplateStatusRetired
 	view := &ReportTemplateView{
 		TemplateID: row.ID, Key: row.TemplateKey, Version: row.Version,
 		TenantID: row.TenantID, Payload: *payload, Status: row.Status,
-		Retired: row.RetiredAt != nil || row.Status == model.ReportTemplateStatusRetired,
+		Retired: retired, Source: reportTemplateSourceOf(row), Editable: !retired,
+		SourceTemplateID: row.SourceTemplateID, SourceTemplateVersion: row.SourceTemplateVersion,
 	}
 	return view, nil
 }

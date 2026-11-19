@@ -38,6 +38,9 @@ func pdfSectionAnchorKey(ord int) string { return fmt.Sprintf("sec:%d", ord) }
 
 const pdfAppendixAnchorKey = "appendix"
 
+// pdfClaimAppendixAnchorKey is the contents entry for the claim list (R11).
+const pdfClaimAppendixAnchorKey = "claim-appendix"
+
 // renderReportPdf renders the frozen document to PDF.
 //
 // It renders twice on purpose. A table of contents needs the page number of every
@@ -99,13 +102,18 @@ func reportPdfContentsRows(document *reportDocument, pageOf map[string]int) []pd
 		key := pdfSectionAnchorKey(section.Ord)
 		rows = append(rows, pdfContentsRow{
 			Key:   key,
-			Label: fmt.Sprintf("%d. %s", section.Ord+1, section.Title),
+			Label: fmt.Sprintf("%d. %s", reportSectionNumber(section.Ord), section.Title),
 			Page:  pageOf[key],
 		})
 	}
 	if len(document.EvidenceAppendix) > 0 {
 		rows = append(rows, pdfContentsRow{
 			Key: pdfAppendixAnchorKey, Label: "证据附录", Page: pageOf[pdfAppendixAnchorKey],
+		})
+	}
+	if len(document.Claims) > 0 {
+		rows = append(rows, pdfContentsRow{
+			Key: pdfClaimAppendixAnchorKey, Label: "结论清单", Page: pageOf[pdfClaimAppendixAnchorKey],
 		})
 	}
 	return rows
@@ -173,7 +181,7 @@ func renderReportPdfPass(
 		pdf.MultiCell(0, 5, "本报告为部分完成，以下节未生成：", "", "L", false)
 		for _, gap := range document.Gaps {
 			line := fmt.Sprintf("· 第 %d 节「%s」未生成：%s（影响：%s）",
-				gap.Ord+1, gap.Title, gap.Reason, gap.Impact)
+				reportSectionNumber(gap.Ord), gap.Title, gap.Reason, gap.Impact)
 			if gap.ErrorCode != "" {
 				line += fmt.Sprintf("；错误码 %s", gap.ErrorCode)
 			}
@@ -218,21 +226,33 @@ func renderReportPdfPass(
 			pdf.SetLink(link, pdf.GetY()-2, pdf.PageNo())
 		}
 		pdf.SetFont("cjk", "", 14)
-		pdf.MultiCell(0, 7, fmt.Sprintf("%d. %s", section.Ord+1, section.Title), "", "L", false)
+		pdf.MultiCell(0, 7, fmt.Sprintf("%d. %s", reportSectionNumber(section.Ord), section.Title), "", "L", false)
 		pdf.Ln(1)
 		for _, block := range parseAnswerContent(section.ContentMD) {
 			pdfReportBlock(pdf, block, numbers)
 		}
+		if line := reportLocationHintsLine(section.LocationHints); line != "" {
+			pdf.SetFont("cjk", "", 9)
+			pdf.MultiCell(0, 5, line, "", "L", false)
+		}
+		if plan := reportResearchPlanLine(section.ResearchPlan); plan != "" {
+			pdf.SetFont("cjk", "", 9)
+			pdf.MultiCell(0, 5, plan, "", "L", false)
+		}
 		if section.EvidenceStatus != "" && section.CitationCount > 0 {
 			pdf.SetFont("cjk", "", 9)
 			pdf.MultiCell(0, 5, fmt.Sprintf("依据：%d 条引用，证据状态 %s。",
-				section.CitationCount, section.EvidenceStatus), "", "L", false)
+				section.CitationCount, reportEvidenceStatusLabel(section.EvidenceStatus)), "", "L", false)
 		}
 	}
 
 	if len(document.EvidenceAppendix) > 0 {
 		renderReportEvidenceAppendixPdf(pdf, document)
 		landed[pdfAppendixAnchorKey] = pdf.PageNo()
+	}
+	if len(document.Claims) > 0 {
+		renderReportClaimAppendixPdf(pdf, document)
+		landed[pdfClaimAppendixAnchorKey] = pdf.PageNo()
 	}
 
 	var buffer strings.Builder
@@ -265,6 +285,37 @@ func pdfReportBlock(pdf *fpdf.Fpdf, block exportBlock, numbers *pdfCaptionNumber
 	pdfBlock(pdf, block)
 }
 
+// renderReportClaimAppendixPdf prints R11's claim list and R16's cross-section
+// warnings. It starts a new page like the evidence appendix: the claim list is
+// something a reviewer reads beside the evidence, not a footnote.
+func renderReportClaimAppendixPdf(pdf *fpdf.Fpdf, document *reportDocument) {
+	pdf.AddPage()
+	pdf.SetFont("cjk", "", 14)
+	pdf.MultiCell(0, 7, "结论清单", "", "L", false)
+	pdf.SetFont("cjk", "", 9)
+	pdf.MultiCell(0, 5, reportClaimAppendixPreamble, "", "L", false)
+	pdf.MultiCell(0, 5, reportClaimSummary(document), "", "L", false)
+	pdf.Ln(2)
+	for _, group := range reportClaimGroups(document) {
+		pdf.SetFont("cjk", "", 11)
+		pdf.MultiCell(0, 6, fmt.Sprintf("%d. %s", reportSectionNumber(group.Ord), group.Title), "", "L", false)
+		pdf.SetFont("cjk", "", 9)
+		for _, line := range group.Headings {
+			pdf.MultiCell(0, 5, "· "+line, "", "L", false)
+		}
+	}
+	if len(document.ConsistencyIssues) > 0 {
+		pdf.Ln(3)
+		pdf.SetFont("cjk", "", 12)
+		pdf.MultiCell(0, 6, "跨章节一致性提示", "", "L", false)
+		pdf.SetFont("cjk", "", 9)
+		pdf.MultiCell(0, 5, "以下同一事实在不同章节出现不同说法，请核实后再对外使用。", "", "L", false)
+		for _, issue := range document.ConsistencyIssues {
+			pdf.MultiCell(0, 5, reportConsistencyLine(issue), "", "L", false)
+		}
+	}
+}
+
 // renderReportEvidenceAppendixPdf prints the frozen appendix. It is shared by the
 // PDF and (structurally) mirrored by the DOCX/Markdown renderers, because the same
 // evidence has to be readable in every delivered format (A13).
@@ -289,9 +340,9 @@ func renderReportEvidenceAppendixPdf(pdf *fpdf.Fpdf, document *reportDocument) {
 			pdf.SetFont("cjk", "", 11)
 			title := entry.SectionTitle
 			if title == "" {
-				title = fmt.Sprintf("第 %d 节", entry.SectionOrd+1)
+				title = fmt.Sprintf("第 %d 节", reportSectionNumber(entry.SectionOrd))
 			}
-			pdf.MultiCell(0, 6, fmt.Sprintf("%d. %s", entry.SectionOrd+1, title), "", "L", false)
+			pdf.MultiCell(0, 6, fmt.Sprintf("%d. %s", reportSectionNumber(entry.SectionOrd), title), "", "L", false)
 			pdf.SetFont("cjk", "", 9)
 		}
 		locator := entry.DocumentName
@@ -301,7 +352,7 @@ func renderReportEvidenceAppendixPdf(pdf *fpdf.Fpdf, document *reportDocument) {
 		if locator == "" {
 			locator = entry.ChunkID
 		}
-		pdf.MultiCell(0, 5, fmt.Sprintf("[%d] %s · %s", entry.Ord+1, locator, scoreLabel(entry)), "", "L", false)
+		pdf.MultiCell(0, 5, fmt.Sprintf("[%d] %s · %s", reportSectionNumber(entry.Ord), locator, scoreLabel(entry)), "", "L", false)
 		pdf.SetFont("cjk", "", 8)
 		pdf.SetFillColor(245, 245, 245)
 		pdf.MultiCell(0, 4.5, entry.Content, "1", "L", true)
@@ -312,12 +363,37 @@ func renderReportEvidenceAppendixPdf(pdf *fpdf.Fpdf, document *reportDocument) {
 
 // scoreLabel renders the score with its type, because a bare number is unit-less:
 // `similarity 0.82` and `rerank 0.82` mean different things (doc/288 §12).
+//
+// The three retrieval types get a Chinese name, because the appendix is a document
+// a person reads: `hybrid 0.82` in the middle of Chinese prose is a machine
+// identifier leaking into a deliverable. A legacy `similarity` row (written before
+// the type was recorded, §7.5) falls back to the raw value rather than being
+// relabelled as one of the three — the point of the column is to say *which* signal
+// the number is, so guessing on re-print would defeat it.
 func scoreLabel(entry reportEvidenceEntry) string {
 	kind := entry.RetrievalScoreType
-	if kind == "" {
-		kind = "score"
+	label := scoreTypeLabel(kind)
+	if label == "" {
+		label = kind
 	}
-	return fmt.Sprintf("%s %.2f", kind, entry.RetrievalScore)
+	if label == "" {
+		label = "score"
+	}
+	return fmt.Sprintf("%s %.2f", label, entry.RetrievalScore)
+}
+
+// scoreTypeLabel is the reader-facing name of a retrieval score type.
+func scoreTypeLabel(kind string) string {
+	switch kind {
+	case model.ReportRetrievalScoreVector:
+		return "向量"
+	case model.ReportRetrievalScoreTerm:
+		return "词项"
+	case model.ReportRetrievalScoreHybrid:
+		return "混合"
+	default:
+		return ""
+	}
 }
 
 // pdfStringWriter adapts a strings.Builder to the io.Writer fpdf expects, so the

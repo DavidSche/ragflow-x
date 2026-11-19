@@ -86,13 +86,19 @@ type ReportSectionSnapshot struct {
 	// the confirmation screen. Nil means nothing was frozen — render 未评估, never
 	// "充足".
 	EvidencePreview *reportEvidencePreview `json:"evidence_preview,omitempty"`
-	CitationCount   int                    `json:"citation_count"`
-	ClaimCount      int                    `json:"claim_count"`
-	Attempt         int                    `json:"attempt"`
-	TokensIn        int64                  `json:"tokens_in"`
-	TokensOut       int64                  `json:"tokens_out"`
-	StartedAt       *time.Time             `json:"started_at"`
-	FinishedAt      *time.Time             `json:"finished_at"`
+	// LocationHints are R17's compiled-artifact locators as display lines, so the
+	// workspace can show the same 「定位线索（非证据）」 line the reader and the three
+	// exports show. They are navigation only: nothing here may be counted as
+	// evidence, and the projection's score/excerpt/chunk id is deliberately absent
+	// (doc/295 §2.1).
+	LocationHints []string   `json:"location_hints,omitempty"`
+	CitationCount int        `json:"citation_count"`
+	ClaimCount    int        `json:"claim_count"`
+	Attempt       int        `json:"attempt"`
+	TokensIn      int64      `json:"tokens_in"`
+	TokensOut     int64      `json:"tokens_out"`
+	StartedAt     *time.Time `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
 }
 
 // ReportJobSnapshot is the refresh-without-loss payload (§8.3): the current truth
@@ -198,6 +204,7 @@ func (s *Service) GetReportJobSnapshot(ctx context.Context, actorID, tenantID, j
 			QualityStatus:    section.QualityStatus,
 			RequiresEvidence: section.RequiresEvidence,
 			EvidencePreview:  reportSectionEvidencePreview(section.EvidencePreviewJSON),
+			LocationHints:    reportLocationHintLines(parseReportLocationHints(section.LocationHintsJSON)),
 			CitationCount:    section.CitationCount,
 			ClaimCount:       section.ClaimCount,
 			Attempt:          section.Attempt,

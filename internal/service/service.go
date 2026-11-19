@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -358,6 +359,22 @@ func (s *Service) CurrentUser(ctx context.Context, userID string) (*model.User, 
 		return nil, err
 	}
 	return u, nil
+}
+
+// TenantDisplayName resolves the workspace name the UI shows next to a user
+// ("工作区 最佳实践演示工作区-BP"). A missing row is not an error: the caller
+// falls back to the raw id rather than failing the whole identity call. The
+// report workspace footer used to print `tenant_id` — a 32-character hex string
+// that says nothing to a reader (live, 2026-11-18).
+func (s *Service) TenantDisplayName(ctx context.Context, tenantID string) string {
+	if strings.TrimSpace(tenantID) == "" {
+		return ""
+	}
+	tenant, err := s.Store.GetTenant(ctx, tenantID)
+	if err != nil || tenant == nil {
+		return ""
+	}
+	return tenant.Name
 }
 
 // authzContext carries the resolved user and effective permissions for one

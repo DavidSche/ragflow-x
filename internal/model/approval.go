@@ -22,6 +22,12 @@ const (
 	ApprovalObjectKnowledgeTask        = "knowledge-task"
 	ApprovalObjectReleaseCandidate     = "release-candidate"
 	ApprovalObjectCompilationRun       = "compilation-run"
+	// ApprovalObjectReport is the report surface's governance object (doc/296 §2.2).
+	// It exists for one action — raising a frozen token envelope — because that is
+	// the only report decision an approval may make: everything else on the surface
+	// is the owner's own call (§7.6), and a report's *content* is never approved,
+	// only its budget.
+	ApprovalObjectReport = "report"
 
 	ApprovalActionCreate                  = "create"
 	ApprovalActionUpdate                  = "update"
@@ -39,6 +45,9 @@ const (
 	ApprovalActionResolve                 = "resolve"
 	ApprovalActionRelease                 = "release"
 	ApprovalActionConfirmDownstreamAbsent = "confirm-downstream-absent"
+	// ApprovalActionExtendBudget widens one job's envelope. It cannot rewrite the
+	// ledger: what was spent stays spent (doc/288 §8.6 last rule).
+	ApprovalActionExtendBudget = "extend-budget"
 
 	ApprovalStatusPendingApproval = "pending_approval"
 	ApprovalStatusApproved        = "approved"
