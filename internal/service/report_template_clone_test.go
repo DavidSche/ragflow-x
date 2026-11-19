@@ -204,6 +204,48 @@ func TestCloneReportTemplateUnknownKey(t *testing.T) {
 	}
 }
 
+// TestCloneReportTemplateRefusesPlatformTenant pins the guard added after the
+// 2026-11-19 guide pass: the platform tenant has no "my workspace" to fork into,
+// so the clone route answers NotFound there instead of writing a byte-identical
+// platform version on top of the baseline every workspace pins.
+func TestCloneReportTemplateRefusesPlatformTenant(t *testing.T) {
+	fx := newReportFixture(t, "clone-platform")
+	ctx := context.Background()
+	countVersions := func() int {
+		t.Helper()
+		rows, err := fx.svc.Store.ListReportTemplates(ctx, model.PlatformTenantID)
+		if err != nil {
+			t.Fatalf("list platform templates: %v", err)
+		}
+		n := 0
+		for _, row := range rows {
+			if row.TemplateKey == reportComplianceTemplateKey {
+				n++
+			}
+		}
+		return n
+	}
+	before := countVersions()
+	// A platform admin is the only actor the platform tenant's matrix authorises;
+	// the guard sits *after* authorization, so the test has to reach it as one.
+	if err := fx.svc.BootstrapAdmin(ctx, "clone-platform-root", "secret123"); err != nil {
+		t.Fatalf("bootstrap platform admin: %v", err)
+	}
+	root, err := fx.svc.Store.GetUserByUsername(ctx, "clone-platform-root")
+	if err != nil || root == nil {
+		t.Fatalf("load platform admin: %v", err)
+	}
+	_, err = fx.svc.CloneReportTemplate(ctx, root.ID, model.PlatformTenantID, reportComplianceTemplateKey)
+	var httpErr *httperr.Error
+	if !errors.As(err, &httpErr) || httpErr.Code != codeReportTemplateNotFound || httpErr.Status != 404 {
+		t.Fatalf("platform-tenant clone must be 404/44107, got %v", err)
+	}
+	after := countVersions()
+	if after != before {
+		t.Fatalf("refused clone must not publish a version, %d → %d", before, after)
+	}
+}
+
 func TestCloneReportTemplateRequiresManage(t *testing.T) {
 	fx := newReportFixture(t, "clone-rbac")
 	ctx := context.Background()
