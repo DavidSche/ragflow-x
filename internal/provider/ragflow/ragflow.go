@@ -355,10 +355,20 @@ type AddedModel struct {
 }
 
 // DefaultModel is a tenant default model setting returned by /models/default.
+//
+// The engine answers this endpoint with the `ModelItem` shape
+// (`model_provider` / `model_instance` / `model_name` / `model_id` /
+// `model_type`), not with the `/models` `name` key, so the identity fields are
+// decoded here explicitly. Without them a canvas LLM node cannot name its
+// tenant default (it would show a bare id) and the chat editor's "default:
+// <name>" hint stays blank.
 type DefaultModel struct {
-	ModelID string `json:"model_id"`
-	Name    string `json:"name"`
-	Type    string `json:"model_type"`
+	ModelID   string `json:"model_id"`
+	Name      string `json:"name"`
+	ModelName string `json:"model_name"`
+	Provider  string `json:"model_provider"`
+	Instance  string `json:"model_instance"`
+	Type      string `json:"model_type"`
 }
 
 // SetDefaultModelRequest mirrors RAGFlow's tenant default-model write contract

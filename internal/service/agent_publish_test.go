@@ -21,8 +21,7 @@ func TestAgentPublishWritesVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	agent, err := svc.CreateAgent(ctx, tenant.ID, "agent-publish",
-		map[string]interface{}{"components": map[string]interface{}{}}, false, "agent_canvas")
+	agent, err := svc.CreateAgent(ctx, tenant.ID, "agent-publish", validChatDsl(), false, "agent_canvas")
 	if err != nil {
 		t.Fatal(err)
 	}

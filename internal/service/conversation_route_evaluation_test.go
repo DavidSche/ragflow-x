@@ -268,7 +268,7 @@ func createDoc41RouteSuite(t *testing.T, svc *Service, tenantID string) string {
 	for _, target := range doc41RouteEvaluationMetadata() {
 		var assistantID string
 		if target.kind == model.AssistantKindAgent {
-			assistant, err := svc.CreateAgent(context.Background(), tenantID, target.name, map[string]interface{}{"components": map[string]interface{}{}}, true, model.AgentCanvasCategoryWorkflow)
+			assistant, err := svc.CreateAgent(context.Background(), tenantID, target.name, validChatDsl(), true, model.AgentCanvasCategoryWorkflow)
 			if err != nil {
 				t.Fatal(err)
 			}

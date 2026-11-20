@@ -451,7 +451,57 @@ func (c *HTTPClient) AgentChatCompletion(ctx context.Context, req CompletionRequ
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, wrapError("decode ragflow agent completion", err)
 	}
+	attachAgentChoiceReferences(&out, raw)
 	return &out, nil
+}
+
+// attachAgentChoiceReferences lifts the reference payload out of
+// `choices[0].message.reference` into `CompletionResponse.Reference`.
+//
+// The openai-compatible response (which this client asks for) nests the retrieval
+// evidence under the message and leaves the top-level `reference` key unused, so
+// a direct decode produced a completion with no citations at all: the answer text
+// still carried `[ID:bd7636ac5bbdadce]` markers (the engine's own chunk ids) while
+// the citation list was empty, which the UI can only render as dead chips.
+func attachAgentChoiceReferences(out *CompletionResponse, raw []byte) {
+	if out == nil || len(out.Reference) > 0 {
+		return
+	}
+	var envelope struct {
+		Choices []struct {
+			Message struct {
+				Reference json.RawMessage `json:"reference"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return
+	}
+	for _, choice := range envelope.Choices {
+		if chunks, ok := decodeReferencePayload(choice.Message.Reference); ok && len(chunks) > 0 {
+			out.Reference = chunks
+			return
+		}
+	}
+}
+
+// decodeReferencePayload accepts both reference shapes the engine uses: an
+// object with `chunks` (agent/session replies) and a bare chunk array.
+func decodeReferencePayload(raw json.RawMessage) ([]map[string]interface{}, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, false
+	}
+	var object struct {
+		Chunks []map[string]interface{} `json:"chunks"`
+	}
+	if err := json.Unmarshal(raw, &object); err == nil && object.Chunks != nil {
+		return object.Chunks, true
+	}
+	var list []map[string]interface{}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, false
+	}
+	return list, true
 }
 
 // StreamAgentChatCompletion proxies an agent chat completion (SSE).

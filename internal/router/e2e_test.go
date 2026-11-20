@@ -1075,6 +1075,53 @@ func TestE2E_RBACEnforcement(t *testing.T) {
 	}
 }
 
+// TestE2E_AgentValidationRoutesAreReachable pins the *route table* side of the
+// save-time validator. The RBAC middleware denies an unregistered authenticated
+// route with a bare 403, so a handler that exists but is missing from accessRules
+// looks like a permissions bug in production (and passed every service test).
+func TestE2E_AgentValidationRoutesAreReachable(t *testing.T) {
+	app := newTestApp(t)
+	defer app.close()
+	token := app.login(t)
+
+	dsl := `{"components":{"begin":{"obj":{"component_name":"Begin","params":{}}},
+		"retr":{"obj":{"component_name":"Knowledge","params":{"kb_ids":[]},"upstream":["begin"]}}},
+		"graph":{"nodes":[{"id":"begin","data":{"label":"Begin"}},{"id":"retr","data":{"label":"Knowledge"}}]}}`
+	resp, body := app.doAuth(t, http.MethodPost, "/api/v1/agents/validate",
+		token, []byte(`{"canvas_category":"agent_canvas","dsl":`+dsl+`}`))
+	if resp.StatusCode != 200 {
+		t.Fatalf("validate status %d: %s", resp.StatusCode, body)
+	}
+	var report struct {
+		Data struct {
+			OK     bool `json:"ok"`
+			Errors []struct {
+				Code string `json:"code"`
+			} `json:"errors"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Data.OK {
+		t.Fatalf("a knowledge node with no kb must not validate: %s", body)
+	}
+	found := false
+	for _, issue := range report.Data.Errors {
+		if issue.Code == "retrieval_dataset_missing" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected retrieval_dataset_missing, got %s", body)
+	}
+
+	resp, body = app.doAuth(t, http.MethodGet, "/api/v1/agents/does-not-exist/validation", token, nil)
+	if resp.StatusCode == 403 {
+		t.Fatalf("stored-canvas validation must be registered in accessRules: %s", body)
+	}
+}
+
 func TestE2E_ChatManagement(t *testing.T) {
 	app := newTestApp(t)
 	defer app.close()

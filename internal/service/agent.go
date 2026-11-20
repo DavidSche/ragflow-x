@@ -213,6 +213,13 @@ func (s *Service) CreateAgent(ctx context.Context, tenantID, title string, dsl m
 	if normalizedCategory == "" {
 		normalizedCategory = model.AgentCanvasCategoryWorkflow
 	}
+	if release {
+		// Never let a canvas that cannot run reach users: the engine reports it as
+		// "Internal storage error" on the first chat, hours after the author left.
+		if err := s.EnforceAgentDSL(ctx, agentScope(tenantID), dsl, normalizedCategory); err != nil {
+			return nil, err
+		}
+	}
 	created, err := s.RAGFlow.CreateAgent(ctx, ragflow.CreateAgentRequest{Title: title, Dsl: dsl, Release: release, CanvasCategory: normalizedCategory})
 	if err != nil {
 		return nil, httperr.New(502, 50281, "ragflow create agent failed")
@@ -262,6 +269,26 @@ func (s *Service) UpdateAgent(ctx context.Context, tenantID, agentID, title stri
 	if release != nil {
 		req.Release = release
 	}
+	if release != nil && *release {
+		// Validate what will actually be live: the submitted DSL, or the stored one
+		// when this call only flips the flag.
+		candidate := dsl
+		category := a.CanvasCategory
+		if candidate == nil {
+			live, liveErr := s.RAGFlow.GetAgent(ctx, agentID)
+			if liveErr == nil && live != nil {
+				candidate = live.Dsl
+				if live.CanvasCategory != "" {
+					category = live.CanvasCategory
+				}
+			}
+		}
+		if candidate != nil {
+			if err := s.EnforceAgentDSL(ctx, agentScope(tenantID), candidate, category); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if err := s.RAGFlow.UpdateAgent(ctx, agentID, req); err != nil {
 		return nil, httperr.New(502, 50282, "ragflow update agent failed")
 	}
@@ -294,6 +321,20 @@ func (s *Service) PublishAgent(ctx context.Context, tenantID, agentID string, re
 	}
 	if a == nil {
 		return nil, httperr.NotFound("agent not found")
+	}
+	live, err := s.RAGFlow.GetAgent(ctx, agentID)
+	if err != nil {
+		return nil, httperr.New(502, 50280, "ragflow get agent failed")
+	}
+	if live == nil {
+		return nil, httperr.NotFound("agent not found")
+	}
+	category := live.CanvasCategory
+	if category == "" {
+		category = a.CanvasCategory
+	}
+	if err := s.EnforceAgentDSL(ctx, agentScope(tenantID), live.Dsl, category); err != nil {
+		return nil, err
 	}
 	if _, err := s.RAGFlow.PublishAgentVersion(ctx, agentID); err != nil {
 		return nil, agentUpstreamError(err, 50290, "ragflow publish agent version failed", "agent not found")

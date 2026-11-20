@@ -64,6 +64,73 @@ func (h *Handler) ListAgents(c *gin.Context) {
 	response.OKPage(c, items, total, page, pageSize)
 }
 
+// AgentAuthoringOptions returns the picker lists the canvas inspector needs
+// (chat/rerank models, governance-scoped datasets, memories) so node parameters
+// that reference a system resource are dropdowns instead of free-text id inputs.
+// Read permission on `agent` is enough: the payload is catalog metadata, not
+// resource content.
+func (h *Handler) AgentAuthoringOptions(c *gin.Context) {
+	ctx := c.Request.Context()
+	if err := h.Service.Authorize(ctx, c.GetString(middleware.ContextUserID), "read", "agent"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	scope, ok := h.resolveGovernanceScope(c, "agent")
+	if !ok {
+		return
+	}
+	response.OK(c, h.Service.AgentAuthoringOptions(ctx, scope))
+}
+
+// agentValidatePayload is the body of POST /agents/validate. `canvas_category`
+// decides which rule set applies (chat canvas vs ingestion pipeline).
+type agentValidatePayload struct {
+	Dsl            map[string]interface{} `json:"dsl"`
+	CanvasCategory string                 `json:"canvas_category"`
+}
+
+// ValidateAgentDSL checks a canvas without saving it, so the editor can show the
+// blocking items before the author hits save (and before publishing turns them
+// into a 40099). Read permission on `agent` is enough: nothing is persisted.
+func (h *Handler) ValidateAgentDSL(c *gin.Context) {
+	var req agentValidatePayload
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 400, 40000, "invalid agent payload")
+		return
+	}
+	ctx := c.Request.Context()
+	if err := h.Service.Authorize(ctx, c.GetString(middleware.ContextUserID), "read", "agent"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	scope, ok := h.resolveGovernanceScope(c, "agent")
+	if !ok {
+		return
+	}
+	response.OK(c, h.Service.ValidateAgentDSL(ctx, scope, req.Dsl, req.CanvasCategory))
+}
+
+// AgentValidation validates the DSL the engine currently stores for one agent.
+// The editor calls it on open, so canvases saved before the validator existed are
+// flagged without being re-saved.
+func (h *Handler) AgentValidation(c *gin.Context) {
+	ctx := c.Request.Context()
+	if err := h.Service.Authorize(ctx, c.GetString(middleware.ContextUserID), "read", "agent"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	scope, ok := h.resolveGovernanceScope(c, "agent")
+	if !ok {
+		return
+	}
+	report, err := h.Service.ValidateStoredAgentDSL(ctx, scope, c.Param("id"))
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, report)
+}
+
 // CreateAgent creates an agent owned by the caller's tenant.
 func (h *Handler) CreateAgent(c *gin.Context) {
 	var req agentCreatePayload

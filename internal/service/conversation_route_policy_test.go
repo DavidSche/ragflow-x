@@ -203,7 +203,7 @@ func TestRoutePolicyRequiresAgentFlowReadiness(t *testing.T) {
 	if _, err := svc.SetTenantRoutePolicy(ctx, admin.ID, tenant.ID, UpdateRoutePolicyRequest{AutoRouteMode: RouteModeAutoLowRisk}); err != nil {
 		t.Fatal(err)
 	}
-	agent, err := svc.CreateAgent(ctx, tenant.ID, "Risk workflow", map[string]interface{}{"components": map[string]interface{}{}}, true, model.AgentCanvasCategoryWorkflow)
+	agent, err := svc.CreateAgent(ctx, tenant.ID, "Risk workflow", validChatDsl(), true, model.AgentCanvasCategoryWorkflow)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,6 +25,7 @@ type HTTPClient struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+	catalogCache
 }
 
 // NewHTTPClient builds a client with a default LoggingMiddleware.
@@ -172,12 +173,22 @@ func (c *HTTPClient) buildRequest(ctx context.Context, method, path string,
 func (c *HTTPClient) doAndParse(ctx context.Context, method, path string,
 	body io.Reader, contentType string, out interface{}) error {
 
+	return c.doAndParseWithClient(ctx, c.http, method, path, body, contentType, out)
+}
+
+// doAndParseWithClient is doAndParse with an explicit http.Client, so one call
+// can use a longer deadline without cloning HTTPClient. Cloning it would copy
+// the embedded catalog mutex — `go vet` rejects that ("assignment copies lock
+// value"), and a duplicated mutex is a real data race, not a style nit.
+func (c *HTTPClient) doAndParseWithClient(ctx context.Context, hc *http.Client, method, path string,
+	body io.Reader, contentType string, out interface{}) error {
+
 	req, err := c.buildRequest(ctx, method, path, body, contentType)
 	if err != nil {
 		return err
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		// Pass through structured errors (e.g. from RetryMiddleware) without wrapping.
 		var ragErr *Error
@@ -1031,18 +1042,17 @@ func (c *HTTPClient) VerifyConnection(ctx context.Context, providerName, apiKey,
 // still wins, and a fast answer returns as soon as it arrives.
 const ChatToModelDeadline = 180 * time.Second
 
-// withLongFormTimeout returns a copy of this client whose request timeout is at
-// least ChatToModelDeadline. The interactive client is shared with every other
-// call, so it is copied rather than mutated.
-func (c *HTTPClient) withLongFormTimeout() *HTTPClient {
+// longFormClient returns an http.Client whose request timeout is at least
+// ChatToModelDeadline. The interactive client is shared with every other call,
+// so a copy of *http.Client is used — not of HTTPClient: the latter embeds the
+// catalog cache, and copying its mutex is both a vet failure and a data race.
+func (c *HTTPClient) longFormClient() *http.Client {
 	if c.http.Timeout >= ChatToModelDeadline {
-		return c
+		return c.http
 	}
-	clone := *c
 	shared := *c.http
 	shared.Timeout = ChatToModelDeadline
-	clone.http = &shared
-	return &clone
+	return &shared
 }
 
 // ChatToModel asks the engine to answer one prompt with one named model, and
@@ -1102,7 +1112,7 @@ func (c *HTTPClient) ChatToModel(ctx context.Context, providerName, instanceName
 	// configured interactive timeout.
 	// Long-form answers get the longer ceiling; everything else keeps the
 	// configured interactive timeout.
-	if err := c.withLongFormTimeout().do(ctx, http.MethodPost, "/chat/completions", bytes.NewReader(body), "application/json", &out); err != nil {
+	if err := c.doAndParseWithClient(ctx, c.longFormClient(), http.MethodPost, "/chat/completions", bytes.NewReader(body), "application/json", &out); err != nil {
 		return "", wrapError(fmt.Sprintf("chat to model %s via %s/%s", modelName, providerName, instanceName), err)
 	}
 	text := out.Answer

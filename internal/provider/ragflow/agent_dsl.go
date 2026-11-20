@@ -5,11 +5,13 @@ import "strings"
 // The canvas stores the Generate / LLM node's two prompt fields under the names
 // the editor form binds to: "system" and "prompt". The Go engine's LLM
 // component reads "system_prompt" and "user_prompt" and nothing else — its only
-// alias for the system prompt is "sys_prompt", and the "prompt" alias exists
-// solely on the v1 "Generate" stub, which cannot call a model at all.
+// alias for the system prompt is "sys_prompt".
 //
-// Consequence before this translation existed: an agent built in the canvas —
-// both prompt fields filled in, plainly visible in the property panel — failed
+// The v1 "Generate" stub in the engine does read "prompt"/"system", but it is
+// the same object as the LLM component under another name; the boundary maps
+// Generate onto llm (see agent_dsl_normalize.go), so every prompt-carrying node
+// on the wire is spelled the way the LLM component reads it. Keeping the canvas'
+// names on the wire made an agent with both prompt fields plainly filled in fail
 // every completion with
 //
 //	invalid param "user_prompt": at least one of user_prompt or system_prompt must be set
@@ -28,18 +30,33 @@ var agentPromptParamNames = map[string]string{
 }
 
 // agentLLMComponentNames are the component_name values whose params hold the two
-// prompt fields. "LLM" is what the canvas emits (dslUtils FORK_OPERATOR_NAME_MAP
-// maps the Generate label to it); "Generate" is the v1 name a raw upstream DSL
-// may still carry.
+// prompt fields. Writes have already been normalized to "llm" by the time the
+// rename runs; "generate" stays in the set so a DSL read back from an engine
+// that still stores the v1 name is handed to the canvas in its own shape too.
 var agentLLMComponentNames = map[string]bool{
 	"llm":      true,
 	"generate": true,
 }
 
-// engineAgentDsl returns a copy of dsl with the prompt params renamed to the
-// names the engine reads. Call it before sending a DSL upstream.
+// engineAgentDsl returns a copy of dsl ready to be sent upstream: component
+// names resolved to the engine's registry, node ids and references made legal
+// for its variable grammar, then the prompt params renamed to the names the
+// engine reads, then a bare Answer node pointed at its upstream. Call it before
+// sending a DSL upstream.
 func engineAgentDsl(dsl map[string]interface{}) map[string]interface{} {
-	return renameAgentPromptParams(dsl, agentPromptParamNames)
+	return normalizeAgentMessageContent(
+		renameAgentPromptParams(
+			mirrorAgentNodeLinks(normalizeAgentNodeIDs(normalizeAgentComponentNames(dsl))),
+			agentPromptParamNames,
+		),
+	)
+}
+
+// PrepareAgentDslForEngine exposes the boundary normalization so authoring-time
+// validation can inspect exactly what the engine will receive, instead of
+// re-deriving the corrections (and drifting from them).
+func PrepareAgentDslForEngine(dsl map[string]interface{}) map[string]interface{} {
+	return engineAgentDsl(dsl)
 }
 
 // canvasAgentDsl is the inverse of engineAgentDsl: it returns a copy of dsl with
