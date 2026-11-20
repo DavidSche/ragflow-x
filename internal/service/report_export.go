@@ -78,8 +78,85 @@ const reportArtifactRenewalLimit = 10
 type ReportExportRequest struct {
 	ReportID string
 	Revision int64
-	Format   string
-	TraceID  string
+	Format   string `json:"format"`
+	TraceID  string `json:"-"`
+	// AcknowledgeAssurance is the explicit "I have seen the unresolved assurance
+	// conflicts and still want to deliver this" (doc/301 §7.2). It is never implied
+	// by anything else in the request: a retry of an export must not silently
+	// inherit the acknowledgement, because the conflict set may have grown.
+	AcknowledgeAssurance bool `json:"acknowledge_assurance"`
+}
+
+// gateReportExportOnAssurance is §7.2: 44122 (the template wants assurance and the
+// run is not done) and 44121 (unresolved conflicts, no acknowledgement).
+//
+// Two refusals, in this order, because they need different actions from the caller:
+// 44122 says "wait", 44121 says "decide". Returning 44121 for an unfinished run
+// would tell the reader to acknowledge conflicts that have not been found yet.
+func (s *Service) gateReportExportOnAssurance(
+	ctx context.Context, actorID, tenantID string, revision *model.ReportRevision,
+	request ReportExportRequest,
+) error {
+	policy, conflicts := reportAssuranceGateState(revision)
+	if policy == model.ReportAssurancePolicyRequired &&
+		!model.ReportAssuranceTerminal(revision.AssuranceStatus) {
+		return errReportAssuranceNotReady()
+	}
+	if conflicts == 0 {
+		return nil
+	}
+	if request.AcknowledgeAssurance {
+		// Recorded on the revision, and recorded *before* the render: if the render
+		// fails, the acknowledgement still stands as "what the caller was shown", and
+		// the next attempt is an ordinary retry rather than a second decision.
+		ack := reportRevisionAckPayload(conflicts, actorID, time.Now().UTC())
+		if ack != "" {
+			if err := s.Store.SetRevisionAssuranceAck(ctx, tenantID, revision.ID, ack); err != nil {
+				return err
+			}
+			revision.AssuranceAckJSON = ack
+		}
+		// §7.4 `report.assurance_ack`. `acknowledged` carries the conflict count that was
+		// shown to the caller, which is the number that made the decision meaningful.
+		//
+		// Argument order is `(actorID, tenantID, …)`: swapped, the row lands on a chain
+		// keyed by a *user* id, where the tenant can never read the acknowledgement that
+		// authorised its own export. The gate test caught exactly that.
+		s.recordReportAudit(ctx, actorID, tenantID, "report.assurance_ack",
+			revision.ReportID, map[string]any{
+				"run_id": revision.AssuranceRunID, "revision": revision.Revision,
+				"acknowledged": conflicts, "format": request.Format,
+			})
+		return nil
+	}
+	return errReportAssuranceAckRequired(conflicts)
+}
+
+// reportAssuranceGateState reads the gate inputs from the revision projection.
+//
+// The conflict count comes from `assurance_summary_json` rather than a live finding
+// query: the gate must answer the same way every time for the same revision, and a
+// live count would let a reviewer dismiss a finding after the preview and change
+// what an *already started* export was checked against.
+func reportAssuranceGateState(revision *model.ReportRevision) (string, int) {
+	policy := model.ReportAssurancePolicyAdvisory
+	var summary struct {
+		RequestedPolicy string `json:"requested_policy"`
+		Conflicts       int    `json:"conflicts"`
+		HighFindings    int    `json:"high_findings"`
+	}
+	if strings.TrimSpace(revision.AssuranceSummaryJSON) != "" {
+		if err := json.Unmarshal([]byte(revision.AssuranceSummaryJSON), &summary); err == nil {
+			if summary.RequestedPolicy != "" {
+				policy = summary.RequestedPolicy
+			}
+			if summary.Conflicts > 0 {
+				return policy, summary.Conflicts
+			}
+			return policy, summary.HighFindings
+		}
+	}
+	return policy, 0
 }
 
 // ReportExportResult is the successful export answer: the job and the artifact
@@ -192,6 +269,13 @@ func (s *Service) CreateReportExport(
 	}
 	if revision.Status != model.ReportRevisionPublished {
 		return nil, errReportExportRequiresPublished()
+	}
+
+	// The assurance gate runs *before* the document is assembled: rendering a
+	// document we are about to refuse wastes the work, and the refusal must not
+	// depend on whether the renderer happened to succeed (doc/301 §7.2).
+	if err := s.gateReportExportOnAssurance(ctx, actorID, tenantID, revision, request); err != nil {
+		return nil, err
 	}
 
 	document, payload, err := s.assembleReportDocument(ctx, tenantID, report, revision)
@@ -641,7 +725,14 @@ func renderReportMarkdown(document *reportDocument, now time.Time) string {
 	builder.WriteString(fmt.Sprintf("- 报告版本：r%d（模板 %s v%d）\n",
 		document.Revision, document.TemplateKey, document.TemplateVersion))
 	builder.WriteString(fmt.Sprintf("- 生成时间：%s\n", now.UTC().Format("2006-01-02 15:04:05Z")))
-	builder.WriteString(fmt.Sprintf("- 完整性：%s\n\n", reportCompletenessLabel(document.Completeness)))
+	builder.WriteString(fmt.Sprintf("- 完整性：%s\n", reportCompletenessLabel(document.Completeness)))
+	// doc/301 §5.3.1: `scan_scope` is mandatory disclosure next to the verdict, so
+	// it rides in the metadata block every format prints rather than in an appendix a
+	// claim-less report would not have.
+	if document.ScanScope != "" {
+		builder.WriteString("- 复核范围：" + document.ScanScope + "\n")
+	}
+	builder.WriteString("\n")
 
 	if document.Completeness == model.ReportCompletenessPartial || len(document.Gaps) > 0 {
 		builder.WriteString("> **完整性声明**：本报告为部分完成。\n>\n")

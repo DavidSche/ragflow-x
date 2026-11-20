@@ -1005,7 +1005,11 @@ func (s *Service) resolveApprovalTarget(ctx context.Context, tenantID, actorID s
 			attrs["key_name"] = name
 			attrs["key_quota"] = approvalAnyToFloat(req.Payload["token_quota"])
 			attrs["key_request_quota"] = approvalAnyToFloat(req.Payload["request_quota"])
-		} else if req.Action == model.ApprovalActionRevoke {
+		} else if req.Action == model.ApprovalActionRevoke || req.Action == model.ApprovalActionRotateCredential {
+			// Rotation is approved by the same authority as revoke: it *is* a revoke
+			// plus a mint, so an actor who may not retire somebody else's credential
+			// must not be able to re-issue it either. Reusing the branch keeps the two
+			// from drifting apart.
 			key, err := s.Store.GetAPIKey(ctx, tenantID, req.ObjectID)
 			if err != nil {
 				return nil, nil, nil, err
@@ -1018,6 +1022,15 @@ func (s *Service) resolveApprovalTarget(ctx context.Context, tenantID, actorID s
 			}
 			target.Snapshot = map[string]any{"name": key.Name, "enabled": key.Enabled}
 			attrs["key_name"] = key.Name
+			if req.Action == model.ApprovalActionRotateCredential {
+				target.Snapshot["rotated_to_key_id"] = key.RotatedToKeyID
+				attrs["key_grace_hours"] = approvalAnyToFloat(req.Payload["grace_hours"])
+			}
+		} else {
+			// An unhandled action used to fall through here with no authorization and
+			// no snapshot, which made every new action silently approvable. Refuse
+			// loudly instead: a new action must add its own branch.
+			return nil, nil, nil, httperr.BadRequest(40094, "unsupported api key action")
 		}
 	case model.ApprovalObjectModelProvider:
 		if req.Action != model.ApprovalActionCreate && req.Action != model.ApprovalActionDelete {

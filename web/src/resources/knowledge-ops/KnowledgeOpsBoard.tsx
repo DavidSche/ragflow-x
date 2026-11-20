@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, CircleAlert, Database, RefreshCw, Tags } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
+import { AnswerabilityBadge } from "../workbench/AnswerabilityBadge";
+import { ANSWERABILITY_FILTER_GROUPS, answerabilityLabel } from "../workbench/answerability";
+import type { AnswerabilityClaim } from "../workbench/workbench-types";
 
 import {
   KnowledgeTasksCard,
@@ -15,6 +18,8 @@ import {
 import { TraceRunLookup } from "./TraceRunLookup";
 import { MetricContractBoard } from "./MetricContractBoard";
 import { KnowledgeStrategyQualityGatePanel } from "./KnowledgeStrategyQualityGatePanel";
+import { AnswerQualityProxyCard } from "./AnswerQualityProxyCard";
+import { CitationAuditCard } from "./CitationAuditCard";
 
 interface Envelope<T> {
   code: number;
@@ -95,6 +100,8 @@ interface KnowledgeEvent {
   reviewed_at?: string;
   feedback_rating?: string;
   feedback_attribution?: string;
+  /** Decoded server-side from `answerability_json` (doc/301 T12). */
+  answerability?: AnswerabilityClaim | null;
 }
 
 interface CompilationRecoveryRun {
@@ -203,6 +210,10 @@ export const KnowledgeOpsBoard = () => {
   const notify = useNotify();
   const [range, setRange] = useState("7");
   const [attributionFilter, setAttributionFilter] = useState("");
+  // doc/301 T12: `no_evidence`/`low_similarity` are addressable content gaps;
+  // `self_abstain` is a model judgement. The filter exists so the board can be worked
+  // as two different queues instead of one undifferentiated "bad answer" pile.
+  const [abstainFilter, setAbstainFilter] = useState("");
   const [summary, setSummary] = useState<Summary>(emptySummary);
   const [topQueries, setTopQueries] = useState<TopQuery[]>([]);
   const [costRows, setCostRows] = useState<CostAttribution[]>([]);
@@ -231,6 +242,7 @@ export const KnowledgeOpsBoard = () => {
       review_status: "open",
     });
     if (attributionFilter) eventQuery.set("attribution", attributionFilter);
+    if (abstainFilter) eventQuery.set("abstain_reason", abstainFilter);
     try {
       const [summaryRes, topRes, eventRes, evalSetRes, taskSummaryRes, taskRes, recoveryRes] = await Promise.all([
         api.get<Envelope<Summary>>(`/knowledge-ops?${query.toString()}`),
@@ -256,7 +268,7 @@ export const KnowledgeOpsBoard = () => {
     } finally {
       setLoading(false);
     }
-  }, [attributionFilter, notify, range, t]);
+  }, [abstainFilter, attributionFilter, notify, range, t]);
 
   useEffect(() => {
     void load();
@@ -546,6 +558,23 @@ export const KnowledgeOpsBoard = () => {
               </option>
             ))}
           </select>
+          <select
+            value={abstainFilter}
+            onChange={(event) => setAbstainFilter(event.target.value)}
+            aria-label={t("qa.answerability.label")}
+            className="mt-2 w-full max-w-56 rounded border bg-background px-2 py-1 text-sm"
+          >
+            <option value="">{t("qa.answerability.filter_all")}</option>
+            {ANSWERABILITY_FILTER_GROUPS.map((group) => (
+              <optgroup key={group.labelKey} label={t(group.labelKey)}>
+                {group.reasons.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {answerabilityLabel(t, reason)}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
         </CardHeader>
         <CardContent className="space-y-3">
           {canManage ? (
@@ -580,6 +609,7 @@ export const KnowledgeOpsBoard = () => {
                           {t(`knowledgeOps.attribution_${event.feedback_attribution || "unclassified"}`)}
                         </span>
                       ) : null}
+                      <AnswerabilityBadge claim={event.answerability} showEvidence />
                       <span>{new Date(event.created_at).toLocaleString()}</span>
                       <span>{t("knowledgeOps.citations_count", { count: event.citations_count })}</span>
                       <span>{t("knowledgeOps.tokens_count", { count: compact(event.tokens_in + event.tokens_out) })}</span>
@@ -640,6 +670,14 @@ export const KnowledgeOpsBoard = () => {
         onUpdateTask={updateTask}
       />
       <MetricContractBoard />
+      {/* doc/301 T20: proxy metrics are separate from the metric contract above on
+          purpose — the contract states gate targets, this states what the product is
+          doing right now, and merging them would make a proxy look like a gate. */}
+      <AnswerQualityProxyCard />
+      {/* doc/301 T19: the weekly sample is the *drill-down* of the citation-missing
+          rate above — same question, different population (sampled turns, not all
+          turns), so it is a separate card rather than another column. */}
+      <CitationAuditCard />
       <KnowledgeStrategyQualityGatePanel />
       <Card>
         <CardHeader>

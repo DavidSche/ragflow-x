@@ -14,6 +14,12 @@ import (
 type SessionMessage struct {
 	ragflow.Message
 	RequestID string `json:"request_id,omitempty"`
+	// Answerability is the per-turn honesty claim from the knowledge-ops ledger
+	// (doc/301 T12). `nil` means the ledger has no row for this turn — a turn that
+	// predates the claim, or one that never reached the ledger at all. The UI shows
+	// that as "not recorded"; it must never be rendered as "answerable", because a
+	// missing measurement is not a passing measurement.
+	Answerability *AnswerabilityClaim `json:"answerability,omitempty"`
 }
 
 func answerTraceKey(question, answer string) string {
@@ -69,7 +75,42 @@ func (s *Service) traceSessionMessages(
 			pending[key] = queue[1:]
 		}
 	}
+	s.attachAnswerability(ctx, tenantID, traced)
 	return traced
+}
+
+// attachAnswerability joins the ledger's per-turn claim onto the assistant turns of
+// one page (doc/301 T12). It is best-effort in the same sense as the citation trace:
+// a ledger read failure leaves `Answerability` nil, which renders as "not recorded"
+// rather than breaking the conversation.
+func (s *Service) attachAnswerability(ctx context.Context, tenantID string, messages []SessionMessage) {
+	ids := make([]string, 0, len(messages))
+	for _, message := range messages {
+		if message.RequestID != "" {
+			ids = append(ids, message.RequestID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	claims, err := s.Store.AnswerabilityByRequestIDs(ctx, tenantID, ids)
+	if err != nil {
+		logger.Warn("answerability trace lookup failed",
+			"tenant_id", tenantID, "turns", len(ids), "error", err)
+		return
+	}
+	for index := range messages {
+		raw, ok := claims[messages[index].RequestID]
+		if !ok {
+			continue
+		}
+		var claim AnswerabilityClaim
+		// A claim we cannot read is not a claim we may invent.
+		if err := json.Unmarshal([]byte(raw), &claim); err != nil {
+			continue
+		}
+		messages[index].Answerability = &claim
+	}
 }
 
 // answerCitationsFromSnapshot converts the completion-time AnswerCitation

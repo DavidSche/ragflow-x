@@ -19,7 +19,11 @@ import (
 // changes or when a response/error semantic changes in a way clients can
 // observe; the version is quoted by the release evidence package (doc/227 §7.3)
 // and by the developer onboarding material (doc/228 T7.6).
-const Version = "gateway.v1"
+// v1.1 (doc/301 §5.10 GW-1): two changes a client can observe — the knowledge
+// routes' `data.governance` envelope key, and the governance response headers /
+// SSE frame. Adding either without a version bump would leave a v1 client unable
+// to tell "this build has no governance" from "this deployment turned it off".
+const Version = "gateway.v1.1"
 
 // Stability classifies how far a gateway route can be relied on.
 type Stability string
@@ -64,6 +68,15 @@ type API struct {
 	// test asserts each entry is registered, so an upstream-path edit cannot
 	// silently detach the gateway from its anchor.
 	Upstream []string
+	// Knowledge reports whether the route retrieves from the corpus and therefore
+	// can carry governance data (doc/301 §5.10 GW-1).
+	//
+	// It is per route because the three routes do not have the same shape, and
+	// pretending they do is what makes a client read `citations` where there can
+	// never be any: `/v1/chat/completions` is an OpenAI-compatible pass-through of a
+	// generation-only call — it does not search — so its governance lives in response
+	// headers only and `citations`/`answerability` are structurally absent, not empty.
+	Knowledge bool
 	// Successor names the replacement route for deprecated entries.
 	Successor string
 	// Evidence anchors the classification to code and docs.
@@ -75,6 +88,7 @@ var gatewayAPIs = []API{
 		ID: "chat.completions", Method: "POST", Path: "/v1/chat/completions",
 		Stability: StabilityStable, Capability: "chat", Streaming: true, Idempotent: true,
 		QuotaScopes: []string{"routes:chat", "models", "chat-apps"},
+		Knowledge:   false,
 		Upstream:    []string{"POST /chat/completions"},
 		Evidence:    "internal/handler/gateway.go#GatewayChat; internal/service/gateway.go#ChatCompletion; doc/227 §4.3 C3.1",
 	},
@@ -82,6 +96,7 @@ var gatewayAPIs = []API{
 		ID: "search-apps.completions", Method: "POST", Path: "/v1/search-apps/:id/completions",
 		Stability: StabilityStable, Capability: "search_app", Streaming: true, Idempotent: true,
 		QuotaScopes: []string{"routes:search-app"},
+		Knowledge:   true,
 		Upstream:    []string{"POST /searches/{search_id}/completions"},
 		Evidence:    "internal/handler/gateway.go#GatewaySearchApp; internal/service/search_app.go#SearchAppCompletion; doc/227 §4.3 C3.1",
 	},
@@ -89,6 +104,7 @@ var gatewayAPIs = []API{
 		ID: "agents.completions", Method: "POST", Path: "/v1/agents/:id/completions",
 		Stability: StabilityExperimental, Capability: "agent", Streaming: true, Idempotent: true,
 		QuotaScopes: []string{"routes:agent"},
+		Knowledge:   true,
 		Upstream:    []string{"POST /agents/chat/completions"},
 		Evidence:    "internal/handler/gateway.go#GatewayAgent; internal/service/agent.go#AgentChatCompletion; upstream Agentic-mode alias still settling (doc/227 C1.2/C1.5)",
 	},

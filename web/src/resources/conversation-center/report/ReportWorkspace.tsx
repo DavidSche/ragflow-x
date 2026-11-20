@@ -42,9 +42,11 @@ import {
 } from "../../report-center/report-center-api";
 import type { ReportAdapter } from "../adapters";
 import { ArtifactPanel } from "./ArtifactPanel";
+import { AssuranceReviewPanel } from "./AssuranceReviewPanel";
 import { OutlineEditor } from "./OutlineEditor";
 import { SectionDrawer } from "./SectionDrawer";
 import {
+  type ReportRevisionSummary,
   isReportJobTerminal,
   openReportEventPoller,
   rememberReportJob,
@@ -161,6 +163,23 @@ export function ReportWorkspace({
   }, []);
   // Delivery history of the published revision (A11). Loaded from the read, never
   // held only in the panel's memory: that is what makes an export survive F5.
+  // The revisions a `resolved` decision may point at, and the id→number map the
+  // panel prints. Loaded once per report: a revision is immutable, so the only thing
+  // that can change the list is a *new* revision, which remounts this workspace.
+  const [revisions, setRevisions] = useState<ReportRevisionSummary[]>([]);
+  const laterRevisions = useMemo(
+    () =>
+      revisions
+        .filter((row) => report !== null && row.revision > report.revision.revision)
+        .sort((a, b) => a.revision - b.revision)
+        .map((row) => ({ id: row.id, revision: row.revision })),
+    [report, revisions],
+  );
+  const revisionNumbers = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const row of revisions) map[row.id] = row.revision;
+    return map;
+  }, [revisions]);
   const [artifacts, setArtifacts] = useState<ReportArtifactEntry[]>([]);
   const [outlineConfirmed, setOutlineConfirmed] = useState(false);
   const [confirmingOutline, setConfirmingOutline] = useState(false);
@@ -362,6 +381,28 @@ export function ReportWorkspace({
     [adapter, report],
   );
 
+  const reloadRevisions = useCallback(
+    async (options: { signal?: AbortSignal } = {}) => {
+      const id = report?.report.id;
+      if (!id) return;
+      // A failure here is not fatal: the review panel degrades to "no later revision
+      // to point at", which disables one button rather than breaking the surface.
+      //
+      // The whole call is wrapped, not just the promise: an injected adapter may not
+      // implement `listRevisions` at all (it is an optional capability), and
+      // `undefined(...)` throws *synchronously* — before `.catch` could exist. That
+      // rejected the enclosing async effect with no handler and surfaced only as an
+      // unhandled rejection, so the test suite reported "22 passed, 6 errors".
+      try {
+        const rows = await adapter.listRevisions?.(id, options);
+        if (rows) setRevisions(rows);
+      } catch {
+        /* keep the previous list; the button stays disabled */
+      }
+    },
+    [adapter, report],
+  );
+
   // The published surface owns the artifact list: entering it (including after a
   // refresh) re-reads the history, and every workspace-level refresh re-reads it
   // too, so a file delivered in another tab appears without a reload.
@@ -369,15 +410,16 @@ export function ReportWorkspace({
     if (phase !== "published") return;
     const controller = new AbortController();
     void reloadArtifacts({ signal: controller.signal });
+    void reloadRevisions({ signal: controller.signal });
     return () => controller.abort();
-  }, [phase, reloadArtifacts]);
+  }, [phase, reloadArtifacts, reloadRevisions]);
 
   const refresh = async () => {
     setRefreshing(true);
     try {
       // Both halves of the published surface, so a file delivered in another tab and
       // a section written by a retry appear together instead of one at a time.
-      await Promise.all([reloadSnapshot(), reloadArtifacts()]);
+      await Promise.all([reloadSnapshot(), reloadArtifacts(), reloadRevisions()]);
     } finally {
       setRefreshing(false);
     }
@@ -717,6 +759,29 @@ export function ReportWorkspace({
                     revision={report.revision.revision}
                     history={artifacts}
                     onExported={() => void reloadArtifacts()}
+                    // The ack dialog needs the verdict it is asking the user to accept;
+                    // without this read the 44121 refusal could only be a dead end.
+                    loadReview={(reportId, revisionNo) => adapter.loadReview(reportId, revisionNo)}
+                  />
+                  {/* 证据复核 (doc/301 T08/T09/T12). It sits *above* nothing and below
+                      the delivery panel on purpose: what the report says and whether it
+                      can be trusted are read together, and the review cannot be skipped
+                      past into a download without the ack prompt having been shown. */}
+                  <AssuranceReviewPanel
+                    load={(options) =>
+                      adapter.loadReview(report.report.id, report.revision.revision, options)
+                    }
+                    trigger={() =>
+                      adapter.triggerAssurance(report.report.id, report.revision.revision)
+                    }
+                    poll={(runId) =>
+                      adapter.loadAssuranceRun(report.report.id, report.revision.revision, runId)
+                    }
+                    decide={(findingId, body) =>
+                      adapter.updateFinding(report.report.id, report.revision.revision, findingId, body)
+                    }
+                    laterRevisions={laterRevisions}
+                    revisionIdToNumber={revisionNumbers}
                   />
                 </>
               )}

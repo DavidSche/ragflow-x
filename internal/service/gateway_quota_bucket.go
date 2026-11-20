@@ -47,10 +47,24 @@ func (s *Service) PreauthorizeTenantBucketQuota(ctx context.Context, key *model.
 // gate semantics. The ledger reservation is keyed by requestID and records its
 // own dimension, so finalize/release stay dimension-agnostic.
 func (s *Service) PreauthorizeBucketQuota(ctx context.Context, key *model.APIKey, requestID string, est int64, tokenEnabled, requestEnabled bool, dimension, dimensionKey string) (QuotaResult, error) {
+	if key == nil {
+		// A nil key would panic four lines down. It is a programming error, not a
+		// caller's: the assurance path must use PreauthorizeBucketQuotaForTenant.
+		return QuotaResult{}, httperr.Internal("bucket quota requires a key or an explicit tenant")
+	}
+	return s.PreauthorizeBucketQuotaForTenant(ctx, key.TenantID, key.ID, requestID, est, tokenEnabled, requestEnabled, dimension, dimensionKey)
+}
+
+// PreauthorizeBucketQuotaForTenant is the same gate with the tenant identity as
+// an explicit parameter (doc/301 §6.5 item ②). It exists so a caller without an
+// API key — an assurance run charging the tenant's monthly allowance — can use
+// the identical reservation, exhaustion and alert semantics instead of growing a
+// second quota implementation.
+func (s *Service) PreauthorizeBucketQuotaForTenant(ctx context.Context, tenantID, subjectID, requestID string, est int64, tokenEnabled, requestEnabled bool, dimension, dimensionKey string) (QuotaResult, error) {
 	period := quotaPeriodStart()
-	bucket, err := s.Store.GetQuotaBucket(ctx, key.TenantID, dimension, dimensionKey, period)
+	bucket, err := s.Store.GetQuotaBucket(ctx, tenantID, dimension, dimensionKey, period)
 	if err != nil {
-		return QuotaResult{}, s.quotaLedgerErr(key, requestID, err)
+		return QuotaResult{}, s.quotaLedgerErrForTenant(tenantID, subjectID, requestID, err)
 	}
 	if bucket == nil || (bucket.TokenLimit <= 0 && bucket.RequestLimit <= 0) {
 		return QuotaResult{Remaining: -1, RemainingRequests: -1}, nil
@@ -64,23 +78,23 @@ func (s *Service) PreauthorizeBucketQuota(ctx context.Context, key *model.APIKey
 		RequestEnabled:    requestEnabled,
 		RemainingRequests: -1,
 	}
-	if err := s.reapStaleBucketQuota(ctx, key.TenantID, dimension, dimensionKey, period); err != nil {
-		return result, s.quotaLedgerErr(key, requestID, err)
+	if err := s.reapStaleBucketQuota(ctx, tenantID, dimension, dimensionKey, period); err != nil {
+		return result, s.quotaLedgerErrForTenant(tenantID, subjectID, requestID, err)
 	}
 	inserted, err := s.Store.AddQuotaBucketReservation(ctx, &model.QuotaBucketReservation{
-		RequestID: requestID, TenantID: key.TenantID,
+		RequestID: requestID, TenantID: tenantID,
 		Dimension: dimension, DimensionKey: dimensionKey,
 		PeriodStart: period, Estimated: est, Status: model.QuotaReservationPending,
 	})
 	if err != nil {
-		return result, s.quotaLedgerErr(key, requestID, err)
+		return result, s.quotaLedgerErrForTenant(tenantID, subjectID, requestID, err)
 	}
 	if !inserted {
 		// Same request_id retried: already reserved against this bucket, no
 		// double-deduct. Surface the current remaining balances.
-		current, err := s.Store.GetQuotaBucket(ctx, key.TenantID, dimension, dimensionKey, period)
+		current, err := s.Store.GetQuotaBucket(ctx, tenantID, dimension, dimensionKey, period)
 		if err != nil {
-			return result, s.quotaLedgerErr(key, requestID, err)
+			return result, s.quotaLedgerErrForTenant(tenantID, subjectID, requestID, err)
 		}
 		result.Remaining = -1
 		result.RemainingRequests = -1
@@ -95,17 +109,17 @@ func (s *Service) PreauthorizeBucketQuota(ctx context.Context, key *model.APIKey
 		return result, nil
 	}
 	applied, tokenRemaining, requestRemaining, err := s.Store.ReserveQuotaBucketTokens(
-		ctx, key.TenantID, dimension, dimensionKey, period, requestID, est, requestEnabled,
+		ctx, tenantID, dimension, dimensionKey, period, requestID, est, requestEnabled,
 	)
 	if err != nil {
 		_ = s.Store.ReleaseQuotaBucketReservation(ctx, requestID)
-		return result, s.quotaLedgerErr(key, requestID, err)
+		return result, s.quotaLedgerErrForTenant(tenantID, subjectID, requestID, err)
 	}
 	if !applied {
 		_ = s.Store.ReleaseQuotaBucketReservation(ctx, requestID)
 		notify.Emit(ctx, notify.Event{
-			Title: "gateway quota bucket exhausted", Severity: "warn", TenantID: key.TenantID,
-			Resource: "chat", Type: "bucket_quota_exceeded", ResourceID: key.TenantID,
+			Title: "gateway quota bucket exhausted", Severity: "warn", TenantID: tenantID,
+			Resource: "chat", Type: "bucket_quota_exceeded", ResourceID: tenantID,
 			Detail: "request rejected by " + dimension + " quota bucket before any provider call",
 		})
 		result.Remaining, result.RemainingRequests = tokenRemaining, requestRemaining

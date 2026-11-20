@@ -756,6 +756,18 @@ func RegisterReportRoutes(group *gin.RouterGroup) {
 	group.POST("/reports/:id/budget-extension", postReportBudgetExtension)
 	group.POST("/reports/:id/revisions/:revision/outline/confirm", confirmReportOutline)
 	group.POST("/reports/:id/revisions/:revision/artifacts", createReportExport)
+	// Assurance surface (doc/301 §7.1). Five routes, all scoped by revision because
+	// an audit is a statement about one immutable text: a run addressed only by
+	// report id would leave "which revision was reviewed" to a body field.
+	//
+	// Read routes are `read:report`; triggering and adjudicating are `execute` plus
+	// an owner check in the service (44109 for a grantee), so no new permission row
+	// or role is introduced (doc/301 D10).
+	group.POST("/reports/:id/revisions/:revision/assurance-runs", postReportAssuranceRun)
+	group.GET("/reports/:id/revisions/:revision/assurance-runs", listReportAssuranceRuns)
+	group.GET("/reports/:id/revisions/:revision/assurance-runs/:runId", getReportAssuranceRun)
+	group.GET("/reports/:id/revisions/:revision/review", getReportReview)
+	group.PATCH("/reports/:id/revisions/:revision/findings/:findingId", patchReportReviewFinding)
 	group.GET("/reports/:id/revisions/:revision/artifacts/:artifactId/download", downloadReportExport)
 	group.GET("/report-templates", listReportTemplates)
 	group.POST("/report-templates/:key/capability-check", capabilityCheckReportTemplate)

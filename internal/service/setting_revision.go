@@ -249,6 +249,71 @@ var settingKeyPolicies = map[string]SettingSourcePolicy{
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "high", Impact: "sends alerts to external systems", EffectiveMode: "hot_reload",
 	},
+	// The `report` group (doc/301 §7.6). It is a *new group*, not keys inside
+	// `retention`: the assurance surface is a delivery gate, and grouping it with
+	// clocks would suggest its knobs are housekeeping. All eight keys are two
+	// segments (`group.field`) because the registry rejects a third.
+	"report.assurance_enabled": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "allows or refuses assurance runs for this tenant (whitelist rollout)", EffectiveMode: "hot_reload",
+	},
+	"report.assurance_gate": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "high", Impact: "changes whether an assurance result blocks export (required is refused in v0.7.0)", EffectiveMode: "hot_reload",
+	},
+	"report.assurance_model": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "changes which model evaluates claims (empty means the tenant default)", EffectiveMode: "hot_reload",
+	},
+	"report.assurance_review_model": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "changes the independent reviewer; empty records independence=unknown", EffectiveMode: "hot_reload",
+	},
+	"report.assurance_budget_tokens": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "caps the token budget of one assurance run (44119)", EffectiveMode: "hot_reload",
+	},
+	"report.assurance_monthly_tokens": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "high", Impact: "sets the monthly assurance allowance; 0 means unlimited but still metered (44123)", EffectiveMode: "hot_reload",
+	},
+	"report.candidate_scan_top_k": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "freezes how many uncited chunks per section are kept as conflict candidates; 0 keeps none", EffectiveMode: "hot_reload",
+	},
+	"report.locator_hints_enabled": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "low", Impact: "shows compiled-artifact navigation hints in citations (navigation only, never evidence)", EffectiveMode: "hot_reload",
+	},
+	// The `knowledge_audit` group is QA-2's weekly chat citation sample
+	// (doc/301 T19). It is its own group rather than keys inside `report`: the
+	// sample judges *chat turns*, and grouping it with the report assurance knobs
+	// would suggest both share a budget and a population. They do not — this group
+	// has its own token cap, and the report assurance allowance is never charged.
+	"knowledge_audit.enabled": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "turns the weekly chat citation sample on or off for this tenant", EffectiveMode: "hot_reload",
+	},
+	"knowledge_audit.sample_per_week": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "low", Impact: "changes how many cited turns one week's sample may judge", EffectiveMode: "hot_reload",
+	},
+	"knowledge_audit.max_tokens": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "caps the semantic arm of one sample run; 0 means the mechanical layer only", EffectiveMode: "hot_reload",
+	},
+	"knowledge_audit.semantic": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "allows the sample to ask a model about the inconclusive citations", EffectiveMode: "hot_reload",
+	},
+	"knowledge_audit.model": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "medium", Impact: "chooses which model judges the inconclusive citations (empty disables the semantic arm)", EffectiveMode: "hot_reload",
+	},
+	"knowledge_audit.sweep_interval_hours": {
+		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
+		RestartRequired: false, RiskLevel: "low", Impact: "changes how often the sample sweep looks for a new completed week", EffectiveMode: "hot_reload",
+	},
 }
 
 var settingKeyValidators = map[string]SettingKeyMetadata{
@@ -300,6 +365,28 @@ var settingKeyValidators = map[string]SettingKeyMetadata{
 	"alerting.enabled":                         {Group: "alerting", Field: "enabled", Type: "bool"},
 	"alerting.throttle_sec":                    {Group: "alerting", Field: "throttle_sec", Type: "number", Min: 1, Max: 86400},
 	"alerting.webhooks":                        {Group: "alerting", Field: "webhooks", Type: "webhook_list"},
+	// doc/301 §7.6. Two ranges are load-bearing rather than cosmetic:
+	//   - `assurance_gate` accepts only off/advisory in v0.7.0, so `required` is
+	//     refused by the *validator* and not by a documentation convention (G-A8).
+	//   - `candidate_scan_top_k` defaults to 0 = freeze nothing: widening the
+	//     retained uncited pool is opt-in, never a default (Q9).
+	"report.assurance_enabled":        {Group: "report", Field: "assurance_enabled", Type: "bool"},
+	"report.assurance_gate":           {Group: "report", Field: "assurance_gate", Type: "enum", Allowed: []string{"off", "advisory"}},
+	"report.assurance_model":          {Group: "report", Field: "assurance_model", Type: "string"},
+	"report.assurance_review_model":   {Group: "report", Field: "assurance_review_model", Type: "string"},
+	"report.assurance_budget_tokens":  {Group: "report", Field: "assurance_budget_tokens", Type: "number", Min: 1, Max: 200000},
+	"report.assurance_monthly_tokens": {Group: "report", Field: "assurance_monthly_tokens", Type: "number", Min: 0, Max: 100000000},
+	"report.candidate_scan_top_k":     {Group: "report", Field: "candidate_scan_top_k", Type: "number", Min: 0, Max: 20},
+	"report.locator_hints_enabled":    {Group: "report", Field: "locator_hints_enabled", Type: "bool"},
+	// doc/301 T19. Ranges are load-bearing: `max_tokens` accepts 0 because 0 is the
+	// honest default ("mechanical layer only"), and `sample_per_week` has a floor of
+	// 1 because a sample of 0 would record a run that judged nothing.
+	"knowledge_audit.enabled":              {Group: "knowledge_audit", Field: "enabled", Type: "bool"},
+	"knowledge_audit.sample_per_week":      {Group: "knowledge_audit", Field: "sample_per_week", Type: "number", Min: 1, Max: 500},
+	"knowledge_audit.max_tokens":           {Group: "knowledge_audit", Field: "max_tokens", Type: "number", Min: 0, Max: 200000},
+	"knowledge_audit.semantic":             {Group: "knowledge_audit", Field: "semantic", Type: "bool"},
+	"knowledge_audit.model":                {Group: "knowledge_audit", Field: "model", Type: "string"},
+	"knowledge_audit.sweep_interval_hours": {Group: "knowledge_audit", Field: "sweep_interval_hours", Type: "number", Min: 1, Max: 168},
 }
 
 func defaultSystemSettingsSnapshot() map[string]interface{} {
@@ -360,6 +447,31 @@ func defaultSystemSettingsSnapshot() map[string]interface{} {
 				"enabled":      false,
 				"throttle_sec": 60,
 				"webhooks":     []interface{}{},
+			},
+			// The default snapshot is the third registration point (doc/301 §7.6):
+			// it decides what a tenant reads *before* anyone edits the key. Leaving
+			// it out would surface every report key as a zero value, and
+			// `candidate_scan_top_k`'s zero already means "off" — so "never turned on"
+			// and "configured wrong" would look identical in the panel.
+			"report": map[string]interface{}{
+				"assurance_enabled":        false,
+				"assurance_gate":           "advisory",
+				"assurance_model":          "",
+				"assurance_review_model":   "",
+				"assurance_budget_tokens":  80000,
+				"assurance_monthly_tokens": 0,
+				"candidate_scan_top_k":     0,
+				"locator_hints_enabled":    true,
+			},
+			// doc/301 T19. `enabled: false` and `max_tokens: 0` are the defaults: the
+			// sample is opt-in and, until it is turned on, costs nothing.
+			"knowledge_audit": map[string]interface{}{
+				"enabled":              false,
+				"sample_per_week":      chatCitationAuditDefaultSample,
+				"max_tokens":           0,
+				"semantic":             false,
+				"model":                "",
+				"sweep_interval_hours": 6,
 			},
 		},
 	}
@@ -1096,14 +1208,24 @@ func (s *Service) UpdateSystemSettings(ctx context.Context, updatedBy string, re
 	snapshot = withDefaultSettingGroups(snapshot)
 	highRiskChange := false
 	for key, value := range request.Changes {
-		if strings.Contains(strings.ToLower(key), "password") ||
-			strings.Contains(strings.ToLower(key), "api_key") ||
-			strings.Contains(strings.ToLower(key), "token") ||
-			strings.Contains(strings.ToLower(key), "secret") {
-			return nil, httperr.BadRequest(40098, "system setting secrets must use the credential API")
-		}
+		// Policy lookup comes FIRST, and the secret-name heuristic only applies to a
+		// key the registry does not know (doc/301 T19 / 304 E52).
+		//
+		// The heuristic is a name-based guard against writing a credential through the
+		// settings API. Applied before the registry lookup it also refused every
+		// *registered* numeric cap whose name happens to contain "token" — including
+		// `report.assurance_budget_tokens` and `knowledge_audit.max_tokens` — so a
+		// registered setting existed that no client could ever change. A registered
+		// key is not a secret: its validator decides the type, and a number is not a
+		// credential.
 		policy, ok := settingKeyPolicies[key]
 		if !ok {
+			if strings.Contains(strings.ToLower(key), "password") ||
+				strings.Contains(strings.ToLower(key), "api_key") ||
+				strings.Contains(strings.ToLower(key), "token") ||
+				strings.Contains(strings.ToLower(key), "secret") {
+				return nil, httperr.BadRequest(40098, "system setting secrets must use the credential API")
+			}
 			return nil, httperr.BadRequest(40098, "unsupported system setting: "+key)
 		}
 		if policy.RiskLevel == "high" {

@@ -48,6 +48,10 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "POST", Path: "/api/v1/system/ragflow/sync/runs/:id/import", Action: "manage", Resource: "ragflow-sync"},
 		{Method: "POST", Path: "/api/v1/system/ragflow/sync/runs/:id/assign", Action: "manage", Resource: "ragflow-sync"},
 		{Method: "POST", Path: "/api/v1/system/ragflow/sync/reconcile", Action: "manage", Resource: "ragflow-sync"},
+		// GW-3 / T21. `system` and not `usage`: the run walks every tenant's ledgers,
+		// and `usage` only admits `read` in the route registry — a new `manage` on it
+		// would be a permission row the plan explicitly said not to add (301 D10).
+		{Method: "POST", Path: "/api/v1/system/usage/reconcile", Action: "manage", Resource: "system"},
 		{Method: "GET", Path: "/api/v1/system/ragflow/sync/resources", Action: "read", Resource: "ragflow-sync"},
 		{Method: "GET", Path: "/api/v1/system/ragflow/sync/relink/tenant-options", Action: "read", Resource: "ragflow-sync"},
 		{Method: "GET", Path: "/api/v1/system/ragflow/sync/relink/resource-options", Action: "read", Resource: "ragflow-sync"},
@@ -311,11 +315,14 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/keys", Action: "read", Resource: "api-key"},
 		{Method: "POST", Path: "/api/v1/keys", Action: "manage", Resource: "api-key"},
 		{Method: "POST", Path: "/api/v1/keys/:id/revoke", Action: "manage", Resource: "api-key"},
+		{Method: "POST", Path: "/api/v1/keys/:id/rotate", Action: "manage", Resource: "api-key"},
 
 		// Operations
 		{Method: "GET", Path: "/api/v1/usage", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/details", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/attribution", Action: "read", Resource: "usage"},
+		{Method: "GET", Path: "/api/v1/usage/reconcile", Action: "read", Resource: "usage"},
+		{Method: "GET", Path: "/api/v1/usage/reconcile/:runId/findings", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/audit", Action: "read", Resource: "audit"},
 		{Method: "GET", Path: "/api/v1/usage/export", Action: "read", Resource: "usage-export"},
 		{Method: "GET", Path: "/api/v1/audit/export", Action: "read", Resource: "audit"},
@@ -325,6 +332,10 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/dashboard", Action: "read", Resource: "dashboard"},
 		{Method: "GET", Path: "/api/v1/knowledge-ops", Action: "read", Resource: "knowledge-ops"},
 		{Method: "GET", Path: "/api/v1/knowledge-ops/top-queries", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/answer-quality", Action: "read", Resource: "knowledge-ops"},
+		{Method: "POST", Path: "/api/v1/knowledge-ops/citation-audit", Action: "manage", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/citation-audit/runs", Action: "read", Resource: "knowledge-ops"},
+		{Method: "GET", Path: "/api/v1/knowledge-ops/citation-audit/runs/:runId/findings", Action: "read", Resource: "knowledge-ops"},
 		{Method: "GET", Path: "/api/v1/knowledge-ops/events", Action: "read", Resource: "knowledge-ops"},
 		{Method: "PATCH", Path: "/api/v1/knowledge-ops/events/:id/review", Action: "manage", Resource: "knowledge-ops"},
 		{Method: "POST", Path: "/api/v1/knowledge-ops/trace-runs", Action: "manage", Resource: "knowledge-ops"},
@@ -656,6 +667,20 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		// (doc/288 §7.7 / §11.4).
 		{Method: "POST", Path: "/api/v1/reports/:id/revisions/:revision/artifacts", Action: "execute", Resource: "report"},
 		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision/artifacts/:artifactId/download", Action: "read", Resource: "report"},
+		// Assurance surface (doc/301 §7.1). Triggering a run is `execute` plus an owner
+		// check in Service.TriggerReportAssurance (44109 for a grantee): it spends the
+		// tenant's monthly allowance, and the person accountable for the report is the
+		// person who decides to spend it. The three reads are `read` — an audit of a
+		// document the caller can already read is part of reading it, and hiding it
+		// would leave a grantee unable to see why a revision is not release-eligible.
+		// Adjudicating a finding is `execute` + owner: dismissing a problem changes what
+		// the report means, so it stays with the owner (doc/301 D10 — no new permission
+		// rows or roles).
+		{Method: "POST", Path: "/api/v1/reports/:id/revisions/:revision/assurance-runs", Action: "execute", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision/assurance-runs", Action: "read", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision/assurance-runs/:runId", Action: "read", Resource: "report"},
+		{Method: "GET", Path: "/api/v1/reports/:id/revisions/:revision/review", Action: "read", Resource: "report"},
+		{Method: "PATCH", Path: "/api/v1/reports/:id/revisions/:revision/findings/:findingId", Action: "execute", Resource: "report"},
 		// The template catalog is read-only in P0-A. Cloning (P0-B) and the
 		// capability-check probe (P0-A, §11.4) is `read` — it only discloses a verdict
 		// and never mutates the template. Cloning (P0-B, §11.4) is `manage`: it forks

@@ -21,6 +21,28 @@ const (
 	AbstainReasonNoEvidence    = "no_evidence"    // answer states a conclusion with zero citations: 无据下结论, discipline violation marker.
 )
 
+// AnswerabilityReasons is the closed set of `abstain_reason` values, in the order
+// the board lists them. `none` is a real value (the turn was answerable), so an
+// empty string is the only "no claim recorded" marker.
+func AnswerabilityReasons() []string {
+	return []string{
+		AbstainReasonNone, AbstainReasonNoAnswer, AbstainReasonSelfAbstain,
+		AbstainReasonLowSimilarity, AbstainReasonNoEvidence,
+	}
+}
+
+// IsAnswerabilityReason reports whether `value` is in the closed set. A filter
+// accepts only these: an unknown value would answer an empty page, which a reader
+// cannot tell apart from "no such turn".
+func IsAnswerabilityReason(value string) bool {
+	for _, reason := range AnswerabilityReasons() {
+		if reason == value {
+			return true
+		}
+	}
+	return false
+}
+
 // abstainPhraseSignals are engine-side honest-refusal phrases. They are the
 // observable contract of "知识库暂未覆盖 / 我无法从知识库确认" wording families.
 // Matching is whole-answer containment (not word-boundary) because refusal
@@ -250,4 +272,7 @@ func (s *Service) attachAnswerabilityClaim(event *model.KnowledgeOpsEvent, answe
 		return
 	}
 	event.AnswerabilityJSON = string(raw)
+	// Projected here, in the same function, so the column can never disagree with
+	// the JSON: two writers would be two answers waiting to differ.
+	event.AbstainReason = claim.AbstainReason
 }

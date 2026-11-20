@@ -485,9 +485,21 @@ type ReportRevision struct {
 	MetricsJSON           string `gorm:"column:metrics_json;type:text" json:"metrics_json"`
 	// GapJSON is written by finalize together with the terminal state; the
 	// banner, the job.partial payload and the artifact disclosure only read it.
-	GapJSON      string `gorm:"column:gap_json;type:text" json:"gap_json"`
-	Status       string `gorm:"column:status;size:24;not null" json:"status"`
-	Completeness string `gorm:"column:completeness;size:16" json:"completeness"`
+	// AssuranceRunID / AssuranceStatus / AssuranceSummaryJSON / AssuranceAckJSON
+	// are a *rebuildable projection* of the latest assurance run (doc/301 §6.2).
+	// They may be overwritten by a new run, so code must never answer "was this
+	// revision assured when it was published" from them — the immutable answer is
+	// an `rgx_report_assurance_run` row plus `assurance_ack_json`.
+	AssuranceRunID       string `gorm:"column:assurance_run_id;size:32" json:"assurance_run_id,omitempty"`
+	AssuranceStatus      string `gorm:"column:assurance_status;size:16;not null;default:not_run" json:"assurance_status"`
+	AssuranceSummaryJSON string `gorm:"column:assurance_summary_json;type:text" json:"assurance_summary_json,omitempty"`
+	// AssuranceAckJSON records the explicit "export anyway" acknowledgement: who,
+	// when, and what they were shown. Renamed from the first draft's
+	// `publish_ack_json`, which read as a *publish* confirmation (doc/301 §6.2).
+	AssuranceAckJSON string `gorm:"column:assurance_ack_json;type:text" json:"assurance_ack_json,omitempty"`
+	GapJSON          string `gorm:"column:gap_json;type:text" json:"gap_json"`
+	Status           string `gorm:"column:status;size:24;not null" json:"status"`
+	Completeness     string `gorm:"column:completeness;size:16" json:"completeness"`
 	// No clock of its own: a revision lives and dies with its report (doc/288
 	// §7.2 column list). The evidence-safe clock belongs to the snapshot.
 	PublishedAt  *time.Time `gorm:"column:published_at" json:"published_at"`
@@ -645,10 +657,19 @@ type ReportSection struct {
 	// ResearchPlanJSON is R18: the planner's sub-queries, how many chunks each
 	// returned, and which fallback (if any) replaced the plan. Written with
 	// `prompt_hash` at BeginReportSection because it describes that prompt's inputs.
-	ResearchPlanJSON string `gorm:"column:research_plan_json;type:text" json:"research_plan_json,omitempty"`
-	Status           string `gorm:"column:status;size:24;not null;index" json:"status"`
-	QualityStatus    string `gorm:"column:quality_status;size:24;not null;default:not_checked" json:"quality_status"`
-	EvidenceStatus   string `gorm:"column:evidence_status;size:24" json:"evidence_status"`
+	// PoolHitChunks / PoolInsufficient / PoolCandidateCount are the *writing-time*
+	// retrieval pool of this section (doc/301 §5.8 item 1), the counterpart of the
+	// outline-time `evidence_preview_json`. All three are nullable on purpose:
+	// `NULL` means "this revision did not record it", which is not the same answer
+	// as `0` (= the pool returned nothing) — the same discipline as
+	// `evidence_preview_json.insufficient`.
+	PoolHitChunks      *int   `gorm:"column:pool_hit_chunks" json:"pool_hit_chunks,omitempty"`
+	PoolInsufficient   *bool  `gorm:"column:pool_insufficient" json:"pool_insufficient,omitempty"`
+	PoolCandidateCount *int   `gorm:"column:pool_candidate_count" json:"pool_candidate_count,omitempty"`
+	ResearchPlanJSON   string `gorm:"column:research_plan_json;type:text" json:"research_plan_json,omitempty"`
+	Status             string `gorm:"column:status;size:24;not null;index" json:"status"`
+	QualityStatus      string `gorm:"column:quality_status;size:24;not null;default:not_checked" json:"quality_status"`
+	EvidenceStatus     string `gorm:"column:evidence_status;size:24" json:"evidence_status"`
 	// GapReason is why the section ended without content, from the closed set
 	// `failed | skipped | budget_exhausted` (doc/288 §7.8 `gap_json.reason`). It is
 	// written by the runner that made the decision because the reason cannot be

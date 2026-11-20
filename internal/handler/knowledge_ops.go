@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -54,6 +55,29 @@ func (h *Handler) KnowledgeOpsTopQueries(c *gin.Context) {
 	response.OK(c, out)
 }
 
+// KnowledgeOpsAnswerQuality returns the Q&A proxy metrics (doc/301 §5.9 QA-3 / T20).
+//
+// It is a *proxy* board and the shape says so: every rate travels with the counts it was
+// derived from, `null` means "no denominator", and the `bias` block carries feedback
+// coverage so the page can print the caveat next to the number instead of in a footnote.
+func (h *Handler) KnowledgeOpsAnswerQuality(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, scopeAll := knowledgeOpsScope(h, c)
+	weeks, _ := strconv.Atoi(c.DefaultQuery("weeks", "0"))
+	out, err := h.Service.AnswerQualityProxy(
+		c.Request.Context(), tenantID, scopeAll, weeks,
+		c.Query("date_from"), c.Query("date_to"), time.Now().UTC(),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, out)
+}
+
 // KnowledgeOpsEvents returns badcase candidates with review state.
 func (h *Handler) KnowledgeOpsEvents(c *gin.Context) {
 	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
@@ -71,12 +95,18 @@ func (h *Handler) KnowledgeOpsEvents(c *gin.Context) {
 		DateFrom:     c.Query("date_from"),
 		DateTo:       c.Query("date_to"),
 		Attribution:  c.Query("attribution"),
+		// doc/301 T12: the board filters by abstain reason (`no_evidence` /
+		// `low_similarity` are the two operators actually chase; `self_abstain` is
+		// a model judgement, not a knowledge gap).
+		AbstainReason: c.Query("abstain_reason"),
 	})
 	if err != nil {
 		response.Err(c, err)
 		return
 	}
-	response.OKPage(c, out, total, page, pageSize)
+	// Decoded in the service, not here: a handler that parses a payload is a second
+	// reader of a format the service already owns.
+	response.OKPage(c, service.KnowledgeOpsEventViews(out), total, page, pageSize)
 }
 
 type knowledgeOpsReviewPayload struct {
@@ -170,4 +200,60 @@ func (h *Handler) RequestCompilationRecoveryApproval(c *gin.Context) {
 		return
 	}
 	response.Accepted(c, approval)
+}
+
+// TriggerChatCitationAudit runs QA-2's weekly chat citation sample for the caller's
+// tenant (doc/301 §5.10 / T19).
+//
+// The handler is thin on purpose: it authorizes, resolves the tenant and hands
+// over. Everything else — the week boundary, the sample size, the judgement, the
+// idempotency — belongs to the service, because a second copy of "which week is
+// it" in a handler is a second answer waiting to disagree with the first.
+func (h *Handler) TriggerChatCitationAudit(c *gin.Context) {
+	actorID := c.GetString(middleware.ContextUserID)
+	if err := h.Service.Authorize(c.Request.Context(), actorID, "manage", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, _ := knowledgeOpsScope(h, c)
+	run, created, err := h.Service.RunChatCitationAudit(c.Request.Context(), tenantID, actorID)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, gin.H{"run": run, "created": created})
+}
+
+// ChatCitationAuditRuns lists the recent weekly runs of the caller's tenant.
+func (h *Handler) ChatCitationAuditRuns(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, _ := knowledgeOpsScope(h, c)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "12"))
+	runs, err := h.Service.ChatCitationAuditRuns(c.Request.Context(), tenantID, limit)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, gin.H{"runs": runs})
+}
+
+// ChatCitationAuditFindings pages one run's per-citation verdicts.
+func (h *Handler) ChatCitationAuditFindings(c *gin.Context) {
+	if err := h.Service.Authorize(c.Request.Context(), c.GetString(middleware.ContextUserID), "read", "knowledge-ops"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	tenantID, _ := knowledgeOpsScope(h, c)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "50"))
+	findings, total, err := h.Service.ChatCitationAuditFindings(
+		c.Request.Context(), tenantID, c.Param("runId"), page, pageSize)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, gin.H{"findings": findings, "total": total})
 }

@@ -91,6 +91,10 @@ func renderReportHTML(document *reportDocument, now time.Time) string {
 		html.EscapeString(now.UTC().Format("2006-01-02 15:04:05Z")) + "</dd></div>\n")
 	builder.WriteString("<div><dt>完整性</dt><dd>" +
 		html.EscapeString(reportCompletenessLabel(document.Completeness)) + "</dd></div>\n")
+	if document.ScanScope != "" {
+		builder.WriteString("<div><dt>复核范围</dt><dd>" +
+			html.EscapeString(document.ScanScope) + "</dd></div>\n")
+	}
 	builder.WriteString("</dl>\n")
 
 	if document.Question != "" {

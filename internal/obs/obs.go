@@ -48,6 +48,36 @@ type Observability struct {
 	retentionRunTotal    prometheus.Counter
 	retentionPurgedTotal *prometheus.CounterVec
 
+	// Report assurance (doc/301 §7.4). Seven series, chosen so that every number in
+	// the plan's acceptance table is a query rather than a re-derivation: runs by
+	// terminal state *and* tier (so "how many releases were blocked" is one series),
+	// claims by verdict and by quote status (the two axes that must never be merged
+	// into one "quality" number), duration, tokens split by cache hit, open findings
+	// by severity, and the quota drift ratio.
+	reportAssuranceRunsTotal     *prometheus.CounterVec
+	reportAssuranceClaimsVerdict *prometheus.CounterVec
+	reportAssuranceClaimsQuote   *prometheus.CounterVec
+	reportAssuranceDuration      prometheus.Histogram
+	reportAssuranceTokensTotal   *prometheus.CounterVec
+	reportAssuranceFindingsOpen  *prometheus.GaugeVec
+	assuranceQuotaDriftRatio     prometheus.Gauge
+	// assuranceSettlementDrift is a *different* number from the ratio above: it
+	// compares the two ledgers (runs' `quota_settled_tokens` vs
+	// `bucket.tokens_used - bucket.pending`), not usage against the limit. One is
+	// "did we exceed the allowance", the other is "do our two books agree", and
+	// collapsing them would let an accounting bug hide behind a healthy budget.
+	assuranceSettlementDrift prometheus.Gauge
+	// Gateway billing reconciliation (doc/301 §5.10 GW-3 / T21). Four series, one per
+	// question the drill has to answer: did the sweep run, how many requests were
+	// examined (the denominator), what disagreed and how, and how many tokens were
+	// involved. `checked_total` exists only so the ratio can be recomputed in a
+	// dashboard: without it, `findings_total > 0` is unreadable — one finding out of
+	// three requests and one out of thirty thousand are not the same event.
+	gatewayBillingReconcileRunsTotal     *prometheus.CounterVec
+	gatewayBillingReconcileCheckedTotal  *prometheus.CounterVec
+	gatewayBillingReconcileFindingsTotal *prometheus.CounterVec
+	gatewayBillingReconcileTokensTotal   *prometheus.CounterVec
+
 	approvalSubmittedTotal                    *prometheus.CounterVec
 	approvalExecutionTotal                    *prometheus.CounterVec
 	approvalPending                           prometheus.Gauge
@@ -430,6 +460,70 @@ func New(cfg config.Observability) *Observability {
 			Name: "firewall_total",
 			Help: "Generation attribution firewall decisions by verdict (doc/224 T3.3): allowed/warn/block — claims carrying a specific assertion with no verified citation.",
 		}, []string{"verdict"})
+		o.reportAssuranceRunsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "report_assurance",
+			Name: "runs_total",
+			Help: "Report assurance runs by terminal status, mode and release eligibility (doc/301 §7.4). A run that never finished is not counted here: it is still a run, and counting it as a status would hide the difference between 'measured nothing' and 'measured and failed'.",
+			// `budget_exhausted` is a label from the start for a reason a counter cannot
+			// fix later: a counter can only be incremented, so "how many runs ran out of
+			// budget" has to be part of the sample's identity on the very first write.
+		}, []string{"status", "mode", "release_eligibility", "budget_exhausted"})
+		o.reportAssuranceClaimsVerdict = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "report_assurance",
+			Name: "claims_total",
+			Help: "Report claims evaluated, by support verdict (doc/301 §7.4). `abstained` and `not_evaluated` are verdicts here, not absences: coverage is computed from this series, so dropping them would inflate it.",
+		}, []string{"verdict"})
+		o.reportAssuranceClaimsQuote = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "report_assurance",
+			Name: "claim_quote_status_total",
+			Help: "Report claims by mechanical quote status (doc/301 §7.4). Kept apart from the verdict series because a `verified` quote never implies `supported`, and one merged series would invite exactly that reading.",
+		}, []string{"quote_status"})
+		o.reportAssuranceDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace, Subsystem: "report_assurance",
+			Name:    "duration_seconds",
+			Help:    "Wall-clock duration of one report assurance run (doc/301 §7.4).",
+			Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1200, 2400},
+		})
+		o.reportAssuranceTokensTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "report_assurance",
+			Name: "tokens_total",
+			Help: "Tokens spent by report assurance calls, split by cache hit (doc/301 §7.4). `cache_hit=true` must stay near zero tokens: a cache hit that spends tokens is a broken cache key.",
+		}, []string{"cache_hit"})
+		o.reportAssuranceFindingsOpen = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "report_assurance",
+			Name: "findings_open",
+			Help: "Open review findings by severity (doc/301 §7.4). Set, not incremented: the value is 'how many are open right now', and an increment-only series could never go down after a dismissal.",
+		}, []string{"severity"})
+		o.assuranceQuotaDriftRatio = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "assurance_quota_drift_ratio",
+			Help:      "Assurance quota drift: settled-plus-pending over the bucket limit (doc/301 §7.4). Above 1 means the monthly allowance was exceeded, which the per-call reservation is supposed to make impossible.",
+		})
+		o.assuranceSettlementDrift = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "assurance_settlement_drift_ratio",
+			Help:      "Assurance allowance reconciliation drift (doc/301 §6.5 / T25): |settled - (tokens_used - pending)| / settled over one tenant period. Above 0.01 means the run ledger and the bucket ledger disagree.",
+		})
+		o.gatewayBillingReconcileRunsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "gateway_billing",
+			Name: "reconcile_runs_total",
+			Help: "Daily gateway billing reconciliation runs by tenant-day status (doc/301 T21). A `failed` run means the day is unreconciled, not that nothing disagreed.",
+		}, []string{"tenant_id", "status"})
+		o.gatewayBillingReconcileCheckedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "gateway_billing",
+			Name: "reconcile_checked_total",
+			Help: "Ledger entries examined by the reconciliation (doc/301 T21). This is the denominator of the mismatch ratio and is published for exactly that reason; it carries `tenant_id` because the ratio is only meaningful per tenant (one tenant's clean day cannot dilute another's broken one).",
+		}, []string{"tenant_id"})
+		o.gatewayBillingReconcileFindingsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "gateway_billing",
+			Name: "reconcile_findings_total",
+			Help: "Gateway billing ledger disagreements by kind (doc/301 T21): missing_meter/missing_cost/charged_after_failure/duplicate_request/stale_reservation/quota_drift/usage_drift. Expected steady state is zero.",
+		}, []string{"tenant_id", "kind"})
+		o.gatewayBillingReconcileTokensTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "gateway_billing",
+			Name: "reconcile_tokens_total",
+			Help: "Tokens on each side of the settlement comparison (doc/301 T21), split by `settled` (the reservation ledger) and `counter` (the key balance). Two series rather than one difference, so a reader can see which side moved.",
+		}, []string{"tenant_id", "side"})
 		o.contextDecisionDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: namespace, Subsystem: "context",
 			Name:    "decision_duration_seconds",
@@ -460,7 +554,13 @@ func New(cfg config.Observability) *Observability {
 			o.memoryPrivacyGateTotal, o.contextDecisionDuration,
 			o.governanceProjectionTotal, o.governanceExcludedDocsTotal, o.governanceEmptyGuardTotal,
 			o.governanceDictionaryApprovalTotal, o.governanceAutoProjectionTotal,
-			o.attributionFirewallTotal)
+			o.attributionFirewallTotal,
+			o.reportAssuranceRunsTotal, o.reportAssuranceClaimsVerdict,
+			o.reportAssuranceClaimsQuote, o.reportAssuranceDuration,
+			o.reportAssuranceTokensTotal, o.reportAssuranceFindingsOpen,
+			o.assuranceQuotaDriftRatio, o.assuranceSettlementDrift,
+			o.gatewayBillingReconcileRunsTotal, o.gatewayBillingReconcileCheckedTotal,
+			o.gatewayBillingReconcileFindingsTotal, o.gatewayBillingReconcileTokensTotal)
 	}
 
 	o.setupTracer(cfg)
@@ -1092,6 +1192,129 @@ func (o *Observability) AddResourceSyncStaleRuns(sourceID string, count int64) {
 func (o *Observability) IncRetentionPurged(class string, rows int64) {
 	if o.metricsEnabled && o.retentionPurgedTotal != nil && rows > 0 {
 		o.retentionPurgedTotal.WithLabelValues(class).Add(float64(rows))
+	}
+}
+
+// Report assurance metrics (doc/301 §7.4).
+//
+// All seven hang off one wrapper so that a `metrics_enabled=false` deployment costs
+// nothing but a branch: the service layer calls these unconditionally and never
+// checks configuration itself.
+
+// IncReportAssuranceRun records one terminal run. `status` is the run's terminal
+// word (`succeeded` / `degraded` / `failed`); a run still `queued` or `running` is
+// deliberately not reported, because a counter cannot be un-incremented.
+func (o *Observability) IncReportAssuranceRun(status, mode, eligibility string, budgetExhausted bool) {
+	if o.metricsEnabled && o.reportAssuranceRunsTotal != nil {
+		exhausted := "false"
+		if budgetExhausted {
+			exhausted = "true"
+		}
+		o.reportAssuranceRunsTotal.WithLabelValues(status, mode, eligibility, exhausted).Inc()
+	}
+}
+
+// AddReportAssuranceClaims records the verdict histogram of one run.
+func (o *Observability) AddReportAssuranceClaims(counts map[string]int64) {
+	if !o.metricsEnabled || o.reportAssuranceClaimsVerdict == nil {
+		return
+	}
+	for verdict, count := range counts {
+		if count > 0 {
+			o.reportAssuranceClaimsVerdict.WithLabelValues(verdict).Add(float64(count))
+		}
+	}
+}
+
+// AddReportAssuranceQuoteStatuses records the mechanical layer's outcomes.
+func (o *Observability) AddReportAssuranceQuoteStatuses(counts map[string]int64) {
+	if !o.metricsEnabled || o.reportAssuranceClaimsQuote == nil {
+		return
+	}
+	for status, count := range counts {
+		if count > 0 {
+			o.reportAssuranceClaimsQuote.WithLabelValues(status).Add(float64(count))
+		}
+	}
+}
+
+// ObserveReportAssuranceDuration records one run's wall-clock time.
+func (o *Observability) ObserveReportAssuranceDuration(seconds float64) {
+	if o.metricsEnabled && o.reportAssuranceDuration != nil && seconds >= 0 {
+		o.reportAssuranceDuration.Observe(seconds)
+	}
+}
+
+// AddReportAssuranceTokens records tokens split by cache hit.
+func (o *Observability) AddReportAssuranceTokens(cacheHit bool, tokens int64) {
+	if !o.metricsEnabled || o.reportAssuranceTokensTotal == nil || tokens <= 0 {
+		return
+	}
+	label := "false"
+	if cacheHit {
+		label = "true"
+	}
+	o.reportAssuranceTokensTotal.WithLabelValues(label).Add(float64(tokens))
+}
+
+// SetReportAssuranceOpenFindings sets (never increments) the open-finding count for
+// one severity. A zero is written too: leaving the old value would make a fully
+// resolved instance look like a permanently unhappy one.
+func (o *Observability) SetReportAssuranceOpenFindings(severity string, count int) {
+	if o.metricsEnabled && o.reportAssuranceFindingsOpen != nil {
+		o.reportAssuranceFindingsOpen.WithLabelValues(severity).Set(float64(count))
+	}
+}
+
+// SetAssuranceQuotaDriftRatio publishes the allowance-drift gauge. `ratio < 0`
+// means "not measurable" and is skipped rather than clamped to 0, because 0 looks
+// like perfect health.
+func (o *Observability) SetAssuranceQuotaDriftRatio(ratio float64) {
+	if o.metricsEnabled && o.assuranceQuotaDriftRatio != nil && ratio >= 0 {
+		o.assuranceQuotaDriftRatio.Set(ratio)
+	}
+}
+
+// SetAssuranceSettlementDrift publishes the two-ledger reconciliation drift.
+//
+// `ratio < 0` means "not measurable" (no bucket, no settled runs) and is skipped
+// rather than clamped to 0: a zero drift is the healthy answer, so publishing it when
+// nothing was compared would be a lie that looks like good news.
+func (o *Observability) SetAssuranceSettlementDrift(ratio float64) {
+	if o.metricsEnabled && o.assuranceSettlementDrift != nil && ratio >= 0 {
+		o.assuranceSettlementDrift.Set(ratio)
+	}
+}
+
+// RecordGatewayBillingReconcile publishes one reconciliation run (doc/301 T21).
+//
+// Every disagreement is counted by kind on the run that found it, and the tokens on
+// both sides are accumulated even when the sides agree — a drift that resolves itself
+// still tells an operator how much money moved through the check.
+func (o *Observability) RecordGatewayBillingReconcile(tenantID, status string, checked int, findings map[string]int, expectedTokens, actualTokens int64) {
+	if !o.metricsEnabled || tenantID == "" {
+		return
+	}
+	if o.gatewayBillingReconcileRunsTotal != nil {
+		o.gatewayBillingReconcileRunsTotal.WithLabelValues(tenantID, status).Inc()
+	}
+	if o.gatewayBillingReconcileCheckedTotal != nil && checked > 0 {
+		o.gatewayBillingReconcileCheckedTotal.WithLabelValues(tenantID).Add(float64(checked))
+	}
+	if o.gatewayBillingReconcileFindingsTotal != nil {
+		for kind, count := range findings {
+			if count > 0 {
+				o.gatewayBillingReconcileFindingsTotal.WithLabelValues(tenantID, kind).Add(float64(count))
+			}
+		}
+	}
+	if o.gatewayBillingReconcileTokensTotal != nil {
+		if expectedTokens > 0 {
+			o.gatewayBillingReconcileTokensTotal.WithLabelValues(tenantID, "settled").Add(float64(expectedTokens))
+		}
+		if actualTokens > 0 {
+			o.gatewayBillingReconcileTokensTotal.WithLabelValues(tenantID, "counter").Add(float64(actualTokens))
+		}
 	}
 }
 

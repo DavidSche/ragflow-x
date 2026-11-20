@@ -211,11 +211,70 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 			expression: "increase(ragflow_x_connector_credential_failure_total[30m]) >= 2",
 			pendingFor: "0m", severity: "critical",
 		},
+		// doc/301 §7.4 report assurance alerts. Five, one per way a review stops
+		// being an assurance. The pinning matters: an expression that silently loses
+		// its `budget_exhausted` selector would still parse, and would then fire on
+		// every run rather than on the exhausted ones.
+		"AssuranceFailureRateHigh": {
+			expression: `sum(increase(ragflow_x_report_assurance_runs_total{status="failed"}[1h])) / clamp_min(sum(increase(ragflow_x_report_assurance_runs_total[1h])), 1) > 0.2 and sum(increase(ragflow_x_report_assurance_runs_total[1h])) >= 3`,
+			pendingFor: "15m", severity: "warning",
+		},
+		"AssuranceBudgetExhausted": {
+			expression: `sum(increase(ragflow_x_report_assurance_runs_total{budget_exhausted="true"}[6h])) >= 3`,
+			pendingFor: "0m", severity: "warning",
+		},
+		"AssuranceQuotaDriftHigh": {
+			expression: "ragflow_x_assurance_quota_drift_ratio > 1.05",
+			pendingFor: "30m", severity: "critical",
+		},
+		// T25: the two-ledger reconciliation. Deliberately a *second* series with a
+		// much tighter threshold: 1% is an accounting disagreement, not a budget
+		// overrun, and it fires long before the allowance gauge above moves.
+		"AssuranceSettlementDriftHigh": {
+			expression: "ragflow_x_assurance_settlement_drift_ratio > 0.01",
+			pendingFor: "1h", severity: "warning",
+		},
+		"AssuranceOpenHighFindings": {
+			expression: `ragflow_x_report_assurance_findings_open{severity="high"} > 0`,
+			pendingFor: "24h", severity: "warning",
+		},
+		"AssuranceQuoteNotFound": {
+			expression: `sum(increase(ragflow_x_report_assurance_claim_quote_status_total{quote_status="not_found"}[6h])) >= 3`,
+			pendingFor: "0m", severity: "warning",
+		},
+		// doc/301 §5.10 GW-3 / T21 gateway billing reconciliation. Two alerts, pinned
+		// separately because they answer different questions, and because losing the
+		// `checked_total` quorum clause would still parse while turning a single
+		// disagreement on two looked-at rows into the same page as a rare bug.
+		"GatewayBillingReconcileMismatch": {
+			expression: `sum by (tenant_id) (increase(ragflow_x_gateway_billing_reconcile_findings_total[25h])) > 0 and sum by (tenant_id) (increase(ragflow_x_gateway_billing_reconcile_checked_total[25h])) >= 3`,
+			pendingFor: "0m", severity: "critical",
+		},
+		"GatewayBillingReconcileFailed": {
+			expression: `sum by (tenant_id) (increase(ragflow_x_gateway_billing_reconcile_runs_total{status="failed"}[25h])) >= 1`,
+			pendingFor: "5m", severity: "warning",
+		},
+		// doc/301 §5.10 GW-2 / T14 gateway route latency. The threshold is the same
+		// 2s the baseline probe judges non-stream cells against; the label is `route`
+		// (gin FullPath, internal/obs/obs.go Middleware) and deliberately not `tenant`.
+		"GatewayRouteLatencyHigh": {
+			expression: `histogram_quantile(0.95, sum by (le, route) (increase(ragflow_x_http_request_duration_seconds_bucket{route=~"/v1/.*"}[15m]))) > 2`,
+			pendingFor: "15m", severity: "warning",
+		},
 	}
 	expectedRunbook := map[string]string{
-		"CompilationUpstreamStalled":    "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
-		"CompilationUnknownAgeWarning":  "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
-		"CompilationUnknownAgeCritical": "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"CompilationUpstreamStalled":      "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"CompilationUnknownAgeWarning":    "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"CompilationUnknownAgeCritical":   "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
+		"AssuranceFailureRateHigh":        "doc/operations/runbooks/ReportAssuranceRunbook.md",
+		"AssuranceBudgetExhausted":        "doc/operations/runbooks/ReportAssuranceRunbook.md",
+		"AssuranceQuotaDriftHigh":         "doc/operations/runbooks/ReportAssuranceRunbook.md",
+		"AssuranceSettlementDriftHigh":    "doc/operations/runbooks/ReportAssuranceRunbook.md",
+		"AssuranceOpenHighFindings":       "doc/operations/runbooks/ReportAssuranceRunbook.md",
+		"AssuranceQuoteNotFound":          "doc/operations/runbooks/ReportAssuranceRunbook.md",
+		"GatewayBillingReconcileMismatch": "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
+		"GatewayBillingReconcileFailed":   "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
+		"GatewayRouteLatencyHigh":         "doc/operations/runbooks/GatewayPerformanceRunbook.md",
 	}
 	for alert, wantRunbook := range expectedRunbook {
 		rule, exists := rules[alert]
@@ -224,6 +283,38 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 		}
 		if rule.Annotations["runbook"] != wantRunbook {
 			t.Fatalf("alert %q runbook = %q, want %q", alert, rule.Annotations["runbook"], wantRunbook)
+		}
+		// The tenant/kind guard is the compilation alerts' shape, not every runbook's:
+		// the assurance alerts are instance-wide health signals, and requiring a tenant
+		// dimension would either add a label the plan does not define or fail the test
+		// for the wrong reason.
+		//
+		// The gateway billing alerts keep `tenant_id` (a reconciliation is per
+		// tenant-day, and one tenant's clean day must not dilute another's broken one)
+		// but deliberately sum across `kind`: the operator's first question is "whose
+		// books disagree", and the kind breakdown lives in the run's findings, which the
+		// runbook tells them to filter on the API. An alert grouped by kind would page
+		// seven times for one root cause.
+		// Each family declares the dimension its question is about; there is no single
+		// right answer, and a blanket "must contain tenant_id and kind" would only
+		// teach the next person to add a label nobody aggregates on.
+		switch {
+		case strings.HasPrefix(alert, "Assurance"):
+			// Instance-wide health signals (see above).
+			continue
+		case strings.HasPrefix(alert, "GatewayBilling"):
+			if !strings.Contains(rule.Expr, "tenant_id") {
+				t.Fatalf("alert %q must retain the tenant dimension: %s", alert, rule.Expr)
+			}
+			continue
+		case strings.HasPrefix(alert, "GatewayRoute"):
+			// Latency is a property of a route; the histogram carries no tenant label,
+			// and inventing one here would be aggregating on a dimension the metric
+			// does not have.
+			if !strings.Contains(rule.Expr, "route") {
+				t.Fatalf("alert %q must retain the route dimension: %s", alert, rule.Expr)
+			}
+			continue
 		}
 		if !strings.Contains(rule.Expr, "tenant_id") || !strings.Contains(rule.Expr, "kind") {
 			t.Fatalf("alert %q must retain tenant and kind dimensions: %s", alert, rule.Expr)

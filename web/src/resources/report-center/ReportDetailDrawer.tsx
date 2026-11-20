@@ -326,6 +326,25 @@ export function ReportDetailDrawer({ report, onOpenChange, onRead }: ReportDetai
                   {formatRatio(t, metrics.claim_support_rate)}
                 </dd>
               </div>
+              {/* doc/301 T10 / §4: the locator's *use* is visible, next to its
+                  denominator. The ratio is `null` when nothing cited anything (0/0 is
+                  not "0%"), and the denominator is printed whether the rate is null or
+                  not, so "no evidence to assist" and "the locator was never used" can
+                  never render as the same number. */}
+              <div>
+                <dt className="text-xs text-muted-foreground">{t("reportCenter.detail_locator_assisted")}</dt>
+                <dd className="font-medium tabular-nums" data-testid="report-detail-locator-assisted">
+                  {formatRatio(t, metrics.locator_assisted_section_rate)}
+                  {metrics.with_citation_sections ? (
+                    <span className="ml-1 text-xs font-normal text-muted-foreground">
+                      {t("reportCenter.detail_locator_assisted_denominator", {
+                        assisted: metrics.locator_assisted_sections ?? 0,
+                        total: metrics.with_citation_sections,
+                      })}
+                    </span>
+                  ) : null}
+                </dd>
+              </div>
             </dl>
 
             {consistency && consistency.keys_checked !== null && (

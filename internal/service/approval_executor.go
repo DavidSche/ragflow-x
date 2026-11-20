@@ -125,6 +125,10 @@ func (s *Service) approvalExecutorRegistry() *ApprovalExecutorRegistry {
 		svc: s, objectType: model.ApprovalObjectAPIKey, action: model.ApprovalActionRevoke,
 		validate: validateApprovalAPIKeyRevoke, execute: s.executeAPIKeyRevoke,
 	})
+	registry.Register(fmt.Sprintf("%s.%s", model.ApprovalObjectAPIKey, model.ApprovalActionRotateCredential), &serviceApprovalExecutor{
+		svc: s, objectType: model.ApprovalObjectAPIKey, action: model.ApprovalActionRotateCredential,
+		validate: validateApprovalAPIKeyRotation, execute: s.executeAPIKeyRotation,
+	})
 	registry.Register(fmt.Sprintf("%s.%s", model.ApprovalObjectModelProvider, model.ApprovalActionCreate), &serviceApprovalExecutor{
 		svc: s, objectType: model.ApprovalObjectModelProvider, action: model.ApprovalActionCreate,
 		validate: validateApprovalModelProviderCreate, execute: s.executeModelProviderCreate,
@@ -372,6 +376,27 @@ func validateApprovalAPIKeyRevoke(ctx context.Context, svc *Service, approval *m
 	}
 	if key == nil {
 		return httperr.NotFound("api key not found")
+	}
+	return nil
+}
+
+// validateApprovalAPIKeyRotation re-checks rotatability at *execution* time. The key may
+// have been revoked or rotated between the request and the approval, and an approved
+// rotation of a dead credential would mint a live secret from a decision that no longer
+// applies.
+func validateApprovalAPIKeyRotation(ctx context.Context, svc *Service, approval *model.Approval) error {
+	key, err := svc.Store.GetAPIKey(ctx, approval.TenantID, approval.ObjectID)
+	if err != nil {
+		return err
+	}
+	if key == nil {
+		return httperr.NotFound("api key not found")
+	}
+	if !key.Enabled {
+		return httperr.New(409, httperr.CodeAPIKeyRotationConflict, "a revoked api key cannot be rotated")
+	}
+	if key.RotatedToKeyID != "" {
+		return httperr.New(409, httperr.CodeAPIKeyRotationConflict, "api key has already been rotated")
 	}
 	return nil
 }
@@ -834,6 +859,32 @@ func (s *Service) executeAPIKeyRevoke(ctx context.Context, _ *Service, approval 
 		return nil, err
 	}
 	return map[string]any{"key_id": approval.ObjectID}, nil
+}
+
+// executeAPIKeyRotation mints the successor and encrypts its secret into the result, so
+// only the requester can reveal it (same path as an approved create).
+func (s *Service) executeAPIKeyRotation(ctx context.Context, _ *Service, approval *model.Approval) (map[string]any, error) {
+	payload, err := approvalPayload(approval)
+	if err != nil {
+		return nil, err
+	}
+	var grace *int
+	if payload["grace_hours"] != nil {
+		hours := int(approvalAnyToFloat(payload["grace_hours"]))
+		grace = &hours
+	}
+	raw, successor, retired, err := s.RotateAPIKey(ctx, approval.TenantID, approval.ObjectID, grace)
+	if err != nil {
+		return nil, err
+	}
+	secretCiphertext, err := crypto.Encrypt(s.EncryptKey, raw)
+	if err != nil {
+		return nil, httperr.Internal("failed to encrypt approval secret")
+	}
+	return map[string]any{
+		"key_id": successor.ID, "retired_key_id": retired.ID, "name": successor.Name,
+		"api_key_ciphertext": secretCiphertext,
+	}, nil
 }
 
 func (s *Service) executeModelProviderCreate(ctx context.Context, _ *Service, approval *model.Approval) (map[string]any, error) {

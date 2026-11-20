@@ -237,6 +237,25 @@ func parseReportLocationHints(raw string) []reportLocationHint {
 func (s *Service) attachReportLocationHints(
 	ctx context.Context, tenantID string, sections []model.ReportSection, previews []reportEvidencePreview,
 ) {
+	// `report.locator_hints_enabled` (doc/301 §5.7 KC-1) is the switch the A54 toggle
+	// regression turns off, so it has to be read *here*: a registered setting that
+	// nothing consults is a promise the workspace cannot keep, and the frozen hints are
+	// the one place where "off" is observable (the prompt block and the reader both
+	// read this column).
+	//
+	// Fail closed: an unreadable settings snapshot leaves every section without
+	// locators rather than guessing "on". Compilation is an enhancement and a report
+	// must never depend on it, so the honest degradation is "no navigation", never
+	// "navigation we could not authorize".
+	settings, err := s.reportAssuranceSettingsOf(ctx)
+	if err != nil {
+		logger.Warn("report locators: settings read failed, locators disabled",
+			"tenant_id", tenantID, "error", err)
+		return
+	}
+	if !settings.LocatorHintsEnabled {
+		return
+	}
 	datasetIDs := make([]string, 0, len(sections))
 	seen := make(map[string]struct{}, len(sections))
 	for _, preview := range previews {

@@ -85,6 +85,14 @@ type ReportMetricsTotals struct {
 	// revisions; CitationCoverage likewise.
 	StructureCompleteness *float64 `json:"structure_completeness"`
 	CitationCoverage      *float64 `json:"citation_coverage"`
+	// LocatorAssistedSections / WithCitationSections are the pooled numerator and
+	// denominator of `locator_assisted_section_rate` (doc/301 T10). They are summed
+	// across revisions rather than averaged: a 3-section report and a 30-section one
+	// do not carry the same evidence, and pooling keeps the ratio's denominator
+	// visible next to it.
+	LocatorAssistedSections    int      `json:"locator_assisted_sections"`
+	WithCitationSections       int      `json:"with_citation_sections"`
+	LocatorAssistedSectionRate *float64 `json:"locator_assisted_section_rate"`
 	// QualityJudged / QualityPassed / QualityNeedsReview / QualityNotChecked are the
 	// §14.2 gate counts, summed from the stored per-revision metrics.
 	QualityJudged       int      `json:"quality_judged"`
@@ -96,6 +104,12 @@ type ReportMetricsTotals struct {
 	// (citation coverage below the floor, §14.2). It is a count, not a ratio, so a
 	// single flagged revision is visible on a quiet day.
 	DegradedRevisions int `json:"degraded_revisions"`
+	// ResearchDegradedSections / ResearchPlannedSections are pooled counts from the
+	// per-revision metrics (doc/301 §5.8 item 2). They are counts, never a ratio: the
+	// only decision §5.8 item 3 authorises is "is this common enough to fund planning
+	// v2", and a percentage without its denominator cannot answer it on a quiet week.
+	ResearchDegradedSections int `json:"research_degraded_sections"`
+	ResearchPlannedSections  int `json:"research_planned_sections"`
 }
 
 // ReportMetricsBucket is one day or week of the series.
@@ -232,7 +246,11 @@ type reportMetricsAccumulator struct {
 	judged         int
 	passed         int
 	needsReview    int
-	totals         ReportMetricsTotals
+	// locatorAssisted / withCitation are counts, not sums of ratios: see the field
+	// comment on `ReportMetricsTotals.LocatorAssistedSections`.
+	locatorAssisted int
+	withCitation    int
+	totals          ReportMetricsTotals
 }
 
 // accumulateReportMetric folds one revision into an accumulator and reports whether
@@ -274,10 +292,14 @@ func accumulateReportMetric(acc *reportMetricsAccumulator, revision *model.Repor
 		acc.structureCount++
 		acc.citationSum += metrics.CitationCoverage
 		acc.citationCount++
+		acc.locatorAssisted += metrics.LocatorAssistedSections
+		acc.withCitation += metrics.WithCitationSections
 		acc.judged += metrics.QualityJudged
 		acc.passed += metrics.QualityPassed
 		acc.needsReview += metrics.QualityNeedsReview
 		acc.totals.QualityNotChecked += metrics.QualityNotChecked
+		acc.totals.ResearchDegradedSections += metrics.ResearchDegradedSections
+		acc.totals.ResearchPlannedSections += metrics.ResearchPlannedSections
 		if metrics.QualityFlag == model.ReportQualityFlagDegraded {
 			acc.totals.DegradedRevisions++
 		}
@@ -303,6 +325,14 @@ func (acc *reportMetricsAccumulator) view() ReportMetricsTotals {
 	if acc.judged > 0 {
 		value := roundRatio(float64(acc.passed) / float64(acc.judged))
 		totals.QualityGatePassRate = &value
+	}
+	totals.LocatorAssistedSections = acc.locatorAssisted
+	totals.WithCitationSections = acc.withCitation
+	// `nil` when nothing cited anything: 0/0 is "no evidence to assist", which is not
+	// "the locator was never used".
+	if acc.withCitation > 0 {
+		value := roundRatio(float64(acc.locatorAssisted) / float64(acc.withCitation))
+		totals.LocatorAssistedSectionRate = &value
 	}
 	return totals
 }

@@ -199,6 +199,10 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.GET("/dashboard", h.Dashboard)
 		protected.GET("/knowledge-ops", h.KnowledgeOpsSummary)
 		protected.GET("/knowledge-ops/top-queries", h.KnowledgeOpsTopQueries)
+		protected.GET("/knowledge-ops/answer-quality", h.KnowledgeOpsAnswerQuality)
+		protected.POST("/knowledge-ops/citation-audit", h.TriggerChatCitationAudit)
+		protected.GET("/knowledge-ops/citation-audit/runs", h.ChatCitationAuditRuns)
+		protected.GET("/knowledge-ops/citation-audit/runs/:runId/findings", h.ChatCitationAuditFindings)
 		protected.GET("/knowledge-ops/events", h.KnowledgeOpsEvents)
 		protected.PATCH("/knowledge-ops/events/:id/review", h.ReviewKnowledgeOpsEvent)
 		protected.POST("/knowledge-ops/trace-runs", h.CreateTraceRun)
@@ -222,6 +226,11 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.GET("/usage/details", h.UsageDetail)
 		protected.GET("/usage/attribution", h.OperationalAttribution)
 		protected.GET("/usage/export", h.ExportUsageReport)
+		// GW-3 / T21: the daily four-ledger billing check. The tenant-facing read
+		// surface is under `/usage` (it is a usage question), while the on-demand run
+		// is under `/system` because it walks every tenant's ledgers.
+		protected.GET("/usage/reconcile", h.GatewayBillingReconcileRuns)
+		protected.GET("/usage/reconcile/:runId/findings", h.GatewayBillingReconcileFindings)
 		protected.GET("/audit", h.ListAudits)
 		protected.GET("/audit/export", h.ExportAudits)
 		protected.GET("/audit/anchors", h.ListAuditAnchors)
@@ -251,6 +260,7 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.POST("/system/ragflow/sync/runs/:id/import", h.ImportResourceSync)
 		protected.POST("/system/ragflow/sync/runs/:id/assign", h.AssignResourceSyncItems)
 		protected.POST("/system/ragflow/sync/reconcile", h.ReconcileResourceSync)
+		protected.POST("/system/usage/reconcile", h.ReconcileGatewayBilling)
 		protected.GET("/system/ragflow/sync/resources", h.ListResourceSyncResources)
 		protected.GET("/system/ragflow/sync/relink/tenant-options", h.ListResourceSyncRelinkTenantOptions)
 		protected.GET("/system/ragflow/sync/relink/resource-options", h.ListResourceSyncRelinkResourceOptions)
@@ -441,6 +451,7 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.GET("/keys", h.ListAPIKeys)
 		protected.POST("/keys", h.CreateAPIKey)
 		protected.POST("/keys/:id/revoke", h.RevokeAPIKey)
+		protected.POST("/keys/:id/rotate", h.RotateAPIKey)
 	}
 	// Frontend: serve the embedded UI build (webfs embeds web/dist at compile
 	// time) as the no-route fallback, so a single binary provides API + UI.

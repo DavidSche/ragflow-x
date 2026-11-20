@@ -110,6 +110,11 @@ type Service struct {
 	approvalSubmitLimiter            ratelimit.Limiter
 	approvalDecisionLimiter          ratelimit.Limiter
 	approvalExecutorRegistryOverride *ApprovalExecutorRegistry
+	// chatCitationAuditSweepMu/-At throttle QA-2's weekly sweep (doc/301 T19).
+	// Value-typed so the zero value is usable without lazy init; one stamp per
+	// Service, never a package variable, so two instances cannot share a cadence.
+	chatCitationAuditSweepMu sync.Mutex
+	chatCitationAuditSweptAt time.Time
 	// connectorRegistry holds the built-in data-source providers (doc/225 §8).
 	connectorRegistry *connectorpkg.Registry
 	// connectorMu guards connectorConfig/connectorSem; the semaphore enforces the

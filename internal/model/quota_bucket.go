@@ -10,6 +10,14 @@ const (
 	QuotaBucketDimensionTenant    = "tenant"
 	QuotaBucketDimensionModel     = "model"
 	QuotaBucketDimensionAssistant = "assistant"
+	// QuotaBucketDimensionAssurance is the monthly claim-assurance allowance
+	// (doc/301 §6.5). It reuses this ledger rather than a new one because the
+	// ledger already answers the four questions a budget must answer: how to
+	// reserve without overshooting under concurrency, how to keep a retry from
+	// double-charging (`request_id` primary key + `Applied`), how to release an
+	// abandoned reservation, and how to reconcile a stuck one (`reapStale...`).
+	// `dimension` is a varchar, so adding a value is additive at the table level.
+	QuotaBucketDimensionAssurance = "assurance"
 )
 
 // QuotaBucket is a monthly quota ledger row for a gateway quota dimension

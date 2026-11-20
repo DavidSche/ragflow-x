@@ -69,6 +69,12 @@ const detail = {
       claim_support_rate: 0.75,
       claim_scored: 4,
       claim_not_required: 1,
+      // T10: the locator rate travels with its pooled counts, and the denominator is
+      // printed next to it — "25%" alone cannot say whether four sections used it or
+      // forty did.
+      locator_assisted_sections: 1,
+      with_citation_sections: 4,
+      locator_assisted_section_rate: 0.25,
       consistency_keys_checked: 4,
       consistency_issues: [
         { kind: "number", label: "住宿标准", ords: [2, 4], values: ["600元", "800元"] },
@@ -228,6 +234,10 @@ describe("ReportDetailDrawer", () => {
     // R11: the claim rate is printed from the frozen metrics, with its denominator
     // still on the wire for anyone reading the JSON.
     expect(screen.getByTestId("report-detail-claim-support").textContent).toBe("75%");
+    // T10: "the locator was used" is a fact about citing sections, so it is shown with
+    // the population it was measured over.
+    expect(screen.getByTestId("report-detail-locator-assisted").textContent).toContain("25%");
+    expect(screen.getByTestId("report-detail-locator-assisted").textContent).toContain("1/4 引用章节");
     // R16: the disagreement names the fact, both chapters and both values — a line
     // saying only "跨章节数字冲突" would leave the reader to hunt for it.
     const consistency = screen.getByTestId("report-detail-consistency");
@@ -377,9 +387,10 @@ describe("ReportDetailDrawer", () => {
 
     await screen.findByText("v2 · 已交付 · 部分");
     // No crash, no fabricated 0%: an unreadable blob means "nothing to show".
-    // Four, not three: the claim support rate is a fourth ratio that was never
-    // computed, and it must say so as well.
-    expect(screen.getAllByText("暂无判定")).toHaveLength(4);
+    // Five ratios, five ways to say "nothing to judge": the quality pass rate, the
+    // locator rate (0/0 has no denominator) and the three that had a blob but no
+    // numbers in it. The count is pinned so a sixth silently-null metric is caught.
+    expect(screen.getAllByText("暂无判定")).toHaveLength(5);
     // An unreadable blob also means "the consistency check never ran" — no section,
     // no "0 项" reassurance.
     expect(screen.queryByTestId("report-detail-consistency")).toBeNull();

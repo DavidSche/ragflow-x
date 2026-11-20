@@ -284,6 +284,33 @@ export function ReportCenter() {
                 label={t("reportCenter.metric_citation")}
                 value={formatRatio(t, trend.totals.citation_coverage as number | null | undefined)}
               />
+              {/* T10: the locator rate is *pooled* across revisions (§4), so the
+                  denominator is part of the number — a 3-section report and a
+                  30-section one do not carry the same evidence. */}
+              <Metric
+                label={t("reportCenter.metric_locator_assisted")}
+                value={formatRatio(t, trend.totals.locator_assisted_section_rate)}
+                hint={
+                  trend.totals.with_citation_sections
+                    ? t("reportCenter.detail_locator_assisted_denominator", {
+                        assisted: trend.totals.locator_assisted_sections ?? 0,
+                        total: trend.totals.with_citation_sections,
+                      })
+                    : undefined
+                }
+              />
+              {/* §5.8 item 2: the degraded-plan count is a *count*, so it renders with
+                  the number of planned sections it is out of. Silence when nothing was
+                  planned: "0 degraded" over no plans would read as a clean bill. */}
+              {trend.totals.research_planned_sections ? (
+                <Metric
+                  label={t("reportCenter.metric_research_degraded")}
+                  value={String(trend.totals.research_degraded_sections ?? 0)}
+                  hint={t("reportCenter.metric_research_degraded_denominator", {
+                    planned: trend.totals.research_planned_sections,
+                  })}
+                />
+              ) : null}
             </dl>
             {points.length > 0 ? (
               <ul className="mt-4 flex h-16 items-end gap-1" aria-hidden="true">
@@ -537,11 +564,12 @@ export function ReportCenter() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="text-lg font-semibold tabular-nums">{value}</dd>
+      {hint ? <dd className="text-xs text-muted-foreground">{hint}</dd> : null}
     </div>
   );
 }

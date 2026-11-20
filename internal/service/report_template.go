@@ -64,6 +64,13 @@ type ReportTemplateRetrieval struct {
 	TopK            int    `json:"top_k"`
 	ThresholdPolicy string `json:"threshold_policy"`
 	MinEvidence     int    `json:"min_evidence"`
+	// ScanTopK is how many *uncited* chunks per section are frozen as conflict
+	// candidates at generation time (doc/301 §5.3.1 / §7.6). It is additive on
+	// purpose: an older payload has no key, reads as 0, and inherits the tenant
+	// setting. 0 means "keep none" — widening the retained uncited pool is opt-in,
+	// never a default, because those chunks are content the report did not choose
+	// to cite.
+	ScanTopK int `json:"scan_top_k,omitempty"`
 }
 
 // ReportTemplateEvidencePolicy controls how unsupported, conflicting and
@@ -183,6 +190,12 @@ func validateReportTemplatePayload(payload *ReportTemplatePayload) error {
 	}
 	if payload.Retrieval.MinEvidence < 0 {
 		return fmt.Errorf("retrieval.min_evidence must not be negative")
+	}
+	// doc/301 §5.3.1: 0–20. The upper bound is a retention decision as much as a
+	// quality one — every frozen candidate is *uncited* corpus text kept on disk, so
+	// "as many as the retriever returns" must not be expressible as a template value.
+	if payload.Retrieval.ScanTopK < 0 || payload.Retrieval.ScanTopK > reportAssuranceMaxScanTopK {
+		return fmt.Errorf("retrieval.scan_top_k must be between 0 and %d", reportAssuranceMaxScanTopK)
 	}
 	for name, value := range map[string]string{
 		"evidence_policy.conflict_handling":  payload.EvidencePolicy.ConflictHandling,

@@ -94,6 +94,21 @@ export interface ConversationToolCall {
   summary?: string;
 }
 
+/**
+ * AnswerabilityClaim mirrors `service.AnswerabilityClaim` (doc/301 T12 / QA-1):
+ * the server's per-turn statement about whether the answer was grounded. Every
+ * field is optional because the payload is a projection of a JSON column that has
+ * grown over time; a missing `abstain_reason` is "not recorded", never "answered".
+ */
+export interface AnswerabilityClaim {
+  answerable?: boolean;
+  confidence?: number;
+  source?: string;
+  abstain_reason?: string;
+  citation_count?: number;
+  distinct_docs?: number;
+}
+
 export interface Message {
   id?: string;
   role: "user" | "assistant" | "system";
@@ -112,6 +127,12 @@ export interface Message {
   answerRunId?: string;
   answerSnapshotId?: string;
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  /**
+   * `undefined`/`null` means the ledger has no claim for this turn — a turn that
+   * predates the field or never reached the ledger. The UI renders that as
+   * "not recorded"; a missing measurement is not a passing measurement.
+   */
+  answerability?: AnswerabilityClaim | null;
   createdAt?: string;
   status?: "streaming" | "completed" | "failed" | "cancelled";
 }

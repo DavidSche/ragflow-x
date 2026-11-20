@@ -52,6 +52,45 @@ func TestGatewayAPIInvariants(t *testing.T) {
 	}
 }
 
+// TestGatewayKnowledgeRoutes pins the v1.1 split (doc/301 §5.10 GW-1 / G-A5): the
+// knowledge routes advertise governance, the chat route must not.
+//
+// Three assertions, because three different mistakes are possible:
+//
+//  1. every route must *state* its Knowledge flag (a missing flag reads as false and
+//     would silently demote a knowledge route);
+//  2. exactly the two envelope routes are knowledge routes — a third would mean a new
+//     retrieval path shipped without a governance decision;
+//  3. the chat route is explicitly non-knowledge, since it is the one a client would
+//     most plausibly expect `citations` from.
+func TestGatewayKnowledgeRoutes(t *testing.T) {
+	if Version != "gateway.v1.1" {
+		t.Fatalf("contract version = %q, want gateway.v1.1 (doc/301 T13)", Version)
+	}
+	want := map[string]bool{
+		"chat.completions":        false,
+		"search-apps.completions": true,
+		"agents.completions":      true,
+	}
+	for _, api := range APIs() {
+		expected, ok := want[api.ID]
+		if !ok {
+			t.Fatalf("route %q is not covered by the knowledge-route assertion; classify it before shipping", api.ID)
+		}
+		if api.Knowledge != expected {
+			t.Fatalf("%s: Knowledge = %v, want %v", api.ID, api.Knowledge, expected)
+		}
+	}
+	if len(want) != len(APIs()) {
+		t.Fatalf("knowledge assertion covers %d routes, registry has %d", len(want), len(APIs()))
+	}
+	for _, api := range APIs() {
+		if api.Knowledge && !api.Streaming {
+			t.Errorf("%s: a knowledge route is expected to support streaming (SSE governance frame)", api.ID)
+		}
+	}
+}
+
 // TestGatewayAPIsAnchorToRegisteredUpstreamEndpoints keeps the gateway contract
 // attached to the provider endpoint registry: if an upstream path is renamed,
 // this fails instead of the gateway silently pointing at nothing.

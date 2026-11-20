@@ -3,13 +3,27 @@
 package httperr
 
 // Error is an HTTP-aware business error.
+//
+// Data is optional structured context that a client needs in order to act on the
+// error (44123's `quota` block is the first user: "quota exhausted" without the
+// period/limit/used numbers forces the caller to guess). It is `nil` for every
+// error that carries no arithmetic, and a nil Data renders exactly the old
+// `{code,message,trace_id}` body, so adding it changed no existing response.
 type Error struct {
 	Status  int
 	Code    int
 	Message string
+	Data    any
 }
 
 func (e *Error) Error() string { return e.Message }
+
+// WithData attaches structured context to an error and returns the same value so
+// it can be used in a single expression at the call site.
+func (e *Error) WithData(data any) *Error {
+	e.Data = data
+	return e
+}
 
 // New constructs an Error.
 func New(status, code int, message string) *Error {

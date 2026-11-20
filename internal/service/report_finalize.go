@@ -166,6 +166,17 @@ type reportQualityMetrics struct {
 	// EvidenceSections is `E` in §14.1 — the number of declared sections whose
 	// claims need citations, i.e. the denominator of every structural ratio.
 	EvidenceSections int `json:"evidence_sections"`
+	// WithCitationSections / LocatorAssistedSections are the two numbers behind
+	// `locator_assisted_section_rate` (doc/301 §4 / T10). The denominator is
+	// "sections that produced evidence", not `EvidenceSections`: a section with no
+	// citation had nothing for a locator to assist, and counting it would report a
+	// lower locator usage for the same behaviour.
+	//
+	// The rate answers only "was the compiled locator used", never "did it enter the
+	// citation list" — A54 forbids the second question from having an answer.
+	WithCitationSections       int      `json:"with_citation_sections"`
+	LocatorAssistedSections    int      `json:"locator_assisted_sections"`
+	LocatorAssistedSectionRate *float64 `json:"locator_assisted_section_rate"`
 	// Claim metrics (R16, §7.4 / §9.2). The denominator is `claim_scored`: claims that
 	// actually assert something about the sources. `not_required` claims (a
 	// recommendation, a stated limitation, an inference) are counted separately and
@@ -184,6 +195,14 @@ type reportQualityMetrics struct {
 	// inconsistencies" over 0 keys and over 40 keys are different statements.
 	ConsistencyKeysChecked int                      `json:"consistency_keys_checked"`
 	ConsistencyIssues      []reportConsistencyIssue `json:"consistency_issues"`
+	// ResearchDegradedSections counts succeeded sections whose frozen research plan
+	// is one of the three `fallback_*` states (doc/301 §5.8 item 2). It is a count,
+	// not a ratio, and it is the numerator of the only question §5.8 item 3 lets the
+	// team act on: "are thin/degraded sections so common that planning v2 is worth
+	// its per-report model cost". A count with no denominator is deliberate — the
+	// denominator (`ResearchPlannedSections`) travels next to it.
+	ResearchDegradedSections int `json:"research_degraded_sections"`
+	ResearchPlannedSections  int `json:"research_planned_sections"`
 }
 
 // BeginReportFinalization closes the current slice and durably asks for the
@@ -589,6 +608,23 @@ func deriveReportQualityMetrics(
 	if metrics.ConsistencyIssues == nil {
 		metrics.ConsistencyIssues = []reportConsistencyIssue{}
 	}
+	// §5.8 item 2: a degraded research plan is already frozen per section; counting
+	// it here is what turns "some sections had a plan" into a number the team can
+	// watch across two versions before deciding whether planning v2 is worth its
+	// per-report cost.
+	for _, section := range present {
+		if section.Status != model.ReportSectionSucceeded {
+			continue
+		}
+		plan := parseReportResearchPlan(section.ResearchPlanJSON)
+		if plan == nil {
+			continue
+		}
+		metrics.ResearchPlannedSections++
+		if reportResearchPlanningDegraded(plan.Planning) {
+			metrics.ResearchDegradedSections++
+		}
+	}
 	metrics.ClaimCount = len(facts.Claims)
 	for _, claim := range facts.Claims {
 		switch claim.SupportStatus {
@@ -625,6 +661,7 @@ func deriveReportQualityMetrics(
 	}
 	evidenceTotal := 0
 	withCitation, supported, unsupported := 0, 0, 0
+	locatorAssisted := 0
 	attributionDenominator, attributionOK := 0, 0
 	gateDenominator, gatePassed := 0, 0
 	for key, requiresEvidence := range facts.EvidenceKeys {
@@ -638,6 +675,11 @@ func deriveReportQualityMetrics(
 		}
 		if section.CitationCount >= 1 {
 			withCitation++
+			// A frozen locator that narrowed the search for a section that did cite
+			// something: the only shape this rate counts (doc/301 T10).
+			if strings.TrimSpace(section.LocationHintsJSON) != "" && section.LocationHintsJSON != "[]" {
+				locatorAssisted++
+			}
 		}
 		switch section.EvidenceStatus {
 		case model.ReportEvidenceSupported, model.ReportEvidencePartiallySupported:
@@ -670,6 +712,12 @@ func deriveReportQualityMetrics(
 		}
 	}
 	metrics.EvidenceSections = evidenceTotal
+	metrics.WithCitationSections = withCitation
+	metrics.LocatorAssistedSections = locatorAssisted
+	if withCitation > 0 {
+		rate := roundRatio(float64(locatorAssisted) / float64(withCitation))
+		metrics.LocatorAssistedSectionRate = &rate
+	}
 	if evidenceTotal > 0 {
 		metrics.CitationCoverage = roundRatio(float64(withCitation) / float64(evidenceTotal))
 		metrics.EvidenceAvailability = roundRatio(float64(supported) / float64(evidenceTotal))

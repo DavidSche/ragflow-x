@@ -22,6 +22,14 @@ type KnowledgeOpsEvent struct {
 	// {answerable, confidence, source, abstain_reason, citation_count, distinct_docs}.
 	// It annotates the turn without rewriting the engine answer.
 	AnswerabilityJSON string `gorm:"column:answerability_json;type:text" json:"answerability_json,omitempty"`
+	// AbstainReason is `answerability_json.abstain_reason` projected into a column
+	// so the board can *filter* on it (doc/301 T12/QA-1). A JSON text column cannot
+	// be filtered portably across sqlite and postgres, and filtering after the page
+	// is fetched would make the total wrong rather than merely slow. One writer
+	// (`attachAnswerabilityClaim`) sets both, so the projection cannot disagree with
+	// the JSON it came from; "" means the field predates the claim or the claim was
+	// never evaluated — the UI shows that as "not recorded", never as "answerable".
+	AbstainReason string `gorm:"column:abstain_reason;size:24;index" json:"abstain_reason,omitempty"`
 	// TopSimilarity is the highest retrieval similarity observed for the turn
 	// (engine reference similarity key); 0 means no measurable reference
 	// (P2 operations observability).
@@ -46,6 +54,16 @@ type KnowledgeOpsEvent struct {
 	FeedbackAttribution  string     `gorm:"column:feedback_attribution;size:32" json:"feedback_attribution"`
 	FeedbackComment      string     `gorm:"column:feedback_comment;size:1024" json:"feedback_comment"`
 	FeedbackAt           *time.Time `gorm:"column:feedback_at" json:"feedback_at"`
+
+	// Citation audit state (doc/301 §5.10 QA-2 / T19). The weekly sample writes
+	// its disposition back here so the existing badcase queue can filter on it —
+	// without a second queue table and without rewriting any other field of the
+	// turn. Both strings stay "" until the turn is sampled, which is what
+	// "never audited" looks like; `skipped` is a different value on purpose.
+	CitationAuditStatus string     `gorm:"column:citation_audit_status;size:16;index" json:"citation_audit_status,omitempty"`
+	CitationAuditReason string     `gorm:"column:citation_audit_reason;size:48" json:"citation_audit_reason,omitempty"`
+	CitationAuditRunID  string     `gorm:"column:citation_audit_run_id;size:32;index" json:"citation_audit_run_id,omitempty"`
+	CitationAuditedAt   *time.Time `gorm:"column:citation_audited_at" json:"citation_audited_at,omitempty"`
 }
 
 // TableName is the physical table name.
@@ -139,4 +157,19 @@ type KnowledgeParseTaskSummary struct {
 	Queued  int64 `json:"queued"`
 	Failed  int64 `json:"failed"`
 	Stopped int64 `json:"stopped"`
+}
+
+// AnswerQualityCounts is one window's raw counts for the Q&A proxy board
+// (doc/301 §5.9 QA-3 / T20). It holds counts only: every rate is derived in the
+// service so that "no denominator" stays representable as `null` instead of 0.
+//
+// The two feedback counts come from a join on `request_id`, not from a turn-level
+// flag, because feedback is per-user and arrives after the turn was recorded.
+type AnswerQualityCounts struct {
+	Turns            int64 `json:"turns"`
+	Answered         int64 `json:"answered"`
+	Abstained        int64 `json:"abstained"`
+	CitationsMissing int64 `json:"citations_missing"`
+	FeedbackAnswered int64 `json:"feedback_answered"`
+	NegativeAnswered int64 `json:"negative_answered"`
 }

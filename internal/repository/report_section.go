@@ -485,7 +485,14 @@ func (s *store) CommitReportSection(ctx context.Context, commit ReportSectionCom
 				// Written in the same statement as the body so a section can never
 				// claim a plan it was not written under.
 				"research_plan_json": commit.Section.ResearchPlanJSON,
-				"finished_at":        commit.Now,
+				// doc/301 §5.8 item 1: the writing-time pool, written with the body it
+				// produced. `nil` writes SQL NULL on purpose — a section written before
+				// this column existed must read back as "not recorded", never as "the
+				// pool was empty".
+				"pool_hit_chunks":      commit.Section.PoolHitChunks,
+				"pool_insufficient":    commit.Section.PoolInsufficient,
+				"pool_candidate_count": commit.Section.PoolCandidateCount,
+				"finished_at":          commit.Now,
 			})
 		if result.Error != nil {
 			return result.Error

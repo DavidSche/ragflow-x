@@ -23,6 +23,17 @@ type KnowledgeOpsRepo interface {
 	AttachMessageFeedbackToKnowledgeOpsEvent(ctx context.Context, tenantID, requestID string, feedback *model.MessageFeedback) (bool, error)
 	ReviewKnowledgeOpsEvent(ctx context.Context, tenantID, eventID string, scopeAll bool, review KnowledgeOpsReview) (bool, error)
 	CountCitedChatAnswers(ctx context.Context, tenantID, assistantID string) (int64, error)
+	// AnswerabilityByRequestIDs returns the per-turn honesty claim for each request
+	// id, as the raw `answerability_json` the ledger stored (doc/301 T12). Returning
+	// the stored text rather than a decoded struct keeps the ledger the single
+	// source of truth: a caller that decoded here would own a second parser.
+	AnswerabilityByRequestIDs(ctx context.Context, tenantID string, requestIDs []string) (map[string]string, error)
+	// AnswerQualityCounts and AnswerQualitySimilarityQuantiles are the raw material of
+	// the Q&A proxy board (doc/301 T20). They take an explicit half-open window instead
+	// of date strings because the caller — the service — owns the week calendar, and a
+	// repository that parsed dates would be a second calendar.
+	AnswerQualityCounts(ctx context.Context, tenantID string, scopeAll bool, from, to time.Time) (*model.AnswerQualityCounts, error)
+	AnswerQualitySimilarityQuantiles(ctx context.Context, tenantID string, scopeAll bool, from, to time.Time, quantiles []float64) (int64, []float64, error)
 }
 
 // KnowledgeOpsFilter controls the badcase list query.
@@ -35,6 +46,11 @@ type KnowledgeOpsFilter struct {
 	DateFrom     string
 	DateTo       string
 	Attribution  string
+	// AbstainReason filters on why a turn was not answerable (doc/301 T12). The
+	// value is projected into `abstain_reason` at write time; "" means no filter,
+	// and there is no way to ask for "no claim recorded" — that is a data-quality
+	// observation, not a badcase category.
+	AbstainReason string
 }
 
 // KnowledgeOpsReview carries a badcase disposition.
@@ -258,6 +274,9 @@ func (s *store) ListKnowledgeOpsEvents(ctx context.Context, tenantID string, sco
 	if filter.ReviewStatus != "" {
 		q = q.Where("review_status = ?", filter.ReviewStatus)
 	}
+	if filter.AbstainReason != "" {
+		q = q.Where("abstain_reason = ?", filter.AbstainReason)
+	}
 	if filter.Attribution != "" {
 		if filter.Attribution == "unclassified" {
 			q = q.Where("feedback_rating = ? AND (feedback_attribution = '' OR feedback_attribution IS NULL)", model.FeedbackNegative)
@@ -278,6 +297,32 @@ func (s *store) ListKnowledgeOpsEvents(ctx context.Context, tenantID string, sco
 	offset, limit := paginate(page, pageSize)
 	err := q.Order("created_at DESC").Offset(offset).Limit(limit).Find(&list).Error
 	return list, total, err
+}
+
+// AnswerabilityByRequestIDs reads the stored claims for a page of turns. A request
+// id with no ledger row is simply absent from the map — the caller renders that as
+// "not recorded", which is different from an empty claim.
+func (s *store) AnswerabilityByRequestIDs(ctx context.Context, tenantID string, requestIDs []string) (map[string]string, error) {
+	out := make(map[string]string, len(requestIDs))
+	if len(requestIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		RequestID         string
+		AnswerabilityJSON string
+	}
+	if err := s.WithContext(ctx).
+		Model(&model.KnowledgeOpsEvent{}).
+		Select("request_id", "answerability_json").
+		Where("tenant_id = ? AND request_id IN ?", tenantID, requestIDs).
+		Where("answerability_json IS NOT NULL AND answerability_json <> ''").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.RequestID] = row.AnswerabilityJSON
+	}
+	return out, nil
 }
 
 // CountCitedChatAnswers counts completed assistant answers that carried at

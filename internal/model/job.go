@@ -71,6 +71,28 @@ const (
 	// delays the next occurrence instead of firing the same one twice; the run
 	// itself is deduplicated by `schedule:<schedule_id>:<due_at>`.
 	JobKindReportScheduleTick = "report_schedule_tick"
+	// JobKindReportAssurance executes one assurance run of one immutable revision
+	// (doc/301 §6.6 / T04b). The key `assurance:<run_id>` makes the enqueue
+	// idempotent, and the payload carries only the run id so a replayed job cannot
+	// describe a run that has since been cancelled.
+	JobKindReportAssurance = "report_assurance"
+	// JobKindReportAssuranceReconcile re-arms runs left `queued` without a runtime
+	// job (crash between the run insert and the enqueue) and closes `running` runs
+	// whose worker died. It is the second trigger of the assurance terminal write,
+	// the same posture `report_finalize_reconcile` has for reports.
+	JobKindReportAssuranceReconcile = "report_assurance_reconcile"
+	// JobKindChatCitationAudit is QA-2's weekly sweep (doc/301 §5.10 / T19): one
+	// job that judges the previous completed week for every tenant that asked
+	// questions, then schedules the next sweep. It is self-rescheduling rather than
+	// cron-driven so a crashed process resumes the cadence instead of stopping it.
+	JobKindChatCitationAudit = "chat_citation_audit"
+	// JobKindGatewayBillingReconcile is GW-3's daily four-ledger check (doc/301
+	// §5.10 / T21): it reconciles the previous completed UTC day for every tenant
+	// with gateway activity, then schedules the next run. Self-rescheduling for the
+	// same reason as the citation sweep — a crashed process resumes the cadence
+	// instead of silently ending it, and a day that was never reconciled is exactly
+	// the failure this job exists to make visible.
+	JobKindGatewayBillingReconcile = "gateway_billing_reconcile"
 )
 
 // Job lifecycle states (doc/21 §2).

@@ -39,6 +39,13 @@ type RetentionSummary struct {
 	Report          map[string]int64 `json:"report"`           // report aggregates (incl. revisions/sections/jobs)
 	ReportEvidence  map[string]int64 `json:"report_evidence"`  // evidence snapshots past their own clock
 	ReportEvent     map[string]int64 `json:"report_event"`     // report job replay events
+	// ReportCandidate counts frozen conflict candidates past their own clock
+	// (doc/301 §6.4). It is its own class because "we kept uncited chunks" is a
+	// retention fact an operator must be able to read apart from citations.
+	ReportCandidate map[string]int64 `json:"report_candidate"`
+	// ReportAssurance counts assurance judgement rows removed because their report
+	// was already gone. Judgements may be deleted; the audit of them may not.
+	ReportAssurance map[string]int64 `json:"report_assurance"`
 }
 
 // SetRetentionPolicy stores the A5 retention policy (enabled + per-class TTLs).
@@ -151,7 +158,8 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 		Feedback: map[string]int64{}, Job: map[string]int64{},
 		ExportArtifacts: map[string]int64{},
 		Report:          map[string]int64{}, ReportEvidence: map[string]int64{},
-		ReportEvent: map[string]int64{},
+		ReportEvent:     map[string]int64{},
+		ReportCandidate: map[string]int64{}, ReportAssurance: map[string]int64{},
 	}
 	// perTenant accumulates class -> deleted count for the audit record.
 	perTenant := map[string]map[string]int64{}
@@ -270,6 +278,8 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 		{"report", s.cleanupExpiredReports, summary.Report},
 		{"report_evidence", s.cleanupExpiredReportEvidence, summary.ReportEvidence},
 		{"report_event", s.cleanupExpiredReportEvents, summary.ReportEvent},
+		{"report_candidate", s.cleanupExpiredReportCandidates, summary.ReportCandidate},
+		{"report_assurance", s.cleanupOrphanedReportAssurance, summary.ReportAssurance},
 	} {
 		deleted, err := purge.fn(ctx, now)
 		if err != nil {
@@ -306,7 +316,9 @@ func (s *Service) RunRetention(ctx context.Context) (*RetentionSummary, error) {
 		"audit", len(summary.Audit), "usage", len(summary.Usage),
 		"feedback", len(summary.Feedback), "job", len(summary.Job),
 		"report", len(summary.Report), "report_evidence", len(summary.ReportEvidence),
-		"report_event", len(summary.ReportEvent))
+		"report_event", len(summary.ReportEvent),
+		"report_candidate", len(summary.ReportCandidate),
+		"report_assurance", len(summary.ReportAssurance))
 	return summary, nil
 }
 

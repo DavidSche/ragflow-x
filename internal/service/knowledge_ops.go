@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
@@ -90,7 +91,43 @@ func (s *Service) TopKnowledgeQueries(ctx context.Context, tenantID string, scop
 
 // ListKnowledgeOpsEvents returns a page of badcase candidates and outcomes.
 func (s *Service) ListKnowledgeOpsEvents(ctx context.Context, tenantID string, scopeAll bool, page, pageSize int, filter repository.KnowledgeOpsFilter) ([]model.KnowledgeOpsEvent, int64, error) {
+	// Validated here rather than in the handler so every caller is covered: an
+	// unknown reason would otherwise match no rows and answer an empty page, which
+	// a reader cannot tell apart from "the filter is right and nothing matched".
+	if filter.AbstainReason != "" && !IsAnswerabilityReason(filter.AbstainReason) {
+		return nil, 0, httperr.BadRequest(40096, "abstain_reason must be one of "+strings.Join(AnswerabilityReasons(), ", "))
+	}
 	return s.Store.ListKnowledgeOpsEvents(ctx, tenantID, scopeAll, page, pageSize, filter)
+}
+
+// KnowledgeOpsEventView is what the board receives: the ledger row plus the claim
+// decoded once, server-side (doc/301 T12).
+//
+// The stored form is `answerability_json` — a text column — and shipping that text
+// to the browser would make every consumer own a second parser for a payload the
+// server already understands. `Answerability` is nil when no claim was recorded, and
+// the UI renders that as "not recorded": a missing measurement is not a passing one.
+type KnowledgeOpsEventView struct {
+	model.KnowledgeOpsEvent
+	Answerability *AnswerabilityClaim `json:"answerability,omitempty"`
+}
+
+// KnowledgeOpsEventViews decodes the claim for a page of ledger rows. A row whose
+// claim does not parse keeps a nil `Answerability` (and still ships its raw JSON),
+// so a malformed ledger entry degrades to "not recorded" instead of failing the page.
+func KnowledgeOpsEventViews(events []model.KnowledgeOpsEvent) []KnowledgeOpsEventView {
+	out := make([]KnowledgeOpsEventView, 0, len(events))
+	for _, event := range events {
+		view := KnowledgeOpsEventView{KnowledgeOpsEvent: event}
+		if event.AnswerabilityJSON != "" {
+			var claim AnswerabilityClaim
+			if err := json.Unmarshal([]byte(event.AnswerabilityJSON), &claim); err == nil {
+				view.Answerability = &claim
+			}
+		}
+		out = append(out, view)
+	}
+	return out
 }
 
 // ReviewKnowledgeOpsEvent records a badcase disposition. This is the closure

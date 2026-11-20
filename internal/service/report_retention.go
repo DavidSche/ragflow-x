@@ -65,6 +65,28 @@ func (s *Service) cleanupExpiredReportEvidence(ctx context.Context, now time.Tim
 	return s.Store.PurgeExpiredReportEvidence(ctx, now, reportRetentionBatch)
 }
 
+// cleanupExpiredReportCandidates clears frozen conflict candidates on their own
+// clock (doc/301 §6.4).
+//
+// A separate pass rather than a cascade from evidence cleanup: candidates expire
+// no later than the citations they were compared against, so the two clocks move
+// independently, and mixing them would make an evidence-snapshot purge silently
+// decide when the uncited pool disappears.
+func (s *Service) cleanupExpiredReportCandidates(ctx context.Context, now time.Time) (map[string]int64, error) {
+	return s.Store.PurgeExpiredReportCandidates(ctx, now, reportRetentionBatch)
+}
+
+// cleanupOrphanedReportAssurance removes assurance rows whose report is gone.
+//
+// The assurance tables carry no clock of their own — their lifetime *is* the
+// report's — so this pass answers "is there still a report?" instead of "is it old
+// enough?". It exists because `PurgeReport` is transactional and can be skipped by
+// a crash between committing the report delete and the child deletes of an older
+// release; the pass makes that self-healing instead of permanent.
+func (s *Service) cleanupOrphanedReportAssurance(ctx context.Context, now time.Time) (map[string]int64, error) {
+	return s.Store.PurgeAssuranceForExpiredReports(ctx, now, reportRetentionBatch)
+}
+
 // cleanupExpiredReportEvents clears replay events on their own clock. A stream
 // cursor pointing into the gap must degrade to `reset_required` (44115), never
 // to a silent jump — that contract lives in the stream handler.

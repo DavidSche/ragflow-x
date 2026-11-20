@@ -153,10 +153,21 @@ func quotaLimitRemaining(limit, used, pending int64) int64 {
 // quotaLedgerErr converts a quota-ledger store failure into a fail-closed 502
 // (spending controls must not silently fail open) plus an alert.
 func (s *Service) quotaLedgerErr(key *model.APIKey, requestID string, err error) error {
-	logger.Error("gateway quota ledger failed", "tenant_id", key.TenantID, "key_id", key.ID, "request_id", requestID, "error", err)
+	return s.quotaLedgerErrForTenant(key.TenantID, key.ID, requestID, err)
+}
+
+// quotaLedgerErrForTenant is the same fail-closed conversion with the tenant
+// identity passed explicitly (doc/301 §6.5 item ③). The assurance path has no
+// API key to hand over — it charges a tenant allowance, not a gateway request —
+// and an empty `key.ID` reaching the alert would publish an event whose
+// `resource_id` names nothing. So `subjectID` is a required decision at the call
+// site: the assurance path passes the run id, the gateway paths pass the key id.
+// Both behaviours are unchanged for the three existing callers.
+func (s *Service) quotaLedgerErrForTenant(tenantID, subjectID, requestID string, err error) error {
+	logger.Error("gateway quota ledger failed", "tenant_id", tenantID, "subject_id", subjectID, "request_id", requestID, "error", err)
 	notify.Emit(context.Background(), notify.Event{
-		Title: "gateway quota ledger failed", Severity: "error", TenantID: key.TenantID,
-		Resource: "chat", Type: "quota_ledger_error", ResourceID: key.ID, Detail: err.Error(),
+		Title: "gateway quota ledger failed", Severity: "error", TenantID: tenantID,
+		Resource: "chat", Type: "quota_ledger_error", ResourceID: subjectID, Detail: err.Error(),
 	})
 	return httperr.New(502, 50239, "quota check failed, request rejected")
 }

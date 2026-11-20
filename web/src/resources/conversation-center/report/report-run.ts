@@ -53,6 +53,28 @@ export interface ReportRevisionRecord {
  * must render this flag rather than inspect `artifact_status`/`byte_size` itself,
  * because the 30-day clock is a server fact (A11/A47, doc/288 §7.7).
  */
+/**
+ * One row of `GET /reports/:id/revisions` (Go `ReportRevisionSummary`).
+ *
+ * `is_current` is the report's own pointer, not "the newest row": a regenerate that
+ * is still running leaves the pointer on the published base, so the history list must
+ * render this flag rather than assume index 0 is current.
+ */
+export interface ReportRevisionSummary {
+  id: string;
+  revision: number;
+  status: string;
+  completeness: string;
+  template_key: string;
+  template_version: number;
+  outline_confirmation: string;
+  execution_snapshot_hash: string;
+  published_at: string | null;
+  superseded_at: string | null;
+  created_at: string;
+  is_current: boolean;
+}
+
 export interface ReportArtifactEntry {
   artifact: ExportArtifactRecord;
   downloadable: boolean;

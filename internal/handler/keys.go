@@ -73,6 +73,58 @@ func (h *Handler) CreateAPIKey(c *gin.Context) {
 	response.OK(c, gin.H{"key": key, "secret": raw})
 }
 
+type rotateAPIKeyRequest struct {
+	// GraceHours is how long the retired key keeps working. Omitted = server
+	// default; the service clamps whatever it gets, because an unbounded grace is an
+	// unbounded lifetime for a credential that was supposed to be replaced.
+	GraceHours *int `json:"grace_hours"`
+}
+
+// RotateAPIKey issues a successor key and retires the old one after a grace window
+// (doc/301 GW-4). The raw secret is returned exactly once, like create.
+func (h *Handler) RotateAPIKey(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID := c.GetString(middleware.ContextTenantID)
+	userID := c.GetString(middleware.ContextUserID)
+	if err := h.Service.Authorize(ctx, userID, "manage", "api-key"); err != nil {
+		response.Err(c, err)
+		return
+	}
+	keyID := c.Param("id")
+	// The body is optional: "rotate with the default grace" is the common call and
+	// must not require a JSON payload. Only a *malformed* body is a 400 — an absent
+	// one is a valid request.
+	var req rotateAPIKeyRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.Fail(c, 400, 40000, "invalid api key rotation payload")
+			return
+		}
+	}
+	payload := map[string]any{}
+	if req.GraceHours != nil {
+		payload["grace_hours"] = *req.GraceHours
+	}
+	// Rotation is gated by the same policy as create/revoke: it mints a credential, so a
+	// workspace that requires approval to create a key must approve this too, or
+	// rotation becomes the way around its own policy.
+	if h.approvalHold(c, model.ApprovalObjectAPIKey, model.ApprovalActionRotateCredential, keyID, payload) {
+		return
+	}
+	raw, successor, retired, err := h.Service.RotateAPIKey(ctx, tenantID, keyID, req.GraceHours)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	h.RecordAudit(ctx, &model.AuditLog{
+		TenantID: tenantID, UserID: userID, Action: "api-key.rotate", Resource: "api-key",
+		ResourceID: keyID,
+		DetailJSON: `{"successor_id":"` + successor.ID + `"}`,
+		IP:         c.ClientIP(), TraceID: c.GetString("request_id"),
+	})
+	response.OK(c, gin.H{"key": successor, "secret": raw, "retired": retired})
+}
+
 // RevokeAPIKey disables a tenant's gateway key.
 func (h *Handler) RevokeAPIKey(c *gin.Context) {
 	ctx := c.Request.Context()

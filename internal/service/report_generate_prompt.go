@@ -111,6 +111,15 @@ type reportSnapshotRetrieval struct {
 	SimilarityThreshold *float64 `json:"similarity_threshold"`
 	ThresholdSource     string   `json:"threshold_source"`
 	MinEvidence         int      `json:"min_evidence"`
+	// ScanTopK is the frozen conflict-candidate width for this revision
+	// (doc/301 §5.3.1). It is written with the outline, before the first section is
+	// retrieved, and the review run's `scan_scope` may derive from *this* value only:
+	// resolving it again at review time would let a settings change silently rewrite
+	// what an already-published revision was reviewed against. 0 = `cited_only`.
+	ScanTopK int `json:"scan_top_k,omitempty"`
+	// ScanTopKSource names where the number came from (template / tenant / platform),
+	// because "0" and "the operator turned it off" are indistinguishable otherwise.
+	ScanTopKSource string `json:"scan_top_k_source,omitempty"`
 }
 
 // reportSnapshotGeneration records the generation knobs. `Temperature` is a

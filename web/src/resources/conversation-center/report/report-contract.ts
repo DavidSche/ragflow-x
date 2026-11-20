@@ -227,7 +227,9 @@ export const isReportTerminalEvent = (t: string): boolean =>
   (REPORT_TERMINAL_EVENTS as readonly string[]).includes(t);
 
 /* ------------------------------------------------------------------ */
-/* §8.7 error code set 44101–44116 (report_codes.go) — 16, contiguous */
+/* §8.7 error code set 44101–44123 (report_codes.go) — 23, contiguous        */
+/* 44117–44123 are the assurance codes from doc/301 §7.3, appended not      */
+/* renumbered: a shift would silently re-label an existing UI message.      */
 /* ------------------------------------------------------------------ */
 
 export interface ReportErrorCodeMeta {
@@ -253,7 +255,28 @@ export const REPORT_ERROR_CODES: Record<number, ReportErrorCodeMeta> = {
   44114: { name: "IdempotencyKeyRequired", httpStatus: 400 },
   44115: { name: "EventCursorExpired", httpStatus: 409 },
   44116: { name: "EvidenceExpired", httpStatus: 409 },
+  44117: { name: "RevisionNotAssurable", httpStatus: 400 },
+  44118: { name: "AssuranceRunConflict", httpStatus: 409 },
+  44119: { name: "AssuranceBudgetExhausted", httpStatus: 409 },
+  44120: { name: "FindingNotFound", httpStatus: 404 },
+  44121: { name: "AssuranceAckRequired", httpStatus: 409 },
+  44122: { name: "AssuranceNotReady", httpStatus: 409 },
+  44123: { name: "AssuranceQuotaExhausted", httpStatus: 429 },
 };
+
+/**
+ * §7.3 note (doc/301): 44123 is the only 429 in the family and the only code that
+ * carries a `data.quota` block (`period` / `limit` / `used` / `pending` /
+ * `min_call_tokens`). The UI must render the arithmetic, not "quota exceeded":
+ * "you have 320 tokens left, one call needs 900" tells the operator what to do.
+ */
+export interface ReportAssuranceQuota {
+  period: string;
+  limit: number;
+  used: number;
+  pending: number;
+  min_call_tokens: number;
+}
 
 /**
  * §8.7 note: object-level "missing" and "not yours" are BOTH 404/44109 by design —

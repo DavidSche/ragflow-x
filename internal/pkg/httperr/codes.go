@@ -59,6 +59,13 @@ const (
 
 	// Upstream business rejection (41140-41149).
 	CodeUpstreamRejected = 41140 // engine answered 200 with a non-zero envelope code
+
+	// Credential lifecycle (41150-41159). Rotation is a request that is
+	// well-formed but cannot be honoured, which is exactly this block's contract;
+	// it does not get a 40044 (already "template payload is invalid" elsewhere) and
+	// it must not borrow a 409 without a code, because the client has to be able to
+	// tell "already rotated" from "revoked" without parsing English.
+	CodeAPIKeyRotationConflict = 41150 // key is revoked or already rotated
 )
 
 // Declaration documents one code: what it means and who may emit it.
@@ -92,4 +99,5 @@ var Declared = []Declaration{
 	{CodeApprovalAdjacentApproverConflict, "approval_adjacent_approver_conflict", "相邻审批步骤由同一人审批"},
 
 	{CodeUpstreamRejected, "upstream_rejected", "引擎以 HTTP 200 + 非零 envelope code 拒绝业务请求"},
+	{CodeAPIKeyRotationConflict, "api_key_rotation_conflict", "API Key 已吊销或已轮换，不能再次轮换"},
 }

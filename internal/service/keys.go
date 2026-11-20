@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
@@ -70,6 +71,110 @@ func (s *Service) CreateAPIKey(ctx context.Context, tenantID, userID, name strin
 // ListAPIKeys returns a tenant's gateway keys (without hashes).
 func (s *Service) ListAPIKeys(ctx context.Context, tenantID string) ([]model.APIKey, error) {
 	return s.Store.ListAPIKeys(ctx, tenantID)
+}
+
+// Key rotation (doc/301 GW-4 / T22).
+//
+// Before this existed, rotating a credential meant "revoke, then create": the old key
+// died at the instant of the revoke, so every caller holding it failed at the same
+// second the new secret was generated. That is not a rotation, it is an outage with
+// extra steps.
+//
+// The design keeps exactly one clock. The retired key is *not* disabled — it is given
+// an `expired_at` at the end of the grace window, and `ResolveAPIKey` already refuses an
+// expired key. A separate "grace until" column would be a second authority on when the
+// key stops working, and the two would eventually disagree.
+const (
+	// apiKeyRotationDefaultGraceHours is the window used when the caller does not say.
+	// 24h covers "deploy the new secret across your callers" without leaving a retired
+	// credential alive for a week by accident.
+	apiKeyRotationDefaultGraceHours = 24
+	// apiKeyRotationMaxGraceHours bounds the window. An unbounded grace is an unbounded
+	// lifetime for a secret that was supposed to be replaced.
+	apiKeyRotationMaxGraceHours = 720
+)
+
+// RotateAPIKey creates a successor key that inherits the old key's constraints and
+// retires the old one after `graceHours` (clamped; nil = default).
+//
+// Inheritance is deliberate and total: quotas, scopes, allowed IPs and owning user are
+// copied. A rotation that quietly widened a scope would be a privilege escalation with
+// an innocuous name, so there is no parameter to pass new ones — if a caller wants
+// different constraints they create a new key and revoke the old one.
+func (s *Service) RotateAPIKey(
+	ctx context.Context, tenantID, keyID string, graceHours *int,
+) (string, *model.APIKey, *model.APIKey, error) {
+	if strings.TrimSpace(keyID) == "" {
+		return "", nil, nil, httperr.BadRequest(40040, "key id is required")
+	}
+	grace := apiKeyRotationDefaultGraceHours
+	if graceHours != nil {
+		grace = *graceHours
+	}
+	if grace < 0 {
+		return "", nil, nil, httperr.BadRequest(40041, "grace_hours must be zero or a positive integer")
+	}
+	if grace > apiKeyRotationMaxGraceHours {
+		grace = apiKeyRotationMaxGraceHours
+	}
+
+	old, err := s.Store.GetAPIKey(ctx, tenantID, keyID)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if old == nil {
+		return "", nil, nil, httperr.NotFound("api key not found")
+	}
+	// A revoked key is a decision that has already been made. Rotating it would
+	// resurrect the capability under a new secret, which is the one thing a revoke
+	// must be able to guarantee it prevented.
+	if !old.Enabled {
+		return "", nil, nil, httperr.New(409, httperr.CodeAPIKeyRotationConflict, "a revoked api key cannot be rotated")
+	}
+	if old.RotatedToKeyID != "" {
+		return "", nil, nil, httperr.New(409, httperr.CodeAPIKeyRotationConflict, "api key has already been rotated")
+	}
+
+	raw, err := keygen.New()
+	if err != nil {
+		return "", nil, nil, err
+	}
+	successor := &model.APIKey{
+		ID:             id.New(),
+		TenantID:       old.TenantID,
+		UserID:         old.UserID,
+		Name:           old.Name,
+		KeyHash:        keygen.Hash(raw),
+		Prefix:         keygen.Prefix(raw),
+		TokenQuota:     old.TokenQuota,
+		RequestQuota:   old.RequestQuota,
+		ScopesJSON:     old.ScopesJSON,
+		AllowedIPsJSON: old.AllowedIPsJSON,
+		Enabled:        true,
+	}
+	if err := s.Store.CreateAPIKey(ctx, successor); err != nil {
+		return "", nil, nil, err
+	}
+
+	retiredAt := time.Now().UTC().Add(time.Duration(grace) * time.Hour)
+	ok, err := s.Store.RetireAPIKeyForRotation(ctx, tenantID, keyID, successor.ID, retiredAt)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if !ok {
+		// Lost a race with a concurrent rotation or revoke. The successor row is
+		// already inserted, so it is disabled rather than left live: a secret
+		// nobody's caller knows about must not be able to authenticate.
+		_ = s.Store.RevokeAPIKey(ctx, tenantID, successor.ID)
+		return "", nil, nil, httperr.New(409, httperr.CodeAPIKeyRotationConflict, "api key has already been rotated")
+	}
+	// Read the old row back so the response shows the stored expiry rather than the
+	// value this process computed; a caller that prints "grace until" must print the
+	// number that actually governs the key.
+	if refreshed, err := s.Store.GetAPIKey(ctx, tenantID, keyID); err == nil && refreshed != nil {
+		old = refreshed
+	}
+	return raw, successor, old, nil
 }
 
 // RevokeAPIKey disables a tenant's key.

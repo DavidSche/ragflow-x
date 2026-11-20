@@ -90,6 +90,27 @@ func reportMatrixRoutes(reportID, jobID, key string) []reportMatrixRoute {
 		{"job", http.MethodGet, "/api/v1/report-jobs/" + jobID, "read", "", nil},
 		{"events", http.MethodGet, "/api/v1/report-jobs/" + jobID + "/events", "read", "", nil},
 		{"retry", http.MethodPost, "/api/v1/report-jobs/" + jobID + "/sections/1/retry", "execute", "", nil},
+		// The assurance surface (doc/301 §7.1, T07). Five routes and no sixth
+		// permission: reading is `read:report` (the same question the reader answers),
+		// triggering a run and adjudicating a finding are `execute` plus an owner
+		// check inside the service — a grantee reaches the object gate and is answered
+		// 44109, never 403, because "you may read this report" and "you may certify it"
+		// are not the same axis (doc/301 D10).
+		// A well-formed body on purpose: these handlers bind before the service
+		// authorizes (the same order every report handler uses), so an empty body would
+		// answer 40070 for every role and the row would test nothing but the binder.
+		{"assurance-run", http.MethodPost,
+			"/api/v1/reports/" + reportID + "/revisions/1/assurance-runs", "execute", "",
+			map[string]interface{}{"mode": "advisory"}},
+		{"assurance-runs", http.MethodGet,
+			"/api/v1/reports/" + reportID + "/revisions/1/assurance-runs", "read", "", nil},
+		{"assurance-run-detail", http.MethodGet,
+			"/api/v1/reports/" + reportID + "/revisions/1/assurance-runs/run-guessed-0001", "read", "", nil},
+		{"review", http.MethodGet,
+			"/api/v1/reports/" + reportID + "/revisions/1/review", "read", "", nil},
+		{"finding", http.MethodPatch,
+			"/api/v1/reports/" + reportID + "/revisions/1/findings/find-guessed-0001", "execute", "",
+			map[string]interface{}{"status": "resolved", "note": "已按来源修正"}},
 	}
 }
 
@@ -187,7 +208,7 @@ func TestReportHandlerRoleMatrixGatesEveryRoute(t *testing.T) {
 				// it is still the object gate, not a permission answer.
 				if code := envelopeCode(t, envelope); code != 44109 && code != 40130 &&
 					code != 44104 && code != 44105 && code != 44107 && code != 44106 &&
-					code != 404 {
+					code != 44117 && code != 44118 && code != 44120 && code != 404 {
 					t.Fatalf("%s %s: %s must be answered by the object gate, got %d/%d (%s)",
 						route.method, route.path, role, rec.Code, code, rec.Body.String())
 				}

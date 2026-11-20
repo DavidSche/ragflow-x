@@ -547,7 +547,12 @@ func (s *Service) AgentChatCompletion(ctx context.Context, tenantID, agentID, us
 	}
 	s.recordCitationReferences(ctx, tenantID, agentID, sessionID, requestID, resp.Reference)
 	citations = citationCountFromMaps(resp.Reference)
-	s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, answer, citations, tokensIn, tokensOut, time.Since(startedAt).Milliseconds()))
+	agentEvent := knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, answer, citations, tokensIn, tokensOut, time.Since(startedAt).Milliseconds())
+	// doc/301 T12: an agent turn is a turn. Without the claim the conversation
+	// centre would show "not recorded" for every agent answer, which reads as a
+	// measurement gap rather than as the scope boundary it would actually be.
+	s.attachAnswerabilityClaim(agentEvent, answer, resp.Reference)
+	s.recordKnowledgeEvent(ctx, agentEvent)
 	s.recordAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, answer, citationsFromProviderReferences(resp.Reference))
 	return resp, nil
 }
@@ -608,7 +613,9 @@ func (s *Service) StreamAgentChatCompletion(ctx context.Context, tenantID, agent
 		// (doc/227 C3.3).
 		return reportedStreamFailure(agentUpstreamError(err, 50289, "ragflow agent completion failed", "agent session not found"))
 	}
-	s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), int64(capture.citations), capture.tokensIn, capture.tokensOut, time.Since(startedAt).Milliseconds()))
+	streamAgentEvent := knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), int64(capture.citations), capture.tokensIn, capture.tokensOut, time.Since(startedAt).Milliseconds())
+	s.attachAnswerabilityClaim(streamAgentEvent, capture.answer.String(), capture.reference)
+	s.recordKnowledgeEvent(ctx, streamAgentEvent)
 	s.recordAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), citationsFromProviderReferences(capture.reference))
 	s.meterAgentCompletion(ctx, tenantID, a.OwnerID, requestID, &ragflow.CompletionResponse{Usage: &ragflow.CompletionUsage{PromptTokens: capture.tokensIn, CompletionTokens: capture.tokensOut}})
 	return nil

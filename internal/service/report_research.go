@@ -62,6 +62,20 @@ const (
 	reportResearchPlanningUnparseable  = "fallback_unparseable"
 )
 
+// reportResearchPlanningDegraded reports whether a frozen plan state is one of the
+// three fallbacks. It is the single definition of "degraded" used by the metric, the
+// reader badge and the export note: `standard` and `planned` are healthy states, and
+// an unknown word is *not* silently counted as degraded — a state this build does not
+// know cannot be classified by guessing.
+func reportResearchPlanningDegraded(planning string) bool {
+	switch planning {
+	case reportResearchPlanningBudget, reportResearchPlanningPlannerError,
+		reportResearchPlanningUnparseable:
+		return true
+	}
+	return false
+}
+
 // decodeReportPlannerReply reads the planner's answer.
 //
 // `decodeReportModelReply` treats a top-level JSON array as a protocol oddity

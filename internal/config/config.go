@@ -571,8 +571,13 @@ func defaults() *Config {
 		Gateway: Gateway{NonStreamTimeoutSec: 120, StreamHeaderTimeoutSec: 30, StreamTimeoutSec: 0, MaxConns: 20, RateLimitPerMin: 120},
 		Redis:   Redis{Addr: "localhost:6379", DB: 0, PoolSize: 10},
 		Security: Security{
-			AllowedMethods:        []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-			AllowedHeaders:        []string{"Content-Type", "Authorization", "X-Request-Id"},
+			AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+			// `Idempotency-Key` is a contract header, not a preference: the gateway
+			// retry ledger reads it on all three routes, and a browser cannot send a
+			// header the preflight does not allow (doc/301 §5.10 GW-1c). Keep this list
+			// in sync with middleware.ContractHeaders — this default is what a fresh
+			// install (and the settings snapshot) starts from.
+			AllowedHeaders:        []string{"Content-Type", "Authorization", "X-Request-Id", "Idempotency-Key"},
 			AllowCredentials:      true,
 			MaxAgeSec:             600,
 			HSTSMaxAgeSec:         31536000,

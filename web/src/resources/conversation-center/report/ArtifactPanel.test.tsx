@@ -9,14 +9,18 @@ import type { ReactNode } from "react";
 import { ArtifactPanel, formatArtifactSize } from "./ArtifactPanel";
 import type { ReportAdapter, ReportExportSuccess } from "../adapters";
 import { REPORT_EXPORT_FORMATS } from "./report-contract";
+import { ApiError } from "../../../lib/api";
+import { tZh } from "../../../test/translate";
 
 const notifyMock = vi.hoisted(() => vi.fn());
 
+// Resolve through the shipped dictionary rather than echoing the key: a key-echo mock
+// is banned here because it cannot tell "the copy says what the design says" from
+// "the copy is the key", and every dialog assertion below is about the sentence.
 vi.mock("ra-core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("ra-core")>()),
-  useTranslate: () =>
-    (key: string, options?: { _?: string }) =>
-      options && typeof options._ === "string" ? options._ : key,
+  useTranslate: () => (key: string, options?: Record<string, unknown>) =>
+    tZh(key, options),
   useNotify: () => notifyMock,
 }));
 vi.mock("@/components/ui/badge", () => ({
@@ -74,7 +78,7 @@ describe("formatArtifactSize", () => {
 describe("ArtifactPanel", () => {
   it("shows the empty state before any export", () => {
     render(<ArtifactPanel adapter={makeAdapter()} reportId="rep1" revision={1} />);
-    expect(screen.getByText("conversationCenter.report_artifacts_empty")).toBeInTheDocument();
+    expect(screen.getByText(tZh("conversationCenter.report_artifacts_empty"))).toBeInTheDocument();
   });
 
   it("exports and renders a downloadable artifact row", async () => {
@@ -141,7 +145,7 @@ describe("ArtifactPanel", () => {
     // A missing CJK font is an operator fix, not a retry: the message names it.
     await vi.waitFor(() =>
       expect(notifyMock).toHaveBeenCalledWith(
-        "conversationCenter.report_export_pdf_unavailable",
+        tZh("conversationCenter.report_export_pdf_unavailable"),
         { type: "error" },
       ),
     );
@@ -173,7 +177,7 @@ describe("ArtifactPanel", () => {
     );
     expect(screen.getByTestId("artifact-art-1")).toBeInTheDocument();
     expect(screen.queryByTestId("artifact-download-art-1")).not.toBeInTheDocument();
-    expect(screen.getByText("conversationCenter.report_artifact_pending")).toBeInTheDocument();
+    expect(screen.getByText(tZh("conversationCenter.report_artifact_pending"))).toBeInTheDocument();
   });
 
   it("merges a fresh export over the history without duplicating the row", async () => {
@@ -217,7 +221,153 @@ describe("ArtifactPanel", () => {
     await user.click(screen.getByTestId("export-markdown"));
     const row = await screen.findByTestId("artifact-art-failed");
     expect(row).toBeInTheDocument();
-    expect(row.textContent).toContain("failed");
+    expect(row.textContent).toContain(tZh("reportCenter.label_artifact.failed"));
     expect(screen.queryByTestId("artifact-download-art-failed")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 导出前的知悉确认 (doc/301 §7.2 / T09).
+ *
+ * The two assurance refusals are different products, and the panel must not merge
+ * them: 44121 asks a question (acknowledge the open conflicts and go on), 44122
+ * states a fact (the review has not finished, so there is nothing to acknowledge).
+ * A panel that treated them alike would either invent an ack nobody gave or offer a
+ * button that cannot work.
+ */
+describe("ArtifactPanel assurance gate", () => {
+  const review = {
+    report_id: "rep1",
+    revision_id: "rev1",
+    revision: 1,
+    revision_status: "published",
+    release_eligibility: "blocked" as const,
+    release_eligibility_basis: ["unresolved_conflicts"],
+    requested_policy: "advisory" as const,
+    acknowledgeable: true,
+    acknowledged: false,
+    counters: {
+      total_claims: 4,
+      denominator: 4,
+      evaluated: 4,
+      supported: 2,
+      partially_supported: 0,
+      unsupported: 0,
+      conflicting: 2,
+      insufficient_evidence: 0,
+      abstained: 0,
+      not_evaluated: 0,
+      not_required: 0,
+      high_findings: 1,
+      open_findings: 2,
+      not_required_share: 0,
+      denominator_small: false,
+      coverage: 1,
+    },
+    sections: [],
+    findings: [],
+    scan_scope: "cited_only",
+    candidate_count: 0,
+    candidates_visible: false,
+  };
+
+  function adapterRefusing(code: number) {
+    const adapter = makeAdapter();
+    let acked = false;
+    adapter.createExport = vi.fn(async (
+      reportId: string,
+      revisionNo: number,
+      format: string,
+      options?: { acknowledgeAssurance?: boolean },
+    ) => {
+      if (!acked && !options?.acknowledgeAssurance) {
+        acked = options?.acknowledgeAssurance === true;
+        throw new ApiError(409, code, "refused");
+      }
+      return { ...readyExport, export_artifact: { ...readyExport.export_artifact, id: `art-${format}-acked` } };
+    }) as unknown as ReportAdapter["createExport"];
+    return adapter;
+  }
+
+  it("turns 44121 into a dialog stating the verdict and the open conflicts", async () => {
+    const user = userEvent.setup();
+    const adapter = adapterRefusing(44121);
+    const loadReview = vi.fn(async () => review);
+    render(
+      <ArtifactPanel adapter={adapter} reportId="rep1" revision={1} loadReview={loadReview} />,
+    );
+    notifyMock.mockClear();
+    await user.click(screen.getByTestId("export-docx"));
+
+    const dialog = await screen.findByTestId("ack-dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(loadReview).toHaveBeenCalledWith("rep1", 1);
+    expect(screen.getByTestId("ack-counts")).toHaveTextContent("未解决冲突 2 项");
+    expect(screen.getByTestId("ack-counts")).toHaveTextContent("高风险 1 项");
+    expect(screen.getByTestId("ack-eligibility")).toHaveTextContent("复核结论");
+    // The refusal itself is not an error to notify: it is a question being asked.
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
+
+  it("re-exports with acknowledge_assurance only after the user confirms", async () => {
+    const user = userEvent.setup();
+    const adapter = adapterRefusing(44121);
+    render(
+      <ArtifactPanel adapter={adapter} reportId="rep1" revision={1} loadReview={async () => review} />,
+    );
+    await user.click(screen.getByTestId("export-docx"));
+    await screen.findByTestId("ack-dialog");
+
+    await user.click(screen.getByTestId("ack-confirm"));
+    await screen.findByTestId("artifact-download-art-docx-acked");
+    expect(adapter.createExport).toHaveBeenLastCalledWith("rep1", 1, "docx", {
+      acknowledgeAssurance: true,
+    });
+    expect(screen.queryByTestId("ack-dialog")).not.toBeInTheDocument();
+  });
+
+  it("cancelling writes nothing: no second request, no ack", async () => {
+    const user = userEvent.setup();
+    const adapter = adapterRefusing(44121);
+    render(
+      <ArtifactPanel adapter={adapter} reportId="rep1" revision={1} loadReview={async () => review} />,
+    );
+    await user.click(screen.getByTestId("export-docx"));
+    await screen.findByTestId("ack-dialog");
+    const calls = (adapter.createExport as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+
+    await user.click(screen.getByTestId("ack-cancel"));
+    expect(screen.queryByTestId("ack-dialog")).not.toBeInTheDocument();
+    expect((adapter.createExport as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(calls);
+  });
+
+  it("says the review has not finished for 44122 and offers no dialog", async () => {
+    const user = userEvent.setup();
+    const adapter = adapterRefusing(44122);
+    const loadReview = vi.fn(async () => review);
+    render(
+      <ArtifactPanel adapter={adapter} reportId="rep1" revision={1} loadReview={loadReview} />,
+    );
+    notifyMock.mockClear();
+    await user.click(screen.getByTestId("export-docx"));
+
+    expect(await vi.waitFor(() => expect(notifyMock).toHaveBeenCalled())).toBeTruthy();
+    expect(notifyMock).toHaveBeenCalledWith(
+      tZh("conversationCenter.report_export_assurance_not_ready"),
+      { type: "error" },
+    );
+    expect(screen.queryByTestId("ack-dialog")).not.toBeInTheDocument();
+    // Nothing to acknowledge yet, so the review is not even read.
+    expect(loadReview).not.toHaveBeenCalled();
+  });
+
+  it("degrades to a plain error when no review reader is wired", async () => {
+    const user = userEvent.setup();
+    const adapter = adapterRefusing(44121);
+    render(<ArtifactPanel adapter={adapter} reportId="rep1" revision={1} />);
+    notifyMock.mockClear();
+    await user.click(screen.getByTestId("export-docx"));
+    await vi.waitFor(() => expect(notifyMock).toHaveBeenCalled());
+    expect(screen.queryByTestId("ack-dialog")).not.toBeInTheDocument();
   });
 });

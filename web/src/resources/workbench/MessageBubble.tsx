@@ -20,6 +20,7 @@ import {
 import { AnswerMarkdown } from "./AnswerMarkdown";
 import { AgentExecutionTimeline } from "./AgentExecutionTimeline";
 import { ConversationArtifacts } from "./ConversationArtifacts";
+import { AnswerabilityBadge } from "./AnswerabilityBadge";
 import { InlineCitations } from "./InlineCitations";
 import { CitationImage } from "./CitationImage";
 import type { Citation, Message, Rating } from "./workbench-types";
@@ -341,6 +342,17 @@ export function MessageBubble({
           <AgentExecutionTimeline message={m} isStreaming={isLastStreaming} />
         ) : null}
         <ConversationArtifacts artifacts={m.artifacts} />
+        {/*
+          doc/301 T12: every finished assistant turn states whether it was grounded.
+          A turn with no claim renders "not recorded" rather than nothing, because a
+          silent badge would be indistinguishable from a passing one. A streaming turn
+          has not measured anything yet, so it is left off.
+        */}
+        {m.role === "assistant" && !isLastStreaming ? (
+          <div className="mt-2">
+            <AnswerabilityBadge claim={m.answerability} />
+          </div>
+        ) : null}
         {m.role === "assistant" && (m.createdAt || m.usage || m.model) ? (
           <div className="mt-2 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
             {m.model ? <Badge variant="outline">{m.model}</Badge> : null}

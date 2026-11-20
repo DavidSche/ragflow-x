@@ -16,15 +16,22 @@ import {
 // Mirrors the Go registry guards: no gaps, no extras, no renumbering.
 
 describe("report contract — error codes", () => {
-  it("is exactly the closed set 44101..44116", () => {
+  it("is exactly the closed set 44101..44123", () => {
     const codes = Object.keys(REPORT_ERROR_CODES)
       .map(Number)
       .sort((a, b) => a - b);
-    expect(codes).toHaveLength(16);
+    expect(codes).toHaveLength(23);
     expect(codes[0]).toBe(44101);
-    expect(codes[15]).toBe(44116);
-    const expected = Array.from({ length: 16 }, (_, i) => 44101 + i);
+    expect(codes[22]).toBe(44123);
+    const expected = Array.from({ length: 23 }, (_, i) => 44101 + i);
     expect(codes).toEqual(expected);
+  });
+
+  it("keeps 44123 as the only 429 (a rate condition, not a state conflict)", () => {
+    const ratelimited = Object.entries(REPORT_ERROR_CODES)
+      .filter(([, meta]) => meta.httpStatus === 429)
+      .map(([code]) => Number(code));
+    expect(ratelimited).toEqual([44123]);
   });
 
   it("keeps every object-level code at 404, not 403", () => {

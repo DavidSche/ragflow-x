@@ -21,6 +21,9 @@ import (
 //     44112, 44113). 44103 and 44112 are produced inside the worker
 //     transaction and only ever surface as `rgx_report_job.error_code`; they
 //     have no HTTP response. Only 44113 is an HTTP 500.
+//   - the assurance surface (doc/301 §7.3) extends the set by seven codes,
+//     44117-44123, one trigger each. They are *appended*, never inserted: a
+//     renumbering would silently move an existing frontend message.
 //
 // 44114 is the one "the request itself is malformed" code, so it is 400, and
 // the frontend must never paper over it by minting a key: that would turn a
@@ -42,10 +45,18 @@ const (
 	codeReportIdempotencyKeyRequired   = 44114
 	codeReportEventCursorExpired       = 44115
 	codeReportEvidenceExpired          = 44116
+	// Assurance (doc/301 §7.3). Seven new triggers, no renumbering of 44101-44116.
+	codeReportRevisionNotAssurable     = 44117
+	codeReportAssuranceRunConflict     = 44118
+	codeReportAssuranceBudgetExhausted = 44119
+	codeReportFindingNotFound          = 44120
+	codeReportAssuranceAckRequired     = 44121
+	codeReportAssuranceNotReady        = 44122
+	codeReportAssuranceQuotaExhausted  = 44123
 )
 
 // reportErrorCodes is the closed set with its HTTP status. It exists so a
-// contract test can assert "no gaps, no extras, no 44117" instead of trusting
+// contract test can assert "no gaps, no extras, no 44124" instead of trusting
 // the const block, and so error mapping never has to be re-derived by hand.
 var reportErrorCodes = map[int]int{
 	codeReportTemplateNotFound:         404,
@@ -64,6 +75,18 @@ var reportErrorCodes = map[int]int{
 	codeReportIdempotencyKeyRequired:   400,
 	codeReportEventCursorExpired:       409,
 	codeReportEvidenceExpired:          409,
+	// 44117-44123 (doc/301 §7.3). 44119 and 44123 are kept apart on purpose:
+	// "this run's budget is too small" (fix: narrow the scope) and "this month's
+	// allowance is spent" (fix: wait or raise the limit) are different remedies.
+	// 44123 is the only 429 in the family because it is the only rate condition
+	// rather than a state conflict.
+	codeReportRevisionNotAssurable:     400,
+	codeReportAssuranceRunConflict:     409,
+	codeReportAssuranceBudgetExhausted: 409,
+	codeReportFindingNotFound:          404,
+	codeReportAssuranceAckRequired:     409,
+	codeReportAssuranceNotReady:        409,
+	codeReportAssuranceQuotaExhausted:  429,
 }
 
 // errReportTemplateNotFound is the creation-time "key unknown, retired, or not
@@ -189,4 +212,84 @@ func errReportOutlineInvalid(reason string) error {
 // sixteen (`TestReportErrorCodeSetIsClosedAndContiguous`).
 func errReportAccessInvalid(reason string) error {
 	return httperr.New(400, codeReportOutlineInvalid, reason)
+}
+
+// ---------------------------------------------------------------------------
+// Assurance codes (doc/301 §7.3)
+// ---------------------------------------------------------------------------
+
+// errReportRevisionNotAssurable is 44117: only a published, non-cancelled
+// revision of an assurance-capable template can be reviewed. The message names
+// the current state instead of "invalid request", because the next action differs
+// per state (publish it / pick another revision).
+func errReportRevisionNotAssurable(reason string) error {
+	return httperr.New(400, codeReportRevisionNotAssurable, reason)
+}
+
+// errReportAssuranceRunConflict is 44118: one queued/running run per revision.
+// It is also the "business mutex" that makes a unique `cache_key` unnecessary
+// (doc/301 §6.1): without it two runs could evaluate the same claim concurrently
+// and both write.
+func errReportAssuranceRunConflict() error {
+	return httperr.New(409, codeReportAssuranceRunConflict,
+		"this revision already has a queued or running assurance run; open its progress instead of starting a second one")
+}
+
+// errReportAssuranceBudgetExhausted is 44119: the run's own budget is spent.
+func errReportAssuranceBudgetExhausted(limit int64) error {
+	return httperr.New(409, codeReportAssuranceBudgetExhausted,
+		"assurance budget of "+strconv.FormatInt(limit, 10)+
+			" tokens is exhausted; raise report.assurance_budget_tokens or narrow the scope")
+}
+
+// errReportAssuranceOwnerOnly is 44109 (not a new code): starting a run and
+// adjudicating a finding are the owner's actions (doc/301 §7.1). A grantee can
+// read everything, but spending the tenant's allowance and closing a finding
+// change what the report *means*, so they stay with the person accountable for
+// it. It reuses the not-found status rather than 403 so the endpoint cannot be
+// used to probe which report ids exist.
+func errReportAssuranceOwnerOnly() error {
+	return httperr.New(404, codeReportAccessDenied,
+		"only the report owner can start a review run or adjudicate a finding")
+}
+
+// errReportFindingNotFound is 44120: missing and cross-tenant are the same answer
+// (404), so the endpoint is not an existence oracle.
+func errReportFindingNotFound() error {
+	return httperr.New(404, codeReportFindingNotFound, "review finding not found")
+}
+
+// errReportAssuranceAckRequired is 44121: the revision has open conflicts or a
+// failed run and the caller did not acknowledge them. Refusing is the whole point
+// of the gate: an export that silently ships a known conflict is worse than no
+// export.
+func errReportAssuranceAckRequired(conflicts int) error {
+	return httperr.New(409, codeReportAssuranceAckRequired,
+		"this revision has "+strconv.Itoa(conflicts)+
+			" unresolved assurance conflict(s); pass acknowledge_assurance=true to export anyway")
+}
+
+// errReportAssuranceNotReady is 44122: the template requires assurance and the run
+// has not finished (doc/301 §5.5 `required`, opened in v0.7.1).
+func errReportAssuranceNotReady() error {
+	return httperr.New(409, codeReportAssuranceNotReady,
+		"this template requires assurance and the run has not finished yet; retry, or export with the assurance requirement off")
+}
+
+// errReportAssuranceQuotaExhausted is 44123: the tenant's monthly assurance
+// allowance cannot cover the smallest useful call. `data.quota` carries
+// period/limit/used/pending/min_call_tokens so the UI can explain the arithmetic
+// instead of saying "quota exceeded".
+func errReportAssuranceQuotaExhausted(period string, limit, used, pending, minCall int64) error {
+	return httperr.New(429, codeReportAssuranceQuotaExhausted,
+		"monthly assurance allowance for "+period+" cannot cover one model call").
+		WithData(map[string]any{
+			"quota": map[string]any{
+				"period":          period,
+				"limit":           limit,
+				"used":            used,
+				"pending":         pending,
+				"min_call_tokens": minCall,
+			},
+		})
 }

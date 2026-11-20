@@ -280,6 +280,19 @@ type ReportRepo interface {
 	PurgeReport(ctx context.Context, tenantID, reportID string) error
 	PurgeExpiredReportEvidence(ctx context.Context, now time.Time, limit int) (map[string]int64, error)
 	PurgeExpiredReportEvents(ctx context.Context, now time.Time, limit int) (map[string]int64, error)
+	// PurgeExpiredReportCandidates clears frozen conflict candidates past their own
+	// clock (doc/301 §6.4). Their clock may never outlive the citation snapshot they
+	// came from, so this pass can only ever run earlier than evidence cleanup.
+	PurgeExpiredReportCandidates(ctx context.Context, now time.Time, limit int) (map[string]int64, error)
+	// PurgeAssuranceForExpiredReports deletes assurance rows whose *report* is gone.
+	// The three tables are judgements, not evidence: they may be deleted, but the
+	// deletion is audited by the caller because "who acknowledged the conflicts"
+	// must stay answerable after the rows are gone.
+	PurgeAssuranceForExpiredReports(ctx context.Context, now time.Time, limit int) (map[string]int64, error)
+	// PurgeAssuranceForReport is the soft-delete half of the same rule: a report
+	// purge takes its own assurance judgements with it, while the audit entries do
+	// not follow (they are the only surviving answer).
+	PurgeAssuranceForReport(ctx context.Context, tenantID, reportID string) error
 }
 
 // Report purge helpers (doc/288 §7.6). Three deletions are driven by the frozen
@@ -334,6 +347,28 @@ func purgeReportRows(tx *gorm.DB, tenantID, reportID string) error {
 	if err := tx.Model(&model.ReportJob{}).
 		Where("tenant_id = ? AND report_id = ?", tenantID, reportID).
 		Pluck("id", &jobIDs).Error; err != nil {
+		return err
+	}
+	// Assurance judgements follow the report inside the same transaction
+	// (doc/301 §6.4): candidates and findings key on `report_id`, evaluations key on
+	// `revision_id`, and the run is the parent of both — so the deletes run child
+	// first and the run last, and a failure halfway leaves no row pointing at a
+	// deleted ancestor. The *audit* entries are deliberately untouched: they are the
+	// only surviving answer to "who acknowledged the conflicts".
+	if len(revisionIDs) > 0 {
+		if err := tx.Where("tenant_id = ? AND revision_id IN ?", tenantID, revisionIDs).
+			Delete(&model.ReportClaimEvaluation{}).Error; err != nil {
+			return err
+		}
+	}
+	for _, target := range []any{&model.ReportConflictCandidate{}, &model.ReportReviewFinding{}} {
+		if err := tx.Where("tenant_id = ? AND report_id = ?", tenantID, reportID).
+			Delete(target).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Where("tenant_id = ? AND report_id = ?", tenantID, reportID).
+		Delete(&model.ReportAssuranceRun{}).Error; err != nil {
 		return err
 	}
 	if len(revisionIDs) > 0 {
@@ -420,6 +455,129 @@ func (s *store) PurgeExpiredReportEvidence(ctx context.Context, now time.Time, l
 		}
 	}
 	return counts, nil
+}
+
+// PurgeExpiredReportCandidates deletes frozen conflict candidates past their own
+// clock (doc/301 §6.4). Candidates are the *uncited* half of a retrieval pool, so
+// they are the first thing to go: keeping them longer than the citations they were
+// compared against would make the workspace retain corpus text nobody cited.
+func (s *store) PurgeExpiredReportCandidates(ctx context.Context, now time.Time, limit int) (map[string]int64, error) {
+	counts := map[string]int64{}
+	if limit <= 0 {
+		limit = 100
+	}
+	var rows []model.ReportConflictCandidate
+	if err := s.WithContext(ctx).
+		Select("id", "tenant_id").
+		Where("expires_at IS NOT NULL AND expires_at <= ?", now).
+		Order("expires_at ASC").
+		Limit(limit).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	grouped := map[string][]string{}
+	for _, row := range rows {
+		grouped[row.TenantID] = append(grouped[row.TenantID], row.ID)
+	}
+	for tenantID, ids := range grouped {
+		result := s.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).
+			Delete(&model.ReportConflictCandidate{})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected > 0 {
+			counts[tenantID] += result.RowsAffected
+		}
+	}
+	return counts, nil
+}
+
+// PurgeAssuranceForExpiredReports removes assurance judgements whose report row is
+// already gone. It is driven by a `NOT EXISTS` probe rather than by a clock: the
+// assurance rows have no `expires_at` of their own, because their lifetime is the
+// report's (doc/301 §6.4) — a judgement that outlived its revision would be an
+// opinion about text nobody can read any more.
+func (s *store) PurgeAssuranceForExpiredReports(ctx context.Context, now time.Time, limit int) (map[string]int64, error) {
+	counts := map[string]int64{}
+	if limit <= 0 {
+		limit = 100
+	}
+	var orphans []model.ReportAssuranceRun
+	if err := s.WithContext(ctx).
+		Select("id", "tenant_id", "report_id").
+		Where("NOT EXISTS (?)",
+			s.WithContext(ctx).Model(&model.Report{}).
+				Select("1").
+				Where("rgx_report.id = rgx_report_assurance_run.report_id")).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&orphans).Error; err != nil {
+		return nil, err
+	}
+	for _, run := range orphans {
+		if err := s.PurgeAssuranceForReport(ctx, run.TenantID, run.ReportID); err != nil {
+			return nil, err
+		}
+		counts[run.TenantID]++
+	}
+	// Candidates follow the same rule but are driven by their own clock too, which
+	// `PurgeExpiredReportCandidates` already does; here we only catch the orphans.
+	var candidateTenants []model.ReportConflictCandidate
+	if err := s.WithContext(ctx).
+		Select("id", "tenant_id").
+		Where("NOT EXISTS (?)",
+			s.WithContext(ctx).Model(&model.Report{}).
+				Select("1").
+				Where("rgx_report.id = rgx_report_conflict_candidate.report_id")).
+		Limit(limit).
+		Find(&candidateTenants).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range candidateTenants {
+		result := s.WithContext(ctx).Where("tenant_id = ? AND id = ?", row.TenantID, row.ID).
+			Delete(&model.ReportConflictCandidate{})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		counts[row.TenantID] += result.RowsAffected
+	}
+	return counts, nil
+}
+
+// PurgeAssuranceForReport deletes the vision rows of one report: candidates, claim
+// evaluations, findings and runs — in that order, so a partially completed purge
+// never leaves an evaluation pointing at a run that is already gone.
+//
+// It is called by `PurgeReport` (report deletion) and by the orphan pass above. The
+// audit entries are deliberately *not* deleted: after the judgement rows are gone,
+// "who acknowledged which conflicts, when" is the only remaining answer, and it must
+// outlive the text it was about.
+func (s *store) PurgeAssuranceForReport(ctx context.Context, tenantID, reportID string) error {
+	if tenantID == "" || reportID == "" {
+		return nil
+	}
+	return s.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var revisionIDs []string
+		if err := tx.Model(&model.ReportRevision{}).
+			Where("tenant_id = ? AND report_id = ?", tenantID, reportID).
+			Pluck("id", &revisionIDs).Error; err != nil {
+			return err
+		}
+		if len(revisionIDs) > 0 {
+			if err := tx.Where("tenant_id = ? AND revision_id IN ?", tenantID, revisionIDs).
+				Delete(&model.ReportClaimEvaluation{}).Error; err != nil {
+				return err
+			}
+		}
+		for _, target := range []any{&model.ReportConflictCandidate{}, &model.ReportReviewFinding{}} {
+			if err := tx.Where("tenant_id = ? AND report_id = ?", tenantID, reportID).
+				Delete(target).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Where("tenant_id = ? AND report_id = ?", tenantID, reportID).
+			Delete(&model.ReportAssuranceRun{}).Error
+	})
 }
 
 // PurgeExpiredReportEvents deletes replay events past their clock. The event

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ragflow-x/ragflow-x/internal/gateway/contract"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
@@ -36,6 +37,12 @@ func (h *Handler) GatewayChat(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
+	// The classic chat route resolves its key inline rather than through
+	// `resolveGatewayKey`, because its IP-denial audit carries the `chat` resource.
+	// It must still advertise the contract version: a caller cannot otherwise tell
+	// "this build has no governance block" from "governance is off here", and this is
+	// the one route where the governance block is structurally absent (GW-1).
+	advertiseGatewayContract(c)
 	if err := h.Service.Authorize(ctx, key.UserID, "execute", "chat"); err != nil {
 		response.Err(c, err)
 		return
@@ -189,10 +196,18 @@ func (h *Handler) GatewaySearchApp(c *gin.Context) {
 		c.Header("Connection", "keep-alive")
 		c.Writer.WriteHeader(200)
 		var captured bytes.Buffer
-		if err := h.Service.StreamSearchAppCompletion(ctx, key.TenantID, key.UserID, searchAppID, input.Question, requestID, false, io.MultiWriter(c.Writer, &captured)); err != nil {
+		stream := newGovernanceStreamWriter(io.MultiWriter(c.Writer, &captured), requestID)
+		if err := h.Service.StreamSearchAppCompletion(ctx, key.TenantID, key.UserID, searchAppID, input.Question, requestID, false, stream); err != nil {
+			// Release the held terminal frame without a governance frame: the caller is
+			// about to receive a gateway error, and claiming governance success next to
+			// it would be a second, contradictory answer.
+			_ = stream.Close(false)
 			h.gatewayStreamFailed(c, key, "search-app", searchAppID, requestID, idempotencyState, err)
 			return
 		}
+		// Close before Complete so the replayed bytes include the governance frame: a
+		// replay must reproduce what the live caller saw, not a shorter stream.
+		_ = stream.Close(true)
 		h.Service.CompleteGatewayIdempotency(ctx, idempotencyState, requestID, captured.String())
 		h.Service.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, h.Service.EstimateGatewayTokens(body)+int64(captured.Len()/2))
 		h.RecordAudit(ctx, &model.AuditLog{TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.search_app.stream", Resource: "search-app", ResourceID: searchAppID, IP: c.ClientIP(), TraceID: requestID})
@@ -208,7 +223,9 @@ func (h *Handler) GatewaySearchApp(c *gin.Context) {
 	h.Service.CompleteGatewayIdempotency(ctx, idempotencyState, requestID, "search-app:"+requestID)
 	h.Service.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, h.Service.EstimateGatewayTokens(body)+int64(len([]rune(result.Answer))/2))
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.search_app", Resource: "search-app", ResourceID: searchAppID, IP: c.ClientIP(), TraceID: requestID})
-	response.OK(c, result)
+	governance := h.Service.GatewayGovernanceFor(result.Answer, result.Reference)
+	setGatewayGovernanceHeaders(c, governance)
+	response.OK(c, service.GatewaySearchAppData{Answer: result.Answer, Reference: result.Reference, Governance: governance})
 }
 
 // GatewayAgent exposes a controlled Agent completion path for API keys.
@@ -272,10 +289,13 @@ func (h *Handler) GatewayAgent(c *gin.Context) {
 		c.Header("Connection", "keep-alive")
 		c.Writer.WriteHeader(200)
 		var captured bytes.Buffer
-		if err := h.Service.StreamAgentChatCompletion(ctx, key.TenantID, agentID, key.UserID, input.Messages, input.Files, requestID, input.SessionID, io.MultiWriter(c.Writer, &captured)); err != nil {
+		stream := newGovernanceStreamWriter(io.MultiWriter(c.Writer, &captured), requestID)
+		if err := h.Service.StreamAgentChatCompletion(ctx, key.TenantID, agentID, key.UserID, input.Messages, input.Files, requestID, input.SessionID, stream); err != nil {
+			_ = stream.Close(false)
 			h.gatewayStreamFailed(c, key, "agent", agentID, requestID, idempotencyState, err)
 			return
 		}
+		_ = stream.Close(true)
 		h.Service.CompleteGatewayIdempotency(ctx, idempotencyState, requestID, captured.String())
 		h.Service.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, h.Service.EstimateGatewayTokens(body)+int64(captured.Len()/2))
 		h.RecordAudit(ctx, &model.AuditLog{TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.agent.stream", Resource: "agent", ResourceID: agentID, IP: c.ClientIP(), TraceID: requestID})
@@ -295,7 +315,13 @@ func (h *Handler) GatewayAgent(c *gin.Context) {
 	}
 	h.Service.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, h.Service.EstimateGatewayTokens(body)+tokens)
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.agent", Resource: "agent", ResourceID: agentID, IP: c.ClientIP(), TraceID: requestID})
-	response.OK(c, resp)
+	answer := ""
+	if len(resp.Choices) > 0 {
+		answer = resp.Choices[0].Message.Content
+	}
+	governance := h.Service.GatewayGovernanceFor(answer, resp.Reference)
+	setGatewayGovernanceHeaders(c, governance)
+	response.OK(c, service.GatewayAgentData{CompletionResponse: *resp, Governance: governance})
 }
 
 func (h *Handler) resolveGatewayKey(c *gin.Context, requestID string) (*model.APIKey, error) {
@@ -308,6 +334,9 @@ func (h *Handler) resolveGatewayKey(c *gin.Context, requestID string) (*model.AP
 		response.Err(c, err)
 		return nil, err
 	}
+	// Every authenticated gateway response advertises which contract version governs
+	// it (doc/301 §5.10 GW-1).
+	advertiseGatewayContract(c)
 	if err := h.Service.AuthorizeAPIKeyIP(key, c.ClientIP()); err != nil {
 		h.RecordAudit(c.Request.Context(), &model.AuditLog{TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.ip_denied", Resource: "gateway", DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: requestID})
 		response.Err(c, err)
@@ -316,9 +345,26 @@ func (h *Handler) resolveGatewayKey(c *gin.Context, requestID string) (*model.AP
 	return key, nil
 }
 
+// advertiseGatewayContract is the only writer of `X-RGX-Policy`. Both key-resolution
+// paths call it and neither builds the value itself, so the version a caller reads can
+// only ever come from `contract.Version` — a second literal here is how two routes end
+// up claiming different contracts.
+func advertiseGatewayContract(c *gin.Context) {
+	c.Header(service.GatewayPolicyHeader, contract.Version)
+}
+
 // setGatewayQuotaHeaders exposes the same post-reservation budgets on every
 // gateway entrypoint so API consumers can pace Chat, Search App and Agent
 // traffic with one contract.
+// setGatewayGovernanceHeaders writes `X-RGX-Degraded` when the governance block is
+// incomplete. Absent otherwise: a header that is present on every response and
+// almost always "false" is a header clients stop reading.
+func setGatewayGovernanceHeaders(c *gin.Context, governance *service.GatewayGovernance) {
+	if governance.DegradedForHeader() {
+		c.Header(service.GatewayDegradedHeader, "true")
+	}
+}
+
 func setGatewayQuotaHeaders(c *gin.Context, quota service.QuotaResult) {
 	if !quota.Enabled {
 		return

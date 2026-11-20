@@ -173,7 +173,11 @@ describe("ReportCenter", () => {
     // The server stores `null` when the denominator is empty; the browser must
     // not turn that into "0%" — that would be the same lie the server stopped
     // telling (doc/288 §14.1).
-    expect(screen.getByText("暂无判定")).toBeTruthy();
+    // Two cards say 暂无判定 here and both mean it: the quality pass rate (no
+    // revision was judged) and the locator-assisted rate (no section cited anything,
+    // so 0/0 has no denominator). A third would mean another metric lost its
+    // population, which is why the count is pinned rather than "at least one".
+    expect(screen.getAllByText("暂无判定")).toHaveLength(2);
     expect(screen.queryByText("0%")).toBeNull();
     expect(screen.getByText("50%")).toBeTruthy();
   });
@@ -548,6 +552,36 @@ describe("ReportCenter", () => {
 
     expect(await screen.findByText("动火作业风险分析")).toBeTruthy();
     expect(await screen.findByText("analysis")).toBeTruthy();
+  });
+
+  it("prints the degraded-research count with the number of planned sections", async () => {
+    // doc/301 §5.8 item 2. A count without its denominator cannot answer §5.8 item 3's
+    // question ("is degradation common enough to fund planning v2"), so the card prints
+    // both — and prints nothing at all when no section carried a plan, because
+    // "0 degraded out of nothing planned" would read as a clean bill of health.
+    mockReads([], trend({
+      totals: {
+        revisions: 3,
+        published: 2,
+        quality_gate_pass_rate: null,
+        citation_coverage: 0.5,
+        research_degraded_sections: 20,
+        research_planned_sections: 40,
+      },
+    }));
+    render(<ReportCenter />);
+
+    expect(await screen.findByText("深研降级章节")).toBeTruthy();
+    expect(screen.getByText("20")).toBeTruthy();
+    expect(screen.getByText("占已规划 40 个章节")).toBeTruthy();
+  });
+
+  it("omits the degraded-research card when no section carried a research plan", async () => {
+    mockReads();
+    render(<ReportCenter />);
+
+    await screen.findByText("动火作业风险分析");
+    expect(screen.queryByText("深研降级章节")).toBeNull();
   });
 
   it("renders the trend even when the report list is empty, and flags truncation", async () => {

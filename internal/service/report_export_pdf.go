@@ -164,6 +164,9 @@ func renderReportPdfPass(
 	pdf.MultiCell(0, 7, fmt.Sprintf("报告版本：%s", version), "", "L", false)
 	pdf.MultiCell(0, 7, fmt.Sprintf("生成时间：%s", now.UTC().Format("2006-01-02T15:04:05Z")), "", "L", false)
 	pdf.MultiCell(0, 7, fmt.Sprintf("完整性：%s", document.Completeness), "", "L", false)
+	if document.ScanScope != "" {
+		pdf.MultiCell(0, 7, "复核范围："+document.ScanScope, "", "L", false)
+	}
 	if document.Question != "" {
 		pdf.Ln(4)
 		pdf.SetFont("cjk", "", 9)

@@ -45,6 +45,20 @@ export interface TrendResult {
     quality_judged?: number;
     quality_passed?: number;
     quality_gate_pass_rate?: number | null;
+    // doc/301 T10: pooled numerator/denominator of the locator-assisted rate. They
+    // travel with the rate so the workspace can print "3/12 引用章节" beside "25%"
+    // instead of a percentage whose population is invisible.
+    locator_assisted_sections?: number;
+    with_citation_sections?: number;
+    locator_assisted_section_rate?: number | null;
+  /**
+   * T23 / §5.8 item 2: pooled counts of sections whose frozen plan is one of the
+   * three `fallback_*` states, and of sections that carried a plan at all. Counts,
+   * never a ratio — the threshold in §5.8 item 3 is "thin/degraded share", and a
+   * share without its denominator cannot be read on a quiet week.
+   */
+  research_degraded_sections?: number;
+  research_planned_sections?: number;
     [key: string]: unknown;
   };
 }

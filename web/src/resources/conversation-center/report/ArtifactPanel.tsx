@@ -19,16 +19,40 @@
  *   3. the five buttons come from `REPORT_EXPORT_FORMATS`, the same closed set the
  *      report-center drawer maps over: two entries to one delivery must not offer
  *      two different format lists (2026-11-19: this panel still had three).
+ *
+ * A fourth rule arrived with the assurance gate (doc/301 §7.2 / T09): the server refuses
+ * an export whose revision still has unresolved conflicts (44121) or has not been
+ * reviewed at all (44122). Those two refusals are **not** interchangeable errors:
+ *
+ *   - 44121 is an acknowledgement, so the panel opens a dialog that states the
+ *     eligibility verdict, the open-conflict count, and what the ack will record, then
+ *     re-exports with `acknowledge_assurance=true`. Accepting on the user's behalf
+ *     (a silent retry) would write an ack into the audit log that nobody gave.
+ *   - 44122 is a wait, so the panel says "review has not finished" and offers no
+ *     button. Offering an ack there would be offering a lie: there is nothing to
+ *     acknowledge yet.
  */
 import { useState } from "react";
 import { useNotify, useTranslate } from "ra-core";
 import { Download, FileDown, FileText, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ApiError } from "../../../lib/api";
 import { reportArtifactStatusLabel } from "../../report-center/report-center-api";
 import { REPORT_EXPORT_FORMATS, type ReportExportFormat } from "./report-contract";
 import type { ReportAdapter, ReportExportSuccess } from "../adapters";
 import type { ExportArtifactRecord, ReportArtifactEntry } from "./report-run";
+import { describeEligibility, type ReportReview } from "./report-assurance";
 
 export interface ArtifactPanelProps {
   adapter: ReportAdapter;
@@ -38,6 +62,12 @@ export interface ArtifactPanelProps {
   history?: ReportArtifactEntry[];
   /** Lets the workspace re-read the history after an export (one source of truth). */
   onExported?: () => void;
+  /**
+   * Reads the review projection when the server refuses with 44121, so the dialog can
+   * state *what* is unresolved. Absent ⇒ the refusal degrades to a message: a dialog
+   * that cannot name the conflicts would be a dialog that asks for consent to nothing.
+   */
+  loadReview?: (reportId: string, revision: number) => Promise<ReportReview>;
 }
 
 /** Human size for the delivery line; a failed render has 0 bytes and prints "—". */
@@ -80,18 +110,27 @@ export function ArtifactPanel({
   revision,
   history = [],
   onExported,
+  loadReview,
 }: ArtifactPanelProps) {
   const t = useTranslate();
   const notify = useNotify();
   const [exporting, setExporting] = useState<ReportExportFormat | null>(null);
   const [created, setCreated] = useState<ReportExportSuccess[]>([]);
+  const [pendingAck, setPendingAck] = useState<{ format: ReportExportFormat; review: ReportReview } | null>(null);
+  const [ackBusy, setAckBusy] = useState(false);
   const entries = mergeArtifactEntries(created, history);
 
-  const runExport = async (format: ReportExportFormat) => {
+  const runExport = async (format: ReportExportFormat, acknowledgeAssurance = false) => {
     if (exporting) return;
     setExporting(format);
     try {
-      const result = await adapter.createExport(reportId, revision, format);
+      // Called with three arguments unless the user just acknowledged: the extra
+      // `{acknowledgeAssurance:true}` is a *user act* and must not be passed as
+      // `undefined` on every ordinary export, where a later default flip would silently
+      // reinterpret the call.
+      const result = acknowledgeAssurance
+        ? await adapter.createExport(reportId, revision, format, { acknowledgeAssurance: true })
+        : await adapter.createExport(reportId, revision, format);
       setCreated((previous) => [
         result,
         ...previous.filter((item) => item.export_artifact.id !== result.export_artifact.id),
@@ -111,9 +150,35 @@ export function ArtifactPanel({
         );
       }
     } catch (error) {
-      notify(t("conversationCenter.report_export_error"), { type: "error" });
+      const code = error instanceof ApiError ? error.code : 0;
+      if (code === 44122) {
+        // Not reviewed yet: nothing to acknowledge, nothing to retry.
+        notify(t("conversationCenter.report_export_assurance_not_ready"), { type: "error" });
+      } else if (code === 44121 && loadReview) {
+        try {
+          const review = await loadReview(reportId, revision);
+          setPendingAck({ format, review });
+        } catch {
+          // The review read failed too; the generic message is still true.
+          notify(t("conversationCenter.report_export_error"), { type: "error" });
+        }
+      } else {
+        notify(t("conversationCenter.report_export_error"), { type: "error" });
+      }
     } finally {
       setExporting(null);
+    }
+  };
+
+  const confirmAck = async () => {
+    if (!pendingAck || ackBusy) return;
+    setAckBusy(true);
+    const { format } = pendingAck;
+    setPendingAck(null);
+    try {
+      await runExport(format, true);
+    } finally {
+      setAckBusy(false);
     }
   };
 
@@ -196,6 +261,58 @@ export function ArtifactPanel({
           ))}
         </ul>
       )}
+
+      <AlertDialog
+        open={pendingAck !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingAck(null);
+        }}
+      >
+        <AlertDialogContent data-testid="ack-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("conversationCenter.report_export_ack_title")}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p data-testid="ack-eligibility">
+                  {t("conversationCenter.report_export_ack_eligibility", {
+                    reason: pendingAck
+                      ? describeEligibility(
+                          t,
+                          pendingAck.review.release_eligibility,
+                          pendingAck.review.release_eligibility_basis,
+                        )
+                      : "",
+                  })}
+                </p>
+                <p data-testid="ack-counts">
+                  {t("conversationCenter.report_export_ack_counts", {
+                    open: pendingAck?.review.counters.open_findings ?? 0,
+                    high: pendingAck?.review.counters.high_findings ?? 0,
+                  })}
+                </p>
+                <p className="text-muted-foreground">
+                  {t("conversationCenter.report_export_ack_body")}
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={ackBusy} data-testid="ack-cancel">
+              {t("conversationCenter.report_export_ack_cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={ackBusy}
+              data-testid="ack-confirm"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              onClick={() => void confirmAck()}
+            >
+              {t("conversationCenter.report_export_ack_confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }

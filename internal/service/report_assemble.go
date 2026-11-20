@@ -61,6 +61,12 @@ type reportDocument struct {
 	// `CreateReportExport` refuses to *re-export* when a snapshot is gone: an empty
 	// appendix would be a lie about evidence that no longer exists.
 	EvidenceAppendix []reportEvidenceEntry `json:"evidence_appendix"`
+	// ScanScope is doc/301 §5.3.1's mandatory disclosure: `cited_only` or
+	// `cited+candidate:K`. Without it a delivered file that found no conflict reads as
+	// "cross-document contrast was performed and found nothing", which is a much
+	// stronger claim than the run made. Omitted only when the revision predates the
+	// field, so an old file keeps its old bytes.
+	ScanScope string `json:"scan_scope,omitempty"`
 	// Claims is the R11 claim appendix (doc/288 §9.2): every sentence the report
 	// asserts, with its type and the verdict of the L3 support check. It is frozen
 	// with the document for the same reason as the evidence copy — a file that is
@@ -261,6 +267,7 @@ func (s *Service) assembleReportDocument(
 		Claims:                 claimEntries,
 		ClaimScored:            scored,
 		ClaimNotRequired:       notRequired,
+		ScanScope:              renderScanScope(s.revisionScanScope(ctx, tenantID, revision)),
 		ClaimSupportRate:       metrics.ClaimSupportRate,
 		ConsistencyIssues:      metrics.ConsistencyIssues,
 		ConsistencyKeysChecked: metrics.ConsistencyKeysChecked,

@@ -80,6 +80,8 @@ describe("<KnowledgeOpsBoard />", () => {
             review_status: "open",
             feedback_rating: "negative",
             feedback_attribution: "knowledge",
+            // Decoded server-side from `answerability_json`.
+            answerability: { answerable: false, abstain_reason: "no_evidence", citation_count: 0 },
           }],
           total: 2,
         });
@@ -168,6 +170,30 @@ describe("<KnowledgeOpsBoard />", () => {
     });
 
     await waitFor(() => expect(apiGet.mock.calls.some(([url]) => String(url).includes("attribution=knowledge"))).toBe(true));
+  });
+
+  // doc/301 T12 (QA-1): the board can be worked as "content gap" and "model
+  // judgement" queues instead of one undifferentiated pile. The filter value is the
+  // server reason ("no_evidence"), never the display label.
+  it("filters pending badcases by abstain reason", async () => {
+    render(<KnowledgeOpsBoard />);
+    await waitFor(() => expect(screen.getByText("knowledgeOps.pending_badcases")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText("qa.answerability.label"), {
+      target: { value: "no_evidence" },
+    });
+
+    await waitFor(() =>
+      expect(apiGet.mock.calls.some(([url]) => String(url).includes("abstain_reason=no_evidence"))).toBe(true),
+    );
+  });
+
+  // The row must say *why* the turn was not answerable: `no_evidence` and
+  // `self_abstain` look identical in a bare "no answer" count.
+  it("renders the per-turn answerability state in the badcase row", async () => {
+    const { container } = render(<KnowledgeOpsBoard />);
+    await waitFor(() => expect(screen.getByText("badcase")).toBeInTheDocument());
+    expect(container.querySelector('[data-answerability="no_evidence"]')).not.toBeNull();
   });
 
   it("loads knowledge task loop data", async () => {

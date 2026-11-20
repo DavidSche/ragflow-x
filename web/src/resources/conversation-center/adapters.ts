@@ -33,7 +33,17 @@ import {
   type ReportJobSnapshot,
   type ReportTemplateView,
 } from "./report/report-run";
-import { isReportTerminalEvent, type ReportExportFormat } from "./report/report-contract";
+import { IDEMPOTENCY_HEADER, isReportTerminalEvent, type ReportExportFormat } from "./report/report-contract";
+import type {
+  ReportRevisionSummary,
+} from "./report/report-run";
+import type {
+  AssuranceMode,
+  AssuranceRun,
+  FindingStatus,
+  ReportReview,
+  ReviewFinding,
+} from "./report/report-assurance";
 
 interface PageEnvelope<T> {
   items: T[];
@@ -659,8 +669,63 @@ export interface ReportAdapter extends ConversationAdapter {
    * old three-name alias: the drawer and this panel must offer the same five, and a
    * wire name here keeps one vocabulary for the artifact row we render back.
    */
-  createExport(reportId: string, revisionNo: number, format: ReportExportFormat): Promise<ReportExportSuccess>;
+  createExport(
+    reportId: string,
+    revisionNo: number,
+    format: ReportExportFormat,
+    options?: { acknowledgeAssurance?: boolean },
+  ): Promise<ReportExportSuccess>;
   artifactDownloadUrl(reportId: string, revisionNo: number, artifactId: string): string;
+
+  /* ---- assurance surface (doc/301 §7.1) ---- */
+
+  /**
+   * Start one review run. The `Idempotency-Key` is minted here for the same reason
+   * `createReport` mints one: a double click must resolve to one run, and the server
+   * answers 44114 without the header rather than guessing an identity for us.
+   */
+  triggerAssurance(
+    reportId: string,
+    revisionNo: number,
+    options?: { mode?: AssuranceMode; signal?: AbortSignal },
+  ): Promise<AssuranceRun>;
+  listAssuranceRuns(
+    reportId: string,
+    revisionNo: number,
+    options?: { limit?: number; signal?: AbortSignal },
+  ): Promise<AssuranceRun[]>;
+  /** Poll one run while it is `queued`/`running`. */
+  loadAssuranceRun(
+    reportId: string,
+    revisionNo: number,
+    runId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<AssuranceRun>;
+  /**
+   * The workbench projection. `sectionCursor`/`findingCursor` come straight from
+   * `next_section_cursor`/`next_finding_cursor` — the client never computes a cursor,
+   * because an offset it computed itself would shift under a partial retry.
+   */
+  loadReview(
+    reportId: string,
+    revisionNo: number,
+    options?: { runId?: string; sectionCursor?: string; findingCursor?: string; signal?: AbortSignal },
+  ): Promise<ReportReview>;
+  /**
+   * Revision history, newest first. Needed by the workbench for one specific job:
+   * a `resolved` decision must name a LATER revision, and the panel can only offer
+   * one if it knows which exist. Without it the "标记已修复" button would be
+   * permanently disabled, which is a dead end rather than a safety check.
+   */
+  /** Optional: a caller that does not need later-revision targets may omit it. */
+  listRevisions?(reportId: string, options?: { signal?: AbortSignal }): Promise<ReportRevisionSummary[]>;
+  /** Adjudicate one finding. `resolvedRevisionId` is required for `resolved`. */
+  updateFinding(
+    reportId: string,
+    revisionNo: number,
+    findingId: string,
+    body: { status: FindingStatus; note?: string; resolvedRevisionId?: string },
+  ): Promise<ReviewFinding>;
 }
 
 /**
@@ -763,10 +828,110 @@ export function createReportAdapter(): ReportAdapter {
     ));
   }
 
-  async function createExport(reportId: string, revisionNo: number, format: ReportExportFormat): Promise<ReportExportSuccess> {
+  async function createExport(
+    reportId: string,
+    revisionNo: number,
+    format: ReportExportFormat,
+    options?: { acknowledgeAssurance?: boolean },
+  ): Promise<ReportExportSuccess> {
     return unwrap<ReportExportSuccess>(api.post(
       `/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/artifacts`,
-      { format },
+      // `acknowledge_assurance` is sent only when the caller opted in: an omitted
+      // field and an explicit `false` mean the same thing to the server, but sending
+      // `false` on every export would invite a later default flip to change what an
+      // already-written client does (doc/301 §7.2).
+      options?.acknowledgeAssurance
+        ? { format, acknowledge_assurance: true }
+        : { format },
+    ));
+  }
+
+  function assuranceBase(reportId: string, revisionNo: number): string {
+    return `/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/assurance-runs`;
+  }
+
+  async function triggerAssurance(
+    reportId: string,
+    revisionNo: number,
+    options?: { mode?: AssuranceMode; signal?: AbortSignal },
+  ): Promise<AssuranceRun> {
+    return unwrap<AssuranceRun>(api.post(
+      assuranceBase(reportId, revisionNo),
+      { mode: options?.mode ?? "full" },
+      {
+        signal: options?.signal,
+        headers: { [IDEMPOTENCY_HEADER]: createIdempotencyKey() },
+      },
+    ));
+  }
+
+  async function listAssuranceRuns(
+    reportId: string,
+    revisionNo: number,
+    options?: { limit?: number; signal?: AbortSignal },
+  ): Promise<AssuranceRun[]> {
+    const limit = options?.limit ?? 20;
+    const data = await unwrap<{ items?: AssuranceRun[] }>(api.get(
+      assuranceBase(reportId, revisionNo),
+      { params: { limit }, signal: options?.signal },
+    ));
+    return data?.items ?? [];
+  }
+
+  async function loadAssuranceRun(
+    reportId: string,
+    revisionNo: number,
+    runId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<AssuranceRun> {
+    return unwrap<AssuranceRun>(api.get(
+      `${assuranceBase(reportId, revisionNo)}/${encodeURIComponent(runId)}`,
+      { signal: options?.signal },
+    ));
+  }
+
+  async function loadReview(
+    reportId: string,
+    revisionNo: number,
+    options?: { runId?: string; sectionCursor?: string; findingCursor?: string; signal?: AbortSignal },
+  ): Promise<ReportReview> {
+    return unwrap<ReportReview>(api.get(
+      `/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/review`,
+      {
+        params: {
+          run_id: options?.runId,
+          section_cursor: options?.sectionCursor,
+          finding_cursor: options?.findingCursor,
+        },
+        signal: options?.signal,
+      },
+    ));
+  }
+
+  async function listRevisions(
+    reportId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<ReportRevisionSummary[]> {
+    const data = await unwrap<{ revisions?: ReportRevisionSummary[] }>(api.get(
+      `/reports/${encodeURIComponent(reportId)}/revisions`,
+      { signal: options?.signal },
+    ));
+    return data?.revisions ?? [];
+  }
+
+  async function updateFinding(
+    reportId: string,
+    revisionNo: number,
+    findingId: string,
+    body: { status: FindingStatus; note?: string; resolvedRevisionId?: string },
+  ): Promise<ReviewFinding> {
+    return unwrap<ReviewFinding>(api.patch(
+      `/reports/${encodeURIComponent(reportId)}/revisions/${revisionNo}/findings/${encodeURIComponent(findingId)}`,
+      {
+        status: body.status,
+        note: body.note,
+        resolved_revision_id: body.resolvedRevisionId,
+      },
     ));
   }
 
@@ -938,6 +1103,12 @@ export function createReportAdapter(): ReportAdapter {
     confirmOutline,
     createExport,
     artifactDownloadUrl,
+    triggerAssurance,
+    listAssuranceRuns,
+    loadAssuranceRun,
+    loadReview,
+    listRevisions,
+    updateFinding,
   };
 }
 

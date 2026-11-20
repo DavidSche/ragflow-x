@@ -102,6 +102,13 @@ type APIKeyRepo interface {
 	GetAPIKeyByHash(ctx context.Context, hash string) (*model.APIKey, error)
 	ListAPIKeys(ctx context.Context, tenantID string) ([]model.APIKey, error)
 	RevokeAPIKey(ctx context.Context, tenantID, id string) error
+	// RetireAPIKeyForRotation stamps the successor link and the grace-window
+	// expiry in ONE statement (doc/301 GW-4). Two statements could leave a key
+	// pointing at a successor it never expires for, or expiring without a link —
+	// and the second of those is indistinguishable from a manually shortened key.
+	// It refuses (`RowsAffected == 0`) when the row is missing or already rotated,
+	// which is what makes a double click a no-op instead of a second successor.
+	RetireAPIKeyForRotation(ctx context.Context, tenantID, id, successorID string, expiresAt time.Time) (bool, error)
 	TouchAPIKey(ctx context.Context, id string) error
 }
 
@@ -465,6 +472,21 @@ func (s *store) RevokeAPIKey(ctx context.Context, tenantID, id string) error {
 		Update("enabled", false).Error
 }
 
+// RetireAPIKeyForRotation closes the old key's rotation window (doc/301 GW-4).
+func (s *store) RetireAPIKeyForRotation(ctx context.Context, tenantID, id, successorID string, expiresAt time.Time) (bool, error) {
+	result := s.WithContext(ctx).Model(&model.APIKey{}).
+		Where("id = ? AND tenant_id = ? AND (rotated_to_key_id IS NULL OR rotated_to_key_id = '')", id, tenantID).
+		Updates(map[string]any{
+			"rotated_to_key_id": successorID,
+			"expired_at":        expiresAt.UTC(),
+			"updated_at":        time.Now().UTC(),
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 func (s *store) TouchAPIKey(ctx context.Context, id string) error {
 	now := time.Now().UTC()
 	return s.WithContext(ctx).Model(&model.APIKey{}).Where("id = ?", id).
@@ -733,6 +755,10 @@ type QuotaRepo interface {
 	// Gateway quota buckets (doc/224 §2.5 T5.1): tenant/model/assistant
 	// dimensions share the batch pre-deduction semantics of the key ledger.
 	UpsertQuotaBucket(ctx context.Context, q *model.QuotaBucket) error
+	// EnsureQuotaBucketTokenLimit sets the configured limit without resetting
+	// consumption (doc/301 §6.5): UpsertQuotaBucket is UpdateAll and would zero
+	// `tokens_used` on every settings change.
+	EnsureQuotaBucketTokenLimit(ctx context.Context, tenantID, dimension, dimensionKey, periodStart string, limit int64) error
 	GetQuotaBucket(ctx context.Context, tenantID, dimension, dimensionKey, periodStart string) (*model.QuotaBucket, error)
 	AddQuotaBucketReservation(ctx context.Context, r *model.QuotaBucketReservation) (bool, error)
 	GetQuotaBucketReservation(ctx context.Context, requestID string) (*model.QuotaBucketReservation, error)

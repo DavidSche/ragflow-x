@@ -65,6 +65,9 @@ func renderReportDocx(document *reportDocument, now time.Time) ([]byte, error) {
 		document.Revision, document.TemplateKey, document.TemplateVersion), ""))
 	body.WriteString(docxParagraph("生成时间："+now.UTC().Format("2006-01-02 15:04:05Z"), ""))
 	body.WriteString(docxParagraph("完整性："+document.Completeness, ""))
+	if document.ScanScope != "" {
+		body.WriteString(docxParagraph("复核范围："+document.ScanScope, ""))
+	}
 
 	if document.Completeness == model.ReportCompletenessPartial || len(document.Gaps) > 0 {
 		body.WriteString(docxParagraph("完整性声明", "Heading1"))

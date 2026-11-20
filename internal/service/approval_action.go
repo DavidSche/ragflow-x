@@ -193,7 +193,10 @@ func (s *Service) GetApproval(ctx context.Context, actorID, actorTenantID, appro
 		}
 		steps[i].Actors = actors
 	}
-	if approval.Action == model.ApprovalActionCreate && approval.ObjectType == model.ApprovalObjectAPIKey &&
+	// The reveal is keyed on "this approval produced a secret", which is true of both
+	// create and rotate-credential.
+	if (approval.Action == model.ApprovalActionCreate || approval.Action == model.ApprovalActionRotateCredential) &&
+		approval.ObjectType == model.ApprovalObjectAPIKey &&
 		approval.Status == model.ApprovalStatusCompleted && approval.RequesterID == actorID {
 		secret, modified, err := s.consumeApprovalSecret(approval)
 		if err != nil {

@@ -71,6 +71,9 @@ func protectedRoutes() []string {
 		"GET /api/v1/usage/details",
 		"GET /api/v1/usage/attribution",
 		"GET /api/v1/usage/export",
+		"GET /api/v1/usage/reconcile",
+		"GET /api/v1/usage/reconcile/:runId/findings",
+		"POST /api/v1/system/usage/reconcile",
 		"GET /api/v1/audit",
 		"GET /api/v1/audit/export",
 		"GET /api/v1/audit/verify",
@@ -92,6 +95,10 @@ func protectedRoutes() []string {
 		"POST /api/v1/chat/completions",
 		"GET /api/v1/chat/reference",
 		"POST /api/v1/chat/feedback",
+		// QA-2's weekly chat citation sample (doc/301 T19).
+		"POST /api/v1/knowledge-ops/citation-audit",
+		"GET /api/v1/knowledge-ops/citation-audit/runs",
+		"GET /api/v1/knowledge-ops/citation-audit/runs/:runId/findings",
 		"POST /api/v1/knowledge-ops/trace-runs",
 		"GET /api/v1/knowledge-ops/trace-runs",
 		"GET /api/v1/knowledge-ops/trace-runs/:id",
@@ -147,6 +154,7 @@ func protectedRoutes() []string {
 		"GET /api/v1/keys",
 		"POST /api/v1/keys",
 		"POST /api/v1/keys/:id/revoke",
+		"POST /api/v1/keys/:id/rotate",
 		// Template instance API family (doc/107 §3.1.5, doc/124 §2).
 		"POST /api/v1/template-instances",
 		"GET /api/v1/template-instances",

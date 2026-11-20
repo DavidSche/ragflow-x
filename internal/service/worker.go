@@ -495,6 +495,19 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	// `next_run_at` and mints the next revision — one job for every tenant, because
 	// the due scan is already global.
 	runner.Register(&reportScheduleTickWorker{svc: s})
+	// The assurance run (doc/301 §6.6) and its reconciler. The second trigger
+	// matters as much as it does for report finalize: a run left `queued` without a
+	// runtime job would sit there holding the 44118 mutex for its revision.
+	runner.Register(&reportAssuranceWorker{svc: s})
+	runner.Register(&reportAssuranceReconcileWorker{svc: s})
+	// QA-2's weekly chat citation sample (doc/301 T19). It reschedules itself from
+	// `knowledge_audit.sweep_interval_hours`, so a deployment that never enables the
+	// sample simply never enqueues it again.
+	runner.Register(&chatCitationAuditWorker{svc: s})
+	// GW-3's daily four-ledger billing check (doc/301 T21). Daily rather than
+	// self-timed from a setting: the plan fixes the cadence, and a setting nothing
+	// reads would be a promise the code does not keep.
+	runner.Register(&gatewayBillingReconcileWorker{svc: s})
 	runner.Register(&connectorSyncWorker{svc: s})
 	runner.Register(&connectorRetentionWorker{svc: s})
 	s.SetupApprovalWorker(runner)
@@ -513,6 +526,15 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	}
 	if _, scheduleErr := s.ScheduleReportScheduleTick(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("report schedule tick schedule failed", "error", scheduleErr)
+	}
+	if _, scheduleErr := s.ScheduleReportAssuranceReconciler(context.Background(), ""); scheduleErr != nil {
+		logger.Warn("report assurance reconcile schedule failed", "error", scheduleErr)
+	}
+	if _, scheduleErr := s.ScheduleChatCitationAudit(context.Background(), ""); scheduleErr != nil {
+		logger.Warn("citation audit schedule failed", "error", scheduleErr)
+	}
+	if _, scheduleErr := s.ScheduleGatewayBillingReconcile(context.Background(), ""); scheduleErr != nil {
+		logger.Warn("gateway billing reconcile schedule failed", "error", scheduleErr)
 	}
 	if _, scheduleErr := s.ScheduleConnectorRetention(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("connector retention schedule failed", "error", scheduleErr)

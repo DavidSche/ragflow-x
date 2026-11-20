@@ -169,7 +169,13 @@ type APIKey struct {
 	// array denies every source address; entries may be IPs or CIDRs.
 	AllowedIPsJSON string     `gorm:"column:allowed_ips_json;size:512" json:"allowed_ips_json"`
 	ExpiredAt      *time.Time `gorm:"column:expired_at" json:"expired_at"`
-	Enabled        bool       `gorm:"column:enabled;not null;default:true" json:"enabled"`
+	// RotatedToKeyID is the successor created by a rotation (doc/301 GW-4). It is
+	// also the rotation's idempotency guard: a key that already has a successor
+	// cannot be rotated again, so a double click cannot produce two live secrets.
+	// The retired key keeps working until `ExpiredAt` — that window *is* the grace
+	// period, so there is no second clock to disagree with the expiry check.
+	RotatedToKeyID string `gorm:"column:rotated_to_key_id;size:32;index" json:"rotated_to_key_id"`
+	Enabled        bool   `gorm:"column:enabled;not null;default:true" json:"enabled"`
 	LastUsedAt     *time.Time `gorm:"column:last_used_at" json:"last_used_at"`
 	CreatedAt      time.Time  `gorm:"column:created_at" json:"created_at"`
 	UpdatedAt      time.Time  `gorm:"column:updated_at" json:"updated_at"`

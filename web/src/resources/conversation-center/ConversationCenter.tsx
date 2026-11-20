@@ -1201,6 +1201,29 @@ export function ConversationCenter({
     );
   };
 
+  /**
+   * doc/301 T12 (QA-1): a live turn has no claim until the ledger row exists, and the
+   * ledger is the only place the claim lives — deriving one here would be a second
+   * measurement that could disagree with the read path. One read of the same page a
+   * reload would fetch is enough; if the claim is not there yet the badge keeps saying
+   * "not recorded", which is true, instead of being filled in optimistically.
+   */
+  const refreshTurnAnswerability = async (messageId: string) => {
+    if (!context || context.type !== "session") return;
+    try {
+      const snapshot = await adapter.loadContext(context);
+      const claim = snapshot.messages.find(
+        (item) =>
+          (item.turnId ?? item.id) === messageId || item.id === messageId,
+      )?.answerability;
+      if (claim) {
+        patchMessage(messageId, (message) => ({ ...message, answerability: claim }));
+      }
+    } catch {
+      // A failed refresh must not turn a completed answer into an error.
+    }
+  };
+
   const submit = async (
     requestedText?: string,
     requestedContext?: ConversationContext,
@@ -1547,6 +1570,9 @@ export function ConversationCenter({
           );
           if (finalStatus === "completed") {
             requestState.completePending();
+            void refreshTurnAnswerability(
+              event.messageId ?? `assistant-${requestId}`,
+            );
           } else if (
             finalStatus === "failed" &&
             requestState.getPending()?.state !== "failed" &&

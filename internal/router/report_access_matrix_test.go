@@ -68,6 +68,15 @@ func reportMatrixRouteSpecs() []reportMatrixRouteSpec {
 		{"POST", "/api/v1/reports/:id/revisions/:revision/outline/confirm", "execute"},
 		{"POST", "/api/v1/reports/:id/revisions/:revision/artifacts", "execute"},
 		{"GET", "/api/v1/reports/:id/revisions/:revision/artifacts/:artifactId/download", "read"},
+		// Assurance surface (doc/301 §7.1). Triggering a run and adjudicating a finding
+		// are `execute` (owner-checked in the service, 44109 for a grantee); the three
+		// reads are `read`. Pinning the split here is what stops a later change from
+		// quietly making a grantee able to spend the tenant's review allowance.
+		{"POST", "/api/v1/reports/:id/revisions/:revision/assurance-runs", "execute"},
+		{"GET", "/api/v1/reports/:id/revisions/:revision/assurance-runs", "read"},
+		{"GET", "/api/v1/reports/:id/revisions/:revision/assurance-runs/:runId", "read"},
+		{"GET", "/api/v1/reports/:id/revisions/:revision/review", "read"},
+		{"PATCH", "/api/v1/reports/:id/revisions/:revision/findings/:findingId", "execute"},
 		{"GET", "/api/v1/report-templates", "read"},
 		{"POST", "/api/v1/report-templates/:key/capability-check", "read"},
 		{"POST", "/api/v1/report-templates/:key/clone", "manage"},

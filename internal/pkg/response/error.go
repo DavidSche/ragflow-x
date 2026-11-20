@@ -14,6 +14,13 @@ import (
 func Err(c *gin.Context, err error) {
 	var he *httperr.Error
 	if errors.As(err, &he) {
+		if he.Data != nil {
+			// Structured error context (`data`) is part of the error envelope, not
+			// an extra field on a special response: a client that only knows
+			// {code,message} still reads the same two fields.
+			c.JSON(he.Status, Body{Code: he.Code, Message: he.Message, Data: he.Data, TraceID: traceID(c)})
+			return
+		}
 		Fail(c, he.Status, he.Code, he.Message)
 		return
 	}

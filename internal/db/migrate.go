@@ -3580,6 +3580,162 @@ var migrations = []Migration{
 				Update("budget_policy", model.ReportBudgetEnforce).Error
 		},
 	},
+	{
+		Version: 183,
+		Name:    "report_assurance",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/301 §6.1: the assurance surface gets its own append-only tables.
+			// A verdict is a measurement with a method, so it cannot be a column on
+			// `rgx_report_claim`: several runs of one revision must coexist and a
+			// published revision is never rewritten (D4).
+			//
+			// Two shapes are deliberate and would be hard to change later:
+			//
+			//   - `rgx_report_conflict_candidate` is a separate table, not a
+			//     `role` column on the evidence snapshot. The snapshot carries a
+			//     dedup unique index over `(tenant_id, chunk_id,
+			//     source_content_hash)`, and "the evidence table only holds what the
+			//     report actually cited" is an auditable promise (§5.3.1, P0-3).
+			//   - `rgx_report_claim_evaluation.cache_key` gets a plain index, never
+			//     a unique one: a cache hit also writes a row, so two rows share the
+			//     key by construction (§6.1 self-correction).
+			if err := tx.AutoMigrate(&model.ReportAssuranceRun{}); err != nil {
+				return err
+			}
+			if err := tx.AutoMigrate(&model.ReportClaimEvaluation{}); err != nil {
+				return err
+			}
+			if err := tx.AutoMigrate(&model.ReportReviewFinding{}); err != nil {
+				return err
+			}
+			if err := tx.AutoMigrate(&model.ReportConflictCandidate{}); err != nil {
+				return err
+			}
+			// The four revision columns are a rebuildable projection (§6.2). The
+			// default is what makes every pre-existing revision read back as "never
+			// assured" instead of as an unanswerable empty string.
+			if err := tx.AutoMigrate(&model.ReportRevision{}); err != nil {
+				return err
+			}
+			return tx.Model(&model.ReportRevision{}).
+				Where("assurance_status IS NULL OR assurance_status = ''").
+				Update("assurance_status", model.ReportAssuranceProjectionNotRun).Error
+		},
+	},
+	{
+		Version: 184,
+		Name:    "report_section_pool",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/301 §5.8 item 1: the writing-time retrieval pool belongs next to
+			// the section, the same way the outline-time preview does. All three
+			// columns stay nullable because `NULL` ("not recorded") and `0` ("the
+			// pool was empty") are different answers, and only the second one is a
+			// statement about the corpus.
+			//
+			// Additive: a database that never runs an assurance never writes them.
+			return tx.AutoMigrate(&model.ReportSection{})
+		},
+	},
+	{
+		Version: 185,
+		Name:    "knowledge_ops_abstain_reason",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/301 T12 (QA-1): the board must be able to *filter* by why a turn was
+			// not answerable. `answerability_json` is a text column, and neither
+			// `json_extract` (sqlite) nor `->>` (postgres) is portable here, so the
+			// value is projected into an indexed column.
+			//
+			// Backfill walks the rows in Go rather than in SQL: it is dialect-free,
+			// idempotent (only empty values are written), and it parses with the same
+			// struct the writer uses — a SQL-side extraction would be a second reader
+			// that could disagree with the claim.
+			if err := tx.AutoMigrate(&model.KnowledgeOpsEvent{}); err != nil {
+				return err
+			}
+			return backfillKnowledgeOpsAbstainReason(tx)
+		},
+	},
+	{
+		Version: 186,
+		Name:    "api_key_rotation",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/301 GW-4 (T22): rotation-with-grace. The successor link is a
+			// nullable column rather than a new table, because "which key replaced
+			// this one" is a property of the key and a second table would let the
+			// two disagree. Additive: every existing key reads as "never rotated".
+			return tx.AutoMigrate(&model.APIKey{})
+		},
+	},
+	{
+		Version: 187,
+		Name:    "chat_citation_audit",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/301 §5.10 QA-2 (T19): the weekly chat citation sample needs a run
+			// ledger (this is also the idempotency guard: one row per tenant per ISO
+			// week) plus one row per judged citation. Both tables are new and nothing
+			// references `rgx_report_*`: a chat turn and a report section are two
+			// populations, and the report assurance metrics count the second one.
+			//
+			// The four `citation_audit_*` columns on the knowledge-ops ledger are the
+			// write-back: the existing badcase queue filters on them, so the sample
+			// produces candidates without a parallel queue. Additive — a tenant that
+			// never samples reads "never audited" everywhere.
+			if err := tx.AutoMigrate(&model.ChatCitationAuditRun{}, &model.ChatCitationAuditFinding{}); err != nil {
+				return err
+			}
+			return tx.AutoMigrate(&model.KnowledgeOpsEvent{})
+		},
+	},
+	{
+		Version: 188,
+		Name:    "gateway_billing_reconcile",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/301 §5.10 GW-3 / T21: the daily four-ledger check gets its own run
+			// ledger and finding list. Two tables, both new, both insert-only after the
+			// run finishes — the check must not be able to edit the books it audits,
+			// and it must not be able to edit its own verdict either.
+			//
+			// `(tenant_id, day)` is unique and is the idempotency guard: a replayed
+			// daily job cannot reconcile the same day twice and double-count findings.
+			return tx.AutoMigrate(&model.GatewayBillingReconcileRun{}, &model.GatewayBillingReconcileFinding{})
+		},
+	},
+}
+
+// backfillKnowledgeOpsAbstainReason projects `answerability_json.abstain_reason`
+// into the indexed column added by migration 185 (doc/301 T12).
+//
+// It walks rows in Go rather than in SQL: `json_extract` and `->>` are not portable
+// across the sqlite/postgres pair this project supports, and a SQL extraction would
+// be a second reader that could disagree with the writer's struct. Only empty values
+// are written, so a re-run is a no-op; a claim that does not parse is left empty,
+// which the UI shows as "not recorded" instead of inventing a reason.
+func backfillKnowledgeOpsAbstainReason(tx *gorm.DB) error {
+	const batch = 500
+	var rows []model.KnowledgeOpsEvent
+	return tx.Model(&model.KnowledgeOpsEvent{}).
+		Select("id", "answerability_json").
+		Where("answerability_json IS NOT NULL AND answerability_json <> ''").
+		Where("abstain_reason IS NULL OR abstain_reason = ''").
+		FindInBatches(&rows, batch, func(_ *gorm.DB, _ int) error {
+			for _, row := range rows {
+				var claim struct {
+					AbstainReason string `json:"abstain_reason"`
+				}
+				if err := json.Unmarshal([]byte(row.AnswerabilityJSON), &claim); err != nil {
+					continue
+				}
+				if claim.AbstainReason == "" {
+					continue
+				}
+				if err := tx.Model(&model.KnowledgeOpsEvent{}).
+					Where("id = ?", row.ID).
+					Update("abstain_reason", claim.AbstainReason).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}).Error
 }
 
 func evaluationScopeCondition(columnPrefix string) string {

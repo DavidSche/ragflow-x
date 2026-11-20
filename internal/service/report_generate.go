@@ -197,6 +197,13 @@ func (s *Service) runReportOutlineStep(
 		}
 	}
 
+	// The candidate width is resolved *once*, through the same resolver the review
+	// trigger uses (template > tenant > platform), and frozen into the snapshot. The
+	// number the sections below freeze is therefore the number a later review reads,
+	// even if an operator raises the setting in between (§5.3.1 "冻结即定稿").
+	resolvedScanTopK, resolvedScanSource := s.reportCandidateScanTopK(
+		ctx, templatePayload.Retrieval.ScanTopK)
+
 	snapshot := reportExecutionSnapshot{
 		TemplateKey: templateRow.TemplateKey, TemplateVersion: templateRow.Version,
 		EngineVersion: engineVersion, Model: writer, Datasets: bindings,
@@ -209,6 +216,8 @@ func (s *Service) runReportOutlineStep(
 			SimilarityThreshold: nil,
 			ThresholdSource:     "engine_default",
 			MinEvidence:         templatePayload.Retrieval.MinEvidence,
+			ScanTopK:            resolvedScanTopK,
+			ScanTopKSource:      resolvedScanSource,
 		},
 		Generation: reportSnapshotGeneration{
 			// ChatToModel exposes no sampling knob. Saying so is the honest record.
@@ -378,7 +387,8 @@ func (s *Service) runReportSectionSlices(
 		report: report, snapshot: snapshot, template: templatePayload,
 		runtimeJobID: runtimeJob.ID, attemptSeq: payload.AttemptSeq, sliceSeq: payload.SliceSeq,
 		sections: sections, stage: model.ReportStageSectionWriting,
-		lease: reportSliceLease(templatePayload.Limits),
+		lease:    reportSliceLease(templatePayload.Limits),
+		scanTopK: snapshot.Retrieval.ScanTopK,
 	}
 	return run.execute()
 }
@@ -406,6 +416,9 @@ type reportSectionRun struct {
 	// `budget_exhausted` instead of "someone forgot them".
 	budgetBlocked bool
 	truncated     int
+	// scanTopK is the revision's frozen conflict-candidate width, copied from
+	// `snapshot.Retrieval.ScanTopK` when the run is built (T04b).
+	scanTopK int
 	// reuseApplied reports how many sections this slice inherited from the base
 	// revision instead of writing them (R14). It is logged and disclosed in the
 	// slice checkpoint event; a section that was reused always says so on its own
@@ -901,6 +914,14 @@ func (r *reportSectionRun) commitSection(
 			// R18's disclosure travels with the body: `standard` for a normal run,
 			// and one of the three fallback words when deep research degraded.
 			ResearchPlanJSON: researchPlanJSON(plan),
+			// §5.8 item 1: the pool this section's body was written from, frozen next
+			// to the body so "the writer had thin evidence" is answerable later. The
+			// three values are pointers because a section that never retrieved
+			// (`requires_evidence=false`) has no pool to describe, and `0 hits` would
+			// be a claim about the corpus that nobody checked.
+			PoolHitChunks:      reportPoolHitChunks(section, evidence),
+			PoolInsufficient:   reportPoolInsufficient(section, evidence, r.template.Retrieval.MinEvidence),
+			PoolCandidateCount: reportPoolCandidateCount(section, evidence, cited),
 		},
 		Citations: citations, Claims: claims, Evidence: evidenceRows,
 		Stage: model.ReportStageSectionWriting,
@@ -929,6 +950,17 @@ func (r *reportSectionRun) commitSection(
 	if !applied {
 		return true, false, nil
 	}
+	// T04b / §5.3.1: freeze the *uncited* part of this section's retrieval pool.
+	//
+	// Frozen at generation, not at review time: a review that re-retrieved would be
+	// looking at today's index and calling it "what the writer saw". The default
+	// `scan_top_k=0` freezes nothing at all, so an installation that never opts in
+	// stores no corpus copy it did not already store as a citation.
+	//
+	// A failure here is logged and dropped: candidates are advisory (they can only
+	// add a finding), and failing the section over them would trade a real body for a
+	// better list of suspects.
+	r.freezeCandidates(section, evidence, cited, now)
 	section.Status = model.ReportSectionSucceeded
 	section.ContentMD = content
 	section.CitationCount = len(citations)
@@ -940,6 +972,148 @@ func (r *reportSectionRun) commitSection(
 		"citations", len(citations), "claims", len(claims),
 		"evidence_status", evidenceStatus)
 	return true, false, nil
+}
+
+// reportPoolHitChunks is `NULL` for a section that required no evidence: it never
+// asked the corpus a question, so the number of chunks it happened to see is not a
+// measurement of anything. Otherwise it is the pool width, and `0` is a real answer
+// ("the query matched nothing").
+func reportPoolHitChunks(section *model.ReportSection, evidence []reportEvidenceItem) *int {
+	if !section.RequiresEvidence {
+		return nil
+	}
+	hits := len(evidence)
+	return &hits
+}
+
+// reportPoolInsufficient compares the pool to the template's `min_evidence` — the
+// same threshold `evidence_status` uses, so the two disclosures cannot disagree about
+// what "thin" means. It is advisory like the outline-time preview, and `NULL` (rather
+// than `false`) is the answer for a section that was never going to cite anything.
+func reportPoolInsufficient(
+	section *model.ReportSection, evidence []reportEvidenceItem, minEvidence int,
+) *bool {
+	if !section.RequiresEvidence {
+		return nil
+	}
+	insufficient := len(evidence) < minEvidence
+	if minEvidence <= 0 {
+		// A template that declares no floor has no thin/adequate split to report: "we
+		// found less than zero" is not a finding.
+		return nil
+	}
+	return &insufficient
+}
+
+// reportPoolCandidateCount is how many pool chunks the body did *not* cite: the width
+// of what a review would contrast against. It counts the whole uncited remainder, not
+// the frozen `scan_top_k` subset — "how much was there" and "how much did we freeze"
+// are different facts and the panel already discloses the second.
+func reportPoolCandidateCount(
+	section *model.ReportSection, evidence []reportEvidenceItem, cited map[int]bool,
+) *int {
+	if !section.RequiresEvidence {
+		return nil
+	}
+	uncited := 0
+	for _, item := range evidence {
+		if !cited[item.Index] {
+			uncited++
+		}
+	}
+	return &uncited
+}
+
+// freezeCandidates persists up to `scan_top_k` uncited chunks for one section.
+//
+// `pool_rank` is the retrieval order, so a reviewer sees "the runner-up source" rather
+// than an arbitrary sample: a contradiction candidate that ranked 2nd is a much
+// stronger signal than one that ranked 40th out of 40.
+func (r *reportSectionRun) freezeCandidates(
+	section *model.ReportSection, evidence []reportEvidenceItem, cited map[int]bool, now time.Time,
+) {
+	// Read the width from the *frozen* snapshot, not from the template: the template
+	// may have been republished between the outline and this section, and a section's
+	// pool must be frozen with the revision's own policy (T04b / §5.3.1).
+	topK := r.scanTopK
+	if topK <= 0 {
+		return
+	}
+	rows := make([]model.ReportConflictCandidate, 0, topK)
+	for _, item := range evidence {
+		if len(rows) >= topK {
+			break
+		}
+		if cited[item.Index] {
+			continue
+		}
+		source := item.SourceContent
+		if strings.TrimSpace(source) == "" {
+			source = item.Content
+		}
+		window, strategy, ok := reportEvidenceWindow(source)
+		if !ok {
+			continue
+		}
+		contentHash := hashReportContent(window)
+		rows = append(rows, model.ReportConflictCandidate{
+			// The id is derived from `(section, chunk)` so a retried section rewrites the
+			// same candidate rows instead of accumulating a second copy of the pool.
+			ID:       reportRowID("candidate", section.ID, item.ChunkID),
+			TenantID: r.tenantID, ReportID: r.report.ID, RevisionID: r.revision.ID,
+			SectionOrd: section.Ord, SectionID: section.ID,
+			DatasetID: r.localDatasetID(item.EngineDataset), DocumentID: item.DocumentID,
+			ChunkID: item.ChunkID, ChunkOrd: item.Index,
+			Content: reportEvidenceSnippet(window), ContentHash: contentHash,
+			ContentSize: int64(len([]rune(window))),
+			Truncated:   strategy != model.ReportEvidenceTruncationNone, TruncationStrategy: strategy,
+			PoolRank:     item.Index,
+			ACLScopeJSON: r.permissionScopeJSON(),
+			CreatedAt:    now,
+			// The candidate clock is `min(created+evidence_ttl, report.expires_at)`
+			// (§5.3.1): it may never outlive the snapshot it was compared against, and a
+			// candidate that outlived its *report* would be the only copy of a chunk the
+			// workspace promised to delete.
+			ExpiresAt: reportExpiryPtr(reportEarliestExpiry(r.evidenceExpiry(now), r.report.ExpiresAt)),
+		})
+	}
+	if len(rows) == 0 {
+		return
+	}
+	if err := r.svc.Store.InsertConflictCandidates(r.ctx, rows); err != nil {
+		logger.Warn("report candidate freeze failed",
+			"report_job_id", r.business.ID, "ord", section.Ord, "error", err)
+		return
+	}
+	r.svc.recordReportAudit(r.ctx, r.report.OwnerUserID, r.tenantID,
+		"report.assurance_candidates_frozen", r.report.ID, map[string]any{
+			"section_ord": section.Ord, "frozen_count": len(rows),
+			"scan_top_k": topK, "acl_scope_hash": hashReportContent(r.permissionScopeJSON()),
+		})
+}
+
+// reportEarliestExpiry returns whichever clock runs out first. A missing clock (zero)
+// means "that side has no deadline", so the other one stands: inventing "now" for a
+// missing report clock would purge a candidate the report still needs, and returning
+// zero would mean "never", which is the opposite of what a retention clock says.
+func reportEarliestExpiry(first, second time.Time) time.Time {
+	if first.IsZero() {
+		return second
+	}
+	if second.IsZero() {
+		return first
+	}
+	if second.Before(first) {
+		return second
+	}
+	return first
+}
+
+// reportExpiryPtr is `&t` for a value that is computed once — Go's addressability
+// rule makes the inline form a compile error, and a nil expiry would mean "never",
+// which is the opposite of what the retention clock says.
+func reportExpiryPtr(t time.Time) *time.Time {
+	return &t
 }
 
 // closeSection writes the honest ending of one attempt.

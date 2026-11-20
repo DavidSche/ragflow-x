@@ -7,13 +7,17 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 )
 
-// The 16 report codes are a public contract (doc/288 §8.7). This test is the
-// registry guard: no gaps, no extras, no renumbering, and no 44117.
+// The 23 report codes are a public contract (doc/288 §8.7 + doc/301 §7.3). This
+// test is the registry guard: no gaps, no extras, no renumbering, no 44124.
+//
+// It grew from 16 to 23 when the assurance surface landed: 44117-44123 are
+// *appended*, and the assertion that 44124 does not exist is what keeps the next
+// feature from assuming "there is room".
 func TestReportErrorCodeSetIsClosedAndContiguous(t *testing.T) {
-	if len(reportErrorCodes) != 16 {
-		t.Fatalf("the report code set is 16 values, got %d", len(reportErrorCodes))
+	if len(reportErrorCodes) != 23 {
+		t.Fatalf("the report code set is 23 values, got %d", len(reportErrorCodes))
 	}
-	for code := 44101; code <= 44116; code++ {
+	for code := 44101; code <= 44123; code++ {
 		status, ok := reportErrorCodes[code]
 		if !ok {
 			t.Fatalf("code %d is missing from the closed set", code)
@@ -22,8 +26,20 @@ func TestReportErrorCodeSetIsClosedAndContiguous(t *testing.T) {
 			t.Fatalf("code %d has a non-error HTTP status %d", code, status)
 		}
 	}
-	if _, exists := reportErrorCodes[44117]; exists {
-		t.Fatal("44117 must not exist: the set stops at 44116")
+	if _, exists := reportErrorCodes[44124]; exists {
+		t.Fatal("44124 must not exist: the set stops at 44123")
+	}
+	// The seven assurance codes have their own statuses; 44123 is the only 429 in
+	// the family (a rate condition, not a state conflict).
+	for code, want := range map[int]int{
+		codeReportRevisionNotAssurable: 400, codeReportAssuranceRunConflict: 409,
+		codeReportAssuranceBudgetExhausted: 409, codeReportFindingNotFound: 404,
+		codeReportAssuranceAckRequired: 409, codeReportAssuranceNotReady: 409,
+		codeReportAssuranceQuotaExhausted: 429,
+	} {
+		if got := reportErrorCodes[code]; got != want {
+			t.Fatalf("assurance code %d must be %d, got %d", code, want, got)
+		}
 	}
 }
 

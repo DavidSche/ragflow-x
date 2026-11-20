@@ -28,6 +28,30 @@ func (s *store) UpsertQuotaBucket(ctx context.Context, q *model.QuotaBucket) err
 	}).Create(q).Error
 }
 
+// EnsureQuotaBucketTokenLimit converges a bucket's configured limit without
+// touching what has already been spent (doc/301 §6.5).
+//
+// `UpsertQuotaBucket` cannot be used for this: it is `UpdateAll`, so writing the
+// settings value through it would zero `tokens_used` and `pending` on every run
+// trigger — a tenant admin raising the limit would silently erase the month's
+// consumption. This method inserts only when the row is absent and otherwise
+// updates the single `token_limit` column.
+func (s *store) EnsureQuotaBucketTokenLimit(ctx context.Context, tenantID, dimension, dimensionKey, periodStart string, limit int64) error {
+	return s.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		fresh := &model.QuotaBucket{
+			ID: id.New(), TenantID: tenantID, Dimension: dimension, DimensionKey: dimensionKey,
+			PeriodStart: periodStart, TokenLimit: limit,
+		}
+		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(fresh).Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.QuotaBucket{}).
+			Where("tenant_id = ? AND dimension = ? AND dimension_key = ? AND period_start = ?",
+				tenantID, dimension, dimensionKey, periodStart).
+			Update("token_limit", limit).Error
+	})
+}
+
 // GetQuotaBucket returns the budget row for a bucket dimension/period.
 func (s *store) GetQuotaBucket(ctx context.Context, tenantID, dimension, dimensionKey, periodStart string) (*model.QuotaBucket, error) {
 	var q model.QuotaBucket

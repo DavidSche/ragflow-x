@@ -342,3 +342,127 @@ groups:
           summary: "Repeated connector credential decryption failures"
           description: "At least two connector credential decryptions failed in 30 minutes (doc/225 section 10). Runs fail closed without touching the source. Verify the master encryption key version and rotate the credential through the approval flow."
           runbook: "doc/operations/runbooks/ConnectorSyncRunbook.md"
+      # Report assurance (doc/301 §7.4). Five alerts, one per way a review can stop
+      # being an assurance: it fails too often, it runs out of budget, the monthly
+      # allowance drifts above its limit, a high finding is left unadjudicated, or the
+      # quote layer cannot locate what the model quoted. A "coverage is low" alert is
+      # deliberately absent: low coverage is a *report* fact the reader sees, not an
+      # operational fault, and paging someone for honest abstention would train them to
+      # ignore this file.
+
+      - alert: AssuranceFailureRateHigh
+        expr: "sum(increase(ragflow_x_report_assurance_runs_total{status=\"failed\"}[1h])) / clamp_min(sum(increase(ragflow_x_report_assurance_runs_total[1h])), 1) > 0.2 and sum(increase(ragflow_x_report_assurance_runs_total[1h])) >= 3"
+        for: 15m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Report assurance run failure rate exceeds 20 percent"
+          description: "More than one in five assurance runs failed in the last hour (doc/301 section 7.4). A failed run leaves the revision at `blocked`, so a tenant with a required gate cannot release reports. Inspect `report.assurance_failed` audit entries for `failure_code`: quota and budget codes are configuration, write and model codes are infrastructure."
+          runbook: "doc/operations/runbooks/ReportAssuranceRunbook.md"
+
+      - alert: AssuranceBudgetExhausted
+        expr: "sum(increase(ragflow_x_report_assurance_runs_total{budget_exhausted=\"true\"}[6h])) >= 3"
+        for: 0m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Report assurance runs are hitting their token budget"
+          description: "At least three assurance runs exhausted `report.assurance_budget_tokens` in six hours (doc/301 section 7.4). Exhausted runs close as `degraded` and their remaining claims are reported as `not_evaluated`, so coverage falls without anything failing. Either the budget is too small for the report size or a claim type is generating too many calls."
+          runbook: "doc/operations/runbooks/ReportAssuranceRunbook.md"
+
+      - alert: AssuranceQuotaDriftHigh
+        expr: "ragflow_x_assurance_quota_drift_ratio > 1.05"
+        for: 30m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Assurance monthly allowance exceeded its limit"
+          description: "Settled plus pending assurance tokens exceed the bucket limit by more than 5 percent (doc/301 section 6.5). The per-call reservation is supposed to make this impossible, so a drift means the reservation and the settle disagree: check `rgx_quota_bucket_reservation` for the affected tenant and confirm `report.assurance_monthly_tokens` was not lowered mid-period."
+          runbook: "doc/operations/runbooks/ReportAssuranceRunbook.md"
+
+      - alert: AssuranceSettlementDriftHigh
+        expr: "ragflow_x_assurance_settlement_drift_ratio > 0.01"
+        for: 1h
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Assurance run ledger and quota bucket disagree by more than 1 percent"
+          description: "The monthly reconciliation compared the sum of `rgx_report_assurance_run.quota_settled_tokens` with `rgx_quota_bucket.tokens_used - pending` for one tenant period and found a drift above the 1 percent ceiling (doc/301 section 6.5 / T25). This is an accounting disagreement, not a budget overrun: a reservation that was finalized twice, a settle that never committed, or a period boundary crossed mid-run will all show up here before the allowance gauge moves. Start from the tenant's runs in the period and compare `quota_settled_tokens` per run with the rows in `rgx_quota_bucket_reservation` whose `request_id` is `<run_id>:c<call_seq>`."
+          runbook: "doc/operations/runbooks/ReportAssuranceRunbook.md"
+
+      - alert: AssuranceOpenHighFindings
+        expr: "ragflow_x_report_assurance_findings_open{severity=\"high\"} > 0"
+        for: 24h
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "High-severity review findings left unadjudicated for a day"
+          description: "A report revision still has an open high-severity finding after 24 hours (doc/301 section 7.3). Open findings do not block export once acknowledged, which is exactly why an unadjudicated one is easy to forget: it stays `acknowledged` forever and the reader never learns whether it was real."
+          runbook: "doc/operations/runbooks/ReportAssuranceRunbook.md"
+
+      - alert: AssuranceQuoteNotFound
+        expr: "sum(increase(ragflow_x_report_assurance_claim_quote_status_total{quote_status=\"not_found\"}[6h])) >= 3"
+        for: 0m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "Review model quoted text that no evidence snapshot contains"
+          description: "At least three claims in six hours were quoted with text the snapshot cannot locate (doc/301 section 5.1). Each one is a `quote_unverifiable` finding. A handful is a model doing its own paraphrase; a cluster means the review prompt or the snapshot excerpt logic drifted, and every verdict from that window should be treated as unverified."
+          runbook: "doc/operations/runbooks/ReportAssuranceRunbook.md"
+
+      # Gateway billing self-consistency (doc/301 §5.10 GW-3 / T21). Two alerts, and
+      # they answer two different questions: "did the four ledgers disagree" and "did
+      # the check even run". A single alert over both would let a permanently failing
+      # sweep look like a spotless day.
+      #
+      # The findings alert is quorum-gated on `checked`: one disagreement among two
+      # looked-at rows is a broken deployment, one among thirty thousand is a rare bug,
+      # and an unguarded `> 0` cannot tell them apart.
+
+      - alert: GatewayBillingReconcileMismatch
+        expr: "sum by (tenant_id) (increase(ragflow_x_gateway_billing_reconcile_findings_total[25h])) > 0 and sum by (tenant_id) (increase(ragflow_x_gateway_billing_reconcile_checked_total[25h])) >= 3"
+        for: 0m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Gateway billing ledgers disagree on the reconciled day"
+          description: "The daily reconciliation found at least one disagreement between `rgx_gateway_idempotency`, `rgx_meter_request`, `rgx_quota_usage` and `rgx_cost_metric` (doc/301 section 5.10 GW-3). Which kind fired says what happened: `missing_meter` served a request for free, `missing_cost` under-reported spend, `charged_after_failure` billed a request that failed, `duplicate_request` is the replay-double-billing shape (one request id on two retry rows), `stale_reservation` is a phantom balance locking a key, `quota_drift` means the settlement ledger and the key counter disagree, and `usage_drift` means the daily aggregate billed a different request count than the metering ledger stamped. Read the run's findings with `GET /api/v1/usage/reconcile` then `GET /api/v1/usage/reconcile/{runId}/findings?kind=<kind>`. Do not clear the alert by deleting rows: the finding is the evidence."
+          runbook: "doc/operations/runbooks/GatewayBillingReconcileRunbook.md"
+
+      - alert: GatewayBillingReconcileFailed
+        expr: "sum by (tenant_id) (increase(ragflow_x_gateway_billing_reconcile_runs_total{status=\"failed\"}[25h])) >= 1"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "A day went unreconciled: the billing check failed"
+          description: "At least one daily reconciliation run closed as `failed` in the last 25 hours (doc/301 section 5.10 GW-3). The day is *unreconciled*, not clean: a dataset query or a schema regression failed the run, and `failure_reason` on the run row says which. Re-run it once fixed with `POST /api/v1/system/usage/reconcile?day=YYYY-MM-DD`; the unique `(tenant_id, day)` index makes the re-run safe and returns the stored run if it already finished."
+          runbook: "doc/operations/runbooks/GatewayBillingReconcileRunbook.md"
+
+      # Gateway route latency (doc/301 §5.10 GW-2 / T14). Threshold provenance is the
+      # measured baseline in tmp/perf/gateway-baseline-*.md — the 2s non-stream budget
+      # is the one the probe judges cells against, and the alert exists so a *steady*
+      # drift past it pages someone instead of waiting for the next manual baseline.
+      #
+      # Dimension is `route`, not `tenant`: the histogram is labelled by gin FullPath
+      # (internal/obs/obs.go Middleware), and a tenant label here would need cardinality
+      # the metric does not carry. Per-tenant slowness is a separate question.
+
+      - alert: GatewayRouteLatencyHigh
+        expr: "histogram_quantile(0.95, sum by (le, route) (increase(ragflow_x_http_request_duration_seconds_bucket{route=~\"/v1/.*\"}[15m]))) > 2"
+        for: 15m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "API-key gateway route p95 latency is above the 2s budget"
+          description: "A `/v1/*` route has kept a p95 above 2s for 15 minutes (doc/301 section 5.10 GW-2, baseline in tmp/perf). Two things must be separated before touching anything: if `ragflow_x_ragflow_request_duration_seconds` for the same path rose too, the time is upstream (engine or model provider) and the gateway is innocent; if only the gateway histogram rose, look at quota/idempotency writes and the rate limiter. `search-apps` cells at concurrency 1 measured p95 59ms on the 151 stack, so a 2s p95 is roughly 34 times the baseline, not a slow afternoon."
+          runbook: "doc/operations/runbooks/GatewayPerformanceRunbook.md"

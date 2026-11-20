@@ -160,6 +160,7 @@ func reportXlsxOverviewSheet(document *reportDocument, now time.Time) xlsxSheet 
 			strconv.FormatInt(document.TemplateVersion, 10))},
 		{xlsxTextCell("生成时间"), xlsxTextCell(now.UTC().Format("2006-01-02 15:04:05Z"))},
 		{xlsxTextCell("完整性"), xlsxTextCell(reportCompletenessLabel(document.Completeness))},
+		{xlsxTextCell("复核范围"), xlsxWrapCell(document.ScanScope)},
 		{xlsxTextCell("未生成的章节"), xlsxWrapCell(gapText)},
 		{xlsxTextCell("结论句总数"), xlsxNumberCell(float64(len(document.Claims)))},
 		{xlsxTextCell("可核实比例"), xlsxTextCell(rates)},

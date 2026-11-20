@@ -47,6 +47,15 @@ type Store interface {
 	ChatShadowRepo
 	FeedbackRepo
 	KnowledgeOpsRepo
+	// ChatCitationAuditRepo is QA-2's weekly sample (doc/301 T19). It rides the
+	// knowledge-ops domain, but it is its own interface so the queue repository
+	// cannot grow a second, unrelated aggregate surface.
+	ChatCitationAuditRepo
+	// GatewayBillingReconcileRepo is the daily four-ledger check (doc/301 T21).
+	// It reads the gateway's own ledgers and writes only its own two tables, which
+	// is what keeps it honest: a reconciliation that could edit the books it audits
+	// would be able to make itself agree.
+	GatewayBillingReconcileRepo
 	SearchAppShadowRepo
 	MemoryShadowRepo
 	AgentShadowRepo
@@ -67,6 +76,7 @@ type Store interface {
 	SettingRevisionRepo
 	AnswerDeliveryRepo
 	ReportRepo
+	ReportAssuranceRepo
 	KnowledgeImpactRepo
 	KnowledgeAssetRepo
 	DocumentGovernanceRepo

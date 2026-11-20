@@ -68,6 +68,11 @@ describe("getErrorMessage", () => {
       .toBe("该模板没有智能体画布，请选择对话或检索形态");
     expect(getErrorMessage(41130, 400, "the same user cannot approve adjacent steps"))
       .toBe("相邻审批步骤不能由同一人审批");
+    // 41150 is the credential-lifecycle exception: a 409, not a 400, because "already
+    // rotated" is a state conflict. It still belongs to the 411xx precondition block
+    // (the request itself is well-formed) so a client can translate it.
+    expect(getErrorMessage(41150, 409, "api key has already been rotated"))
+      .toBe("该 API Key 已吊销或已轮换，不能再轮换");
   });
 
   test("keeps 40085 for the role sentence only", () => {
