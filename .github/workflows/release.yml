@@ -6,6 +6,8 @@
 #   - workflow_dispatch manual trigger -> requires the `version` input
 #
 # Flow:
+#   0. preflight job: runs the release gate's static tier (scripts/release-gate.sh)
+#      on the tagged commit; `build` needs it, so a red gate produces no artifacts.
 #   1. build job: cross-compile Go binaries (linux/amd64, linux/arm64, darwin/amd64,
 #      windows/amd64) with the release version stamped into main.version, build the
 #      frontend, package everything into tarballs with SHA256SUMS
@@ -44,7 +46,73 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ------------------------------------------------------------------
+  # Preflight - the release gate's static tier, run before anything is built.
+  # A tag must not be able to produce artifacts from a tree that fails the
+  # checks which gate a release (secret scan, touched-file formatting, vet,
+  # build, RBAC route contracts, append-only migrations, the full backend
+  # suite, frontend typecheck + unit tests, changelog for this version).
+  #
+  # It calls scripts/release-gate.sh rather than repeating the commands, so CI
+  # and a workstation run the same list: a step added here only for CI would
+  # make "it passed" mean two different things. The live tier is not runnable
+  # here (no deployment, no browsers) - it runs on the workstation and its
+  # report is what `pre-push` checks before the tag leaves the machine.
+  # ------------------------------------------------------------------
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RGX_GATE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The gate scopes gofmt / migration checks to "changed since the
+          # previous release tag", which needs tags to be present.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run the release gate (static tier)
+        env:
+          VERSION: ${{ env.RGX_GATE_VERSION }}
+        run: |
+          set -o pipefail
+          version_arg=""
+          if [ -n "${VERSION:-}" ]; then
+            case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
+            version_arg="--version $VERSION"
+          fi
+          # A tag push is a release intent: require the changelog section.
+          bash scripts/release-gate.sh --tier static --ci $version_arg
+
+      - name: Upload the gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-report
+          path: tmp/release-gate-*/**
+          if-no-files-found: warn
+          retention-days: 14
+
   build:
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:

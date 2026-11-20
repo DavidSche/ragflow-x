@@ -5,6 +5,7 @@
         start start-local stop status restart \
         test test-v test-p0 test-contract test-race test-coverage test-frontend-coverage test-frontend-coverage-report \
         test-d1-freeze test-integration test-pg-contract test-pg-release-rollback test-operational-contracts test-warning-contracts test-e2e test-quality-report test-changed-coverage test-coverage-trend test-query-plan-trend test-flake-report test-governance-report check-nightly check-release lint vet typecheck clean \
+        release-gate gate-static gate-live gate-dry-run \
         docker-build docker-up docker-down docker-log docker-ps docker-config
 
 # ─── Platform detection ───────────────────────────────────────────────
@@ -182,6 +183,22 @@ check-nightly: ## Run nightly quality gate
 
 check-release: ## Run release-candidate quality gate
 	$(MAKE) lint check test-integration test-race test-coverage test-frontend-coverage test-e2e deploy-drill
+
+# The release gate is the authoritative "may this tree ship?" command
+# (scripts/release-gate.sh). `check-release` above is the older, broader drill;
+# a tag push is gated on the gate's report by scripts/git-hooks/pre-push.
+release-gate: ## Run the full pre-release gate (static+build+live); needs VERSION=v0.6.5
+	@test -n "$(VERSION)" || { echo "usage: make release-gate VERSION=v0.6.5" >&2; exit 2; }
+	bash $(SCRIPTS)/release-gate.sh --tier all --version $(VERSION)
+
+gate-static: ## Run the static tier of the release gate (any machine, CI-safe)
+	bash $(SCRIPTS)/release-gate.sh --tier static
+
+gate-live: ## Verify a running deployment (needs RGX_BASE + RGX_USER/RGX_PASSWORD)
+	bash $(SCRIPTS)/release-gate.sh --tier live
+
+gate-dry-run: ## Run every tier on the current tree (never releasable)
+	bash $(SCRIPTS)/release-gate.sh --tier all --label "dry run, not a release"
 
 deploy-drill: ## Run deployment readiness drill and write reports
 	go run ./cmd/deploy-drill --config config/config.yaml --base-url http://localhost:9191 --output doc/deployment/drill

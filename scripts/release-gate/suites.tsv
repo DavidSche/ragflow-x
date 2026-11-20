@@ -1,0 +1,8 @@
+# id	profile	script (checked before running)	description	command
+live.api.dataflow-validate	always	tmp/verify_dataflow_validate.py	数据管道画布：参数级校验 + 发布门禁（A21-A26，接口侧）	python "$GATE_TMP/verify_dataflow_validate.py"
+live.ui.dataflow	always	tmp/ui_dataflow_probe.mjs	数据管道面板：模型/模板选择器与回退手填（A27，浏览器侧）	node "$GATE_TMP/ui_dataflow_probe.mjs" "$EVIDENCE_DIR"
+live.api.agent-validate	release	tmp/verify_agent_validate.py	智能体画布：校验接口/存量校验/发布门禁（A17-A19，接口侧）	python "$GATE_TMP/verify_agent_validate.py"
+live.ui.agent-validate	release	tmp/ui_validate_probe.mjs	智能体编辑器：findings 面板与发布拦截（A20，浏览器侧）	node "$GATE_TMP/ui_validate_probe.mjs" "$EVIDENCE_DIR"
+live.api.agent-chain	release	localenv/probes/agent_live_verify.py	智能体主链路：创建/会话/补全/流式/版本/审计/计量（A01-A15，接口侧）	python "$GATE_LIVE/agent_live_verify.py"
+live.api.report	release	localenv/probes/report_live_verify.py	报告类回答主链路：生成/提纲/导出/归档/分享/限流（接口侧）	python "$GATE_LIVE/report_live_verify.py"
+live.api.report-surface	release	localenv/probes/report_p2_surface_verify.py	报告 P2 交付面：阅读器/章节抽屉/导出格式（接口侧）	python "$GATE_LIVE/report_p2_surface_verify.py"

@@ -1,0 +1,113 @@
+#!/bin/sh
+# pre-push hook: a release tag does not leave this machine without a passing
+# release-gate report for the exact commit being tagged.
+#
+# Install with (this repo already sets it):
+#   git config core.hooksPath scripts/git-hooks
+#
+# Why a hook and not a checklist: every release bug we have shipped passed the
+# checklist that existed at the time. The hook cannot be "remembered", and it
+# reads the same machine-readable verdict the gate wrote, so "the gate passed"
+# is a fact about a file, not a claim in a PR description.
+#
+# What is enforced for refs/tags/v*:
+#   - the newest tmp/release-gate-*/summary.json says verdict=PASS;
+#   - releasable=true (tier=all, profile=release, clean tree, built == served);
+#   - git.rev equals the commit the tag points at;
+#   - version equals the tag name;
+#   - the report is younger than RGX_GATE_MAX_AGE_HOURS (default 72).
+# Non-tag pushes are untouched: this hook gates releases, not work.
+set -u
+
+status=0
+zero=0000000000000000000000000000000000000000
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/tags/v*) ;;
+    *) continue ;;
+  esac
+
+  tag="${remote_ref#refs/tags/}"
+  echo "pre-push: checking release gate report for $tag"
+
+  if [ "$local_sha" = "$zero" ]; then
+    echo "pre-push: refusing to delete release tag $tag from the remote" >&2
+    status=1
+    continue
+  fi
+
+  report=""
+  for cand in $(ls -1t tmp/release-gate-*/summary.json 2>/dev/null); do
+    report="$cand"
+    break
+  done
+
+  if [ -z "$report" ]; then
+    echo "pre-push: BLOCKED no release-gate report found (tmp/release-gate-*/summary.json)." >&2
+    echo "          Run: scripts/release-gate.sh --tier all --version $tag" >&2
+    status=1
+    continue
+  fi
+
+  py=""
+  for cand in python3 python py; do
+    p=$(command -v "$cand" 2>/dev/null) || continue
+    if "$p" -c 'import sys' >/dev/null 2>&1; then py="$p"; break; fi
+  done
+  if [ -z "$py" ]; then
+    echo "pre-push: BLOCKED python is required to read the gate report" >&2
+    status=1
+    continue
+  fi
+
+  "$py" - "$report" "$tag" "$local_sha" "${RGX_GATE_MAX_AGE_HOURS:-72}" <<'PY' || status=1
+import json, os, sys
+from datetime import datetime, timezone
+
+report, tag, sha, max_age = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
+try:
+    with open(report, encoding="utf-8") as fh:
+        doc = json.load(fh)
+except Exception as exc:  # noqa: BLE001 - any unreadable report is a block
+    print("pre-push: BLOCKED cannot read %s: %s" % (report, exc), file=sys.stderr)
+    sys.exit(1)
+
+def block(msg):
+    print("pre-push: BLOCKED %s" % msg, file=sys.stderr)
+    print("          report: %s" % report, file=sys.stderr)
+    print("          rerun:  scripts/release-gate.sh --tier all --version %s" % tag, file=sys.stderr)
+    sys.exit(1)
+
+if doc.get("schema") != "rgx.release-gate.v1":
+    block("report schema is %r, expected rgx.release-gate.v1" % doc.get("schema"))
+if doc.get("verdict") != "PASS":
+    failing = [c["id"] for c in doc.get("checks", []) if c.get("required") and c.get("status") != "PASS"]
+    block("verdict is %s%s" % (doc.get("verdict"), (" (blocking: %s)" % ", ".join(failing)) if failing else ""))
+if not doc.get("releasable"):
+    block("releasable=false (tier=%s profile=%s dirty=%s built=%s served=%s)" % (
+        doc.get("tier"), doc.get("profile"), doc.get("git", {}).get("dirty"),
+        doc.get("artifacts", {}).get("frontend_asset"), doc.get("artifacts", {}).get("served_asset")))
+rev = doc.get("git", {}).get("rev") or ""
+if rev != sha:
+    block("report was written for commit %s, the tag points at %s" % (rev[:12] or "<none>", sha[:12]))
+if doc.get("version") != tag:
+    block("report version is %r, the tag is %r" % (doc.get("version"), tag))
+finished = doc.get("finished_at") or ""
+try:
+    when = datetime.strptime(finished, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+except Exception:
+    block("report finished_at is unreadable (%r)" % finished)
+age_h = (datetime.now(timezone.utc) - when).total_seconds() / 3600.0
+if age_h > max_age:
+    block("report is %.1fh old, the limit is %.1fh — rerun the gate" % (age_h, max_age))
+print("pre-push: release gate PASS for %s (commit %s, built %s, %.1fh old)" % (
+    tag, rev[:12], doc.get("artifacts", {}).get("frontend_asset"), age_h))
+PY
+done
+
+if [ "$status" != "0" ]; then
+  echo "pre-push: push refused. A release tag requires a passing release gate." >&2
+  exit "$status"
+fi
+exit 0
