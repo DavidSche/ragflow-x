@@ -175,16 +175,123 @@ export function mergeCitations(base: Citation[], incoming: Citation[]): Citation
   return out;
 }
 
-// Extract the distinct numeric IDs cited in an answer, e.g. [ID:3], [ID:0ID:2] -> [3], [0,2].
-export function extractCitedIds(content: string): number[] {
-  const ids = new Set<number>();
-  const re = /\[ID:\s*([^\]]*)\]/gi;
+// ── citation tokens ────────────────────────────────────────────────────────
+//
+// Two conventions reach the UI for the same marker:
+//
+//   [ID:0]                  numeric index into `reference.chunks` (chat/search)
+//   [ID:0ID:2]              legacy concatenation of several numeric indices
+//   [ID:bd7636ac5bbdadce]   the engine's chunk id, which is what the agent
+//                           canvas' Retrieval -> LLM path actually writes
+//
+// The id form must be treated as an opaque token. Pulling the digits out of it
+// (the old `match(/\d+/g)`) turned one citation into garbage: the UI rendered
+// `ID:7636ID:5` for `bd7636ac5bbdadce` and the “N sources” count was fiction.
+
+export const CITATION_TOKEN_RE = /\[ID:\s*([^\]]*)\]/gi;
+
+/** One marker's worth of references, either a numeric index or a chunk id. */
+export interface CitationToken {
+  /** Numeric index when the token is an index; NaN for id tokens. */
+  index: number;
+  /** The token as written, digits or chunk id. */
+  token: string;
+}
+
+const isIndexToken = (token: string) => /^\d+$/.test(token);
+
+/**
+ * Split the inside of one `[ID:…]` marker into individual tokens.
+ *
+ * Separators are optional: the engine has historically concatenated numeric
+ * indices as `[ID:0ID:2]`, so a second `ID:` also starts a new token. Non-numeric
+ * tokens (chunk ids) are never split — they are one reference each.
+ */
+export function splitCitationTokens(inner: string): string[] {
+  const raw = String(inner ?? "").trim();
+  if (!raw) return [];
+  const parts = raw
+    .split(/ID:/i)
+    .flatMap((part) => part.split(/[\s,;|]+/))
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts;
+}
+
+/** Parse one marker body into tokens (index tokens keep their numeric value). */
+export function parseCitationTokens(inner: string): CitationToken[] {
+  return splitCitationTokens(inner).map((token) => ({
+    index: isIndexToken(token) ? Number(token) : Number.NaN,
+    token,
+  }));
+}
+
+/**
+ * Resolve a chunk id against the citation list. Exact match first (the engine
+ * sends `chunk_id`/`id` verbatim), then a prefix match of at least 8 characters
+ * so a truncated id still lands on its chunk.
+ */
+function indexOfCitationId(citations: Citation[], token: string): number {
+  const wanted = token.toLowerCase();
+  for (let i = 0; i < citations.length; i += 1) {
+    const c = citations[i];
+    const id = String(c?.chunkId ?? c?.id ?? "").toLowerCase();
+    if (id && id === wanted) return i;
+  }
+  if (wanted.length < 8) return -1;
+  for (let i = 0; i < citations.length; i += 1) {
+    const c = citations[i];
+    const id = String(c?.chunkId ?? c?.id ?? "").toLowerCase();
+    if (id && (id.startsWith(wanted) || wanted.startsWith(id))) return i;
+  }
+  return -1;
+}
+
+/** Resolve one marker body to `[token, index]` pairs; index is -1 when unmatched. */
+export function resolveCitationTokens(
+  citations: Citation[] | undefined,
+  inner: string,
+): CitationToken[] {
+  const list = citations ?? [];
+  return parseCitationTokens(inner).map(({ token }) => {
+    if (isIndexToken(token)) {
+      const index = Number(token);
+      return { index: index >= 0 && index < list.length ? index : -1, token };
+    }
+    return { index: indexOfCitationId(list, token), token };
+  });
+}
+
+/** The citations an answer actually points at, in first-mention order. */
+export function citedCitations(content: string, citations: Citation[] | undefined): Citation[] {
+  const list = citations ?? [];
+  const out: Citation[] = [];
+  const seen = new Set<number>();
+  const re = new RegExp(CITATION_TOKEN_RE.source, "gi");
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
-    (String(m[1]).match(/\d+/g) || []).forEach((d) => {
-      const n = Number(d);
+    for (const { index } of resolveCitationTokens(list, m[1])) {
+      if (index < 0 || seen.has(index)) continue;
+      seen.add(index);
+      out.push(list[index]);
+    }
+  }
+  return out;
+}
+
+// Extract the distinct numeric IDs cited in an answer, e.g. [ID:3], [ID:0ID:2] -> [3], [0,2].
+// Chunk-id tokens are skipped on purpose: they carry no index, and inventing one
+// by scraping their digits is what produced the mangled `ID:7636ID:5` pills.
+export function extractCitedIds(content: string): number[] {
+  const ids = new Set<number>();
+  const re = new RegExp(CITATION_TOKEN_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    for (const token of splitCitationTokens(m[1])) {
+      if (!isIndexToken(token)) continue;
+      const n = Number(token);
       if (Number.isFinite(n)) ids.add(n);
-    });
+    }
   }
   return [...ids].sort((a, b) => a - b);
 }

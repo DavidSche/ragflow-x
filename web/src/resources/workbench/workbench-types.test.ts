@@ -8,6 +8,9 @@ import {
   extractCitations,
   isSafeSourceUri,
   mergeCitations,
+  splitCitationTokens,
+  resolveCitationTokens,
+  citedCitations,
   streamRead,
   type Citation,
 } from "./workbench-types";
@@ -32,6 +35,45 @@ describe("extractCitedIds", () => {
   test("returns an empty array when nothing is cited", () => {
     expect(extractCitedIds("no references here")).toEqual([]);
     expect(extractCitedIds("")).toEqual([]);
+  });
+
+  // The agent canvas writes engine chunk ids in the marker; scraping their
+  // digits used to invent indices (bd7636ac5bbdadce -> 7636, 5).
+  test("ignores chunk-id markers instead of inventing indices from their digits", () => {
+    expect(extractCitedIds("\u4f9d\u636e [ID:bd7636ac5bbdadce] \u4e0e [ID:9af2eafb2d6e102b]")).toEqual([]);
+    expect(extractCitedIds("mixed [ID:1] [ID:bd7636ac5bbdadce]")).toEqual([1]);
+  });
+});
+
+describe("citation markers", () => {
+  const chunks: Citation[] = [
+    { id: "bd7636ac5bbdadce", chunkId: "bd7636ac5bbdadce", name: "a.md", content: "a" },
+    { id: "9af2eafb2d6e102b", chunkId: "9af2eafb2d6e102b", name: "b.md", content: "b" },
+  ];
+
+  test("splits numeric concatenations but keeps chunk ids whole", () => {
+    expect(splitCitationTokens("0ID:2")).toEqual(["0", "2"]);
+    expect(splitCitationTokens("0, 2")).toEqual(["0", "2"]);
+    expect(splitCitationTokens("bd7636ac5bbdadce")).toEqual(["bd7636ac5bbdadce"]);
+  });
+
+  test("resolves chunk ids against the citation list", () => {
+    expect(resolveCitationTokens(chunks, "9af2eafb2d6e102b")).toEqual([
+      { index: 1, token: "9af2eafb2d6e102b" },
+    ]);
+    // a truncated id still lands on its chunk once it is long enough to be specific
+    expect(resolveCitationTokens(chunks, "bd7636ac")[0].index).toBe(0);
+    expect(resolveCitationTokens(chunks, "ffffffffffffffff")[0].index).toBe(-1);
+  });
+
+  test("numeric indices outside the list resolve to -1 rather than throwing", () => {
+    expect(resolveCitationTokens(chunks, "7")[0].index).toBe(-1);
+    expect(resolveCitationTokens(undefined, "0")[0].index).toBe(-1);
+  });
+
+  test("citedCitations returns first-mention order without duplicates", () => {
+    const out = citedCitations("[ID:1] \u4e0e [ID:9af2eafb2d6e102b] \u4e0e [ID:bd7636ac5bbdadce]", chunks);
+    expect(out.map((c) => c.name)).toEqual(["b.md", "a.md"]);
   });
 });
 

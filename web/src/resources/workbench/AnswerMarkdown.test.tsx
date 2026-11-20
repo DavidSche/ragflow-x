@@ -50,4 +50,25 @@ describe("<AnswerMarkdown />", () => {
     expect(screen.getByRole("link", { name: "手册" })).toHaveAttribute("href", "https://example.com/manual");
     expect(screen.getByText(/const answer = 42;/)).toBeInTheDocument();
   });
+
+  // The agent canvas' Retrieval -> LLM path cites engine chunk ids, not indices.
+  it("resolves engine chunk-id markers to the matching citation", () => {
+    const chunked: Citation = { name: "manual.pdf", content: "操作步骤", chunkId: "bd7636ac5bbdadce" };
+    const onOpen = vi.fn();
+    render(
+      <AnswerMarkdown content={"依据 [ID:bd7636ac5bbdadce]"} citations={[chunked]} onOpenCitation={onOpen} />,
+    );
+    // The mocked CitationLink prints ID:<index>, so a resolved id token shows ID:0.
+    fireEvent.click(screen.getByRole("button", { name: "ID:0" }));
+    expect(onOpen).toHaveBeenCalledWith(chunked);
+    // and the raw marker is gone
+    expect(screen.queryByText(/bd7636ac5bbdadce/)).toBeNull();
+  });
+
+  it("keeps an unresolvable chunk-id marker as a muted chip instead of mangling it", () => {
+    render(<AnswerMarkdown content={"依据 [ID:bd7636ac5bbdadce]"} onOpenCitation={vi.fn()} />);
+    // Previously this rendered "ID:7636ID:5": digits scraped out of the hex id.
+    expect(screen.queryByText(/ID:7636/)).toBeNull();
+    expect(screen.getByText("ID:bd7636ac")).toBeInTheDocument();
+  });
 });

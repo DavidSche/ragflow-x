@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useTranslate } from "ra-core";
 import { BookOpen, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { extractCitedIds } from "./workbench-types";
+import { citedCitations } from "./workbench-types";
 import type { Citation } from "./workbench-types";
 
 interface InlineCitationsProps {
@@ -31,8 +31,10 @@ function keyOf(c: Citation) {
 
 function groupCitedDocuments(content: string | undefined, citations: Citation[]): CitationGroup[] {
   const map = new Map<string, CitationGroup>();
-  const ids = content ? extractCitedIds(content) : [];
-  if (ids.length === 0) {
+  // Resolve the markers the answer actually wrote — numeric indices and engine
+  // chunk ids both land here — instead of assuming every [ID:…] is an index.
+  const cited = content ? citedCitations(content, citations) : [];
+  if (cited.length === 0) {
     for (const c of citations) {
       const k = keyOf(c);
       const g = map.get(k);
@@ -41,9 +43,7 @@ function groupCitedDocuments(content: string | undefined, citations: Citation[])
     }
     return [...map.values()];
   }
-  for (const id of ids) {
-    const c = citations?.[id];
-    if (!c) continue;
+  for (const c of cited) {
     const k = keyOf(c);
     const g = map.get(k);
     if (g) {

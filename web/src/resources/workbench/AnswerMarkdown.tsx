@@ -6,6 +6,7 @@ import { lazy, Suspense } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Citation } from "./workbench-types";
+import { CITATION_TOKEN_RE, resolveCitationTokens } from "./workbench-types";
 import { CitationLink } from "./CitationLink";
 
 const MermaidBlock = lazy(() =>
@@ -25,17 +26,31 @@ const textOf = (children: unknown): string => {
 };
 
 export function AnswerMarkdown({ content, citations, onOpenCitation }: AnswerMarkdownProps) {
-  // Convert every [ID:...] token (single or multiple IDs like [ID:0], [ID:0ID:1])
-  // into markdown links so ReactMarkdown hands them to the citation override.
-  const prepped = content.replace(/\[ID:\s*([^\]]*)\]/gi, (_whole, inner: string) => {
-    const ids = (String(inner).match(/\d+/g) || []).map(Number).filter((n) => Number.isFinite(n));
-    if (ids.length === 0) return _whole;
-    return ids.map((n) => `[ID:${n}](citation:${n})`).join("");
+  // Convert every [ID:...] marker into markdown links so ReactMarkdown hands them
+  // to the citation override. A marker holds either numeric indices (chat/search:
+  // [ID:0], legacy [ID:0ID:1]) or engine chunk ids (agent canvas:
+  // [ID:bd7636ac5bbdadce]); both resolve against the citation list. A marker that
+  // resolves to nothing keeps its raw text — the previous `match(/\d+/g)` split
+  // chopped chunk ids into digits and printed `ID:7636ID:5`.
+  const prepped = content.replace(CITATION_TOKEN_RE, (whole, inner: string) => {
+    const refs = resolveCitationTokens(citations, inner);
+    if (refs.length === 0) return whole;
+    // An out-of-range numeric index has nothing to link to, so the marker stays
+    // verbatim; an unmatched chunk id becomes a muted chip (see below).
+    if (refs.every((ref) => ref.index < 0 && /^\d+$/.test(ref.token))) return whole;
+    return refs
+      .map((ref) =>
+        ref.index >= 0
+          ? `[ID:${ref.index}](citation:${ref.index})`
+          : `[ID:${ref.token.slice(0, 8)}](citation-raw:${encodeURIComponent(ref.token)})`,
+      )
+      .join("");
   });
 
   const urlTransform = (url: string) => {
     const u = String(url ?? "");
     if (/^citation:\d+$/i.test(u)) return u;
+    if (/^citation-raw:[A-Za-z0-9%.-]*$/i.test(u)) return u;
     if (/^(https?:|mailto:|#|\/)/i.test(u)) return u;
     return "#";
   };
@@ -48,6 +63,21 @@ export function AnswerMarkdown({ content, citations, onOpenCitation }: AnswerMar
       if (m) {
         const idx = parseInt(m[1], 10);
         return <CitationLink index={idx} citation={citations?.[idx]} onOpen={onOpenCitation} />;
+      }
+      const raw = href.match(/^citation-raw:(.*)$/);
+      if (raw) {
+        // An engine chunk id that is not in this answer's reference list (a stale
+        // reference, or a citation-less render). Show it as a muted chip instead
+        // of a fake numeric citation.
+        const token = decodeURIComponent(raw[1]);
+        return (
+          <span
+            className="mx-0.5 inline-flex items-center rounded bg-muted px-1 text-xs text-muted-foreground"
+            title={token}
+          >
+            ID:{token.slice(0, 8)}
+          </span>
+        );
       }
       return (
         <a
