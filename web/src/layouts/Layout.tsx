@@ -1,5 +1,5 @@
 import type { ErrorInfo } from "react";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import type { CoreLayoutProps } from "ra-core";
 import { ErrorBoundary } from "react-error-boundary";
 import { cn } from "@/lib/utils";
@@ -12,9 +12,19 @@ import { LocalesMenuButton } from "@/components/admin/locales-menu-button";
 import { Error } from "@/components/admin/error";
 import { Loading } from "@/components/admin/loading";
 import { AppSidebar } from "./AppSidebar";
+import { DEFAULT_BRAND_NAME, loadBranding, useBranding } from "../lib/branding";
 
 export const Layout = (props: CoreLayoutProps) => {
   const [errorInfo, setErrorInfo] = useState<ErrorInfo | undefined>(undefined);
+  const brandName = useBranding().name || DEFAULT_BRAND_NAME;
+  // The browser tab follows the configured system name, like the sidebar and
+  // login page do; falls back to the default until branding resolves.
+  useEffect(() => {
+    void loadBranding();
+  }, []);
+  useEffect(() => {
+    document.title = brandName;
+  }, [brandName]);
   const handleError = (_: unknown, info: ErrorInfo) => {
     setErrorInfo(info);
   };

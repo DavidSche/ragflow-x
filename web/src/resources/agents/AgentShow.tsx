@@ -20,6 +20,13 @@ import {
 import { api, ApiError } from "../../lib/api";
 import { AgentCanvas } from "./AgentCanvas";
 import { AgentChat } from "./AgentChat";
+import {
+  fetchAgentValidation,
+  fixSummary,
+  issueSummary,
+  validateAgentDsl,
+  type AgentValidationReport,
+} from "./agentValidation";
 import { computeDslDiff } from "./dslDiff";
 import { DiffView } from "./DiffView";
 import {
@@ -52,6 +59,80 @@ interface VersionLike {
 type EditorTab = "canvas" | "json";
 type PageTab = "config" | "versions" | "sessions" | "run";
 
+/**
+ * AgentValidationPanel renders the save-time report: what the engine would not
+ * be able to run (blocking), what will run but answer badly (warning), and what
+ * the boundary already corrected (informational — the author should see it,
+ * because the stored DSL is no longer character-for-character what they wrote).
+ */
+const AgentValidationPanel = ({
+  report,
+  onDismiss,
+}: {
+  report: AgentValidationReport | null;
+  onDismiss: () => void;
+}) => {
+  const t = useTranslate();
+  if (!report) return null;
+  const errors = report.errors ?? [];
+  const warnings = report.warnings ?? [];
+  const fixes = report.auto_fixed ?? [];
+  if (errors.length === 0 && warnings.length === 0 && fixes.length === 0) return null;
+  return (
+    <div
+      className="shrink-0 border-b bg-muted/30 px-4 py-2 text-xs"
+      data-testid="agent-validation-panel"
+    >
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1 space-y-1">
+          {errors.length > 0 && (
+            <div className="text-destructive">
+              <span className="font-medium">{t("agents.validation_errors")}</span>
+              <ul className="ml-4 list-disc" role="list">
+                {errors.map((issue, index) => (
+                  <li key={`err-${issue.code}-${index}`} data-testid="agent-validation-error">
+                    {issueSummary(issue)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {warnings.length > 0 && (
+            <div className="text-amber-600">
+              <span className="font-medium">{t("agents.validation_warnings")}</span>
+              <ul className="ml-4 list-disc" role="list">
+                {warnings.map((issue, index) => (
+                  <li key={`warn-${issue.code}-${index}`}>{issueSummary(issue)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {fixes.length > 0 && (
+            <div className="text-muted-foreground">
+              <span className="font-medium">{t("agents.validation_auto_fixed")}</span>
+              <ul className="ml-4 list-disc" role="list">
+                {fixes.map((fix, index) => (
+                  <li key={`fix-${fix.kind}-${index}`} data-testid="agent-validation-fix">
+                    {fixSummary(fix)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          aria-label={t("agents.validation_dismiss")}
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export const AgentShow = () => {
   const t = useTranslate();
   const notify = useNotify();
@@ -65,6 +146,7 @@ export const AgentShow = () => {
   const [pageTab, setPageTab] = useState<PageTab>("config");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [validation, setValidation] = useState<AgentValidationReport | null>(null);
   const [versions, setVersions] = useState<VersionLike[]>([]);
   const [sessions, setSessions] = useState<SessionLike[]>([]);
   const [sessionName, setSessionName] = useState("");
@@ -208,6 +290,20 @@ export const AgentShow = () => {
         return;
       }
     }
+    // Judge the canvas before it reaches the engine: a node with no model or no
+    // knowledge base only failed on the first question, long after the author left.
+    let report: AgentValidationReport | null = null;
+    try {
+      report = await validateAgentDsl(payload, canvasCategory);
+      setValidation(report);
+    } catch {
+      // The checker is a side path; a failed check must not block the save.
+      setValidation(null);
+    }
+    if (report && !report.ok && release) {
+      notify(t("agents.validation_blocks_publish"), { type: "warning" });
+      return;
+    }
     setSaving(true);
     try {
       await api.put(`/agents/${id}`, { title, dsl: payload, release });
@@ -224,6 +320,20 @@ export const AgentShow = () => {
 
   const togglePublish = async () => {
     if (!id) return;
+    if (!release) {
+      // Publishing makes the stored DSL live, so check what the engine holds —
+      // not what is in the editor (unsaved edits are not what users would get).
+      try {
+        const report = await fetchAgentValidation(id);
+        setValidation(report);
+        if (!report.ok) {
+          notify(t("agents.validation_blocks_publish"), { type: "warning" });
+          return;
+        }
+      } catch {
+        setValidation(null);
+      }
+    }
     try {
       await api.post(`/agents/${id}/publish`, { release: !release });
       notify(release ? t("agents.unpublished") : t("agents.published"), { type: "success" });
@@ -458,6 +568,10 @@ export const AgentShow = () => {
                 </button>
               </div>
             </div>
+            <AgentValidationPanel
+              report={validation}
+              onDismiss={() => setValidation(null)}
+            />
             <div className="min-h-0 flex-1">
               {editorTab === "canvas" ? (
                 <AgentCanvas

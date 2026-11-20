@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Shell } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
-import { getBranding, loadBranding, setBranding } from "../../lib/branding";
+import { DEFAULT_BRAND_NAME, getBranding, loadBranding, setBranding } from "../../lib/branding";
 import { LogoPickerRow } from "../../components/LogoPickerRow";
 
 interface Envelope<T> {
@@ -24,10 +24,19 @@ export const BrandingPage = () => {
   const [logo, setLogo] = useState("");
 
   useEffect(() => {
-    loadBranding();
-    const b = getBranding();
-    setName(b.name);
-    setLogo(b.logo);
+    // loadBranding() is async (tenant -> platform -> default fallback chain), so
+    // the form is seeded after it settles; otherwise the saved branding would
+    // be overwritten on screen by the hard-coded default on first visit.
+    let alive = true;
+    void loadBranding().then(() => {
+      if (!alive) return;
+      const b = getBranding();
+      setName(b.name === DEFAULT_BRAND_NAME ? "" : b.name);
+      setLogo(b.logo);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const save = async () => {

@@ -23,7 +23,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { House, List, Shell } from "lucide-react";
+import { House, List } from "lucide-react";
+import { BrandLogo, BrandName } from "@/components/BrandIdentity";
 
 /**
  * Menu groups rendered in the sidebar, in display order. This is the single
@@ -108,8 +109,8 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
               <LinkBase to="/">
-                <Shell className="!size-5" />
-                <span className="text-base font-semibold">RAGFlow-X</span>
+                <BrandLogo />
+                <BrandName />
               </LinkBase>
             </SidebarMenuButton>
           </SidebarMenuItem>

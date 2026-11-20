@@ -125,33 +125,21 @@ export function nodeColor(label?: string): string {
 }
 
 /**
- * Deployable operator-name mapping for saved `components[].obj.component_name`.
+ * The executable operator name stored in `components[].obj.component_name`.
  *
- * Keep `ENGINE_OPERATOR_NAME_MAP` empty (identity) to target canonical RAGFlow,
- * whose executable components are Generate/Answer/Knowledge/Chunker/Code/Tool.
- * The local fork under `ragflow` renames several of them
- * (LLM/Message/Retrieval/Tokenizer/CodeExec/…) — point
- * `ENGINE_OPERATOR_NAME_MAP` at `FORK_OPERATOR_NAME_MAP` to emit names its
- * runtime (`agent/component/*.py`) resolves. The canvas `graph.data.label`
- * always keeps the friendly label; only `component_name` is remapped, so the
- * editor round-trips unchanged.
+ * This is deliberately the identity: the engine's registry names
+ * (begin/retrieval/llm/message/tokenizer/codeexec/…) are resolved once, on the
+ * Go engine boundary (`internal/provider/ragflow/agent_dsl_normalize.go`), so a
+ * DSL that arrives from a file export — or from an older RAGFlow-X — is
+ * corrected on the way in even though it never passed through this editor. The
+ * canvas keeps the friendly label in `graph.data.label` and writes it here; the
+ * boundary is what makes the wire body runnable.
+ *
+ * Do not add a second table here: two sources of truth drift, and the drift is
+ * invisible until a chat is run.
  */
-export const ENGINE_OPERATOR_NAME_MAP: Record<string, string> = {};
-
-/** Executable operator names used by the ragflow fork runtime. */
-export const FORK_OPERATOR_NAME_MAP: Record<string, string> = {
-  Generate: "LLM",
-  Answer: "Message",
-  Knowledge: "Retrieval",
-  Retrieval: "Retrieval",
-  Chunker: "Tokenizer",
-  Code: "CodeExec",
-  Tool: "Tool",
-  Categorize: "Categorize",
-};
-
 export function resolveComponentName(label: string): string {
-  return ENGINE_OPERATOR_NAME_MAP[label] ?? label;
+  return label;
 }
 
 // ─── DSL scaffolding ────────────────────────────────────────────────────
@@ -217,10 +205,18 @@ export const DATAFLOW_PARSER_FORM = {
     markdown: { type: "string", value: "" },
     text: { type: "string", value: "" },
   },
+  // Vision enhancement is read from the TOP level of params (not from a
+  // per-format setup) and is off by default: it needs a vision model, and 151
+  // ships none. A Parser whose images have OCR off and no vision model refuses
+  // to run (`parser: image has no text source`).
+  enable_vision_enhancement: false,
+  vlm: { llm_id: "" },
   setups: [
     { fileFormat: "pdf", output_format: "json", parse_method: "DeepDOC", preprocess: "main_content", flatten_media_to_text: false, remove_header_footer: false, pages: [{ from: 1, to: 100000 }] },
     { fileFormat: "spreadsheet", output_format: "html", parse_method: "DeepDOC", preprocess: "main_content", flatten_media_to_text: false },
-    { fileFormat: "image", output_format: "text", parse_method: "ocr", preprocess: "main_content", system_prompt: "" },
+    // `ocr_enabled` is the switch the Go engine reads; `parse_method: "ocr"` is
+    // the legacy spelling kept for canvases saved by older builds.
+    { fileFormat: "image", output_format: "text", ocr_enabled: true, preprocess: "main_content", system_prompt: "" },
     { fileFormat: "email", fields: ["from", "to", "cc", "bcc", "date", "subject", "body", "attachments"], output_format: "text", preprocess: "main_content" },
     { fileFormat: "markdown", output_format: "json", preprocess: "main_content", flatten_media_to_text: false },
     { fileFormat: "text&code", output_format: "json", preprocess: "main_content" },
@@ -229,6 +225,44 @@ export const DATAFLOW_PARSER_FORM = {
     { fileFormat: "docx", output_format: "json", preprocess: "main_content", flatten_media_to_text: false, remove_header_footer: false },
     { fileFormat: "slides", output_format: "json", parse_method: "DeepDOC", preprocess: "main_content" },
   ],
+};
+
+/**
+ * Canonical Tokenizer node params.
+ *
+ * The engine requires `search_method` (`schema.TokenizerParam.Validate` rejects
+ * an empty list and anything outside full_text/embedding), so the seed carries
+ * it: a node added from the palette used to start with no retrieval mode at all.
+ */
+export const DATAFLOW_TOKENIZER_FORM = {
+  search_method: ["embedding", "full_text"],
+  fields: "text",
+  filename_embd_weight: 0.1,
+  outputs: {},
+};
+
+/** Canonical Extractor node params: every group starts switched off. */
+export const DATAFLOW_EXTRACTOR_FORM = {
+  llm_id: "",
+  keywords: { enabled: false, top_n: 3 },
+  questions: { enabled: false, top_n: 3 },
+  tags: { enabled: false, top_n: 3 },
+  summary: { enabled: false },
+  metadata: { enabled: false },
+  outputs: {},
+};
+
+/**
+ * Canonical Compiler node params.
+ *
+ * The engine refuses to save a canvas whose Compiler names neither a template
+ * nor a template group, so both ids are present (empty) for the panel to fill.
+ */
+export const DATAFLOW_COMPILER_FORM = {
+  compilation_template_id: "",
+  compilation_template_group_id: "",
+  subtask_prompt: "",
+  outputs: {},
 };
 
 /** Serialize-friendly deep clone of a plain JSON seed form. */
@@ -291,11 +325,19 @@ export function createDataflowEmptyDsl(): Record<string, any> {
   };
 }
 
+/**
+ * A fresh canvas node id.
+ *
+ * The engine resolves `{id@variable}` only for ids matching
+ * `[a-zA-Z:0-9_]+`, so the id may not carry a dash: a hyphenated id does not
+ * raise an error, it leaves the literal `{node-1a2b@content}` in the answer.
+ * Prefixes are separators (`node`, `start`), never punctuation.
+ */
 export function newNodeId(prefix = "node"): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return `${prefix}-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
   }
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 // ─── DSL ↔ React-Flow bridge ───────────────────────────────────────────
@@ -423,6 +465,7 @@ export function transformParserParams(params: Record<string, any>): Record<strin
     };
     for (const k of [
       "parse_method",
+      "ocr_enabled",
       "flatten_media_to_text",
       "remove_header_footer",
       "system_prompt",

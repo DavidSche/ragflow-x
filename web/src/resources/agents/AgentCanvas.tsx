@@ -29,7 +29,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, LayoutGrid, Maximize2, Trash2 } from "lucide-react";
 import {
+  DATAFLOW_COMPILER_FORM,
+  DATAFLOW_EXTRACTOR_FORM,
   DATAFLOW_PARSER_FORM,
+  DATAFLOW_TOKENIZER_FORM,
   cloneSeedForm,
   computeLayeredPositions,
   detectCycle,
@@ -44,6 +47,7 @@ import {
 } from "./dslUtils";
 import { OperatorParamForm } from "./OperatorParamForm";
 import { defaultParams, operatorFormFor, type OperatorFormDef } from "./operatorForms";
+import { modelNameOf } from "./agentAuthoringOptions";
 import { AgentIcon } from "./agentIcons";
 import { PipelineOperatorForm, hasDedicatedPipelineForm } from "./PipelineForms";
 
@@ -115,9 +119,23 @@ function AgentCanvasInner({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isDataflow = category === "dataflow_canvas";
 
+  // Pipeline nodes whose engine contract carries parameters that a palette seed
+  // cannot guess (per-format parse setups, a required retrieval mode, a
+  // template id). Without these a node added from the palette starts out
+  // unrunnable — that is what the save-time validator now reports.
+  const PIPELINE_SEEDS: Record<string, Record<string, any>> = {
+    Parser: DATAFLOW_PARSER_FORM,
+    Tokenizer: DATAFLOW_TOKENIZER_FORM,
+    Extractor: DATAFLOW_EXTRACTOR_FORM,
+    Compiler: DATAFLOW_COMPILER_FORM,
+  };
   const seedFormFor = useCallback(
-    (label: string): Record<string, any> =>
-      label === "Parser" ? cloneSeedForm(DATAFLOW_PARSER_FORM) : defaultParams(label),
+    (label: string): Record<string, any> => {
+      const pipelineSeed = PIPELINE_SEEDS[label];
+      if (pipelineSeed) return cloneSeedForm(pipelineSeed);
+      return defaultParams(label);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
 
@@ -341,7 +359,7 @@ function AgentCanvasInner({
       const def = operatorFormFor(label);
       setFormDef(def);
       const existing: Record<string, any> = node.data?.form ?? {};
-      const seed: Record<string, any> = { ...defaultParams(label) };
+      const seed: Record<string, any> = { ...seedFormFor(label) };
       for (const f of def?.fields ?? []) {
         if (f.name in existing) seed[f.name] = existing[f.name];
       }
@@ -714,7 +732,7 @@ function AgentFlowNode({ data, selected }: NodeProps) {
       {/* Form summary for Generate/LLM node */}
       {(label === "Generate" || label === "LLM") && form.llm_id && (
         <div className="mt-1.5 text-[10px] text-slate-500 truncate">
-          <span className="text-slate-400">{t("agents.canvas_model")}</span> {form.llm_id}
+          <span className="text-slate-400">{t("agents.canvas_model")}</span> {modelNameOf(String(form.llm_id))}
         </div>
       )}
 

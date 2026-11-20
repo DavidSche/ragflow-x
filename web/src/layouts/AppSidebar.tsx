@@ -25,8 +25,9 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronRight, House, List, Shell } from "lucide-react";
-import { useBranding, loadBranding } from "../lib/branding";
+import { ChevronRight, House, List } from "lucide-react";
+import { loadBranding } from "../lib/branding";
+import { BrandLogo, BrandName } from "../components/BrandIdentity";
 import {
   NAVIGATION_VIEW_DEFAULT_EXPANDED,
   NAVIGATION_VIEW_PROFILES,
@@ -38,7 +39,6 @@ export function AppSidebar() {
   const hasDashboard = useHasDashboard();
   const resources = useResourceDefinitions();
   const { openMobile, setOpenMobile } = useSidebar();
-  const brand = useBranding();
   const translate = useTranslate();
   const { data: identity } = useGetIdentity();
   const { data: permissionsData } = usePermissions();
@@ -95,9 +95,9 @@ export function AppSidebar() {
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
               <LinkBase to="/">
-                <Shell className="!size-5" />
+                <BrandLogo />
                 <span className="flex flex-col">
-                  <span className="text-base font-semibold">RAGFlow-X</span>
+                  <BrandName />
                   <span className="text-xs font-normal text-sidebar-foreground/70">
                     {translate(profile.labelKey)}
                   </span>

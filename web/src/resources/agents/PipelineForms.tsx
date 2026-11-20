@@ -13,6 +13,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumericRangeField } from "@/components/NumericRangeField";
+import { PipelineCatalogSelect, PipelineModelSelect } from "./PipelineSelects";
 
 interface FormProps {
   values: Record<string, any>;
@@ -207,9 +208,41 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
         </div>
       </Field>
 
+      {/* Vision enhancement is a Parser-level switch read from the TOP level of
+          params (`params.enable_vision_enhancement` + `params.vlm.llm_id`), not
+          from a per-format setup — the same model describes every image. */}
+      <div className="space-y-2 rounded border bg-muted/30 p-2">
+        <ToggleField
+          label={t("agents.pipe_vision_enable")}
+          checked={values?.enable_vision_enhancement}
+          disabled={disabled}
+          onChange={(v) => onChange("enable_vision_enhancement", v)}
+        />
+        <p className="text-[11px] text-muted-foreground">{t("agents.pipe_vision_hint")}</p>
+        {values?.enable_vision_enhancement ? (
+          <Field label={t("agents.pipe_vision_model")}>
+            <PipelineModelSelect
+              name="vlm.llm_id"
+              kind="vision"
+              allowEmpty
+              value={values?.vlm?.llm_id ?? ""}
+              disabled={disabled}
+              onChange={(v) => onChange("vlm", { ...(values?.vlm ?? {}), llm_id: v })}
+            />
+          </Field>
+        ) : null}
+      </div>
+
       <div className="space-y-2">
         {rows.map((row, i) => {
           const fmt = row.fileFormat ?? "pdf";
+          // The engine derives the image OCR choice from the presence of
+          // `ocr_enabled`; a legacy setup encodes the same choice in
+          // `parse_method` (""/"ocr" = local OCR, anything else = vision model).
+          const ocrOn =
+            typeof row.ocr_enabled === "boolean"
+              ? row.ocr_enabled
+              : !row.parse_method || String(row.parse_method).toLowerCase() === "ocr";
           return (
             <div key={i} className="space-y-2 rounded border p-2">
               <div className="flex items-center justify-between gap-2">
@@ -227,7 +260,7 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
                 <Field label={t("agents.pipe_output_format")}>
                   <SelectField value={row.output_format} disabled={disabled} options={OUTPUT_FORMAT_OPTIONS[fmt] ?? [{ value: "json", label: "JSON" }]} onChange={(v) => updateRow(i, { output_format: v })} />
                 </Field>
-                {(fmt === "pdf" || fmt === "spreadsheet" || fmt === "slides" || fmt === "image") && (
+                {(fmt === "pdf" || fmt === "spreadsheet" || fmt === "slides") && (
                   <Field label={t("agents.pipe_parse_method")}>
                     <SelectField
                       value={row.parse_method}
@@ -276,7 +309,16 @@ function ParserForm({ values, disabled, onChange }: FormProps) {
                   </div>
                 )}
                 {fmt === "image" && (
-                  <div className="col-span-2 space-y-1">
+                  <div className="col-span-2 space-y-2">
+                    <ToggleField
+                      label={t("agents.pipe_image_ocr")}
+                      checked={ocrOn}
+                      disabled={disabled}
+                      onChange={(v) => updateRow(i, { ocr_enabled: v })}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      {ocrOn ? t("agents.pipe_image_ocr_hint") : t("agents.pipe_image_ocr_off_hint")}
+                    </p>
                     <Label className="text-xs">{t("agents.pipe_ocr_prompt")}</Label>
                     <textarea className="min-h-12 w-full rounded border bg-background p-2 text-xs" value={row.system_prompt ?? ""} disabled={disabled} onChange={(e) => updateRow(i, { system_prompt: e.target.value })} />
                   </div>
@@ -409,68 +451,108 @@ function TitleChunkerForm({ values, disabled, onChange }: FormProps) {
 }
 
 // ─── Extractor ──────────────────────────────────────────────────────────
+//
+// The engine reads `llm_id` plus five groups (keywords / questions / tags /
+// summary / metadata). keywords|questions|tags carry an `enabled` switch and
+// `top_n`; an explicit `enabled: true` with `top_n < 1` makes the engine refuse
+// the node (`extractor: <group>.enabled requires top_n >= 1`), so the switch and
+// the count live together here.
+
+const EXTRACT_GROUPS = ["keywords", "questions", "tags"] as const;
+
+function groupOf(values: Record<string, any>, group: string): Record<string, any> {
+  const raw = values?.[group];
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
 
 function ExtractorForm({ values, disabled, onChange }: FormProps) {
   const t = useTranslate();
-  const rules: { meta?: string; list?: string[] }[] = Array.isArray(values?.extraction_rules)
-    ? values.extraction_rules
-    : [{ meta: "", list: [] }];
-  const sync = (next: { meta?: string; list?: string[] }[]) => onChange("extraction_rules", next);
+  const patchGroup = (group: string, patch: Record<string, any>) =>
+    onChange(group, { ...groupOf(values, group), ...patch });
   return (
     <div className="space-y-3">
-      {rules.map((r, i) => (
-        <div key={i} className="space-y-1.5 rounded border p-2">
-          <div className="flex items-center gap-1.5">
-            <Input className="h-8 flex-1 text-xs" placeholder={t("agents.pipe_meta_placeholder")} value={r.meta ?? ""} disabled={disabled} onChange={(e) => sync(rules.map((x, idx) => (idx === i ? { ...x, meta: e.target.value } : x)))} />
-            <button type="button" disabled={disabled || rules.length <= 1} onClick={() => sync(rules.filter((_, idx) => idx !== i))} className="rounded p-1 text-destructive disabled:opacity-40">
-              <Trash2 className="size-3.5" aria-hidden="true" />
-            </button>
+      <Field label={t("agents.pipe_extract_model")} hint={t("agents.pipe_extract_model_hint")}>
+        <PipelineModelSelect
+          name="llm_id"
+          kind="chat"
+          allowEmpty
+          value={values?.llm_id ?? ""}
+          disabled={disabled}
+          onChange={(v) => onChange("llm_id", v)}
+        />
+      </Field>
+      {EXTRACT_GROUPS.map((group) => {
+        const entry = groupOf(values, group);
+        // No explicit switch: the engine derives it from top_n > 0.
+        const enabled = typeof entry.enabled === "boolean" ? entry.enabled : Number(entry.top_n ?? 0) > 0;
+        const topN = Number(entry.top_n ?? 0);
+        return (
+          <div key={group} className="space-y-2 rounded border p-2">
+            <ToggleField
+              label={t(`agents.pipe_extract_${group}`)}
+              checked={enabled}
+              disabled={disabled}
+              onChange={(v) =>
+                // Turning a group on must hand the engine a usable count: an
+                // `enabled: true` with top_n 0 is rejected when the canvas runs.
+                patchGroup(group, v ? { enabled: true, top_n: topN > 0 ? topN : 3 } : { enabled: false, top_n: topN })
+              }
+            />
+            {enabled ? (
+              <Field label={t("agents.pipe_extract_top_n")}>
+                <NumberField value={topN > 0 ? topN : 3} disabled={disabled} min={1} max={50} onChange={(v) => patchGroup(group, { top_n: v })} />
+              </Field>
+            ) : null}
           </div>
-          <textarea
-            className="min-h-14 w-full rounded border bg-background p-2 font-mono text-xs"
-            placeholder={t("agents.pipe_regex_placeholder")}
-            value={(r.list ?? []).join("\n")}
-            disabled={disabled}
-            onChange={(e) =>
-              sync(
-                rules.map((x, idx) =>
-                  idx === i
-                    ? {
-                        ...x,
-                        list: e.target.value.split("\n").filter((l) => l.trim() !== ""),
-                      }
-                    : x,
-                ),
-              )
-            }
-          />
-        </div>
-      ))}
-      <button type="button" disabled={disabled} onClick={() => sync([...rules, { meta: "", list: [] }])} className="flex w-full items-center justify-center gap-1 rounded border border-dashed px-2 py-1.5 text-xs hover:bg-muted disabled:opacity-50">
-        <Plus className="size-3.5" aria-hidden="true" />
-        {t("agents.pipe_add_extract_field")}
-      </button>
+        );
+      })}
+      <ToggleField
+        label={t("agents.pipe_extract_summary")}
+        checked={!!groupOf(values, "summary").enabled}
+        disabled={disabled}
+        onChange={(v) => patchGroup("summary", { enabled: v })}
+      />
+      <ToggleField
+        label={t("agents.pipe_extract_metadata")}
+        checked={!!groupOf(values, "metadata").enabled}
+        disabled={disabled}
+        onChange={(v) => patchGroup("metadata", { enabled: v })}
+      />
     </div>
   );
 }
 
 // ─── Compiler ───────────────────────────────────────────────────────────
+//
+// `compilation_template_id` / `compilation_template_group_id` are engine ids.
+// The engine refuses to SAVE a canvas whose Compiler carries neither
+// (`[Compiler] Compilation Template Group does not support empty value`), and
+// `subtask_prompt` is the instruction it hands the compiler.
 
 function CompilerForm({ values, disabled, onChange }: FormProps) {
   const t = useTranslate();
   return (
     <div className="space-y-3">
       <Field label={t("agents.pipe_knowledge_template")}>
-        <SelectField
-          value={values?.template ?? "general"}
+        <PipelineCatalogSelect
+          testId="compiler-template-select"
+          section="compilation_templates"
+          value={values?.compilation_template_id ?? ""}
+          placeholder={t("agents.pipe_template_none")}
+          emptyHint={t("agents.pipe_template_empty")}
           disabled={disabled}
-          options={[
-            { value: "general", label: "agents.pipe_template_general" },
-            { value: "entity", label: "agents.pipe_template_entity" },
-            { value: "concept", label: "agents.pipe_template_concept" },
-            { value: "topic", label: "agents.pipe_template_topic" },
-          ]}
-          onChange={(v) => onChange("template", v)}
+          onChange={(v) => onChange("compilation_template_id", v)}
+        />
+      </Field>
+      <Field label={t("agents.pipe_template_group")} hint={t("agents.pipe_template_group_hint")}>
+        <PipelineCatalogSelect
+          testId="compiler-template-group-select"
+          section="compilation_template_groups"
+          value={values?.compilation_template_group_id ?? ""}
+          placeholder={t("agents.pipe_template_group_none")}
+          emptyHint={t("agents.pipe_template_group_empty")}
+          disabled={disabled}
+          onChange={(v) => onChange("compilation_template_group_id", v)}
         />
       </Field>
       <Field label={t("agents.pipe_compile_prompt")}>
