@@ -176,6 +176,17 @@ const (
 	ReportEvaluationMethodHuman    = "human"
 )
 
+// ReportEvaluationMethods is the closed set of evaluation methods, ordered
+// strongest-independence-last (`human` is an adjudicated label, not a run).
+// `goldtool preds` needs it to refuse a `--method` typo loudly instead of
+// writing an empty predictions file that scores as full coverage loss.
+func ReportEvaluationMethods() []string {
+	return []string{
+		ReportEvaluationMethodRule, ReportEvaluationMethodSemantic,
+		ReportEvaluationMethodCross, ReportEvaluationMethodHuman,
+	}
+}
+
 // ReportInsufficientReasons is the closed set for `insufficient_reason`.
 func ReportInsufficientReasons() []string {
 	return []string{

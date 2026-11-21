@@ -43,6 +43,10 @@ type Prediction struct {
 	Verdict       string `json:"verdict"`
 	QuoteStatus   string `json:"quote_status"`
 	AbstainReason string `json:"abstain_reason,omitempty"`
+	// NotEvaluatedReason is the third vocabulary a row can carry. Without it a file
+	// could say `not_evaluated` and nothing about why, and §4.2's three-cause
+	// breakdown would print "无" for a run that skipped claims on budget.
+	NotEvaluatedReason string `json:"not_evaluated_reason,omitempty"`
 }
 
 // evalRow is one line of the experiment report. `Class` carries doc/301's own
@@ -225,6 +229,35 @@ func evaluateExperiment(experiment, method string, items []Item, preds []Predict
 				p.ItemID, p.AbstainReason, strings.Join(model.ReportAbstainReasons(), "/")))
 			continue
 		}
+		// The three state words are mutually exclusive, and each one's reason is what
+		// makes its §4.2 row computable. A row that says `abstained` with no reason still
+		// counts in the denominator and in none of the four reason buckets, which is how a
+		// run appears to abstain less than it did.
+		if p.Verdict == model.ReportVerdictAbstained && p.AbstainReason == "" {
+			problems = append(problems, fmt.Sprintf("%s: verdict is abstained but abstain_reason is empty; "+
+				"§4.2's four abstain rows would all under-report", p.ItemID))
+			continue
+		}
+		if p.Verdict != model.ReportVerdictAbstained && p.AbstainReason != "" {
+			problems = append(problems, fmt.Sprintf("%s: abstain_reason %q on verdict %q: a reason for refusing "+
+				"to conclude cannot belong to a row that concluded", p.ItemID, p.AbstainReason, p.Verdict))
+			continue
+		}
+		if p.NotEvaluatedReason != "" && !containsStr(model.ReportNotEvaluatedReasons(), p.NotEvaluatedReason) {
+			problems = append(problems, fmt.Sprintf("%s: not_evaluated_reason %q is not in the closed set %s",
+				p.ItemID, p.NotEvaluatedReason, strings.Join(model.ReportNotEvaluatedReasons(), "/")))
+			continue
+		}
+		if p.Verdict == model.ReportVerdictNotEvaluated && p.NotEvaluatedReason == "" {
+			problems = append(problems, fmt.Sprintf("%s: verdict is not_evaluated but not_evaluated_reason is empty; "+
+				"budget_exhausted / policy_skipped / not_triggered must stay distinguishable", p.ItemID))
+			continue
+		}
+		if p.Verdict != model.ReportVerdictNotEvaluated && p.NotEvaluatedReason != "" {
+			problems = append(problems, fmt.Sprintf("%s: not_evaluated_reason %q on verdict %q",
+				p.ItemID, p.NotEvaluatedReason, p.Verdict))
+			continue
+		}
 		if _, ok := gold[p.ItemID]; !ok {
 			problems = append(problems, fmt.Sprintf("%s: prediction names an item that is not in the gold file "+
 				"(the two files must describe the same claims)", p.ItemID))
@@ -268,6 +301,7 @@ type evalCounts struct {
 	correct       int64 // gold == pred, over evaluated
 	abstainReason map[string]int64
 	notEvaluated  map[string]int64 // pred verdict == not_evaluated, keyed by reason
+	notRequired   int64            // pred verdict == not_required, counted, never scored
 	quoteStatus   map[string]map[string]int64
 }
 
@@ -289,7 +323,15 @@ func tally(items []Item, preds map[string]Prediction) evalCounts {
 		// looks complete while quietly shrinking its denominator.
 		verdict, reason := model.ReportVerdictNotEvaluated, "missing_prediction"
 		if ok {
-			verdict, reason = p.Verdict, p.AbstainReason
+			verdict = p.Verdict
+			switch verdict {
+			case model.ReportVerdictAbstained:
+				reason = p.AbstainReason
+			case model.ReportVerdictNotEvaluated:
+				reason = p.NotEvaluatedReason
+			default:
+				reason = ""
+			}
 		}
 		if c.conf[it.GoldVerdict] == nil {
 			c.conf[it.GoldVerdict] = map[string]int64{}
@@ -316,6 +358,11 @@ func tally(items []Item, preds map[string]Prediction) evalCounts {
 			c.abstainReason[reason]++
 		case verdict == model.ReportVerdictNotEvaluated:
 			c.notEvaluated[reason]++
+		case verdict == model.ReportVerdictNotRequired:
+			// `not_required` is a legal runtime verdict ("nothing was asked") but it is not
+			// a judgement, so it shrinks coverage. Counting it separately keeps the
+			// coverage row from blaming policy/budget for a claim the evaluator declined.
+			c.notRequired++
 		}
 	}
 	return c
@@ -348,6 +395,9 @@ func e1Rows(c evalCounts) ([]evalRow, string) {
 		row.Verdict = evalFail
 	}
 	row.Detail = fmt.Sprintf("not_evaluated 原因：%s（离线 replay 不得有策略跳过或预算退出）", reasons)
+	if c.notRequired > 0 {
+		row.Detail += fmt.Sprintf("；另有 %d 条被判 not_required（运行时认为无需判定，不计入 coverage 分子）", c.notRequired)
+	}
 	rows = append(rows, row)
 
 	// 2. unsupported_false_positive_rate: CP 上界 ≤10%.
