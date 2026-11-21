@@ -445,6 +445,11 @@ func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item,
 		}
 		it.Evidence = evs
 		it.CandidatePool = filterCandidates(cands[it.SectionOrd], bySection[it.SectionOrd], anywhere)
+		// `scan_scope` is derived from what the export actually carries, not from the
+		// setting that was in force: doc/301 §5.2.2 defines K as the number of frozen
+		// rows, and the setting can be widened after generation without backfilling
+		// (there is no backfill). What an annotator can see is the only honest K.
+		it.GoldScanScope = scanScopeOf(it.CandidatePool)
 		it.Source = src
 		it.ItemID = rev.RevisionID + ":" + it.ClaimID
 		it.AsOfDate = stamp(time.Now())
@@ -452,6 +457,16 @@ func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item,
 		out = append(out, it)
 	}
 	return out, len(items), skipped, nil
+}
+
+// scanScopeOf renders doc/301 §5.2.2's vocabulary. `cited_only` is the default state
+// of the product (`report.candidate_scan_top_k=0`), so an export that never saw a
+// candidate says so instead of looking like a scan that came back empty.
+func scanScopeOf(cands []Candidate) string {
+	if len(cands) == 0 {
+		return "cited_only"
+	}
+	return fmt.Sprintf("cited+candidate:%d", len(cands))
 }
 
 // filterCandidates drops candidates this **section** cited and flags the ones another

@@ -31,8 +31,11 @@ func sampleItem(n int, verdict string) Item {
 		GoldQuote:       "",
 		GoldQuoteStatus: "not_provided",
 		GoldEvidenceIDs: []string{fmt.Sprintf("snap%03d", n)},
-		Annotators:      []string{"qa-a", "qa-b"},
-		Notes:           "",
+		// The default state of the product: nothing frozen, so nothing scanned. Tests
+		// that do carry candidates must set the matching `cited+candidate:K`.
+		GoldScanScope: "cited_only",
+		Annotators:    []string{"qa-a", "qa-b"},
+		Notes:         "",
 	}
 }
 
@@ -437,6 +440,7 @@ func TestValidateRefusesCandidateCitedBySameItem(t *testing.T) {
 	it := sampleItem(1, "supported")
 	it.CandidatePool = []Candidate{{ChunkID: it.Evidence[0].ChunkID,
 		ContentHash: it.Evidence[0].ContentHash, ContentExcerpt: "同一段落", PoolRank: 1}}
+	it.GoldScanScope = "cited+candidate:1" // otherwise the scope check fires first
 	problems := checkItem(it, 0)
 	if len(problems) == 0 {
 		t.Fatalf("want a named problem, got none")
@@ -446,9 +450,6 @@ func TestValidateRefusesCandidateCitedBySameItem(t *testing.T) {
 	}
 }
 
-// …but the same chunk cited **elsewhere** is legal and keeps its flag through
-// assembly, because the flag is what turns "the writer never saw it" into "the writer
-// used it in another section" — a different judgement.
 // Redaction is one-way but must be repeatable: an assembly retried after a κ failure
 // re-reads the pool, and a redaction that blanked an already-excerpted item would
 // produce a file that passes the length check carrying no text at all.
@@ -471,10 +472,14 @@ func TestRedactItemIsIdempotent(t *testing.T) {
 	}
 }
 
+// …but the same chunk cited **elsewhere** is legal and keeps its flag through
+// assembly, because the flag is what turns "the writer never saw it" into "the writer
+// used it in another section" — a different judgement.
 func TestCandidateCitedElsewhereSurvivesAssembly(t *testing.T) {
 	it := sampleItem(1, "supported")
 	it.CandidatePool = []Candidate{{ChunkID: "chk-elsewhere", ContentHash: "hash-elsewhere",
 		Content: "别处引用过的一整段原文", PoolRank: 4, CitedElsewhere: true}}
+	it.GoldScanScope = "cited+candidate:1"
 	gold := redactItem(it)
 	cand := gold.CandidatePool[0]
 	if !cand.CitedElsewhere {
@@ -485,6 +490,59 @@ func TestCandidateCitedElsewhereSurvivesAssembly(t *testing.T) {
 	}
 	if problems := checkItem(gold, 0); len(problems) != 0 {
 		t.Fatalf("a flagged-elsewhere candidate must pass checkItem: %v", problems)
+	}
+}
+
+// `gold_scan_scope` is a disclosure, so a *wrong* one is worse than a missing one: it
+// would let "we scanned 8 candidates and found nothing" be a property of a memory.
+// Three ways it can be wrong, all of them named.
+func TestValidateRefusesInconsistentScanScope(t *testing.T) {
+	cases := []struct {
+		name  string
+		scope string
+		cands []Candidate
+		want  string
+	}{
+		{"empty", "", nil, "gold_scan_scope is empty"},
+		{"cited_only_with_rows", "cited_only",
+			[]Candidate{{ChunkID: "c1", ContentHash: "h1", ContentExcerpt: "候选"}},
+			"cited_only but candidate_pool has 1 row"},
+		{"k_mismatch", "cited+candidate:8",
+			[]Candidate{{ChunkID: "c1", ContentHash: "h1", ContentExcerpt: "候选"}},
+			"says 8 candidate(s) but candidate_pool has 1"},
+		{"not_the_vocabulary", "cited", nil, "neither cited_only nor cited+candidate:K"},
+		{"k_not_a_number", "cited+candidate:many",
+			[]Candidate{{ChunkID: "c1", ContentHash: "h1", ContentExcerpt: "候选"}},
+			"no positive count"},
+	}
+	for _, c := range cases {
+		it := sampleItem(1, "supported")
+		it.GoldScanScope = c.scope
+		it.CandidatePool = c.cands
+		got := fmt.Sprint(checkItem(it, 0))
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: want %q, got %s", c.name, c.want, got)
+		}
+	}
+
+	// …and the legal shapes must stay legal, including K = the real row count.
+	ok := sampleItem(1, "supported")
+	ok.GoldScanScope = "cited+candidate:2"
+	ok.CandidatePool = []Candidate{
+		{ChunkID: "c1", ContentHash: "h1", ContentExcerpt: "候选一"},
+		{ChunkID: "c2", ContentHash: "h2", ContentExcerpt: "候选二", CitedElsewhere: true},
+	}
+	if problems := checkItem(ok, 0); len(problems) != 0 {
+		t.Fatalf("a consistent scope must pass: %v", problems)
+	}
+}
+
+func TestScanScopeOfMatchesCandidateRows(t *testing.T) {
+	if got := scanScopeOf(nil); got != "cited_only" {
+		t.Fatalf("no candidates must be cited_only, got %q", got)
+	}
+	if got := scanScopeOf([]Candidate{{ChunkID: "c1"}, {ChunkID: "c2"}, {ChunkID: "c3"}}); got != "cited+candidate:3" {
+		t.Fatalf("K must be the row count, got %q", got)
 	}
 }
 

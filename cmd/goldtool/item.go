@@ -137,8 +137,49 @@ type Item struct {
 	GoldQuote          string      `json:"gold_quote"`
 	GoldQuoteStatus    string      `json:"gold_quote_status"`
 	GoldEvidenceIDs    []string    `json:"gold_evidence_ids"`
-	Annotators         []string    `json:"annotators"`
-	Notes              string      `json:"notes"`
+	// GoldScanScope is how wide the scan that produced this item was
+	// (doc/301 §5.2.2): `cited_only` when no candidate was frozen, else
+	// `cited+candidate:K` with K the number of candidate rows the annotator could
+	// actually see. It is a *disclosure*, not a label: without it, "no conflict
+	// found" cannot be distinguished from "we never looked for one" — which is the
+	// one reading error E2 exists to prevent.
+	GoldScanScope string   `json:"gold_scan_scope"`
+	Annotators    []string `json:"annotators"`
+	Notes         string   `json:"notes"`
+}
+
+// checkScanScope enforces the two things `gold_scan_scope` must never be: malformed,
+// and inconsistent with the candidate rows actually present.
+//
+// The second check is the one that matters. A file claiming `cited+candidate:8` while
+// carrying two candidates would make every "we scanned 8 and found nothing" statement
+// in the report unverifiable — the number would be a memory instead of a property of
+// the file.
+func checkScanScope(it Item) string {
+	scope := trimSpace(it.GoldScanScope)
+	if scope == "" {
+		return "gold_scan_scope is empty (doc/301 §5.2.2: cited_only or cited+candidate:K)"
+	}
+	if scope == "cited_only" {
+		if n := len(it.CandidatePool); n != 0 {
+			return fmt.Sprintf("gold_scan_scope is cited_only but candidate_pool has %d row(s); "+
+				"cited_only means nothing was frozen", n)
+		}
+		return ""
+	}
+	const pfx = "cited+candidate:"
+	if !strings.HasPrefix(scope, pfx) {
+		return fmt.Sprintf("gold_scan_scope %q is neither cited_only nor cited+candidate:K", scope)
+	}
+	var k int
+	if _, err := fmt.Sscanf(strings.TrimPrefix(scope, pfx), "%d", &k); err != nil || k <= 0 {
+		return fmt.Sprintf("gold_scan_scope %q has no positive count after %q", scope, pfx)
+	}
+	if n := len(it.CandidatePool); n != k {
+		return fmt.Sprintf("gold_scan_scope says %d candidate(s) but candidate_pool has %d "+
+			"(the scope is a disclosure; a wrong K is a false disclosure)", k, n)
+	}
+	return ""
 }
 
 // encodeItem renders one JSONL line. Field order is the struct order, which keeps
@@ -234,6 +275,9 @@ func checkItem(it Item, idx int) []string {
 	}
 	if it.GoldQuoteStatus == model.ReportQuoteStatusNotProvided && trimSpace(it.GoldQuote) != "" {
 		add("gold_quote_status is not_provided but gold_quote is non-empty")
+	}
+	if err := checkScanScope(it); err != "" {
+		add("%s", err)
 	}
 	if len(it.Annotators) < 2 {
 		add("annotators has %d entries; the plan requires two independent annotators plus adjudication", len(it.Annotators))
