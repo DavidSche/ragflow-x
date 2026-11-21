@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,6 +139,81 @@ func TestSampleStratifiedShortStratumIsThirdState(t *testing.T) {
 
 // Stratified sampling without targets is a refusal, not a default: the targets are
 // the pre-registration decision (doc/304 §7 item 10).
+// The pre-registration has two tracks and the tool has to keep them apart, because
+// the difference is not cosmetic: a stratified draw over-samples classes by
+// construction, so its class mix stops estimating the corpus and a plain CP bound
+// computed on it is systematically optimistic (doc/301 §9.1, doc/304 §7 item 10).
+//
+// Refusing `--strategy stratified --role primary` is therefore the same kind of rule
+// as refusing a default `--targets`: it makes "which sample is the acceptance sample"
+// a property of the file rather than a memory.
+func TestSampleStratifiedCannotBePrimary(t *testing.T) {
+	poolPath := poolOf(t, 12, map[string]int{"unsupported": 4})
+	out := filepath.Join(t.TempDir(), "w.jsonl")
+	stderr, read := captureStderr(t)
+	code := run([]string{"sample", "--pool", poolPath, "--out", out, "--strategy", "stratified",
+		"--role", "primary", "--targets", "supported=6,unsupported=6"}, devnull(t), stderr)
+	if code != exitUsage {
+		t.Fatalf("a stratified primary sample must be refused with exit 2, got %d", code)
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Fatalf("a refused draw must not write a worksheet")
+	}
+	msg := read()
+	for _, want := range []string{"cannot be --role primary", "doc/301 §9.1", "doc/304 §7 item 10"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("the refusal must name %q, got: %s", want, msg)
+		}
+	}
+}
+
+// …and the two tracks must be independently numbered in the receipt, so that a
+// supplementary worksheet produced today cannot be read as the primary sample of the
+// same seed tomorrow. Random is primary by default; an extra random draw may be
+// supplementary, and then it says so.
+func TestSampleRecordsRoleAndSampleID(t *testing.T) {
+	poolPath := poolOf(t, 12, map[string]int{"unsupported": 4})
+
+	cases := []struct {
+		name   string
+		args   []string
+		role   string
+		wantID string
+	}{
+		{"random defaults to primary", []string{"--n", "6", "--seed", "7"}, "primary", "primary-random-7"},
+		{"random can be supplementary", []string{"--n", "6", "--seed", "7", "--role", "supplementary"}, "supplementary", "supplementary-random-7"},
+		{"stratified is supplementary", []string{"--n", "6", "--seed", "7", "--strategy", "stratified",
+			"--targets", "supported=3,unsupported=3"}, "supplementary", "supplementary-stratified-7"},
+	}
+	for _, c := range cases {
+		dir := t.TempDir()
+		outPath := filepath.Join(dir, "w.jsonl")
+		args := append([]string{"sample", "--pool", poolPath, "--out", outPath}, c.args...)
+		stdout, err := os.CreateTemp(dir, "receipt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		code := run(args, stdout, devnull(t))
+		if code != exitOK {
+			t.Fatalf("%s: exit %d", c.name, code)
+		}
+		if _, err := stdout.Seek(0, 0); err != nil {
+			t.Fatal(err)
+		}
+		var got sampleReceipt
+		if err := json.NewDecoder(stdout).Decode(&got); err != nil {
+			t.Fatalf("%s: receipt is not valid JSON: %v", c.name, err)
+		}
+		stdout.Close()
+		if got.Role != c.role {
+			t.Errorf("%s: role = %q, want %q", c.name, got.Role, c.role)
+		}
+		if got.SampleID != c.wantID {
+			t.Errorf("%s: sample_id = %q, want %q", c.name, got.SampleID, c.wantID)
+		}
+	}
+}
+
 func TestSampleStratifiedRequiresTargets(t *testing.T) {
 	pool := poolOf(t, 10, nil)
 	out := devnull(t)

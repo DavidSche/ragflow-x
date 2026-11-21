@@ -18,19 +18,27 @@ import (
 // sample is only usable as evidence if it can be *re-drawn*: the seed, the pool's
 // sha256 and the strategy are the whole reproducibility argument (doc/301 §4.4 D5).
 type sampleReceipt struct {
-	CreatedAt  string         `json:"created_at"`
-	Pool       string         `json:"pool"`
-	PoolSHA256 string         `json:"pool_sha256"`
-	Out        string         `json:"out"`
-	Strategy   string         `json:"strategy"`
-	Stratum    string         `json:"stratum,omitempty"`
-	Seed       int64          `json:"seed"`
-	Requested  int            `json:"requested"`
-	Available  int            `json:"available"`
-	Selected   int            `json:"selected"`
-	Strata     []stratumCount `json:"strata"`
-	Shortfall  []stratumCount `json:"shortfall,omitempty"`
-	Problems   []Problem      `json:"problems,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	Pool       string `json:"pool"`
+	PoolSHA256 string `json:"pool_sha256"`
+	Out        string `json:"out"`
+	// Role separates the two tracks of doc/301 §9.1's pre-registration: `primary` is
+	// the equal-probability random sample the acceptance metrics are computed on;
+	// `supplementary` is a stratified draw that exists to *diagnose* rare classes and
+	// must never be merged into a primary denominator (over-sampling a class moves what
+	// the CP bound means). The two tracks are independently numbered and independently
+	// reported, so a supplementary file cannot be mistaken for the primary one later.
+	Role      string         `json:"role"`
+	SampleID  string         `json:"sample_id"`
+	Strategy  string         `json:"strategy"`
+	Stratum   string         `json:"stratum,omitempty"`
+	Seed      int64          `json:"seed"`
+	Requested int            `json:"requested"`
+	Available int            `json:"available"`
+	Selected  int            `json:"selected"`
+	Strata    []stratumCount `json:"strata"`
+	Shortfall []stratumCount `json:"shortfall,omitempty"`
+	Problems  []Problem      `json:"problems,omitempty"`
 }
 
 type stratumCount struct {
@@ -63,6 +71,7 @@ func runSample(args []string, stdout, stderr *os.File) int {
 	targets := fs.String("targets", "", `stratum targets for --strategy stratified, e.g. "supported=80,unsupported=40"`)
 	seed := fs.Int64("seed", 0, "draw seed (0 = derive from the clock and print it)")
 	allowShort := fs.Bool("allow-short", false, "write the worksheet even when a stratum cannot be filled (exit 3)")
+	role := fs.String("role", "", "primary | supplementary (default: random→primary, stratified→supplementary)")
 	quiet := fs.Bool("quiet", false, "do not print the JSON receipt")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -80,6 +89,36 @@ func runSample(args []string, stdout, stderr *os.File) int {
 			"  The targets are how much each class is over-sampled, and over-sampling a class\n"+
 			"  moves the CP bound. That is a pre-registration decision (doc/304 §7 item 10),\n"+
 			"  not a tool default.")
+		return exitUsage
+	}
+
+	// The pre-registration is not a preference: a primary sample has to be
+	// equal-probability random, because only then does the class mix in the file
+	// estimate the class mix of the corpus and the CP bound mean what it says.
+	// A stratified draw over-samples by construction, so it may only be supplementary
+	// (doc/301 §9.1, doc/304 §7 item 10).
+	want := "primary"
+	if *strategy == "stratified" {
+		want = "supplementary"
+	}
+	if strings.TrimSpace(*role) == "" {
+		*role = want
+	}
+	if *role != "primary" && *role != "supplementary" {
+		fmt.Fprintf(stderr, "goldtool sample: unknown role %q (primary | supplementary)\n", *role)
+		return exitUsage
+	}
+	if *strategy == "stratified" && *role == "primary" {
+		fmt.Fprintln(stderr, "goldtool sample: --strategy stratified cannot be --role primary.\n"+
+			"  A stratified draw over-samples some classes by construction, so its class mix\n"+
+			"  no longer estimates the corpus and a plain Clopper-Pearson bound on it would\n"+
+			"  be systematically optimistic. Primary samples are equal-probability random;\n"+
+			"  stratified draws are supplementary and are reported separately\n"+
+			"  (doc/301 §9.1 pre-registration, doc/304 §7 item 10).")
+		return exitUsage
+	}
+	if *strategy == "random" && *role == "supplementary" && strings.TrimSpace(*targets) != "" {
+		fmt.Fprintln(stderr, "goldtool sample: --targets only applies to --strategy stratified")
 		return exitUsage
 	}
 
@@ -112,8 +151,9 @@ func runSample(args []string, stdout, stderr *os.File) int {
 	receipt := sampleReceipt{
 		CreatedAt: time.Now().UTC().Format(time.RFC3339), Pool: filepath.Base(*poolPath),
 		PoolSHA256: hex.EncodeToString(sum[:]), Out: filepath.Base(*out),
-		Strategy: *strategy, Seed: *seed, Requested: *n, Available: len(sorted),
+		Role: *role, Strategy: *strategy, Seed: *seed, Requested: *n, Available: len(sorted),
 	}
+	receipt.SampleID = fmt.Sprintf("%s-%s-%d", receipt.Role, receipt.Strategy, receipt.Seed)
 	if *strategy == "stratified" {
 		receipt.Stratum = *stratum
 		selected, strata, gap, problems := drawStratified(sorted, *stratum, *targets, rng)

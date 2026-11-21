@@ -383,17 +383,14 @@ order by section_ord, pool_rank, chunk_id`, revisionID)
 	return out, rows.Err()
 }
 
-// itemsOfRevision assembles one revision into pool items.
+// itemsOfRevision reads one revision and hands it to mergeRevision.
 //
-// Three decisions are visible here and none of them is an accident:
-//   - a claim with no citation is skipped (and counted), because §9.1's evidence
-//     source is the real snapshot text; there is no fallback to the claim's own
-//     words;
-//   - candidates are deduplicated **per section**, matching the freeze, and anything
-//     the revision cited elsewhere is kept with `cited_elsewhere: true` (2026-11-21
-//     amendment to §9.1, 304 D-08). The previous revision-wide filter removed 17 of
-//     17 real candidates on the 151 corpus, which is how E2 lost its only source;
-//   - `prior_support_status` is carried but never copied into a label.
+// The merge itself is pure and documented there; what this function owns is the three
+// queries and the receipt numbers. The one decision worth restating: candidates are
+// deduplicated **per section** and a chunk the revision cited elsewhere is kept with
+// `cited_elsewhere: true` (doc/301 §9.1 rules 3/5, 304 D-08/D-10). The previous
+// revision-wide filter removed 17 of 17 real candidates on the 151 corpus, which is
+// how E2 lost its only source.
 func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item, int, int, error) {
 	items, err := claimsOfRevision(ctx, tx, rev.RevisionID)
 	if err != nil {
@@ -408,9 +405,39 @@ func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item,
 		return nil, 0, 0, err
 	}
 
-	// Two cited sets, because the question has two scopes. `bySection` is the scope an
-	// annotator judges in ("did *this section* use the chunk?"); `anywhere` is only used
-	// to label a surviving candidate, never to delete it.
+	datasets := datasetIDs(rev.DatasetsJSON)
+	publishedAt := ""
+	if rev.PublishedAt.Valid {
+		publishedAt = rev.PublishedAt.Time.UTC().Format(time.RFC3339)
+	}
+	src := Source{
+		TenantID: rev.TenantID, ReportID: rev.ReportID, RevisionID: rev.RevisionID,
+		Revision: rev.Revision, RevisionStatus: rev.Status, TemplateKey: rev.TemplateKey,
+		TemplateVersion: rev.TemplateVersion, DatasetIDs: datasets, PublishedAt: publishedAt,
+	}
+
+	// `total` is the number of claims in the revision, not the number of exported
+	// items: the receipt's `claims_seen` and `skipped_without_citation` must add up,
+	// otherwise "1168 skipped" would silently mean something else after a refactor.
+	total := len(items)
+	out := mergeRevision(rev.RevisionID, items, cites, cands, src, stamp(time.Now()))
+	return out, total, total - len(out), nil
+}
+
+// mergeRevision is the pure half of the export: claims + their citations + their
+// section's candidates → pool items. It is separate so that the one property the
+// whole candidate design rests on can be tested without a database:
+//
+// **a chunk cited in section A and frozen as a candidate in section B keeps both
+// roles.** Section A's citation stays in `evidence` (doc/301 §9.1 rule 5: citation
+// and candidate are two role associations over one content entity, and the export may
+// never collapse them), and section B's candidate stays in `candidate_pool` with
+// `cited_elsewhere: true` (rule 3). Deleting either side is what made the 151 corpus
+// lose 17 of 17 real candidates (304 D-08).
+func mergeRevision(revisionID string, items []Item, cites map[string][]Evidence,
+	cands map[int][]Candidate, src Source, asOf string) []Item {
+	// Two scopes: the section an annotator judges in, and "somewhere in this revision"
+	// (used only to label a surviving candidate, never to delete one).
 	bySection := map[int]map[string]bool{}
 	anywhere := map[string]bool{}
 	for _, it := range items {
@@ -424,39 +451,25 @@ func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item,
 		}
 	}
 
-	datasets := datasetIDs(rev.DatasetsJSON)
-	publishedAt := ""
-	if rev.PublishedAt.Valid {
-		publishedAt = rev.PublishedAt.Time.UTC().Format(time.RFC3339)
-	}
-	src := Source{
-		TenantID: rev.TenantID, ReportID: rev.ReportID, RevisionID: rev.RevisionID,
-		Revision: rev.Revision, RevisionStatus: rev.Status, TemplateKey: rev.TemplateKey,
-		TemplateVersion: rev.TemplateVersion, DatasetIDs: datasets, PublishedAt: publishedAt,
-	}
-
 	out := make([]Item, 0, len(items))
-	skipped := 0
 	for _, it := range items {
 		evs := cites[it.ClaimID]
 		if len(evs) == 0 {
-			skipped++
-			continue
+			continue // a claim with no citation cannot be judged against evidence
 		}
 		it.Evidence = evs
 		it.CandidatePool = filterCandidates(cands[it.SectionOrd], bySection[it.SectionOrd], anywhere)
 		// `scan_scope` is derived from what the export actually carries, not from the
 		// setting that was in force: doc/301 §5.2.2 defines K as the number of frozen
-		// rows, and the setting can be widened after generation without backfilling
-		// (there is no backfill). What an annotator can see is the only honest K.
+		// rows, and the setting can be widened after generation without backfilling.
 		it.GoldScanScope = scanScopeOf(it.CandidatePool)
 		it.Source = src
-		it.ItemID = rev.RevisionID + ":" + it.ClaimID
-		it.AsOfDate = stamp(time.Now())
+		it.ItemID = revisionID + ":" + it.ClaimID
+		it.AsOfDate = asOf
 		it.GoldEvidenceIDs = make([]string, 0, len(evs))
 		out = append(out, it)
 	}
-	return out, len(items), skipped, nil
+	return out
 }
 
 // scanScopeOf renders doc/301 §5.2.2's vocabulary. `cited_only` is the default state
