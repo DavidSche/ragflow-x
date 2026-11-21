@@ -133,7 +133,9 @@ export type ConversationEvent =
   | (ConversationEventBase & { type: "status.changed"; context: ConversationContext | null; status: ConversationStatus })
   | (ConversationEventBase & { type: "cancelled"; context: ConversationContext | null; messageId?: string; reason: "user" | "target_switched" | "context_switched" | "timeout" })
   | (ConversationEventBase & { type: "error.occurred"; context: ConversationContext | null; messageId?: string; error: ConversationError })
-  | (ConversationEventBase & { type: "stream.completed"; context: ConversationContext | null; finalStatus: RunFinalStatus });
+  // `messageId` is optional: a run that failed before the assistant message started has
+  // no id to name, and inventing one would point a reader at a turn that never existed.
+  | (ConversationEventBase & { type: "stream.completed"; context: ConversationContext | null; finalStatus: RunFinalStatus; messageId?: string });
 
 export interface ConversationStream {
   requestId: string;

@@ -60,7 +60,7 @@ function AlertDialogTitle({
 function AlertDialogDescription({
   className,
   ...props
-}: React.HTMLAttributes<HTMLParagraphElement>) {
+}: React.ComponentPropsWithoutRef<typeof DialogDescription>) {
   return <DialogDescription className={className} {...props} />;
 }
 

@@ -371,17 +371,17 @@ async function* consumeStream(
       failed = true;
     }
     if (messageStarted) yield { ...eventBase(state, input, "message.completed"), type: "message.completed", context: context!, messageId: state.assistantId };
-    yield { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: failed ? "failed" : "completed" };
+    yield { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: failed ? "failed" : "completed", messageId: messageStarted ? state.assistantId : undefined };
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       yield { ...eventBase(state, input, "cancelled"), type: "cancelled", context, messageId: messageStarted ? state.assistantId : undefined, reason: "user" };
-      yield { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: "cancelled" };
+      yield { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: "cancelled", messageId: messageStarted ? state.assistantId : undefined };
       return;
     }
     const apiError = error instanceof ApiError ? error : null;
     const message = apiError ? apiError.displayMessage : error instanceof Error ? error.message : String(error);
     yield { ...eventBase(state, input, "error.occurred"), type: "error.occurred", context, messageId: messageStarted ? state.assistantId : undefined, error: conversationError("model_failure", message, { traceId: state.traceId ?? apiError?.traceId, httpStatus: apiError?.status }) };
-    yield { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: "failed" };
+    yield { ...eventBase(state, input, "stream.completed"), type: "stream.completed", context, finalStatus: "failed", messageId: messageStarted ? state.assistantId : undefined };
   }
 }
 

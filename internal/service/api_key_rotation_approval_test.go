@@ -13,14 +13,14 @@ import (
 //
 // Three separate promises, one test each:
 //
-//	1. the executor is registered — an approval for rotate-credential must have somewhere
-//	   to run, and an unregistered (object, action) pair is a policy that promises a gate
-//	   it cannot enforce;
-//	2. validation re-checks the key at execution time — the approval may be decided hours
-//	   later, and rotating a key that was already rotated would mint a second live secret
-//	   from a stale decision;
-//	3. only the requester can reveal the new secret — the approver approves a decision, it
-//	   does not receive a credential.
+//  1. the executor is registered — an approval for rotate-credential must have somewhere
+//     to run, and an unregistered (object, action) pair is a policy that promises a gate
+//     it cannot enforce;
+//  2. validation re-checks the key at execution time — the approval may be decided hours
+//     later, and rotating a key that was already rotated would mint a second live secret
+//     from a stale decision;
+//  3. only the requester can reveal the new secret — the approver approves a decision, it
+//     does not receive a credential.
 func TestApprovalRotationIsGatedValidatedAndRevealed(t *testing.T) {
 	f := newKeyRotationFixture(t)
 	executor, ok := f.svc.approvalExecutorRegistry().Get(model.ApprovalObjectAPIKey + "." + model.ApprovalActionRotateCredential)

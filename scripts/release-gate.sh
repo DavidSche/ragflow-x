@@ -257,6 +257,7 @@ static tier (always required)
   s08.fe-typecheck          cd web && npx tsc -b
   s09.fe-test               cd web && npx vitest run --maxWorkers=2
   s12.gate-selftest         scripts/release-gate/selftest.sh (the hook refuses what it should)
+  s13.assurance-gold        scripts/release-gate/assurance.sh (doc/301 G-A1..A8: 12 rows with n + CP, 44117-44123 in 5 places)
   s10.changelog             CHANGELOG.md carries the --version section
   s11.release-notes         .github/release-notes/<version>.md (optional, reported)
 build tier (required when selected)
@@ -353,6 +354,13 @@ if tier_selected static; then
   # The guard itself is a piece of software: prove it still refuses, and still
   # allows, before trusting a green report from it.
   run_check "s12.gate-selftest" "static" 1 "the tag-push hook still blocks what it should"     bash scripts/release-gate/selftest.sh
+
+  # doc/301 §11.1: the assurance gate has to be a check that can go red, not a promise in
+  # a document. G-A2/G-A3/G-A5/G-A6/G-A7 are Go tests and are already inside s07; what
+  # s07 cannot see is (a) whether the G-A1 table prints its `n` and Clopper-Pearson bound
+  # in a human-readable log, and (b) whether 44117-44123 is registered in all five places,
+  # one of which is documentation. Both live here.
+  run_check "s13.assurance-gold" "static" 1 "assurance gate G-A1..A8 (12 rows with n/CP, error-code closed set)"     bash scripts/release-gate/assurance.sh
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'

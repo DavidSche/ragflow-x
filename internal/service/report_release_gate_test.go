@@ -211,3 +211,29 @@ func releaseGateRow(t *testing.T, result ReleaseGateResult, id string) ReleaseGa
 	t.Fatalf("row %s not found in gate output", id)
 	return ReleaseGateRow{}
 }
+
+// TestReleaseGatePrintsTheTableForTheGateScript is the seam between the Go gate and
+// `scripts/release-gate/assurance.sh` (doc/301 §11.1: "验收 = 门禁里有一条会红的检查").
+//
+// The script cannot import Go, so the table is emitted twice in two shapes: the human
+// table (above) and one `gate-row:` line per row, which the script parses. Two rules
+// make that parse trustworthy rather than decorative:
+//
+//   - the line carries `n=` and `denom=` for every row, so "this row passed" can never
+//     be printed by a row that had no denominator;
+//   - the count is asserted here, not only in the script: if someone deletes a row from
+//     the switch, this test fails before the script has a chance to print a shorter,
+//     greener table.
+func TestReleaseGatePrintsTheTableForTheGateScript(t *testing.T) {
+	result := EvaluateReleaseGate(passingGateInput())
+	if len(result.Rows) != 12 {
+		t.Fatalf("gate has %d rows, want 12 (the script parses exactly twelve gate-row lines)", len(result.Rows))
+	}
+	for _, row := range result.Rows {
+		// `observed` carries the Clopper-Pearson bound on the two upper-bound rows and
+		// the bare count elsewhere; both are printed so the log can be audited without
+		// re-running anything.
+		t.Logf("gate-row: id=%s verdict=%s sample=%s observed=%s", row.ID, row.Verdict, row.Sample, row.Observed)
+	}
+	t.Logf("gate-alpha: alpha=%.3f", releaseGateAlpha)
+}

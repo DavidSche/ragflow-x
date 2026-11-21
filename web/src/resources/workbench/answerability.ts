@@ -31,7 +31,18 @@ export type AnswerabilityReason = (typeof ANSWERABILITY_REASONS)[number];
 /** A frontend-only state: the turn predates the field, or never reached the ledger. */
 export const ANSWERABILITY_NOT_RECORDED = "not_recorded";
 
-export type AnswerabilityState = AnswerabilityReason | typeof ANSWERABILITY_NOT_RECORDED;
+/**
+ * A presentation state, not a server value: the server says `none`, the badge says
+ * "answered". It is a member of the union because `answerabilityState` returns it — a
+ * helper whose return type cannot hold its own return value is how a `switch` ends up
+ * with a dead case that looks like coverage.
+ */
+export const ANSWERABILITY_ANSWERABLE = "answerable";
+
+export type AnswerabilityState =
+  | AnswerabilityReason
+  | typeof ANSWERABILITY_NOT_RECORDED
+  | typeof ANSWERABILITY_ANSWERABLE;
 
 export function isAnswerabilityReason(value: string): value is AnswerabilityReason {
   return (ANSWERABILITY_REASONS as readonly string[]).includes(value);
@@ -119,6 +130,7 @@ export const ANSWERABILITY_FILTER_GROUPS: { labelKey: string; reasons: Answerabi
 export function answerabilityTone(state: AnswerabilityState): string {
   switch (state) {
     case "answerable":
+    case "none":
       return "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300";
     case "no_evidence":
     case "low_similarity":
