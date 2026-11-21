@@ -82,6 +82,10 @@ type evalReceipt struct {
 	Rows       []evalRow `json:"rows"`
 	Decision   string    `json:"decision"`
 	Verdict    string    `json:"verdict"`
+	// Prereg is the freeze this run is judged against (doc/301 §9.2 / T05). Nil when the run
+	// was not bound to one — which the report says out loud, because an unbound run cannot
+	// claim it followed a rule written before the numbers existed.
+	Prereg *preregBinding `json:"prereg,omitempty"`
 }
 
 const (
@@ -124,12 +128,19 @@ func runEval(args []string, stdout, stderr *os.File) int {
 	predPath := fs.String("pred", "", "predictions JSONL: item_id, verdict, quote_status[, abstain_reason]")
 	exp := fs.String("exp", "", "experiment: E1 (method selection) or E2 (candidate scan scope)")
 	method := fs.String("method", "", "label of the method being evaluated (e.g. rule-v1, single-model)")
+	preregPath := fs.String("prereg", "", "pre-registration file to bind this run to (goldtool prereg --freeze)")
+	arm := fs.String("arm", "", "pre-registered arm label, required when one method maps to several arms")
 	out := fs.String("out", "", "write the markdown report here (default: stdout)")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 	if strings.TrimSpace(*goldPath) == "" || strings.TrimSpace(*predPath) == "" {
 		fmt.Fprintln(stderr, "goldtool eval: --gold and --pred are required")
+		return exitUsage
+	}
+	if strings.TrimSpace(*arm) != "" && strings.TrimSpace(*preregPath) == "" {
+		fmt.Fprintln(stderr, "goldtool eval: --arm only means something with --prereg; an arm label without a "+
+			"frozen arm list is a nickname")
 		return exitUsage
 	}
 	experiment := strings.ToUpper(strings.TrimSpace(*exp))
@@ -149,8 +160,36 @@ func runEval(args []string, stdout, stderr *os.File) int {
 		return exitUsage
 	}
 
+	var binding *preregBinding
+	var bindGaps []string
+	if strings.TrimSpace(*preregPath) != "" {
+		var problems []string
+		var err error
+		binding, problems, bindGaps, err = bindPrereg(*preregPath, experiment, *method, *arm, items)
+		if err != nil {
+			fmt.Fprintf(stderr, "goldtool eval: --prereg: %v\n", err)
+			return exitUsage
+		}
+		if len(problems) > 0 {
+			for _, p := range problems {
+				fmt.Fprintf(stderr, "goldtool eval: --prereg: %s\n", p)
+			}
+			return exitInvariant
+		}
+		for _, g := range bindGaps {
+			fmt.Fprintf(stderr, "goldtool eval: --prereg: cannot verify: %s\n", g)
+		}
+	} else {
+		// Not an error: doc/301 §9.2's rules are still enforced by the rows. But a run that
+		// cites no freeze must say so, otherwise "照抄预注册" is an assertion about a file
+		// nobody can produce.
+		fmt.Fprintf(stderr, "goldtool eval: no --prereg: rows are judged, but this run cannot claim it "+
+			"followed a rule frozen before the numbers existed\n")
+	}
+
 	receipt, problems := evaluateExperiment(experiment, *method, items, preds)
 	receipt.GoldFile, receipt.PredFile = *goldPath, *predPath
+	receipt.Prereg = binding
 	if len(problems) > 0 {
 		for _, p := range problems {
 			fmt.Fprintf(stderr, "goldtool eval: %s\n", p)
@@ -176,6 +215,12 @@ func runEval(args []string, stdout, stderr *os.File) int {
 	case evalUnverified:
 		// Ran correctly, but at least one promise has no denominator to check it
 		// against. Same meaning as everywhere else in this tool: declared, never silent.
+		return exitIncomplete
+	}
+	if len(bindGaps) > 0 {
+		// The rows passed, but the freeze they are supposed to belong to could not be hashed
+		// on this machine — so the binding is unverified, and `pass` would be the one thing
+		// this tool never prints without evidence.
 		return exitIncomplete
 	}
 	return exitOK
@@ -977,7 +1022,26 @@ func renderEvalMarkdown(r evalReceipt) string {
 	fmt.Fprintf(&b, "# %s 评价报告（%s）\n\n", r.Experiment, r.Method)
 	fmt.Fprintf(&b, "- 金标文件：`%s`（%d 条）\n", r.GoldFile, r.GoldItems)
 	fmt.Fprintf(&b, "- 预测文件：`%s`（%d 条）\n", r.PredFile, r.Predicted)
-	fmt.Fprintf(&b, "- 判定：**%s**\n\n", r.Verdict)
+	fmt.Fprintf(&b, "- 判定：**%s**\n", r.Verdict)
+	if r.Prereg != nil {
+		fmt.Fprintf(&b, "- 预注册：`%s`（%s，frozen %s，作者 %s）sha256 `%s`\n",
+			r.Prereg.Path, r.Prereg.Experiment, r.Prereg.FrozenAt, r.Prereg.Author, r.Prereg.SHA256)
+		fmt.Fprintf(&b, "- 臂：**%s**（runtime method `%s`，cost_rank %d）；样本 `%s`（%d 条），金标 %d 条\n",
+			r.Prereg.Arm, r.Prereg.ArmMethod, r.Prereg.ArmCostRank,
+			orDash(r.Prereg.SampleID), r.Prereg.SampleItems, r.Prereg.GoldItems)
+	} else {
+		b.WriteString("- 预注册：**未引用**（本报告的行仍按 doc/301 §9.2 判定，但不能主张「照抄冻结规则」）\n")
+	}
+	b.WriteString("\n")
+	if r.Prereg != nil && len(r.Prereg.PlanDrift) > 0 {
+		// A shorter class is disclosed, not repaired (doc/301 §9.1.1 discipline 5): it moves
+		// every CP bound in the table below, so it belongs above the table, not in a footnote.
+		b.WriteString("| 类别 | 计划 n | 实际 n | 差 |\n| --- | --- | --- | --- |\n")
+		for _, d := range r.Prereg.PlanDrift {
+			fmt.Fprintf(&b, "| %s | %d | %d | %+d |\n", d.Class, d.Planned, d.Actual, d.Actual-d.Planned)
+		}
+		b.WriteString("\n计划与实际不一致时，按 301 §9.1.1 纪律 5 披露实际分母，不补样本、不改抽样。\n\n")
+	}
 	fmt.Fprintf(&b, "统计口径：比例一律给分子/分母 + Clopper–Pearson 精确 95%% 区间（单侧 α=%.3f）；"+
 		"点估计与 CP 下界分两行报告（doc/301 §4.2）。\n\n", stats.Alpha)
 	b.WriteString("| 类别 | 指标 | 组 | 分子/分母 | 点估计 | CP 95% | 门槛 | 判定 |\n")

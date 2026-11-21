@@ -19,7 +19,8 @@
 //	kappa      pairwise Cohen's κ over per-annotator label files (offline)
 //	assemble   labels + adjudication -> redacted, validated, frozen gold file
 //	preds      runtime claim evaluations -> the predictions file `eval` scores
-//	eval       (gold, predictions) -> E1/E2 experiment report with CP intervals
+//	prereg     freeze the E1/E2 decision rules, sample hash and arms before the run
+//	eval       (gold, predictions[, prereg]) -> E1/E2 experiment report with CP intervals
 //
 // Exit codes:
 //
@@ -56,8 +57,13 @@ usage:
                     [--adjudication adj.jsonl] --version v1 --out DIR
   goldtool preds    --dsn DSN --items FILE.jsonl --method NAME --out pred.jsonl
                     [--mode full] [--quiet]
+  goldtool prereg   --freeze --exp E1|E2 --sample worksheet.jsonl
+                    --sample-receipt receipt.json --author NAME --out prereg.json
+                    [--pool pool.jsonl] [--arms "rule-v1, ..."]
+                    [--arms "rule-v1, single-model, ..."]
+  goldtool prereg   --check prereg.json
   goldtool eval     --gold DIR/gold-v1.jsonl --pred pred.jsonl --exp E1|E2
-                    [--method NAME] [--out report.md]
+                    [--prereg prereg.json [--arm LABEL]] [--method NAME] [--out report.md]
 
 The DSN is only ever used inside a read-only transaction: this tool annotates
 history, it never writes it.
@@ -83,6 +89,8 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runAssemble(args[1:], stdout, stderr)
 	case "preds":
 		return runPreds(args[1:], stdout, stderr)
+	case "prereg":
+		return runPrereg(args[1:], stdout, stderr)
 	case "eval":
 		return runEval(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
