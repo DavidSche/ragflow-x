@@ -14,6 +14,7 @@
 // Subcommands:
 //
 //	pool       export candidates from published revisions of a live database (read-only)
+//	sample     draw the annotation worksheet out of a pool export (deterministic)
 //	validate   check a gold file against doc/301 §9.1 (offline, no database)
 //	kappa      pairwise Cohen's κ over per-annotator label files (offline)
 //	assemble   labels + adjudication -> redacted, validated, frozen gold file
@@ -23,6 +24,7 @@
 //	0  ok
 //	1  an invariant failed (the message names the invariant, not just "invalid")
 //	2  usage / environment error (missing flag, unreadable file, no DSN)
+//	3  ran correctly but could not meet a coverage promise (declared, never silent)
 package main
 
 import (
@@ -43,6 +45,9 @@ const usage = `goldtool - gold-set tooling for report assurance (doc/301 §9.1)
 
 usage:
   goldtool pool     --dsn DSN --out pool.jsonl [--max-revisions 40] [--tenant ID]
+  goldtool sample   --pool pool.jsonl --out worksheet.jsonl [--n 120]
+                    [--strategy random|stratified --stratum K --targets "k=n,..."]
+                    [--seed N] [--allow-short]
   goldtool validate --gold FILE.jsonl [--labels FILE.jsonl] [--strict-coverage]
   goldtool kappa    --labels FILE.jsonl [--min 0.70]
   goldtool assemble --pool pool.jsonl --labels-a a.jsonl --labels-b b.jsonl
@@ -62,6 +67,8 @@ func run(args []string, stdout, stderr *os.File) int {
 	switch args[0] {
 	case "pool":
 		return runPool(args[1:], stdout, stderr)
+	case "sample":
+		return runSample(args[1:], stdout, stderr)
 	case "validate":
 		return runValidate(args[1:], stdout, stderr)
 	case "kappa":
