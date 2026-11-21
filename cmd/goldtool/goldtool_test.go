@@ -397,15 +397,94 @@ func TestDatasetIDsToleratesGarbage(t *testing.T) {
 	}
 }
 
-func TestFilterCandidatesDropsCitedChunks(t *testing.T) {
-	cited := map[string]bool{"c1:hash1": true}
-	in := []Candidate{
-		{ChunkID: "c1", ContentHash: "hash1", PoolRank: 1},
-		{ChunkID: "c2", ContentHash: "hash2", PoolRank: 2},
+// The dedup unit is the section (2026-11-21 amendment to doc/301 §9.1, 304 D-08).
+// All three outcomes are asserted in one table because the bug this replaced was a
+// *scope* bug: the old filter looked revision-wide and deleted rows the writer had
+// genuinely seen, which emptied E2's only source on the 151 corpus.
+func TestFilterCandidatesDropsOnlySectionCited(t *testing.T) {
+	sectionCited := map[string]bool{"own:hash-own": true}
+	revisionCited := map[string]bool{
+		"own:hash-own":     true, // cited by this section
+		"other:hash-other": true, // cited by a different section of the same revision
 	}
-	out := filterCandidates(in, cited)
-	if len(out) != 1 || out[0].ChunkID != "c2" {
-		t.Fatalf("cited chunks must not survive as candidates: %+v", out)
+	in := []Candidate{
+		{ChunkID: "own", ContentHash: "hash-own", PoolRank: 1},
+		{ChunkID: "other", ContentHash: "hash-other", PoolRank: 2},
+		{ChunkID: "fresh", ContentHash: "hash-fresh", PoolRank: 3},
+	}
+	out := filterCandidates(in, sectionCited, revisionCited)
+	if len(out) != 2 {
+		t.Fatalf("want the section-cited row gone and the other two kept, got %+v", out)
+	}
+	byChunk := map[string]Candidate{}
+	for _, c := range out {
+		byChunk[c.ChunkID] = c
+	}
+	if c, ok := byChunk["other"]; !ok || !c.CitedElsewhere {
+		t.Fatalf("a chunk cited in another section must survive *and* be flagged: %+v", byChunk)
+	}
+	if c, ok := byChunk["fresh"]; !ok || c.CitedElsewhere {
+		t.Fatalf("an uncited chunk must survive unflagged: %+v", byChunk)
+	}
+	if _, ok := byChunk["own"]; ok {
+		t.Fatalf("a chunk this section cited must not survive: %+v", byChunk)
+	}
+}
+
+// A candidate that repeats a chunk this item cites is a contradiction in the one
+// scope the annotator judges, and the validator has to say so by name.
+func TestValidateRefusesCandidateCitedBySameItem(t *testing.T) {
+	it := sampleItem(1, "supported")
+	it.CandidatePool = []Candidate{{ChunkID: it.Evidence[0].ChunkID,
+		ContentHash: it.Evidence[0].ContentHash, ContentExcerpt: "同一段落", PoolRank: 1}}
+	problems := checkItem(it, 0)
+	if len(problems) == 0 {
+		t.Fatalf("want a named problem, got none")
+	}
+	if !strings.Contains(fmt.Sprint(problems), "repeats a chunk that this item cites") {
+		t.Fatalf("want the same-item citation named, got %v", problems)
+	}
+}
+
+// …but the same chunk cited **elsewhere** is legal and keeps its flag through
+// assembly, because the flag is what turns "the writer never saw it" into "the writer
+// used it in another section" — a different judgement.
+// Redaction is one-way but must be repeatable: an assembly retried after a κ failure
+// re-reads the pool, and a redaction that blanked an already-excerpted item would
+// produce a file that passes the length check carrying no text at all.
+func TestRedactItemIsIdempotent(t *testing.T) {
+	it := sampleItem(1, "supported")
+	it.Evidence[0].Content = "完整原文，用于验证重复脱敏"
+	it.Evidence[0].ContentExcerpt = ""
+	once := redactItem(it)
+	twice := redactItem(once)
+	if once.Evidence[0].ContentExcerpt == "" {
+		t.Fatalf("first redaction produced no excerpt")
+	}
+	if twice.Evidence[0].ContentExcerpt != once.Evidence[0].ContentExcerpt {
+		t.Fatalf("second redaction changed the excerpt: %q -> %q",
+			once.Evidence[0].ContentExcerpt, twice.Evidence[0].ContentExcerpt)
+	}
+	if twice.Evidence[0].ContentChars != once.Evidence[0].ContentChars {
+		t.Fatalf("second redaction changed the char count: %d -> %d",
+			once.Evidence[0].ContentChars, twice.Evidence[0].ContentChars)
+	}
+}
+
+func TestCandidateCitedElsewhereSurvivesAssembly(t *testing.T) {
+	it := sampleItem(1, "supported")
+	it.CandidatePool = []Candidate{{ChunkID: "chk-elsewhere", ContentHash: "hash-elsewhere",
+		Content: "别处引用过的一整段原文", PoolRank: 4, CitedElsewhere: true}}
+	gold := redactItem(it)
+	cand := gold.CandidatePool[0]
+	if !cand.CitedElsewhere {
+		t.Fatalf("cited_elsewhere must survive redaction: %+v", cand)
+	}
+	if cand.Content != "" || cand.ContentExcerpt == "" {
+		t.Fatalf("a gold candidate must be redacted, not dropped: %+v", cand)
+	}
+	if problems := checkItem(gold, 0); len(problems) != 0 {
+		t.Fatalf("a flagged-elsewhere candidate must pass checkItem: %v", problems)
 	}
 }
 

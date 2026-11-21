@@ -76,9 +76,22 @@ type Evidence struct {
 // did *not* cite. It is never evidence (doc/301 §5.3.1) — it exists so E2 can ask
 // "would scanning the pool have found the contradiction".
 type Candidate struct {
-	ChunkID        string `json:"chunk_id"`
-	ContentHash    string `json:"content_hash"`
-	ContentChars   int    `json:"content_chars"`
+	ChunkID      string `json:"chunk_id"`
+	ContentHash  string `json:"content_hash"`
+	ContentChars int    `json:"content_chars"`
+	// CitedElsewhere is true when this revision cited the chunk in a *different*
+	// section. The dedup unit is the section (2026-11-21 amendment to doc/301 §9.1,
+	// recorded as 304 D-08): the freeze in `report_generate.go` skips the citing
+	// section's own citations, so exporting against the whole revision would delete
+	// rows the writer really did see — on a 16-document corpus it deleted *all* of
+	// them, and E2's `conflicting` class lost its only source.
+	//
+	// Keeping the row is the honest half; flagging it is the other half. An annotator
+	// judging "did this section miss a contradiction" is entitled to know that the
+	// same chunk was quoted three sections away: it changes the judgement from "the
+	// writer never saw it" to "the writer saw it and used it elsewhere", which is a
+	// different defect and may not be one at all.
+	CitedElsewhere bool   `json:"cited_elsewhere"`
 	Content        string `json:"content,omitempty"`
 	ContentExcerpt string `json:"content_excerpt,omitempty"`
 	PoolRank       int    `json:"pool_rank"`
@@ -268,12 +281,20 @@ func checkItem(it Item, idx int) []string {
 			add("candidate_pool[%d].content_excerpt is %d runes, limit %d", i,
 				utf8.RuneCountInString(c.ContentExcerpt), maxExcerptRunes)
 		}
-		// doc/301 §9.1: a candidate is "in the retrieval pool and NOT cited". The same
-		// chunk may legitimately be cited by one section and pooled by another *inside
-		// the revision*, in which case the export keeps the cited side; if both survive
-		// into one item, the item is lying about what "not cited" means.
+		if c.Content != "" && c.ContentExcerpt != "" {
+			add("candidate_pool[%d] carries both full content and an excerpt; a gold file must be redacted, a pool must not be",
+				i)
+		}
+		if c.Content == "" && c.ContentExcerpt == "" {
+			add("candidate_pool[%d] carries neither content nor excerpt", i)
+		}
+		// doc/301 §9.1 (2026-11-21 amendment, 304 D-08): the dedup unit is the
+		// **section**, so a candidate may be cited elsewhere in the revision — that is
+		// what `cited_elsewhere` records. What it may never do is repeat a chunk this
+		// item itself cites: then "in the pool and not cited" would be false in the one
+		// scope the annotator is actually judging.
 		if citedChunk[c.ChunkID+":"+c.ContentHash] {
-			add("candidate_pool[%d] repeats a chunk that this item cites (%s) — a candidate is by definition uncited",
+			add("candidate_pool[%d] repeats a chunk that this item cites (%s) — a candidate is by definition uncited in this item's section",
 				i, c.ChunkID)
 		}
 	}

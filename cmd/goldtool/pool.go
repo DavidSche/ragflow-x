@@ -28,8 +28,13 @@ type poolExport struct {
 	ClaimTypes   map[string]int `json:"claim_types"`
 	PriorSupport map[string]int `json:"prior_support_status"`
 	Candidates   int            `json:"candidate_rows"`
-	EvidenceRows int            `json:"evidence_rows"`
-	Coverage     poolCoverage   `json:"coverage"`
+	// CandidatesElsewhere counts exported candidates that the same revision cited in
+	// another section. It is printed because the number is the *reason* the dedup unit
+	// is the section: without it, "candidate_rows went from 0 to N" reads as if the
+	// freeze had been broken, when in fact the filter stopped deleting real rows.
+	CandidatesElsewhere int          `json:"candidate_rows_cited_elsewhere"`
+	EvidenceRows        int          `json:"evidence_rows"`
+	Coverage            poolCoverage `json:"coverage"`
 }
 
 // poolCoverage states the three coverage floors of §9.1 as measured facts. The
@@ -127,6 +132,11 @@ func runPool(args []string, stdout, stderr *os.File) int {
 		}
 		receipt.EvidenceRows += len(it.Evidence)
 		receipt.Candidates += len(it.CandidatePool)
+		for _, c := range it.CandidatePool {
+			if c.CitedElsewhere {
+				receipt.CandidatesElsewhere++
+			}
+		}
 	}
 	receipt.Datasets = len(ds)
 	receipt.Templates = distinctSet(items, func(i Item) string { return i.Source.TemplateKey })
@@ -379,8 +389,10 @@ order by section_ord, pool_rank, chunk_id`, revisionID)
 //   - a claim with no citation is skipped (and counted), because §9.1's evidence
 //     source is the real snapshot text; there is no fallback to the claim's own
 //     words;
-//   - candidates are filtered against the revision-wide cited set, so the §9.1
-//     rule "a chunk is either cited or a candidate" holds across sections;
+//   - candidates are deduplicated **per section**, matching the freeze, and anything
+//     the revision cited elsewhere is kept with `cited_elsewhere: true` (2026-11-21
+//     amendment to §9.1, 304 D-08). The previous revision-wide filter removed 17 of
+//     17 real candidates on the 151 corpus, which is how E2 lost its only source;
 //   - `prior_support_status` is carried but never copied into a label.
 func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item, int, int, error) {
 	items, err := claimsOfRevision(ctx, tx, rev.RevisionID)
@@ -396,10 +408,19 @@ func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item,
 		return nil, 0, 0, err
 	}
 
-	cited := map[string]bool{}
-	for _, evs := range cites {
-		for _, ev := range evs {
-			cited[ev.ChunkID+":"+ev.ContentHash] = true
+	// Two cited sets, because the question has two scopes. `bySection` is the scope an
+	// annotator judges in ("did *this section* use the chunk?"); `anywhere` is only used
+	// to label a surviving candidate, never to delete it.
+	bySection := map[int]map[string]bool{}
+	anywhere := map[string]bool{}
+	for _, it := range items {
+		for _, ev := range cites[it.ClaimID] {
+			key := ev.ChunkID + ":" + ev.ContentHash
+			anywhere[key] = true
+			if bySection[it.SectionOrd] == nil {
+				bySection[it.SectionOrd] = map[string]bool{}
+			}
+			bySection[it.SectionOrd][key] = true
 		}
 	}
 
@@ -423,7 +444,7 @@ func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item,
 			continue
 		}
 		it.Evidence = evs
-		it.CandidatePool = filterCandidates(cands[it.SectionOrd], cited)
+		it.CandidatePool = filterCandidates(cands[it.SectionOrd], bySection[it.SectionOrd], anywhere)
 		it.Source = src
 		it.ItemID = rev.RevisionID + ":" + it.ClaimID
 		it.AsOfDate = stamp(time.Now())
@@ -433,12 +454,21 @@ func itemsOfRevision(ctx context.Context, tx *sql.Tx, rev poolRevision) ([]Item,
 	return out, len(items), skipped, nil
 }
 
-func filterCandidates(in []Candidate, cited map[string]bool) []Candidate {
+// filterCandidates drops candidates this **section** cited and flags the ones another
+// section of the same revision cited.
+//
+// `sectionCited` is passed even though the freeze already skipped those rows: an
+// export that trusts upstream to have been right is an export that cannot detect
+// upstream being wrong. If a row shows up here as section-cited, generation and export
+// disagree and the row must not be treated as a candidate.
+func filterCandidates(in []Candidate, sectionCited, revisionCited map[string]bool) []Candidate {
 	out := make([]Candidate, 0, len(in))
 	for _, c := range in {
-		if cited[c.ChunkID+":"+c.ContentHash] {
+		key := c.ChunkID + ":" + c.ContentHash
+		if sectionCited[key] {
 			continue
 		}
+		c.CitedElsewhere = revisionCited[key]
 		out = append(out, c)
 	}
 	sort.SliceStable(out, func(i, j int) bool {

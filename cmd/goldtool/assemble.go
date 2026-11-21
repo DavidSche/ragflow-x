@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Adjudication is the third person's decision on an item the two annotators did not
@@ -358,26 +359,37 @@ func citedSnapshotIDs(it Item) []string {
 }
 
 // redactItem is the tree-safety step: full text out, hash + bounded excerpt in.
+// redactItem turns a pool item (full text) into a gold item (hash + bounded excerpt).
+//
+// It is **idempotent on purpose**: an item that already carries only an excerpt keeps
+// it. Without that, running assembly twice — a retry after a κ failure, say — would
+// blank every excerpt (`redact("")` returns "") and the second file would pass the
+// excerpt-length check while carrying no text at all: a gold set that validates and
+// proves nothing.
 func redactItem(it Item) Item {
 	evs := make([]Evidence, 0, len(it.Evidence))
 	for _, ev := range it.Evidence {
-		excerpt, chars := redact(ev.Content, ev.ContentHash)
-		ev.ContentExcerpt = excerpt
-		ev.ContentChars = chars
+		ev.ContentExcerpt, ev.ContentChars = redactOnce(ev.Content, ev.ContentExcerpt, ev.ContentHash)
 		ev.Content = ""
 		evs = append(evs, ev)
 	}
 	it.Evidence = evs
 	cands := make([]Candidate, 0, len(it.CandidatePool))
 	for _, c := range it.CandidatePool {
-		excerpt, chars := redact(c.Content, c.ContentHash)
-		c.ContentExcerpt = excerpt
-		c.ContentChars = chars
+		c.ContentExcerpt, c.ContentChars = redactOnce(c.Content, c.ContentExcerpt, c.ContentHash)
 		c.Content = ""
 		cands = append(cands, c)
 	}
 	it.CandidatePool = cands
 	return it
+}
+
+// redactOnce is "redact, unless it is already redacted".
+func redactOnce(content, excerpt, hash string) (string, int) {
+	if strings.TrimSpace(content) == "" && excerpt != "" {
+		return excerpt, utf8.RuneCountInString(excerpt)
+	}
+	return redact(content, hash)
 }
 
 func countAdjudicated(items []Item) int {
