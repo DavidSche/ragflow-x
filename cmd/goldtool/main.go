@@ -18,6 +18,7 @@
 //	validate   check a gold file against doc/301 §9.1 (offline, no database)
 //	kappa      pairwise Cohen's κ over per-annotator label files (offline)
 //	assemble   labels + adjudication -> redacted, validated, frozen gold file
+//	eval       (gold, predictions) -> E1/E2 experiment report with CP intervals
 //
 // Exit codes:
 //
@@ -52,6 +53,8 @@ usage:
   goldtool kappa    --labels FILE.jsonl [--min 0.70]
   goldtool assemble --pool pool.jsonl --labels-a a.jsonl --labels-b b.jsonl
                     [--adjudication adj.jsonl] --version v1 --out DIR
+  goldtool eval     --gold DIR/gold-v1.jsonl --pred pred.jsonl --exp E1|E2
+                    [--method NAME] [--out report.md]
 
 The DSN is only ever used inside a read-only transaction: this tool annotates
 history, it never writes it.
@@ -75,6 +78,8 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runKappa(args[1:], stdout, stderr)
 	case "assemble":
 		return runAssemble(args[1:], stdout, stderr)
+	case "eval":
+		return runEval(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage)
 		return exitOK

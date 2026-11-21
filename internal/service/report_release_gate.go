@@ -24,9 +24,10 @@ package service
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"strings"
+
+	"github.com/ragflow-x/ragflow-x/internal/pkg/stats"
 )
 
 // Gate verdict words. Three, not two: "not measured" is a different answer from
@@ -40,7 +41,11 @@ const (
 // releaseGateAlpha is the one-sided tail of a two-sided 95% interval, which is what
 // doc/301 §14.A quotes ("0/36 ⇒ 上界 9.74%"). Using 0.05 here would quietly widen the
 // gate's claim of what it proved.
-const releaseGateAlpha = 0.025
+//
+// It is an alias of stats.Alpha rather than a second literal: the gate and the gold-set
+// evaluation must be unable to drift apart, and a duplicated 0.025 is exactly how that
+// drift starts.
+const releaseGateAlpha = stats.Alpha
 
 // releaseGatePerRevisionTokenCeiling is §4.2's "单修订 token ≤80k".
 const releaseGatePerRevisionTokenCeiling int64 = 80000
@@ -337,121 +342,16 @@ func releaseGateAccountingRow(in ReleaseGateInput) ReleaseGateRow {
 }
 
 // ClopperPearsonUpper returns the exact one-sided upper confidence bound for a binomial
-// proportion: the largest θ with P(X ≤ k; n, θ) ≥ alpha.
+// proportion (doc/301 §14.A). The arithmetic lives in `internal/pkg/stats` because the
+// gold-set evaluation (`cmd/goldtool eval`) has to certify the *experiment* with the same
+// interval this gate certifies a *run* with; two implementations could disagree at the
+// fourth decimal while both printing a plausible number, and the gate would then pass a
+// run whose experiment failed.
 //
-// It is computed by bisection on the regularized incomplete beta function rather than
-// by pulling in a statistics dependency, because the gate must run offline and its
-// numbers must not change with a library version bump. The one closed form worth
-// keeping in mind is k=0: the bound is 1−alpha^(1/n), so 0/36 at alpha=0.025 is 9.74% —
-// the figure doc/301 §14.A quotes.
+// It stays here, as a one-line delegation, because the release gate is the caller that
+// has a name in the docs and in `scripts/release-gate/assurance.sh`.
 func ClopperPearsonUpper(k, n int64, alpha float64) float64 {
-	if n <= 0 {
-		return 1.0
-	}
-	if k >= n {
-		return 1.0
-	}
-	if k < 0 {
-		k = 0
-	}
-	if alpha <= 0 || alpha >= 1 {
-		alpha = releaseGateAlpha
-	}
-	// Closed forms at the two ends keep the bisection away from its worst conditioning.
-	if k == 0 {
-		return 1 - math.Pow(alpha, 1/float64(n))
-	}
-	low, high := float64(k)/float64(n), 1.0
-	for i := 0; i < 200; i++ {
-		mid := (low + high) / 2
-		// P(X <= k; n, mid) = I_{1-mid}(n-k, k+1)
-		cdf := betaRegularized(float64(n-k), float64(k+1), 1-mid)
-		if cdf > alpha {
-			low = mid
-		} else {
-			high = mid
-		}
-		if high-low < 1e-12 {
-			break
-		}
-	}
-	return (low + high) / 2
-}
-
-// betaRegularized is the regularized incomplete beta I_x(a,b).
-func betaRegularized(a, b, x float64) float64 {
-	if x <= 0 {
-		return 0
-	}
-	if x >= 1 {
-		return 1
-	}
-	// log B(a,b) enters with a minus sign: I_x(a,b) = x^a(1-x)^b / B(a,b) * cf / a.
-	// Getting this sign wrong makes every bound collapse toward 0, which reads as a
-	// *stricter* gate — the failure mode the known-value test below exists to catch.
-	la, _ := math.Lgamma(a)
-	lb, _ := math.Lgamma(b)
-	lab, _ := math.Lgamma(a + b)
-	// `logBeta` below is −ln B(a,b) = ln Γ(a+b) − ln Γ(a) − ln Γ(b), which is what the
-	// usual expression adds to the exponents. Writing the sign the intuitive way
-	// (ln B(a,b) with a minus) yields bounds that collapse toward 0 — a *stricter*
-	// looking gate that proves nothing, which is why the known-value test exists.
-	logBeta := lab - la - lb
-	front := math.Exp(logBeta + a*math.Log(x) + b*math.Log(1-x))
-	// The continued fraction converges fast for x < (a+1)/(a+b+2); mirror otherwise.
-	if x < (a+1)/(a+b+2) {
-		return front * betaContinuedFraction(a, b, x) / a
-	}
-	return 1 - front*betaContinuedFraction(b, a, 1-x)/b
-}
-
-// betaContinuedFraction is the modified Lentz evaluation of the incomplete beta
-// continued fraction (Numerical Recipes §6.4).
-func betaContinuedFraction(a, b, x float64) float64 {
-	const (
-		maxIterations = 300
-		epsilon       = 3e-14
-		tiny          = 1e-30
-	)
-	qab, qap, qam := a+b, a+1, a-1
-	c := 1.0
-	d := 1 - qab*x/qap
-	if math.Abs(d) < tiny {
-		d = tiny
-	}
-	d = 1 / d
-	h := d
-	for m := 1; m <= maxIterations; m++ {
-		mf := float64(m)
-		m2 := 2 * mf
-		aa := mf * (b - mf) * x / ((qam + m2) * (a + m2))
-		d = 1 + aa*d
-		if math.Abs(d) < tiny {
-			d = tiny
-		}
-		c = 1 + aa/c
-		if math.Abs(c) < tiny {
-			c = tiny
-		}
-		d = 1 / d
-		h *= d * c
-		aa = -(a + mf) * (qab + mf) * x / ((a + m2) * (qap + m2))
-		d = 1 + aa*d
-		if math.Abs(d) < tiny {
-			d = tiny
-		}
-		c = 1 + aa/c
-		if math.Abs(c) < tiny {
-			c = tiny
-		}
-		d = 1 / d
-		delta := d * c
-		h *= delta
-		if math.Abs(delta-1) < epsilon {
-			break
-		}
-	}
-	return h
+	return stats.Upper(k, n, alpha)
 }
 
 // ReleaseGateRowIDs returns the closed row list, used by the test that pins it.
