@@ -38,7 +38,12 @@ type governanceStreamWriter struct {
 	traceID string
 	pending []byte // bytes of an incomplete line
 	held    []byte // the terminal frame, waiting for Close
-	written bool
+	// heldTerminal records that the last line held was a terminal frame, so the blank
+	// line that closes it is held too. Without this, the separator would be flushed
+	// immediately and the governance frame would land *inside* an empty frame instead
+	// of before the terminal one.
+	heldTerminal bool
+	written      bool
 }
 
 func newGovernanceStreamWriter(dst io.Writer, traceID string) *governanceStreamWriter {
@@ -54,9 +59,16 @@ func (w *governanceStreamWriter) Write(p []byte) (int, error) {
 		}
 		line := w.pending[:index+1]
 		w.pending = w.pending[index+1:]
-		if isSSETerminalFrame(line) {
+		if isSSETerminalFrame(line) || isKnowledgeTerminalLine(line) {
 			// Keep the frame; it is written after the governance frame.
 			w.held = append(w.held, line...)
+			w.heldTerminal = true
+			continue
+		}
+		if w.heldTerminal && strings.TrimSpace(string(line)) == "" {
+			// The blank line belongs to the frame that is being held.
+			w.held = append(w.held, line...)
+			w.heldTerminal = false
 			continue
 		}
 		if _, err := w.dst.Write(line); err != nil {
@@ -96,6 +108,7 @@ func (w *governanceStreamWriter) Close(inject bool) error {
 		}
 	}
 	w.held, w.pending = nil, nil
+	w.heldTerminal = false
 	return nil
 }
 
@@ -136,4 +149,40 @@ func isSSETerminalFrame(line []byte) bool {
 	}
 	payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 	return payload == "[DONE]"
+}
+
+// isKnowledgeTerminalLine recognises the *second* terminal shape this gateway
+// proxies (T16 live drill, doc/304 E62).
+//
+// The OpenAI-compatible route ends with `data: [DONE]`. The knowledge routes
+// (`/v1/search-apps/:id/completions`, `/v1/agents/:id/completions`) proxy RAGFlow's
+// own stream, which ends with `data: {"code":0,"message":"success","data":true}` —
+// there is no `[DONE]` to hold, so before this existed those two streams carried no
+// governance frame at all and a streaming caller could not learn the trace id that
+// the non-streaming caller gets in the body.
+//
+// The check is deliberately narrow: `code` must be exactly 0 and `data` must be the
+// boolean `true`. An answer chunk carries `data` as an object (never a boolean), and
+// an error frame carries a non-zero code — so neither can be mistaken for the
+// terminal frame, and a mid-stream `final:false` chunk keeps streaming.
+func isKnowledgeTerminalLine(line []byte) bool {
+	trimmed := strings.TrimSpace(string(line))
+	if !strings.HasPrefix(trimmed, "data:") {
+		return false
+	}
+	payload := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	if !strings.HasPrefix(payload, "{") {
+		return false
+	}
+	var frame struct {
+		Code *int            `json:"code"`
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(payload), &frame); err != nil {
+		return false
+	}
+	if frame.Code == nil || *frame.Code != 0 {
+		return false
+	}
+	return strings.TrimSpace(string(frame.Data)) == "true"
 }

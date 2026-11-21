@@ -199,3 +199,82 @@ func TestSSETerminalFrameIsNarrow(t *testing.T) {
 		}
 	}
 }
+
+// TestGovernanceStreamWriterKnowledgeStreamOrdersFrameBeforeTerminal encodes why
+// this writer knows two terminal shapes (doc/304 E62, found by the T16 live drill).
+//
+// The knowledge routes do not end with `[DONE]`; they end with
+// `data: {"code":0,...,"data":true}`. A writer that only knew `[DONE]` forwarded that
+// stream untouched, so a streaming Search App caller received answer frames and a
+// terminal frame but no governance frame — the trace id was only reachable through
+// the non-streaming route.
+func TestGovernanceStreamWriterKnowledgeStreamOrdersFrameBeforeTerminal(t *testing.T) {
+	var out bytes.Buffer
+	w := newGovernanceStreamWriter(&out, "trace-k1")
+
+	chunks := []string{
+		`data: {"code":0,"message":"success","data":{"answer":"a","final":false}}` + "\n\n",
+		`data: {"code":0,"message":"success","data":{"answer":"b","final":true}}` + "\n\n",
+		`data: {"code":0,"message":"success","data":true}` + "\n\n",
+	}
+	for _, chunk := range chunks {
+		if _, err := w.Write([]byte(chunk)); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	if err := w.Close(true); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	raw := out.String()
+	events := parseSSEEvents(t, raw)
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events (2 answer + governance + terminal), got %d: %q",
+			len(events), raw)
+	}
+	if events[0].data != `{"code":0,"message":"success","data":{"answer":"a","final":false}}` {
+		t.Fatalf("first answer frame altered: %q", events[0].data)
+	}
+	if events[1].data != `{"code":0,"message":"success","data":{"answer":"b","final":true}}` {
+		t.Fatalf("second answer frame altered: %q", events[1].data)
+	}
+	if events[2].event != governanceEventName {
+		t.Fatalf("expected the governance frame third, got %+v", events[2])
+	}
+	if events[3].data != `{"code":0,"message":"success","data":true}` {
+		t.Fatalf("terminal knowledge frame must stay last, got %+v", events[3])
+	}
+	if strings.Count(raw, `"data":true`) != 1 {
+		t.Fatalf("terminal frame must be unique and must stay the boolean true: %q", raw)
+	}
+
+	// The governance frame must be a whole frame of its own: the blank line that
+	// closed the terminal frame has to travel with it, or the frame lands inside an
+	// empty event and a strict parser drops it.
+	if !strings.Contains(raw, "event: "+governanceEventName+"\ndata: ") {
+		t.Fatalf("governance frame is not self-contained: %q", raw)
+	}
+	if !strings.HasSuffix(raw, "\n\n") {
+		t.Fatalf("stream must end with a complete frame, got %q", raw)
+	}
+}
+
+// TestIsKnowledgeTerminalLineIsNarrow: the two shapes that must NOT be held.
+func TestIsKnowledgeTerminalLineIsNarrow(t *testing.T) {
+	cases := map[string]bool{
+		`data: {"code":0,"message":"success","data":true}` + "\n":     true,
+		`data:{"code":0,"data":true}` + "\n":                          true,
+		`data: {"code":0,"data":{"answer":"x","final":true}}` + "\n":  false,
+		`data: {"code":0,"data":{"answer":"x","final":false}}` + "\n": false,
+		`data: {"code":109,"message":"boom","data":true}` + "\n":      false,
+		`data: {"error":{"code":404}}` + "\n":                         false,
+		`data: {"code":0,"data":"true"}` + "\n":                       false,
+		"data: [DONE]\n":                                              false,
+		"event: ragflowx.governance\n":                                false,
+	}
+	for line, want := range cases {
+		if got := isKnowledgeTerminalLine([]byte(line)); got != want {
+			t.Fatalf("isKnowledgeTerminalLine(%q) = %v, want %v", line, got, want)
+		}
+	}
+}
