@@ -38,14 +38,14 @@ func governanceAccessRules() []middleware.Rule {
 }
 
 type governanceTestEnv struct {
-	svc          *service.Service
-	h            *Handler
-	router       *gin.Engine
-	jwtMgr       *jwt.Manager
-	tenantID     string
-	adminID      string
-	memberID     string
-	datasetID    string
+	svc       *service.Service
+	h         *Handler
+	router    *gin.Engine
+	jwtMgr    *jwt.Manager
+	tenantID  string
+	adminID   string
+	memberID  string
+	datasetID string
 }
 
 func setupGovernanceTestEnv(t *testing.T) *governanceTestEnv {

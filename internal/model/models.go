@@ -124,7 +124,7 @@ type DatasetLink struct {
 	// PushdownEnabled gates retrieval metadata pushdown for this dataset
 	// (doc/123 §3): when true, the dataset's sensitivity is synced to
 	// RAGFlow meta_fields and participates in metadata_condition filtering.
-	PushdownEnabled bool `gorm:"column:pushdown_enabled;not null;default:false" json:"pushdown_enabled"`
+	PushdownEnabled        bool  `gorm:"column:pushdown_enabled;not null;default:false" json:"pushdown_enabled"`
 	CompilationTokenBudget int64 `gorm:"column:compilation_token_budget;not null;default:0" json:"compilation_token_budget"`
 }
 

@@ -124,7 +124,7 @@ func deleteMemoryPrivacyExemption(c *gin.Context) {
 func previewMemoryPrivacy(c *gin.Context) {
 	tenantID, userID := knowledgeStrategyContext(c)
 	type piiPreviewInput struct {
-		UserInput    string `json:"user_input"`
+		UserInput     string `json:"user_input"`
 		AgentResponse string `json:"agent_response"`
 	}
 	input, ok := bind[piiPreviewInput](c)

@@ -84,10 +84,10 @@ func (h *Handler) CreateTenant(c *gin.Context) {
 // UpdateTenant edits a tenant's name/status/branding.
 func (h *Handler) UpdateTenant(c *gin.Context) {
 	var req struct {
-		Name      string `json:"name"`
-		Status    string `json:"status"`
-		BrandName string `json:"brand_name"`
-		BrandLogo string `json:"brand_logo"`
+		Name                   string `json:"name"`
+		Status                 string `json:"status"`
+		BrandName              string `json:"brand_name"`
+		BrandLogo              string `json:"brand_logo"`
 		CompilationTokenBudget *int64 `json:"compilation_token_budget"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -148,14 +148,14 @@ type QuotaReservation struct {
 	// Applied is true only after the atomic budget row was incremented. It
 	// prevents release/reconciliation from draining balances for a request
 	// rejected before reservation or interrupted before it could reserve.
-	Applied   bool      `gorm:"column:applied;not null;default:false" json:"applied"`
-	ProjectID string    `gorm:"column:project_id;size:32;index" json:"project_id,omitempty"`
-	DatasetID string    `gorm:"column:x_dataset_id;size:32;index" json:"x_dataset_id,omitempty"`
-	ProfileID string    `gorm:"column:x_profile_id;size:32;index" json:"x_profile_id,omitempty"`
-	AssistantID string  `gorm:"column:x_assistant_id;size:32;index" json:"x_assistant_id,omitempty"`
-	RunID       string  `gorm:"column:x_run_id;size:32;index" json:"x_run_id,omitempty"`
-	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
+	Applied     bool      `gorm:"column:applied;not null;default:false" json:"applied"`
+	ProjectID   string    `gorm:"column:project_id;size:32;index" json:"project_id,omitempty"`
+	DatasetID   string    `gorm:"column:x_dataset_id;size:32;index" json:"x_dataset_id,omitempty"`
+	ProfileID   string    `gorm:"column:x_profile_id;size:32;index" json:"x_profile_id,omitempty"`
+	AssistantID string    `gorm:"column:x_assistant_id;size:32;index" json:"x_assistant_id,omitempty"`
+	RunID       string    `gorm:"column:x_run_id;size:32;index" json:"x_run_id,omitempty"`
+	CreatedAt   time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
 
 // TableName is the physical table name.

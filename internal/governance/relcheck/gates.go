@@ -201,8 +201,8 @@ func RunGovernanceChecks(root string, testSymbols map[string]bool) []GovernanceC
 			"UI 来源一致性：ContextSourceDialog/Memory 工作台存在且 i18n 键齐备",
 			map[string][]string{
 				"web/src/resources/conversation-center/ContextSourceDialog.tsx": {"context_policy_version"},
-				"web/src/i18n/en.ts":                                            {"context_source_context_policy_version"},
-				"web/src/i18n/zh.ts":                                            {"context_source_context_policy_version"},
+				"web/src/i18n/en.ts": {"context_source_context_policy_version"},
+				"web/src/i18n/zh.ts": {"context_source_context_policy_version"},
 			}),
 		fileContentCheck(root, "memory_knowledge_conflict_rule",
 			"确定性 Memory/Knowledge 冲突降级窄规则存在并接入受管检索（doc 137 §6.3 #8、§30 P1-4）",

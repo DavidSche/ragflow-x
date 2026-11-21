@@ -78,7 +78,12 @@ func main() {
 	pass := func(name, line string) { fmt.Printf("PASS|%s|%s\n", name, line) }
 	fail := func(name, line string) { fmt.Printf("FAIL|%s|%s\n", name, line) }
 	ok := true
-	failIf := func(cond bool, name, line string) { if cond { ok = false; fail(name, line) } }
+	failIf := func(cond bool, name, line string) {
+		if cond {
+			ok = false
+			fail(name, line)
+		}
+	}
 
 	// 1) contract: list chats and confirm this chat's LLM binding is external (AMD).
 	chats, err := client.ListChats(ctx)

@@ -105,10 +105,10 @@ type DocumentGovernance struct {
 	DocumentID string `gorm:"column:document_id;index;size:64;not null;uniqueIndex:uk_rgx_doc_governance_doc" json:"document_id"`
 	Level      string `gorm:"column:level;size:32;not null" json:"level"`
 	// Authority is the 权威度 等级分 (0-100).
-	Authority int `gorm:"column:authority;not null;default:50" json:"authority"`
-	Status    string `gorm:"column:status;size:32;not null;default:published" json:"status"`
-	Source    string `gorm:"column:source;size:32;not null;default:manual" json:"source"`
-	Reason    string `gorm:"column:reason;size:1024" json:"reason"`
+	Authority int        `gorm:"column:authority;not null;default:50" json:"authority"`
+	Status    string     `gorm:"column:status;size:32;not null;default:published" json:"status"`
+	Source    string     `gorm:"column:source;size:32;not null;default:manual" json:"source"`
+	Reason    string     `gorm:"column:reason;size:1024" json:"reason"`
 	ExpiresAt *time.Time `gorm:"column:expires_at;index" json:"expires_at"`
 
 	ApprovalState string     `gorm:"column:approval_state;size:32;not null;default:none" json:"approval_state"`
