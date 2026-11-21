@@ -28,6 +28,10 @@ type Adjudication struct {
 	EvidenceIDs []string `json:"evidence_ids,omitempty"`
 	Adjudicator string   `json:"adjudicator"`
 	Reason      string   `json:"reason"`
+	// CandidateChunkID is the candidate row the adjudicated verdict rests on, when the
+	// disagreement was resolved by pointing at a frozen candidate. It wins over
+	// whatever the two annotators named: the adjudicator is the decision.
+	CandidateChunkID string `json:"candidate_chunk_id,omitempty"`
 }
 
 // manifest is what the freeze record points at: file hash, counts, κ, provenance and
@@ -260,6 +264,18 @@ func assembleItems(pool []Item, a, b []Label, adj []Adjudication, requireAll boo
 		if quoteStatus == "" {
 			quoteStatus = quoteStatusFrom(quote)
 		}
+		candRef, refOK := mergeCandidateRef(it, aLabel, bLabel, adjByItem[id], aLabel.Verdict == bLabel.Verdict)
+		if bad := candidateRefInItem(it, candRef); refOK && bad != "" {
+			problems = append(problems, Problem{"candidate_ref_unknown",
+				fmt.Sprintf("%s: %s", id, bad)})
+			continue
+		}
+		if !refOK {
+			problems = append(problems, Problem{"candidate_ref_disagreement",
+				fmt.Sprintf("%s: A=%q B=%q — which candidate a verdict rests on must be adjudicated, not guessed",
+					id, candRefOf(aLabel), candRefOf(bLabel))})
+			continue
+		}
 
 		it.GoldVerdict = verdict
 		it.GoldQuoteStatus = quoteStatus
@@ -270,6 +286,7 @@ func assembleItems(pool []Item, a, b []Label, adj []Adjudication, requireAll boo
 			// must say so explicitly, and the difference shows up as a diff later.
 			evIDs = citedSnapshotIDs(it)
 		}
+		it.GoldCandidateChunkID = candRef
 		it.GoldEvidenceIDs = evIDs
 		it.Annotators = []string{aLabel.Annotator, bLabel.Annotator}
 		if it.Annotators[0] > it.Annotators[1] {
@@ -298,6 +315,11 @@ func indexLabels(ls []Label, problems *[]Problem, who string, pool map[string]It
 		if _, inPool := pool[l.ItemID]; !inPool {
 			*problems = append(*problems, Problem{"label_for_unknown_item",
 				fmt.Sprintf("%s: %s is not in the pool", who, l.ItemID)})
+			continue
+		}
+		if bad := checkLabelCandidateRef(pool[l.ItemID], l); bad != "" {
+			*problems = append(*problems, Problem{"label_candidate_unknown",
+				fmt.Sprintf("%s: %s: %s", who, l.ItemID, bad)})
 			continue
 		}
 		if prev, dup := out[l.ItemID]; dup {
@@ -441,4 +463,93 @@ func readAdjudications(path string) ([]Adjudication, error) {
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// candRefOf is a label's candidate reference, tolerating the redundant pair
+// (`candidate_index` + `candidate_chunk_id`): index is the position in the item's
+// candidate_pool, chunk id is what the gold file records. A label that names both must
+// name the same row — checked in indexLabels, so here the chunk id is authoritative.
+func candRefOf(l Label) string {
+	return trimSpace(l.CandidateChunkID)
+}
+
+// mergeCandidateRef decides which candidate row a resolved verdict rests on.
+//
+// The rule is "the adjudicator decides; agreement needs no decision; a disagreement
+// without adjudication is not resolved". The third case is why this returns ok=false
+// instead of picking one: silently taking annotator A's candidate would make the gold
+// file's E2 grouping (`cited_elsewhere=true/false`) depend on which file was read
+// first, and that grouping is a reported number.
+func mergeCandidateRef(it Item, a, b Label, adj Adjudication, agreed bool) (string, bool) {
+	fromAdj := trimSpace(adj.CandidateChunkID)
+	if !agreed {
+		return fromAdj, true
+	}
+	ra, rb := candRefOf(a), candRefOf(b)
+	switch {
+	case ra == rb:
+		return ra, true
+	case ra == "":
+		return rb, true
+	case rb == "":
+		return ra, true
+	}
+	// Same verdict, different candidate: the pair still needs one row recorded, because
+	// E2 counts its results per `cited_elsewhere` group. An adjudication may resolve the
+	// reference even when the two annotators already agreed on the verdict — that is a
+	// smaller decision than the verdict, but it is still a decision.
+	if fromAdj != "" {
+		return fromAdj, true
+	}
+	return ra, false
+}
+
+// checkLabelCandidateRef refuses a label that points at a candidate row the item does
+// not carry. Without this, an annotator could cite a candidate from a *different*
+// revision (or one that a later rescan dropped) and the gold file would look like it
+// had used the frozen row when it had not.
+func checkLabelCandidateRef(it Item, l Label) string {
+	ref := trimSpace(l.CandidateChunkID)
+	if ref == "" {
+		if l.CandidateIndex == nil {
+			return ""
+		}
+		idx := *l.CandidateIndex
+		if idx < 0 || idx >= len(it.CandidatePool) {
+			return fmt.Sprintf("candidate_index %d is outside the %d candidate row(s) of this item",
+				idx, len(it.CandidatePool))
+		}
+		return ""
+	}
+	idx, found := -1, false
+	for i, c := range it.CandidatePool {
+		if c.ChunkID == ref {
+			idx, found = i, true
+			break
+		}
+	}
+	if !found {
+		return fmt.Sprintf("candidate_chunk_id %q is not one of the %d candidate row(s) of this item",
+			ref, len(it.CandidatePool))
+	}
+	if l.CandidateIndex != nil && *l.CandidateIndex != idx {
+		return fmt.Sprintf("candidate_index %d points at a different row than candidate_chunk_id %q (index %d)",
+			*l.CandidateIndex, ref, idx)
+	}
+	return ""
+}
+
+// candidateRefInItem is the same membership test checkLabelCandidateRef performs, for
+// the reference that came out of the merge (which may have come from the adjudication).
+func candidateRefInItem(it Item, ref string) string {
+	if ref == "" {
+		return ""
+	}
+	for _, c := range it.CandidatePool {
+		if c.ChunkID == ref {
+			return ""
+		}
+	}
+	return fmt.Sprintf("candidate_chunk_id %q is not one of the %d candidate row(s) of this item",
+		ref, len(it.CandidatePool))
 }

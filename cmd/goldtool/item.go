@@ -143,9 +143,20 @@ type Item struct {
 	// actually see. It is a *disclosure*, not a label: without it, "no conflict
 	// found" cannot be distinguished from "we never looked for one" — which is the
 	// one reading error E2 exists to prevent.
-	GoldScanScope string   `json:"gold_scan_scope"`
-	Annotators    []string `json:"annotators"`
-	Notes         string   `json:"notes"`
+	GoldScanScope string `json:"gold_scan_scope"`
+	// GoldCandidateChunkID names the one candidate row that a `conflicting`
+	// judgement rests on (doc/301 §9.1's E2 rules: the 24 conflicting samples come
+	// from real frozen candidate rows, and E2's recall is reported per
+	// `cited_elsewhere` group separately). Without it, a gold file says "this claim
+	// conflicts" while leaving no record of *what* it conflicted with, and the two
+	// groups cannot be counted without re-deriving them from a pool file that may
+	// have been regenerated since.
+	//
+	// It is empty for every verdict that does not rest on a candidate, so an empty
+	// field never has to be read as "unknown".
+	GoldCandidateChunkID string   `json:"gold_candidate_chunk_id,omitempty"`
+	Annotators           []string `json:"annotators"`
+	Notes                string   `json:"notes"`
 }
 
 // checkScanScope enforces the two things `gold_scan_scope` must never be: malformed,
@@ -278,6 +289,28 @@ func checkItem(it Item, idx int) []string {
 	}
 	if err := checkScanScope(it); err != "" {
 		add("%s", err)
+	}
+	// The candidate reference is the falsifiable half of a `conflicting` verdict.
+	// Three shapes are refused: a reference that names nothing, a reference that
+	// names a chunk the annotator could not have seen, and a `cited_only` export
+	// claiming a candidate-backed verdict (that file never had a candidate row, so
+	// the verdict was formed before the candidate existed — the very error §5.2.2
+	// defines `scan_scope` to prevent).
+	if ref := trimSpace(it.GoldCandidateChunkID); ref != "" {
+		found := -1
+		for i, c := range it.CandidatePool {
+			if c.ChunkID == ref {
+				found = i
+				break
+			}
+		}
+		switch {
+		case found < 0:
+			add("gold_candidate_chunk_id %q is not one of the %d candidate row(s) in this item",
+				ref, len(it.CandidatePool))
+		case it.GoldScanScope == "cited_only":
+			add("gold_candidate_chunk_id is set but gold_scan_scope is cited_only")
+		}
 	}
 	if len(it.Annotators) < 2 {
 		add("annotators has %d entries; the plan requires two independent annotators plus adjudication", len(it.Annotators))

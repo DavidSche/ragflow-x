@@ -28,17 +28,29 @@ type sampleReceipt struct {
 	// must never be merged into a primary denominator (over-sampling a class moves what
 	// the CP bound means). The two tracks are independently numbered and independently
 	// reported, so a supplementary file cannot be mistaken for the primary one later.
-	Role      string         `json:"role"`
-	SampleID  string         `json:"sample_id"`
-	Strategy  string         `json:"strategy"`
-	Stratum   string         `json:"stratum,omitempty"`
-	Seed      int64          `json:"seed"`
-	Requested int            `json:"requested"`
-	Available int            `json:"available"`
-	Selected  int            `json:"selected"`
-	Strata    []stratumCount `json:"strata"`
-	Shortfall []stratumCount `json:"shortfall,omitempty"`
-	Problems  []Problem      `json:"problems,omitempty"`
+	Role     string `json:"role"`
+	SampleID string `json:"sample_id"`
+	// Side is the *unit* of the draw: `items` (one claim per row, the gold set of
+	// doc/301 §9.1) or `candidates` (one frozen candidate row per row, the only
+	// admissible source for E2's 24 conflicting samples). The two sides have
+	// different available counts and different stratified keys, so a receipt that did
+	// not name its side would make two incompatible draws look comparable.
+	Side      string `json:"side"`
+	Strategy  string `json:"strategy"`
+	Stratum   string `json:"stratum,omitempty"`
+	Seed      int64  `json:"seed"`
+	Requested int    `json:"requested"`
+	Available int    `json:"available"`
+	Selected  int    `json:"selected"`
+	// CandidateGroups counts the drawn candidate rows by `cited_elsewhere`, because
+	// doc/301 §9.1 requires the two groups to be *reported separately*: a candidate the
+	// revision cited in another section is a different judgment ("the writer saw it and
+	// used it elsewhere") from one it never cited. An unreported group split would turn
+	// that distinction into a footnote discovered during analysis.
+	CandidateGroups []stratumCount `json:"candidate_groups,omitempty"`
+	Strata          []stratumCount `json:"strata"`
+	Shortfall       []stratumCount `json:"shortfall,omitempty"`
+	Problems        []Problem      `json:"problems,omitempty"`
 }
 
 type stratumCount struct {
@@ -72,6 +84,7 @@ func runSample(args []string, stdout, stderr *os.File) int {
 	seed := fs.Int64("seed", 0, "draw seed (0 = derive from the clock and print it)")
 	allowShort := fs.Bool("allow-short", false, "write the worksheet even when a stratum cannot be filled (exit 3)")
 	role := fs.String("role", "", "primary | supplementary (default: random→primary, stratified→supplementary)")
+	side := fs.String("side", "items", "items (one claim per row) | candidates (one frozen candidate row per row)")
 	quiet := fs.Bool("quiet", false, "do not print the JSON receipt")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -80,9 +93,21 @@ func runSample(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stderr, "goldtool sample: --pool and --out are required")
 		return exitUsage
 	}
+	if *side != "items" && *side != "candidates" {
+		fmt.Fprintf(stderr, "goldtool sample: unknown side %q (items | candidates)\n", *side)
+		return exitUsage
+	}
 	if *strategy != "random" && *strategy != "stratified" {
 		fmt.Fprintf(stderr, "goldtool sample: unknown strategy %q (random | stratified)\n", *strategy)
 		return exitUsage
+	}
+	if *side == "candidates" && *strategy == "stratified" && strings.TrimSpace(*targets) != "" {
+		if bad := checkCandidateTargets(*targets); bad != "" {
+			fmt.Fprintf(stderr, "goldtool sample: %s\n"+
+				"  With --side candidates the only stratified key is cited_elsewhere\n"+
+				"  (doc/301 §9.1: the two groups are counted and reported separately).\n", bad)
+			return exitUsage
+		}
 	}
 	if *strategy == "stratified" && strings.TrimSpace(*targets) == "" {
 		fmt.Fprintln(stderr, "goldtool sample: --strategy stratified needs --targets.\n"+
@@ -151,9 +176,17 @@ func runSample(args []string, stdout, stderr *os.File) int {
 	receipt := sampleReceipt{
 		CreatedAt: time.Now().UTC().Format(time.RFC3339), Pool: filepath.Base(*poolPath),
 		PoolSHA256: hex.EncodeToString(sum[:]), Out: filepath.Base(*out),
-		Role: *role, Strategy: *strategy, Seed: *seed, Requested: *n, Available: len(sorted),
+		Role: *role, Strategy: *strategy, Seed: *seed, Requested: *n, Side: *side,
 	}
 	receipt.SampleID = fmt.Sprintf("%s-%s-%d", receipt.Role, receipt.Strategy, receipt.Seed)
+	if *side == "candidates" {
+		// A distinct id, because the same seed over the same pool draws a completely
+		// different set of rows on this side: two files sharing an id would look like
+		// two draws of one sample.
+		receipt.SampleID = fmt.Sprintf("%s-%s-candidates-%d", receipt.Role, receipt.Strategy, receipt.Seed)
+		return runCandidateSide(sorted, receipt, *out, *strategy, *targets, *n, *allowShort, *quiet, rng, stdout, stderr)
+	}
+	receipt.Available = len(sorted)
 	if *strategy == "stratified" {
 		receipt.Stratum = *stratum
 		selected, strata, gap, problems := drawStratified(sorted, *stratum, *targets, rng)
@@ -257,8 +290,15 @@ func parseTargets(spec string, problems *[]Problem) (map[string]int, []string) {
 		if part == "" {
 			continue
 		}
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 {
+		// Split at the *last* "=": a candidate-side key is itself an equality
+		// (`cited_elsewhere=true=12`), so splitting on the first one would read the
+		// key as `cited_elsewhere` and the count as `true=12`.
+		cut := strings.LastIndex(part, "=")
+		kv := []string{part, ""}
+		if cut >= 0 {
+			kv = []string{part[:cut], part[cut+1:]}
+		}
+		if cut < 0 {
 			*problems = append(*problems, Problem{"bad_target",
 				fmt.Sprintf("%q is not key=count", part)})
 			continue

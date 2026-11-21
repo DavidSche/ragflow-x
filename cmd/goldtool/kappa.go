@@ -29,6 +29,13 @@ type Label struct {
 	Quote       string   `json:"quote,omitempty"`
 	EvidenceIDs []string `json:"evidence_ids,omitempty"`
 	Note        string   `json:"note,omitempty"`
+	// CandidateIndex / CandidateChunkID let an annotator say *which* frozen
+	// candidate row drove the judgement. They are optional because most items have no
+	// candidate at all, but when they are present they are checked against the item's
+	// own candidate_pool (`assemble` refuses a reference to a chunk the item does not
+	// carry) and carried into the gold file as `gold_candidate_chunk_id`.
+	CandidateIndex   *int   `json:"candidate_index,omitempty"`
+	CandidateChunkID string `json:"candidate_chunk_id,omitempty"`
 }
 
 // Agreement is the pairwise κ receipt.
