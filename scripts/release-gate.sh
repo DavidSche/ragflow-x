@@ -262,6 +262,7 @@ static tier (always required)
   s15.kc2-prereg            scripts/release-gate/kc2-prereg.sh (doc/301 §5.7: KC-2 thresholds frozen, bidirectional check, quotes verbatim in 301)
   s16.probes-selfcheck      scripts/release-gate/probes.sh (doc/304 §7 item 12: T02/T16 probes tracked, no credential stored, --offline contract)
   s17.adjudicate            scripts/release-gate/adjudicate.sh (doc/304 §7 item 25: the adjudication skeleton is derived, the manual documents it, 13 tests named)
+  s18.docs-ledger           scripts/release-gate/docs-ledger.sh (doc/304 §7 items 2 and 3: §2/§3/§6/§7 shapes, 301 §14.J tail + derived footer, 305 §2 order)
   s10.changelog             CHANGELOG.md carries the --version section
   s11.release-notes         .github/release-notes/<version>.md (optional, reported)
 build tier (required when selected)
@@ -385,6 +386,13 @@ if tier_selected static; then
   # derives it now; this row holds the two halves a `go test` cannot: that the 13 named tests are
   # still there, and that the page people actually read documents the step it used to skip.
   run_check "s17.adjudicate" "static" 1 "adjudication skeleton derived from the label files (doc/304 §7 item 25)"     bash scripts/release-gate/adjudicate.sh
+
+  # doc/304 §7 items 2 and 3 are two *rituals* — «top up the evidence column at every
+  # milestone», «check §4 once per review» — with no reader. This is the reader. It checks
+  # shapes only (a cell is not empty, a status word is one of five, a number runs 1..N, a
+  # version descends), never whether the evidence still supports the sentence beside it:
+  # that is the review, and a gate that claimed it would be the exact lie §7 item 3 warns of.
+  run_check "s18.docs-ledger" "static" 1 "tracking doc + plan appendix shapes (doc/304 §7 items 2/3, selftest refuses 6 mutations)"     bash scripts/release-gate/docs-ledger.sh
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
