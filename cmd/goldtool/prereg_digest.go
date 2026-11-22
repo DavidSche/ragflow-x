@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -110,26 +113,52 @@ func readPreregDigest(path string) (preregDigestFile, error) {
 // checkPreregDigest compares a digest with the file it claims to pin. One question, one
 // sentence: is this the frozen file? Identity is the hash, never the name — a copy that was
 // renamed is still the same file, and a file that was edited keeps its name.
-func checkPreregDigest(d preregDigestFile, path string) []string {
-	var problems []string
+//
+// The second return value is not a second question, it is a different *cause* for the same
+// answer: the bytes on disk can differ from the frozen bytes because a Windows checkout
+// converted the line endings (`core.autocrlf=true` + `* text=auto`). That is an environment
+// fault, and saying "this is not the frozen file, someone changed the thresholds" about an
+// untouched file is worse than saying nothing: it teaches the operator to ignore the
+// sentence. The distinction is reported, not resolved — `-text` in `.gitattributes` is what
+// makes the bytes faithful, and a checkout that predates that pin still has to be fixed.
+func checkPreregDigest(d preregDigestFile, path string) (problems []string, lineEndingsOnly bool) {
 	add := func(format string, a ...any) { problems = append(problems, fmt.Sprintf(format, a...)) }
 	if d.Schema != preregDigestSchema {
 		add("digest schema is %q, want %q", d.Schema, preregDigestSchema)
 	}
 	if len(d.PreregSHA256) != 64 || !isHex(d.PreregSHA256) {
 		add("digest has no 64-hex prereg_sha256: it pins nothing")
-		return problems
+		return problems, false
 	}
 	got, _, err := fileSum(path)
 	if err != nil {
 		add("%s cannot be hashed (%v): the digest cannot be compared with it", path, err)
-		return problems
+		return problems, false
 	}
 	if got != d.PreregSHA256 {
+		if normalised, nerr := fileSumLF(path); nerr == nil && normalised == d.PreregSHA256 {
+			add("%s hashes to %s… and the digest pins %s…: the two differ *only in line endings*, so "+
+				"this checkout converted the frozen bytes (core.autocrlf) rather than editing the "+
+				"document. `.gitattributes` pins internal/service/testdata/gold/** as -text; re-check "+
+				"out that file and run this again", path, got[:12], d.PreregSHA256[:12])
+			return problems, true
+		}
 		add("%s hashes to %s…, but the digest pins %s…: this is not the frozen file, so its thresholds "+
 			"and sample plan describe a different pre-registration", path, got[:12], d.PreregSHA256[:12])
 	}
-	return problems
+	return problems, false
+}
+
+// fileSumLF hashes a file after folding CRLF to LF. It exists only to *name* the line-ending
+// case; nothing about the freeze is decided on the folded bytes.
+func fileSumLF(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	folded := bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
+	sum := sha256.Sum256(folded)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // checkPreregDigestAgrees cross-checks the digest's *copied* input records against the ones

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -757,12 +758,67 @@ func TestPreregDigestIsDerivedFromTheTrackedFreeze(t *testing.T) {
 		t.Fatalf("the tracked digest is not the one the tool derives from the tracked freeze\n%s\nwant:\n%s",
 			got, want)
 	}
-	if problems := checkPreregDigest(tracked, preregPath); len(problems) > 0 {
+	if problems, lineEndingsOnly := checkPreregDigest(tracked, preregPath); len(problems) > 0 {
+		if lineEndingsOnly {
+			t.Fatalf("the tracked pair differs only in line endings: this checkout converted the frozen "+
+				"bytes (core.autocrlf). `.gitattributes` pins internal/service/testdata/gold/** as -text; "+
+				"re-check out that file. The test is not relaxed for it — a byte claim that tolerates a "+
+				"conversion is not a byte claim: %v", problems)
+		}
 		t.Fatalf("the tracked pair does not check out: %v", problems)
 	}
 	if tracked.Why != preregDigestWhy {
 		t.Fatalf("digest's why = %q, want the constant (a digest that explains itself wrongly is worse than "+
 			"a silent one)", tracked.Why)
+	}
+}
+
+// TestPreregDigestNamesAConvertedCheckoutInsteadOfAnEditedFreeze: the byte-identity claim has
+// two ways to fail and they are not the same fact.
+//
+// A Windows checkout with `core.autocrlf=true` and `* text=auto` hands over CRLF for a file
+// that was frozen as LF. Saying "this is not the frozen file, its thresholds describe another
+// pre-registration" about an untouched document is a false accusation, and a false accusation
+// teaches the operator to stop reading the sentence. So the line-ending case gets its own
+// words and its own exit code (3, "cannot establish byte identity here"), while a real edit
+// keeps the tampering sentence and exit 1. `.gitattributes` pins the fixtures as `-text` so
+// that the case does not arise; this test is about what happens when it does anyway.
+func TestPreregDigestNamesAConvertedCheckoutInsteadOfAnEditedFreeze(t *testing.T) {
+	preregPath, digestPath := trackedPrereg(t)
+	raw, err := os.ReadFile(preregPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	lf := bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
+	crlf := bytes.ReplaceAll(lf, []byte("\n"), []byte("\r\n"))
+
+	converted := filepath.Join(t.TempDir(), "prereg-e1-v1.json")
+	if err := os.WriteFile(converted, crlf, 0o644); err != nil {
+		t.Fatalf("write converted copy: %v", err)
+	}
+	code, stdout, stderr := runPreregCmd(t, "--check", converted, "--digest-file", digestPath)
+	if code != exitIncomplete {
+		t.Fatalf("exit = %d, want %d (incomplete) for a converted checkout: the freeze was not "+
+			"edited, so this is not a violation of it\n%s%s", code, exitIncomplete, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "only in line endings") {
+		t.Fatalf("the refusal does not name the line endings:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "is not the frozen file") {
+		t.Fatalf("a converted checkout was accused of being a different document:\n%s", stderr)
+	}
+
+	// The other direction: an edit that is *not* only line endings keeps the accusation.
+	edited := filepath.Join(t.TempDir(), "prereg-e1-v1-edited.json")
+	if err := os.WriteFile(edited, append(append([]byte{}, lf...), '\n'), 0o644); err != nil {
+		t.Fatalf("write edited copy: %v", err)
+	}
+	code, _, stderr = runPreregCmd(t, "--check", edited, "--digest-file", digestPath)
+	if code != exitInvariant {
+		t.Fatalf("exit = %d, want %d (invariant) for a real edit\n%s", code, exitInvariant, stderr)
+	}
+	if !strings.Contains(stderr, "is not the frozen file") {
+		t.Fatalf("a real edit was not named as one:\n%s", stderr)
 	}
 }
 

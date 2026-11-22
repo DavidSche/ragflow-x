@@ -254,9 +254,16 @@ func runPrereg(args []string, stdout, stderr *os.File) int {
 				fmt.Fprintf(stderr, "goldtool prereg: %v\n", err)
 				return exitUsage
 			}
-			if dps := checkPreregDigest(d, *checkPath); len(dps) > 0 {
+			dps, lineEndingsOnly := checkPreregDigest(d, *checkPath)
+			if len(dps) > 0 {
 				for _, dp := range dps {
 					fmt.Fprintf(stderr, "goldtool prereg: %s\n", dp)
+				}
+				if lineEndingsOnly {
+					// Exit 3, not 1: the freeze was not edited, this checkout's bytes were
+					// converted. "Cannot establish byte identity here" is the true sentence, and
+					// the one that tells the operator what to fix.
+					return exitIncomplete
 				}
 				return exitInvariant
 			}

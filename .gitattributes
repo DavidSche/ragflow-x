@@ -1,2 +1,10 @@
 * text=auto
 *.go text eol=lf
+# Byte-hashed fixtures are not text. The E1 pre-registration digest pins the exact bytes
+# of internal/service/testdata/gold/prereg-e1-v1.json; with `* text=auto` a Windows
+# checkout hands the file CRLF and the digest then accuses an untouched file of being a
+# different document. `-text` means "check out the blob's bytes, unchanged".
+internal/service/testdata/gold/** -text
+# Shell scripts are run by bash, on Linux (CI) and on Windows (git-bash). CRLF in a
+# script turns into a stray carriage return at the end of every command; pin the bytes.
+*.sh text eol=lf
