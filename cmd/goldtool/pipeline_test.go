@@ -121,6 +121,17 @@ func TestPipelineEndToEnd(t *testing.T) {
 	if man.Items != GoldSize() || man.Adjudicated != 1 {
 		t.Fatalf("manifest counts: items=%d adjudicated=%d", man.Items, man.Adjudicated)
 	}
+	// The agreement block has to answer the question a κ number alone cannot: over how
+	// many items? A clean assembly judges the whole sample, so population == pairs ==
+	// items and nothing was dropped. (Before E77 this block copied the κ receipt struct
+	// and wrote `worksheet_items: 0` next to a clean file — a field assembly never has.)
+	if man.Agreement.Population != GoldSize() || man.Agreement.Pairs != GoldSize() {
+		t.Fatalf("agreement must cover the sample: population=%d pairs=%d items=%d",
+			man.Agreement.Population, man.Agreement.Pairs, man.Items)
+	}
+	if man.Agreement.Dropped != 0 || !man.Agreement.OK || !man.Agreement.MeetsTarget {
+		t.Fatalf("a clean assembly must say so: %+v", man.Agreement)
+	}
 	if len(man.Problems) != 0 {
 		t.Fatalf("a clean assembly must record no problems, got %v", man.Problems)
 	}

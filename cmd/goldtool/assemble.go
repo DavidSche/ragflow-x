@@ -38,24 +38,51 @@ type Adjudication struct {
 // the exact command that produced it. Without the last field, "which pool produced
 // this gold file" is a memory.
 type manifest struct {
-	Version     string         `json:"version"`
-	File        string         `json:"file"`
-	SHA256      string         `json:"sha256"`
-	Bytes       int            `json:"bytes"`
-	Items       int            `json:"items"`
-	Verdicts    map[string]int `json:"verdicts"`
-	QuoteStatus map[string]int `json:"quote_status"`
-	Revisions   []string       `json:"revisions"`
-	Templates   []string       `json:"templates"`
-	Datasets    []string       `json:"datasets"`
+	Version     string            `json:"version"`
+	File        string            `json:"file"`
+	SHA256      string            `json:"sha256"`
+	Bytes       int               `json:"bytes"`
+	Items       int               `json:"items"`
+	Verdicts    map[string]int    `json:"verdicts"`
+	QuoteStatus map[string]int    `json:"quote_status"`
+	Revisions   []string          `json:"revisions"`
+	Templates   []string          `json:"templates"`
+	Datasets    []string          `json:"datasets"`
+	Annotators  []string          `json:"annotators"`
+	Adjudicator string            `json:"adjudicator,omitempty"`
+	Adjudicated int               `json:"adjudicated"`
+	Agreement   manifestAgreement `json:"agreement"`
+	PoolFile    string            `json:"pool_file"`
+	FrozenAt    string            `json:"frozen_at"`
+	Problems    []Problem         `json:"problems,omitempty"`
+	Redaction   redactionNote     `json:"redaction"`
+}
+
+// manifestAgreement is the κ block of a gold manifest. It is deliberately *not* the
+// `kappa` receipt type (Agreement): a manifest never sees the worksheet, so the four
+// coverage fields of the receipt have nothing to put in them. Reusing that struct left
+// them at zero — a manifest that read `ok: true`, `worksheet_items: 0` next to a
+// 262-problem assembly, and `unfinished: false` on a file six items short.
+//
+// The fields here are the ones assembly can actually answer. `Population` is how many
+// distinct items the two label files judge (that is the sample, as far as gold can know
+// it), `Pairs` is how many of them survived into the file, and `Dropped` is the
+// difference — the number a reader must see before trusting κ over a gold file.
+// `OK` means "this assembly wrote a file with no problems" — `len(problems) == 0` — not
+// "the sample passed": a clean assembly still says nothing about whether the judgments
+// are right, and a refused one always reads `ok: false`.
+type manifestAgreement struct {
+	Pairs       int            `json:"pairs"`
+	Observed    float64        `json:"observed_agreement"`
+	Expected    float64        `json:"expected_agreement"`
+	Kappa       float64        `json:"cohen_kappa"`
+	Disagreed   int            `json:"disagreed"`
+	ByClass     map[string]int `json:"disagreements_by_gold_class"`
 	Annotators  []string       `json:"annotators"`
-	Adjudicator string         `json:"adjudicator,omitempty"`
-	Adjudicated int            `json:"adjudicated"`
-	Agreement   Agreement      `json:"agreement"`
-	PoolFile    string         `json:"pool_file"`
-	FrozenAt    string         `json:"frozen_at"`
-	Problems    []Problem      `json:"problems,omitempty"`
-	Redaction   redactionNote  `json:"redaction"`
+	Population  int            `json:"population_items"`
+	Dropped     int            `json:"dropped_items"`
+	MeetsTarget bool           `json:"meets_target"`
+	OK          bool           `json:"ok"`
 }
 
 // redactionNote records the promise that made the file committable: customer text is
@@ -64,6 +91,36 @@ type manifest struct {
 type redactionNote struct {
 	MaxExcerptRunes int    `json:"max_excerpt_runes"`
 	Rule            string `json:"rule"`
+}
+
+// manifestAgreementOf turns the recomputed agreement into the manifest block. It takes
+// the raw label files because the only honest denominator available here is "how many
+// items did the two files judge" — `ag` was computed over the gold file, which is the
+// numerator. The difference between the two is `Dropped`, and a reader who does not see
+// it will read "κ = 1.00 over 114 pairs" as a statement about the 120-item sample.
+func manifestAgreementOf(ag Agreement, raw []Label, goldItems int, ok bool) manifestAgreement {
+	population := map[string]bool{}
+	for _, l := range raw {
+		population[l.ItemID] = true
+	}
+	dropped := len(population) - goldItems
+	if dropped < 0 {
+		dropped = 0
+	}
+	m := manifestAgreement{
+		Pairs: ag.Pairs, Observed: ag.Observed, Expected: ag.Expected, Kappa: ag.Kappa,
+		Disagreed: ag.Disagreed, ByClass: ag.PerClass, Annotators: ag.Annotators,
+		Population: len(population), Dropped: dropped,
+		MeetsTarget: ag.Pairs > 0 && ag.Kappa >= minKappa,
+		OK:          ok,
+	}
+	if m.ByClass == nil {
+		m.ByClass = map[string]int{}
+	}
+	if m.Annotators == nil {
+		m.Annotators = []string{}
+	}
+	return m
 }
 
 func runAssemble(args []string, stdout, stderr *os.File) int {
@@ -116,7 +173,8 @@ func runAssemble(args []string, stdout, stderr *os.File) int {
 	// reach the tree, or the next person reads "v1 exists" as "v1 is usable".
 	problems = append(problems, validateItems(gold, true)...)
 
-	ag, agErr := agreement(gold, append(append([]Label{}, la...), lb...))
+	allLabels := append(append([]Label{}, la...), lb...)
+	ag, agErr := agreement(gold, allLabels)
 	if agErr != nil {
 		problems = append(problems, Problem{"agreement", agErr.Error()})
 	} else if ag.Kappa < minKappa && len(gold) > 0 {
@@ -157,7 +215,7 @@ func runAssemble(args []string, stdout, stderr *os.File) int {
 		Datasets:    distinctDatasetIDs(gold),
 		Annotators:  ag.Annotators,
 		Adjudicated: countAdjudicated(gold),
-		Agreement:   ag,
+		Agreement:   manifestAgreementOf(ag, allLabels, len(gold), len(problems) == 0),
 		PoolFile:    filepath.Base(*poolPath),
 		FrozenAt:    time.Now().UTC().Format(time.RFC3339),
 		Problems:    problems,
@@ -198,6 +256,15 @@ func runAssemble(args []string, stdout, stderr *os.File) int {
 //
 // `requireAll` additionally fails items that one annotator never labelled, because an
 // item labelled by one person is a sample of one, not a gold standard.
+//
+// The pool is not necessarily the sample. `pool` is the file the caller passed, and the
+// two label files judge a subset of it whenever the sample was drawn from a bigger pool
+// — the documented command passed the 371-row pool for a 120-row sample and got **251**
+// `unlabelled_item` rows, which buried the six rows that were actually wrong. Items no
+// annotator touched are therefore reported once, as a population statement: the
+// population of gold is what the annotators judged, and a pool bigger than that is a
+// wrong `--pool`, not 251 missing labels. An item one annotator did touch is still a
+// named `unlabelled_item`, because that one *is* missing work.
 func assembleItems(pool []Item, a, b []Label, adj []Adjudication, requireAll bool) ([]Item, []Problem) {
 	var problems []Problem
 	byItem := map[string]Item{}
@@ -206,6 +273,13 @@ func assembleItems(pool []Item, a, b []Label, adj []Adjudication, requireAll boo
 	}
 	la := indexLabels(a, &problems, "labels-a", byItem)
 	lb := indexLabels(b, &problems, "labels-b", byItem)
+	touched := map[string]bool{}
+	for id := range la {
+		touched[id] = true
+	}
+	for id := range lb {
+		touched[id] = true
+	}
 	adjByItem := map[string]Adjudication{}
 	for _, r := range adj {
 		if _, dup := adjByItem[r.ItemID]; dup {
@@ -230,13 +304,33 @@ func assembleItems(pool []Item, a, b []Label, adj []Adjudication, requireAll boo
 	}
 	sort.Strings(ids)
 
+	// One statement, not one per row: "the pool is bigger than the sample" and "20 items
+	// are half-labelled" are different faults with different fixes, and a reader who sees
+	// 251 lines of the first cannot find the second.
+	outside := 0
+	firstOutside := ""
+	for _, id := range ids {
+		if !touched[id] {
+			outside++
+			if firstOutside == "" {
+				firstOutside = id
+			}
+		}
+	}
+	if outside > 0 {
+		problems = append(problems, Problem{"pool_outside_sample",
+			fmt.Sprintf("%d of %d pool row(s) appear in no label file (the files judge %d, e.g. %s is outside them): "+
+				"the population of gold is what the annotators judged, so pass the worksheet sample as --pool, not "+
+				"the pool it was drawn from", outside, len(ids), len(touched), firstOutside)})
+	}
+
 	out := make([]Item, 0, len(ids))
 	for _, id := range ids {
 		it := byItem[id]
 		aLabel, aok := la[id]
 		bLabel, bok := lb[id]
 		if !aok || !bok {
-			if requireAll {
+			if requireAll && touched[id] {
 				problems = append(problems, Problem{"unlabelled_item",
 					fmt.Sprintf("%s: labelled by %d of 2 annotators", id, boolCount(aok, bok))})
 			}
