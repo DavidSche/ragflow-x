@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 
 BASE = os.environ.get("RGX_E2E_BASE", "http://192.168.4.151:19193/api/v1")
 PLATFORM_USER = os.environ.get("RGX_E2E_PLATFORM_USER", "admin")
-PLATFORM_PASS = os.environ.get("RGX_E2E_PLATFORM_PASS", "RgxTest#2026a")
+PLATFORM_PASS = os.environ.get("RGX_E2E_PLATFORM_PASS", "")
 WS_NAME = os.environ.get("RGX_E2E_WS_NAME", "E2E-场景模板全量验证")
 WS_USER = os.environ.get("RGX_E2E_WS_USER", "e2e-admin")
 WS_PASS = os.environ.get("RGX_E2E_WS_PASS", "E2e#2026pass")
@@ -710,6 +710,10 @@ def main():
         tenant_id = workspace_tenant(token)
         step("bootstrap", "POST", "/auth/login", 200, {"code": 0}, f"workspace user {WS_USER} (existing)")
     else:
+        # The console password is not stored in the tree (doc/304 §7 item 24). It is needed
+        # only here, so it is demanded only here — and before the request, not after a 401.
+        if not PLATFORM_PASS:
+            sys.exit("RGX_E2E_PLATFORM_PASS is required: the console password is not stored in the tree")
         ptok = login(PLATFORM_USER, PLATFORM_PASS)
         tenant_id = ensure_tenant(ptok)
         ensure_user(ptok, tenant_id)

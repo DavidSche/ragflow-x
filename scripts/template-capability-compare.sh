@@ -80,7 +80,11 @@ fi
 
 AX_BASE="${RAGRFLOW_X_API_BASE:-http://192.168.4.151:19193/api/v1}"
 AX_USER="${RAGRFLOW_X_USER:-admin}"
-AX_PASS="${RAGRFLOW_X_PASS:-RgxTest#2026a}"
+if [ -z "${RAGRFLOW_X_PASS:-}" ]; then
+  echo "usage: RAGRFLOW_X_PASS is required (the console password is not stored in the tree; doc/304 §7 item 24)" >&2
+  exit 2
+fi
+AX_PASS="$RAGRFLOW_X_PASS"
 RF_BASE="${RAGFLOW_API_BASE:-http://192.168.4.151:8001/api/v1}"
 RF_KEY="${RAGFLOW_API_KEY:-}"
 WK_BASE="${WEKNORA_API_BASE:-http://192.168.4.151:8381/api/v1}"
