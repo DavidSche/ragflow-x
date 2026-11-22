@@ -258,6 +258,7 @@ static tier (always required)
   s09.fe-test               cd web && npx vitest run --maxWorkers=2
   s12.gate-selftest         scripts/release-gate/selftest.sh (the hook refuses what it should)
   s13.assurance-gold        scripts/release-gate/assurance.sh (doc/301 G-A1..A8: 12 rows with n + CP, 44117-44123 in 5 places)
+  s14.assurance-quality     scripts/release-gate/assurance-quality.sh (doc/301 §9.4: 5 self-checks, each able to fail, sentences verbatim in 301)
   s10.changelog             CHANGELOG.md carries the --version section
   s11.release-notes         .github/release-notes/<version>.md (optional, reported)
 build tier (required when selected)
@@ -361,6 +362,12 @@ if tier_selected static; then
   # in a human-readable log, and (b) whether 44117-44123 is registered in all five places,
   # one of which is documentation. Both live here.
   run_check "s13.assurance-gold" "static" 1 "assurance gate G-A1..A8 (12 rows with n/CP, error-code closed set)"     bash scripts/release-gate/assurance.sh
+
+  # doc/301 §9.4 says its five self-checks run 「在 CI 里，不靠人」. s07 already runs their Go
+  # tests; what s07 cannot see is whether the table reaches a log with `n` on every row,
+  # whether each of the five has an observed failing direction, and whether the five
+  # sentences are still §9.4's sentences rather than a paraphrase that asks for less.
+  run_check "s14.assurance-quality" "static" 1 "doc/301 §9.4 self-checks (5 rows, fail+unverified probes, sentences verbatim)"     bash scripts/release-gate/assurance-quality.sh
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
