@@ -566,6 +566,111 @@ func flipN(ps []Prediction, from, to string, n int) []Prediction {
 	return ps
 }
 
+// TestEvalRefusesATwicePredictedItem: two verdicts for one claim cannot both be scored,
+// and the second one must not silently overwrite the first — that is how a re-run
+// appended to a file would turn into "the model changed its mind" with no trace.
+func TestEvalRefusesATwicePredictedItem(t *testing.T) {
+	gold := evalGold(t)
+	preds := perfectPredictions(gold)
+	doubled := append(append([]Prediction{}, preds...), Prediction{
+		ItemID: preds[0].ItemID, Verdict: model.ReportVerdictUnsupported,
+		QuoteStatus: model.ReportQuoteStatusNotProvided,
+	})
+	gpath, ppath := writeEvalFiles(t, gold, doubled)
+
+	out := filepath.Join(t.TempDir(), "report.md")
+	code, _, errOut := runCapturingSplit(t, "eval", "--gold", gpath, "--pred", ppath, "--exp", "E1", "--out", out)
+	if code != exitInvariant {
+		t.Fatalf("a doubly predicted item must exit 1, got %d: %s", code, errOut)
+	}
+	if !strings.Contains(errOut, "predicted twice") {
+		t.Fatalf("the refusal must say what happened: %q", errOut)
+	}
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("a refused evaluation must not write a report: a file on disk reads like a finished run")
+	}
+}
+
+// TestEvalMarksARowWithNoDenominatorUnverified: `conflicting_recall` and `macro_f1_core`
+// have no value when the gold file has no `conflicting` class at all. The row must say so
+// (`unverified`, `—`), never `0/0 = pass`: "nothing was wrong" and "nothing was measured"
+// are the two sentences this tool is built to keep apart (doc/301 §11.1).
+func TestEvalMarksARowWithNoDenominatorUnverified(t *testing.T) {
+	var thin []Item
+	for _, it := range goldWithDistribution() {
+		if it.GoldVerdict != model.ReportVerdictConflicting {
+			thin = append(thin, it)
+		}
+	}
+	preds := perfectPredictions(thin)
+
+	receipt, problems := evaluateExperiment("E1", "no-conflicting", thin, preds)
+	if len(problems) != 0 {
+		t.Fatalf("refused: %v", problems)
+	}
+	for _, group := range []string{"点估计", "CP 下界"} {
+		row := rowsOf(t, receipt.Rows, "conflicting_recall", group)
+		if row.Denominator != 0 || row.Verdict != evalUnverified || row.Point != "—" {
+			t.Fatalf("conflicting_recall %s with n=%d must be unverified + —, got %q/%q",
+				group, row.Denominator, row.Verdict, row.Point)
+		}
+	}
+	macro := rowsOf(t, receipt.Rows, "macro_f1_core", "")
+	if macro.Verdict != evalUnverified || !strings.Contains(macro.Detail, "没有分母") {
+		t.Fatalf("macro F1 without the conflicting class must say why, got %q (%s)", macro.Verdict, macro.Detail)
+	}
+	if receipt.Verdict != evalUnverified {
+		t.Fatalf("receipt verdict = %q, want unverified (a missing class is not a pass)", receipt.Verdict)
+	}
+
+	// The exit code has to follow the rows through the CLI, not only in the pure core.
+	gpath, ppath := writeEvalFiles(t, thin, preds)
+	code, out, _ := runCapturingSplit(t, "eval", "--gold", gpath, "--pred", ppath, "--exp", "E1", "--method", "no-conflicting")
+	if code != exitIncomplete {
+		t.Fatalf("exit = %d, want 3: an unmeasured class is unfinished, not wrong", code)
+	}
+	if !strings.Contains(out, "没有分母") {
+		t.Fatalf("the report must carry the reason into the row, got: %s", firstLines(out, 8))
+	}
+}
+
+// TestEvalExplainsEveryUnverifiedRow is the readability half of the no-denominator rule:
+// `unverified` + `—` is the same picture for "this class has no samples", "the run is out of
+// scope" and "nobody filled the table in". Every such row therefore has to carry a reason,
+// and the reason has to survive into the markdown a human actually reads.
+func TestEvalExplainsEveryUnverifiedRow(t *testing.T) {
+	thin := []Item{sampleItem(1, model.ReportVerdictSupported)}
+	preds := []Prediction{{ItemID: thin[0].ItemID, Verdict: model.ReportVerdictSupported,
+		QuoteStatus: model.ReportQuoteStatusVerified}}
+	receipt, problems := evaluateExperiment("E1", "", thin, preds)
+	if len(problems) != 0 {
+		t.Fatalf("refused: %v", problems)
+	}
+	sawUnverified := false
+	for _, r := range receipt.Rows {
+		if r.Verdict != evalUnverified {
+			continue
+		}
+		sawUnverified = true
+		if strings.TrimSpace(r.Detail) == "" {
+			t.Fatalf("%s / %q is unverified with no reason: a reader cannot tell an empty class from an unfinished one",
+				r.Metric, r.Group)
+		}
+	}
+	if !sawUnverified {
+		t.Fatal("the fixture is supposed to leave rows with no denominator; it produced none, so this test proves nothing")
+	}
+
+	receipt.GoldFile, receipt.PredFile = "gold.jsonl", "pred.jsonl"
+	md := renderEvalMarkdown(receipt)
+	if !strings.Contains(md, "分母 0") {
+		t.Fatalf("the report must carry the reason below the table:\n%s", firstLines(md, 40))
+	}
+	if strings.Contains(md, "评价报告（）") {
+		t.Fatalf("an unnamed method must print as —, not as empty parentheses:\n%s", firstLines(md, 3))
+	}
+}
+
 func describeRows(rows []evalRow) string {
 	var parts []string
 	for _, r := range rows {

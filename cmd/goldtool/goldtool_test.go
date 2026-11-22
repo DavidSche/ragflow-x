@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
 // sampleItem builds a *valid gold* item. Every field the validator checks is filled
@@ -205,6 +208,81 @@ func TestValidateRejectsDuplicateClaimID(t *testing.T) {
 	if codes(problems)["duplicate_claim_id"] != 1 {
 		t.Fatalf("a claim counted twice doubles a denominator: %s", summariseProblems(problems))
 	}
+}
+
+// TestValidateRejectsADuplicatedItemID pins the guard that keeps a copy-pasted line from
+// being scored twice: two rows for one claim do not make the class twice as large, they
+// make every ratio computed over the file a ratio over an unknown denominator.
+func TestValidateRejectsADuplicatedItemID(t *testing.T) {
+	items := goldWithDistribution()
+	items[1].ItemID = items[0].ItemID
+	problems := validateItems(items, false)
+	if codes(problems)["duplicate_item_id"] != 1 {
+		t.Fatalf("one item_id at two lines must be named once: %s", summariseProblems(problems))
+	}
+	for _, p := range problems {
+		if p.Code == "duplicate_item_id" && !strings.Contains(p.Message, "lines 1 and 2") {
+			t.Fatalf("the problem must name both lines, otherwise the annotator cannot find the copy: %q", p.Message)
+		}
+	}
+}
+
+// TestValidateNamesATamperedLineInTheFileItWasGiven: the §9.1 rules are also the
+// mid-file-integrity check. A hand-edited verdict has to come back as a *line number* in
+// the file that was passed, not as a message about the plan — otherwise "which line did I
+// break" is a manual bisect.
+func TestValidateNamesATamperedLineInTheFileItWasGiven(t *testing.T) {
+	items := goldWithDistribution()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gold-v1.jsonl")
+	writeItemsFile(t, path, items)
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	// Line 57: the middle of the file, so an off-by-one in the reported index cannot hide.
+	var tampered Item
+	if err := json.Unmarshal([]byte(lines[56]), &tampered); err != nil {
+		t.Fatal(err)
+	}
+	tampered.GoldVerdict = model.ReportVerdictAbstained // an evaluator state, not a human label
+	encoded, err := json.Marshal(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines[56] = string(encoded)
+	if err := writeText(path, strings.Join(lines, "\n")+"\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, _ := runCapturingSplit(t, "validate", "--gold", path)
+	if code != exitInvariant {
+		t.Fatalf("a tampered line must exit 1, got %d: %s", code, firstLines(out, 6))
+	}
+	for _, needle := range []string{"line 57", tampered.ItemID, "distribution_mismatch"} {
+		if !strings.Contains(out, needle) {
+			t.Fatalf("the report must contain %q, got: %s", needle, firstLines(out, 10))
+		}
+	}
+
+	t.Run("a truncated line is a parse error, not a short file", func(t *testing.T) {
+		broken := filepath.Join(dir, "gold-truncated.jsonl")
+		if err := writeText(broken, strings.Join(lines[:len(lines)-1], "\n")+"\n"+
+			lines[len(lines)-1][:len(lines[len(lines)-1])/2]); err != nil {
+			t.Fatal(err)
+		}
+		code, out, errOut := runCapturingSplit(t, "validate", "--gold", broken)
+		if code == exitOK {
+			t.Fatalf("half a JSON line must not validate: %s", out)
+		}
+		// readItems reports `<path>:<line>: <parse error>`; the line number is the point —
+		// "the file is bad" without a line is a bisect, not a diagnosis.
+		if want := fmt.Sprintf(":%d:", len(lines)); !strings.Contains(errOut, want) {
+			t.Fatalf("a truncated line must name the line it could not read (%s), got %q", want, errOut)
+		}
+	})
 }
 
 func TestRedactIsRuneSafeAndRecordsOriginalLength(t *testing.T) {

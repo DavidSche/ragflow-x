@@ -843,6 +843,10 @@ func ratioRow(class, metric, group string, num, den int64, threshold string) eva
 	row := evalRow{Class: class, Metric: metric, Group: group, Numerator: num, Denominator: den,
 		Threshold: threshold, Verdict: evalUnverified, Point: "—", Interval: "—"}
 	if den <= 0 {
+		// The reason is part of the row, not of the caller: a `unverified` row that prints only
+		// `—` makes "this class has no samples" look like "nobody filled the table in". Callers
+		// that can be more specific (out_of_scope, unattributed) overwrite this afterwards.
+		row.Detail = "分母 0：这一类没有可判定的样本，既不是「0 错误」也不构成通过"
 		return row
 	}
 	low, high := stats.Interval(num, den, 0.95)
@@ -886,6 +890,8 @@ func observedRow(metric string, num, den int64) evalRow {
 	row := ratioRow(evalClassObserved, metric, "", num, den, "只报告，不判定")
 	if den > 0 {
 		row.Verdict = evalObserved
+	} else {
+		row.Detail = "观察项，且分母 0：只说明这一类没有样本，不构成任何结论"
 	}
 	return row
 }
@@ -898,6 +904,8 @@ func observedF1Row(metric string, f1 float64, den, tp int64) evalRow {
 		low, high := stats.Interval(tp, den, 0.95)
 		row.Interval = fmt.Sprintf("召回 CP [%s, %s]（F1 本身无区间）", pct(low), pct(high))
 		row.Verdict = evalObserved
+	} else {
+		row.Detail = "观察项，且分母 0：F1 没有这一类样本可算，不构成任何结论"
 	}
 	return row
 }
@@ -1019,7 +1027,7 @@ func writeText(path, content string) error {
 
 func renderEvalMarkdown(r evalReceipt) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s 评价报告（%s）\n\n", r.Experiment, r.Method)
+	fmt.Fprintf(&b, "# %s 评价报告（%s）\n\n", r.Experiment, orDash(r.Method))
 	fmt.Fprintf(&b, "- 金标文件：`%s`（%d 条）\n", r.GoldFile, r.GoldItems)
 	fmt.Fprintf(&b, "- 预测文件：`%s`（%d 条）\n", r.PredFile, r.Predicted)
 	fmt.Fprintf(&b, "- 判定：**%s**\n", r.Verdict)
@@ -1054,6 +1062,25 @@ func renderEvalMarkdown(r evalReceipt) string {
 		fmt.Fprintf(&b, "| %s | %s | %s | %d/%d | %s | %s | %s | %s |\n",
 			row.Class, row.Metric, group, row.Numerator, row.Denominator,
 			row.Point, row.Interval, row.Threshold, row.Verdict)
+	}
+	// The table is too wide for a detail column, but an `unverified` row without its reason
+	// is unreadable: “没有分母” and “不在本版承诺范围” look identical in the 判定 column, and
+	// the difference is exactly what a reader has to act on. So the reasons go below.
+	var explained []evalRow
+	for _, row := range r.Rows {
+		if strings.TrimSpace(row.Detail) != "" {
+			explained = append(explained, row)
+		}
+	}
+	if len(explained) > 0 {
+		b.WriteString("\n### 行说明（为什么这一行不是 pass / 数字怎么来的）\n\n")
+		for _, row := range explained {
+			name := row.Metric
+			if row.Group != "" {
+				name += " / " + row.Group
+			}
+			fmt.Fprintf(&b, "- `%s`（%s）— %s\n", name, row.Verdict, row.Detail)
+		}
 	}
 	b.WriteString("\n## 结论\n\n")
 	fmt.Fprintf(&b, "%s\n", r.Decision)

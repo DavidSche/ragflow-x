@@ -190,6 +190,13 @@ func TestPipelineFromWorksheetToE1Report(t *testing.T) {
 		t.Fatalf("quote_verified_rate is not 44/44 on a fixture that quotes every supported claim:\n%s",
 			firstLines(report, 30))
 	}
+	// The report has to be readable by a human, not just correct in the struct: every row
+	// whose verdict is not self-explanatory carries its reason in a block below the table.
+	// Without this, `unverified` with a `—` cell is the same picture for "no sample yet"
+	// and "out of scope for this version".
+	if !strings.Contains(report, "行说明") || !strings.Contains(report, "不在本版承诺范围") {
+		t.Fatalf("the report must explain its unverified rows below the table:\n%s", firstLines(report, 40))
+	}
 
 	// 6. The same run bound to the freeze: the arm, its cost_rank and the sample hash come
 	//    from the frozen file, and the gold ids must be a subset of the frozen sample.
@@ -289,6 +296,15 @@ func writePredictions(t *testing.T, path string, gold []Item, missClass string) 
 // failing assertion can show the row that failed instead of only the exit code.
 func runCapturing(t *testing.T, args ...string) (int, string) {
 	t.Helper()
+	code, stdout, stderr := runCapturingSplit(t, args...)
+	return code, stdout + stderr
+}
+
+// runCapturingSplit keeps the two streams apart for the cases where it matters: a refusal
+// goes to stderr and "no report was written" is only assertable if the report itself was
+// not also printed to stdout.
+func runCapturingSplit(t *testing.T, args ...string) (int, string, string) {
+	t.Helper()
 	dir := t.TempDir()
 	outFile, err := os.Create(filepath.Join(dir, "stdout"))
 	if err != nil {
@@ -303,7 +319,7 @@ func runCapturing(t *testing.T, args ...string) (int, string) {
 	code := run(args, outFile, errFile)
 	stdout, _ := os.ReadFile(outFile.Name())
 	stderr, _ := os.ReadFile(errFile.Name())
-	return code, string(stdout) + string(stderr)
+	return code, string(stdout), string(stderr)
 }
 
 // readPreregFile decodes a frozen prereg file and insists it records its inputs.
