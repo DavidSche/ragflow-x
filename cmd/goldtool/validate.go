@@ -44,6 +44,14 @@ func runValidate(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stderr, "goldtool validate: --gold is required")
 		return exitUsage
 	}
+	// No `goldRefusals` here, on purpose (E78): `eval` and `preds` refuse a gold file that
+	// `assemble` refused, because they turn a gold file into numbers. `validate` turns it
+	// into a *description* — its product is the list of what is wrong with the file — so
+	// refusing a draft would leave the operator with a diagnostic that declines to
+	// diagnose. Its `ok` therefore answers "is this file structurally coherent", never
+	// "may this file be scored": qualification is the readers' answer, and the manual
+	// says so (step 4 of §6). Pinned by
+	// TestValidateDescribesARefusedDraftWithoutQualifyingIt.
 	items, err := readItems(*gold)
 	if err != nil {
 		fmt.Fprintf(stderr, "goldtool validate: %v\n", err)

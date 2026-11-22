@@ -38,6 +38,11 @@ func sidecarManifestPath(goldPath string) string {
 // and what the assembly thought of it. Unknown fields are ignored on purpose — a
 // consumer must not break because `assemble` learned a new count.
 type goldSidecar struct {
+	// File is recorded for humans and for audit, but deliberately *not* compared with the
+	// path we were handed: valid spellings differ (`tmp/x.jsonl` and `./tmp/x.jsonl` are
+	// the same file), so a string comparison would refuse correct usage. Identity here is
+	// "the sidecar next to the path you were given", and the bytes are pinned by SHA256.
+	// A real path-identity check needs canonicalisation (os.SameFile): 304 §7 item 20.
 	File     string    `json:"file"`
 	SHA256   string    `json:"sha256"`
 	Items    int       `json:"items"`

@@ -177,3 +177,51 @@ func TestSidecarManifestPathMatchesAssemble(t *testing.T) {
 		t.Fatalf("sidecarManifestPath = %q, want %q", got, want)
 	}
 }
+
+// TestValidateDescribesARefusedDraftWithoutQualifyingIt pins the one *exception* to E78's
+// rule. `eval` and `preds` refuse a gold file that `assemble` refused, because they turn
+// it into numbers. `validate` must not: its product is the list of what is wrong with the
+// file, so refusing the draft would leave the operator with a diagnostic that declines to
+// diagnose. The two answers are different sentences — "the file is coherent" vs "the file
+// may be scored" — and a later symmetry pass that wired `goldRefusals` into `validate`
+// would silently delete the diagnosis path this test exists to keep.
+func TestValidateDescribesARefusedDraftWithoutQualifyingIt(t *testing.T) {
+	gold := evalGold(t)
+	goldPath, predPath := writeEvalFiles(t, gold, perfectPredictions(gold))
+	sha, err := hashFile(goldPath)
+	if err != nil {
+		t.Fatalf("hash gold: %v", err)
+	}
+	writeSidecar(t, goldPath, sha, []Problem{
+		{Code: "distribution_mismatch", Message: "conflicting: got 0, want 24 (doc/301 §9.1)"},
+	})
+
+	code, stdout, stderr := runCapturingSplit(t, "validate", "--gold", goldPath)
+	if code != exitOK {
+		t.Fatalf("validate must describe a draft, not refuse it: exit = %d\n%s", code, stderr)
+	}
+	for _, needle := range []string{"refused it", "output is a draft"} {
+		if strings.Contains(stdout+stderr, needle) {
+			t.Fatalf("validate borrowed the qualification refusal (%q): %s%s", needle, stdout, stderr)
+		}
+	}
+	// The structural verdict is still owed: "ok" here means "no shape problem found",
+	// which is exactly the claim that must not be read as "may be scored".
+	if !strings.Contains(stdout, `"ok": true`) {
+		t.Fatalf("validate dropped its structural verdict: %s", stdout)
+	}
+
+	// Same file, same sidecar, the reader that produces numbers: refused.
+	report := strings.TrimSuffix(goldPath, ".jsonl") + ".e1.md"
+	code, _, errOut := runEvalCmd(t, "--gold", goldPath, "--pred", predPath,
+		"--exp", "E1", "--method", "control", "--out", report)
+	if code != exitInvariant {
+		t.Fatalf("eval on the same draft: exit = %d, want %d\n%s", code, exitInvariant, errOut)
+	}
+	if !strings.Contains(errOut, "was written by an assembly that refused it") {
+		t.Fatalf("eval must name the refusal: %s", errOut)
+	}
+	if _, err := os.Stat(report); !os.IsNotExist(err) {
+		t.Fatalf("eval wrote %s for a refused draft", report)
+	}
+}
