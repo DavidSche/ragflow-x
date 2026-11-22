@@ -152,9 +152,14 @@ func runKappa(args []string, stdout, stderr *os.File) int {
 		Problems: problems, PerClass: map[string]int{}}
 
 	// κ pairs only the rows that carry a judgement. A blank verdict is not a disagreement,
-	// it is a row nobody judged yet — and 301 §9.1 says so: an item the annotator cannot
-	// decide is `abstained`, which *is* a verdict and *does* enter the denominator. A blank
-	// row is therefore unfinished, and the exit code has to say so (3), not 0.
+	// it is a row nobody judged yet: it stays out of the pairs and its presence makes the
+	// exit code 3 ("not finished"), never 0.
+	//
+	// `abstained` is *not* the way to express "not judged": doc/301 §9.1 rule 4 says it enters
+	// the κ denominator, but the gold closed set (`GoldVerdicts`) excludes it because it is an
+	// evaluator state, not a gold label — a claim nobody can decide should not have been
+	// sampled. The code wins, the deviation is logged (304 E76, manual v1.7), and an
+	// `abstained` verdict is refused below as `label_verdict_outside_vocabulary`.
 	judged := make([]Label, 0, len(lines))
 	for _, l := range lines {
 		if trimSpace(l.Verdict) == "" {
@@ -184,10 +189,10 @@ func runKappa(args []string, stdout, stderr *os.File) int {
 	if len(problems) == 0 {
 		pair, err := agreement(items, judged)
 		if err != nil {
-			// "κ needs two annotators" over a one-sided file is not a mis-typed command: the
-			// second half of the sample has not been labelled. Report it as unfinished when
-			// the coverage numbers already say so; otherwise it is a named violation (one file
-			// carrying one annotator is not κ, it is a draft).
+			// Reachable when a second annotator exists in the file but has not filled a single
+			// verdict yet: the coverage numbers then say "unfinished", and κ has nothing to
+			// pair. A one-sided file never gets here (the len(names) < 2 guard above returns
+			// first), so this is not a mis-typed command, it is a half-labelled sample.
 			if ag.Unfinished {
 				ag.OK = false
 				reportKappa(stdout, stderr, ag, *path)
