@@ -1,0 +1,131 @@
+{
+  "components": {
+    "File": {
+      "downstream": ["Parser:doc"],
+      "upstream": [],
+      "obj": {
+        "component_name": "File",
+        "params": {}
+      }
+    },
+    "Parser:doc": {
+      "downstream": ["TokenChunker:chunk"],
+      "upstream": ["File"],
+      "obj": {
+        "component_name": "Parser",
+        "params": {
+          "outputs": {
+            "html": { "type": "string", "value": "" },
+            "json": { "type": "Array<object>", "value": [] },
+            "markdown": { "type": "string", "value": "" },
+            "text": { "type": "string", "value": "" }
+          },
+          "setups": [
+            {
+              "fileFormat": "markdown",
+              "output_format": "json",
+              "preprocess": "main_content",
+              "flatten_media_to_text": false
+            },
+            {
+              "fileFormat": "text&code",
+              "output_format": "json",
+              "preprocess": "main_content"
+            }
+          ]
+        }
+      }
+    },
+    "TokenChunker:chunk": {
+      "downstream": ["Tokenizer:index"],
+      "upstream": ["Parser:doc"],
+      "obj": {
+        "component_name": "TokenChunker",
+        "params": {
+          "chunk_token_size": 512,
+          "overlapped_percent": 0,
+          "delimiter_mode": "delimiter",
+          "delimiters": ["\n", "。", "；", "！", "？", ";", "!", "?"]
+        }
+      }
+    },
+    "Tokenizer:index": {
+      "downstream": [],
+      "upstream": ["TokenChunker:chunk"],
+      "obj": {
+        "component_name": "Tokenizer",
+        "params": {
+          "fields": "text",
+          "filename_embd_weight": 0.1,
+          "search_method": ["embedding", "full_text"],
+          "outputs": {}
+        }
+      }
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "File",
+        "type": "beginNode",
+        "position": { "x": 60, "y": 200 },
+        "data": { "label": "File", "name": "File" },
+        "sourcePosition": "right",
+        "targetPosition": "left"
+      },
+      {
+        "id": "Parser:doc",
+        "type": "parserNode",
+        "position": { "x": 330, "y": 200 },
+        "data": { "label": "Parser", "name": "Parser" },
+        "sourcePosition": "right",
+        "targetPosition": "left"
+      },
+      {
+        "id": "TokenChunker:chunk",
+        "type": "chunkerNode",
+        "position": { "x": 600, "y": 200 },
+        "data": { "label": "TokenChunker", "name": "TokenChunker" },
+        "sourcePosition": "right",
+        "targetPosition": "left"
+      },
+      {
+        "id": "Tokenizer:index",
+        "type": "tokenizerNode",
+        "position": { "x": 870, "y": 200 },
+        "data": { "label": "Tokenizer", "name": "Tokenizer" },
+        "sourcePosition": "right",
+        "targetPosition": "left"
+      }
+    ],
+    "edges": [
+      {
+        "id": "xy-edge__Filestart-Parser:docend",
+        "source": "File",
+        "target": "Parser:doc",
+        "sourceHandle": "start",
+        "targetHandle": "end"
+      },
+      {
+        "id": "xy-edge__Parser:docstart-TokenChunker:chunkend",
+        "source": "Parser:doc",
+        "target": "TokenChunker:chunk",
+        "sourceHandle": "start",
+        "targetHandle": "end"
+      },
+      {
+        "id": "xy-edge__TokenChunker:chunkstart-Tokenizer:indexend",
+        "source": "TokenChunker:chunk",
+        "target": "Tokenizer:index",
+        "sourceHandle": "start",
+        "targetHandle": "end"
+      }
+    ]
+  },
+  "retrieval": [],
+  "history": [],
+  "path": [],
+  "variables": [],
+  "messages": [],
+  "globals": { "sys.history": [] }
+}

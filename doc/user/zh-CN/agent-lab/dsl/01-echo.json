@@ -1,0 +1,58 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "begin",
+        "type": "beginNode",
+        "position": { "x": 60, "y": 200 },
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "data": {
+          "label": "Begin",
+          "name": "begin",
+          "form": {
+            "mode": "conversational",
+            "prologue": "你好，我是回显练习助手。你说什么，我就把这句话原样回给你。"
+          }
+        }
+      },
+      {
+        "id": "message",
+        "type": "generalNode",
+        "position": { "x": 380, "y": 200 },
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "data": {
+          "label": "Message",
+          "name": "message",
+          "form": {
+            "content": ["收到：{sys.query}"]
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "id": "e-begin-message", "source": "begin", "target": "message" }
+    ]
+  },
+  "components": {
+    "begin": {
+      "obj": { "component_name": "Begin", "params": {} },
+      "upstream": [],
+      "downstream": ["message"]
+    },
+    "message": {
+      "obj": {
+        "component_name": "Message",
+        "params": { "content": ["收到：{sys.query}"] }
+      },
+      "upstream": ["begin"],
+      "downstream": []
+    }
+  },
+  "history": [],
+  "path": [],
+  "retrieval": [],
+  "variables": {},
+  "globals": {}
+}

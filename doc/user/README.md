@@ -20,6 +20,10 @@ private data centers.
 | Operations and failure drill SOP | [zh-CN/operations-runbook-and-failure-drill-sop.md](./zh-CN/operations-runbook-and-failure-drill-sop.md) | [en/operations-runbook-and-failure-drill-sop.md](./en/operations-runbook-and-failure-drill-sop.md) |
 | Audit-chain backup and repair SOP | [zh-CN/audit-chain-backup-and-repair-sop.md](./zh-CN/audit-chain-backup-and-repair-sop.md) | [en/audit-chain-backup-and-repair-sop.md](./en/audit-chain-backup-and-repair-sop.md) |
 | Scenario template best practices | [zh-CN/scenario-template-best-practices.md](./zh-CN/scenario-template-best-practices.md) | [en/scenario-template-best-practices.md](./en/scenario-template-best-practices.md) |
+| Getting-started guide (Word) | [zh-CN/ragflow-x-getting-started-guide.docx](./zh-CN/ragflow-x-getting-started-guide.docx) | — |
+| Report-answer guide (Word) | [zh-CN/ragflow-x-report-answer-guide.docx](./zh-CN/ragflow-x-report-answer-guide.docx) | — |
+| Agent guide (Word) | [zh-CN/ragflow-x-agent-guide.docx](./zh-CN/ragflow-x-agent-guide.docx) | — |
+| Agent guide practice kit (corpus + canvas DSL + question list + worksheet) | [zh-CN/agent-lab/](./zh-CN/agent-lab/) ([zip](./zh-CN/ragflow-x-agent-lab.zip)) | — |
 
 **Install path for v0.5.3:** release binary archives only (the frontend is
 embedded). No container image is published for this version — `docker/` still

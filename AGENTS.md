@@ -117,6 +117,17 @@ RAGFlow-X 的目标不是复述“RAGFlow 管控平面”，而是消除企业�
   - Playwright E2E 覆盖登录、关键管控流程和审批闭环；外部网络 mock 或由本地服务提供。
 - 提交前至少运行：`make check`；涉及前端构建时确保 `make build-web` 通过。若修改 lint、迁移、审批、PostgreSQL 路径或网关用量治理，再运行 `make lint` 与 `make test-integration`。
 
+### 发版门禁（不是约定，是强制执行）
+
+- **打 `v*` tag 前必须有一次** `scripts/release-gate.sh --tier all --version <tag>` **的 PASS 且
+  `releasable=true`**。`scripts/git-hooks/pre-push` 会核对报告的 commit、版本、构建产物
+  与线上产物是否一致，核对不过直接拒绝 push。
+- 三层缺一不可：`static`（代码契约）／`build`（产物与指纹）／`live`（真机：`readyz` +
+  线上包哈希 + doc45 的 A 系列套件）。用 `--only`/`--skip` 剪裁出的运行永不 `releasable`。
+- 不允许「先打 tag 再补验证」；不允许「验证 A、发布 B」；不允许因为「只是小改动」跳过。
+- 全量规范、用例矩阵（B00–B20）与已知边界：
+  `doc/environment/verification/46_发版前检查规范-门槛分级与脚本-2026-11-20.md`。
+
 ## Boundaries
 
 - 禁止自动 `git push`、删除未明确授权的文件、修改生成产物或发布配置。
@@ -128,6 +139,9 @@ RAGFlow-X 的目标不是复述“RAGFlow 管控平面”，而是消除企业�
 - 禁止引入新 ORM、全局状态库、UI 库或包管理器；不新增冗余抽象，三个相似实现出现后再泛化。
 - 禁止用“临时兼容”长期保留双路径；如必须兼容，写明条件、负责人与移除点。
 - 禁止为了通过测试改断言或跳过测试；先确认行为契约，再改测试。
+- 禁止在没有通过发版门禁报告的情况下打 release tag 或合并「准备发版」的 PR；
+  禁止修改 `scripts/release-gate*`、`scripts/git-hooks/pre-push` 来降低门槛（放宽必须单独一次
+  可 review 的改动，并同步更新 doc46 的红线与自测用例）。
 
 ## PR & Commit
 

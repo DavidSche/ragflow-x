@@ -1,0 +1,147 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "begin",
+        "type": "beginNode",
+        "position": { "x": 40, "y": 200 },
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "data": {
+          "label": "Begin",
+          "name": "begin",
+          "form": {
+            "mode": "conversational",
+            "prologue": "你好，我是制度问答助手。请直接提问，我会按制度原文回答并标出出处。"
+          }
+        }
+      },
+      {
+        "id": "retr",
+        "type": "retrievalNode",
+        "position": { "x": 300, "y": 200 },
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "data": {
+          "label": "Knowledge",
+          "name": "Knowledge_0",
+          "form": {
+            "retrieval_from": "dataset",
+            "kb_ids": [],
+            "query": "{sys.query}",
+            "top_n": 8,
+            "top_k": 1024,
+            "similarity_threshold": 0.2,
+            "keywords_similarity_weight": 0.7,
+            "vector_similarity_weight": 0.3,
+            "rerank_id": "",
+            "empty_response": "资料里没有找到相关规定。建议换个说法，或联系制度归口部门确认。",
+            "outputs": {}
+          }
+        }
+      },
+      {
+        "id": "llm",
+        "type": "generalNode",
+        "position": { "x": 560, "y": 200 },
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "data": {
+          "label": "Generate",
+          "name": "Generate_0",
+          "form": {
+            "llm_id": "",
+            "parameter": "Custom",
+            "temperature": 0.1,
+            "top_p": 0.3,
+            "presence_penalty": 0.4,
+            "frequency_penalty": 0.7,
+            "max_tokens": 512,
+            "thinking": "default",
+            "system": "你是企业内部制度助手。只依据提供的检索片段回答，不要编造条款号。",
+            "prompt": "请只根据下面的检索片段回答问题。\n\n【检索片段】\n{retr@formalized_content}\n\n【问题】\n{sys.query}\n\n回答要求：\n1. 先给结论，再给依据；\n2. 每条依据写明出自哪份制度的哪一条；\n3. 检索片段里没有的内容，直接说「资料里没有」，不要推测。"
+          }
+        }
+      },
+      {
+        "id": "answer",
+        "type": "generalNode",
+        "position": { "x": 820, "y": 200 },
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "data": {
+          "label": "Answer",
+          "name": "Answer_0",
+          "form": {
+            "content": ["{llm@content}"],
+            "message_history_window_size": 1
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "id": "e1", "source": "begin", "target": "retr" },
+      { "id": "e2", "source": "retr", "target": "llm" },
+      { "id": "e3", "source": "llm", "target": "answer" }
+    ]
+  },
+  "components": {
+    "begin": {
+      "obj": { "component_name": "Begin", "params": {} },
+      "upstream": [],
+      "downstream": ["retr"]
+    },
+    "retr": {
+      "obj": {
+        "component_name": "Retrieval",
+        "params": {
+          "retrieval_from": "dataset",
+          "kb_ids": [],
+          "query": "{sys.query}",
+          "top_n": 8,
+          "top_k": 1024,
+          "similarity_threshold": 0.2,
+          "keywords_similarity_weight": 0.7,
+          "vector_similarity_weight": 0.3,
+          "rerank_id": "",
+          "empty_response": "资料里没有找到相关规定。建议换个说法，或联系制度归口部门确认。",
+          "outputs": {}
+        }
+      },
+      "upstream": ["begin"],
+      "downstream": ["llm"]
+    },
+    "llm": {
+      "obj": {
+        "component_name": "llm",
+        "params": {
+          "llm_id": "",
+          "parameter": "Custom",
+          "temperature": 0.1,
+          "top_p": 0.3,
+          "presence_penalty": 0.4,
+          "frequency_penalty": 0.7,
+          "max_tokens": 512,
+          "thinking": "default",
+          "system": "你是企业内部制度助手。只依据提供的检索片段回答，不要编造条款号。",
+          "prompt": "请只根据下面的检索片段回答问题。\n\n【检索片段】\n{retr@formalized_content}\n\n【问题】\n{sys.query}\n\n回答要求：\n1. 先给结论，再给依据；\n2. 每条依据写明出自哪份制度的哪一条；\n3. 检索片段里没有的内容，直接说「资料里没有」，不要推测。"
+        }
+      },
+      "upstream": ["retr"],
+      "downstream": ["answer"]
+    },
+    "answer": {
+      "obj": {
+        "component_name": "Message",
+        "params": { "content": ["{llm@content}"], "message_history_window_size": 1 }
+      },
+      "upstream": ["llm"],
+      "downstream": []
+    }
+  },
+  "history": [],
+  "path": [],
+  "retrieval": [],
+  "variables": {},
+  "globals": {}
+}
