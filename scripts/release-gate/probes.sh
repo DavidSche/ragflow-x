@@ -58,11 +58,11 @@ say()  { printf '%s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 good() { printf 'ok    %s\n' "$*"; }
 
-# ── selftest: three mutations, each of which must be refused ─────────────────
+# ── selftest: four mutations, each of which must be refused ──────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
-  say "selftest: can this check refuse? (a re-added password, a deleted step, a re-coupled pair)"
+  say "selftest: can this check refuse? (a re-added password, a hidden one, a deleted step, a re-coupled pair)"
   cp "$COMMON" "$T16" "$T02" "$README" "$tmp"/ 2>/dev/null
 
   # ① a credential put back: a name that ends in _PASSWORD with a working literal. This is
@@ -98,6 +98,21 @@ if [ "${1:-}" = "--selftest" ]; then
     exit 1
   fi
   say "ok      T02 importing the T16 drill -> refused"
+  cp "$T02" "$tmp/t02_seed_gold_pool.py"
+
+  # ④ the hole this check had on its first day: a literal hidden inside a `${VAR:-literal}`
+  # default. Its value contains a `$`, so the direct-assignment shape skips it — a probe
+  # could have kept a password and still passed. Re-adding one must be refused.
+  printf '
+DEFAULT_PASS="${RGX_VERIFY_PASS:-RgxTest#2026a}"
+' >> "$tmp/t16_live_drill.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'stores a credential'; then
+    say "SELFTEST FAIL: a literal hidden in a \${VAR:-literal} default was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a literal hidden in a \${VAR:-literal} default -> refused"
 
   say "SELFTEST OK"
   exit 0
@@ -135,8 +150,14 @@ fi
 # The shape, not a word list: `SOMETHING_PASSWORD = "…"` with a non-empty literal. A
 # requirement resolved from the environment (`os.environ.get("…", "")`) has no literal and
 # is what every credential here must look like.
-secret_hits="$(grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"]+"' \
-                "$COMMON" "$T16" "$T02" 2>/dev/null || true)"
+# Two shapes, because a literal hides in two places: assigned directly, or hidden inside a
+# `${VAR:-literal}` default (the value then contains a `$`, so the first pattern skips it —
+# that hole was found by re-adding the old default to another script and watching this
+# check stay green).
+secret_hits="$(
+  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" 2>/dev/null || true
+  } | sed '/^$/d')"
 if [ -z "$secret_hits" ]; then
   good "no credential literal is assigned in any probe (the shape check, not a word list)"
 else
