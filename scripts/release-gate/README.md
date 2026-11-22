@@ -33,9 +33,27 @@ scripts/release-gate.sh --list                        # 列出所有检查项
 ## 状态与退出码
 
 `PASS` 跑了且成立 · `FAIL` 跑了但不成立 · `SKIP` 必过项没跑（判定 INCOMPLETE）·
-`MISSING` 真机套件脚本不在这台机器上（判定 INCOMPLETE）。
+`MISSING` 真机套件脚本不在这台机器上（判定 INCOMPLETE）·
+`N/A` 这项要对照的文档不在这棵树里（**只在 `--ci` 下存在**，见下）。
 
 退出码只有三个：`0` PASS、`1` FAIL、`2` INCOMPLETE。没有「警告放行」。
+
+### `N/A`：一种只在 CI 里有意义的「答不了」
+
+`doc/` 被 `.gitignore:91` 排除（只放行 `doc/user/`），所以 `git clone` 出来的树里
+没有 301/304/305、没有 `doc/specification/12`、没有标注手册。有五个 static 检查是
+「拿代码和这些文档对照」，在没有文档的树上它们**答不了**，而不是**答了「一致」**。
+
+- 检查脚本遇到这种情况退出 **3**，并在日志里写明是哪个文件、为什么没有；
+- `scripts/release-gate.sh` 决定 3 的含义：`--ci` 运行记为 `N/A`（行仍在报告里，
+  `required X/Y passed` 的分子不算它，判定写作 `PASS (ci: N not applicable)`），
+  **其它任何运行都记为 `FAIL`**；
+- `N/A` 永远换不到 `releasable=true`（`--ci` 本来就跑不了 live 层），而
+  `pre-push` 要求每个必过项状态都是 `PASS`，所以**带 `N/A` 的报告推不了 tag**
+  （`scripts/release-gate/selftest.sh` 第 9 例就是在测这句话）。
+
+一句话：CI 可以「这一项在我的树里没有输入」，但只有工作站上那次带文档的
+`--tier all` 才能说「都过了、可以发」。
 
 ## 红线
 

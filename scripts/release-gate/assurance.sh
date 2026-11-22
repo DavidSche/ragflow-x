@@ -194,7 +194,20 @@ fi
 say ""
 say "G-A4 error-code closed set (44117-44123)"
 codes_in_role "$CODES_FILE" "Go constants"                        '=[[:space:]]*%s([^0-9]|$)'
-codes_in_role "$SPEC_FILE"  "API specification (specification/12)" '^\|[[:space:]]*`%s`'
+# specification/12 is under `doc/`, which .gitignore:91 excludes: a clean checkout
+# (CI, or a fresh clone) has it not at all. Four of the five places can still be
+# checked there — the fifth cannot, and "I could not open the fifth" is not "the
+# fifth agrees". The script says which one it lost and exits 3; the release gate
+# decides what that means for the profile (N/A in `--ci`, FAIL anywhere else).
+spec_missing=0
+if [ -f "$SPEC_FILE" ]; then
+  codes_in_role "$SPEC_FILE"  "API specification (specification/12)" '^\|[[:space:]]*`%s`'
+else
+  spec_missing=1
+  say "N/A   API specification (specification/12) is not in this tree ($SPEC_FILE):"
+  say "      doc/ is gitignored by policy (.gitignore:91), so the row-shaped half of"
+  say "      G-A4 did not run in this checkout — the other four places did."
+fi
 codes_in_role "$FEMAP_FILE" "frontend error map (report-contract.ts)" '^[[:space:]]*%s:'
 
 # The two *tests* pin the set structurally (a loop over 44101..44123, `codes[22]`,
@@ -225,6 +238,12 @@ say ""
 if [ "$fail" -ne 0 ]; then
   say "assurance-gold: FAIL"
   exit 1
+fi
+if [ "$spec_missing" = "1" ]; then
+  say "assurance-gold: N/A — every check that could run here held, but G-A4's"
+  say "  fifth place (specification/12) is not in this checkout. Exit 3, which the"
+  say "  gate records as N/A under --ci and as FAIL anywhere else."
+  exit 3
 fi
 say "assurance-gold: PASS (offline fixture; production coverage is T16's live-drill row, not this script's)"
 exit 0

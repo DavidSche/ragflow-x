@@ -155,12 +155,30 @@ PY
   exit 0
 fi
 
-# The develop/ tree is gitignored, so on some checkouts these files simply do not exist.
-# That is refused rather than skipped, for the same reason s14/s15 refuse it: «I could not
-# read the ledger» is not «the ledger is consistent», and a release gate that turns an
-# unreadable input into a green line is the exact failure mode this whole file watches for.
+# The develop/ tree is gitignored (.gitignore:91), so a clean checkout — CI, or a fresh
+# clone — carries no 301/304/305 at all. Two different situations live here and they must
+# not share an exit code:
+#
+#   * the whole directory is absent  -> nothing was compared, nothing was violated. That
+#     is exit 3 ("this tree cannot answer"), which the release gate records as N/A under
+#     `--ci` and as FAIL for any run that could push a tag. It is *not* a pass: exit 3
+#     never reaches the green branch, and the sentence printed says so.
+#   * one of the three is absent but the directory is there — someone moved or deleted a
+#     document in a tree that otherwise has them. That is exit 1, because it is a fault
+#     to find, not a property of the checkout.
+if [ ! -d "$(dirname "$D304")" ]; then
+  say "docs-ledger: N/A — doc/develop is not in this tree, so 304 §2/§3/§6/§7, 301 §14.J and"
+  say "  305 §2 could not be read. Nothing was compared; reading nothing is not a pass."
+  say "  Exit 3: N/A under --ci, FAIL for a run that could tag."
+  exit 3
+fi
 if [ ! -f "$D304" ] || [ ! -f "$D301" ] || [ ! -f "$D305" ]; then
-  say "docs-ledger: FAIL — doc/develop is not present in this tree, so 304 §2/§3/§6/§7, 301 §14.J and 305 §2 cannot be read; reading nothing is not a pass"
+  missing=""
+  [ -f "$D304" ] || missing="$missing 304"
+  [ -f "$D301" ] || missing="$missing 301"
+  [ -f "$D305" ] || missing="$missing 305"
+  say "docs-ledger: FAIL — doc/develop exists but is missing:$missing — a document moved or"
+  say "  deleted in a tree that has the others is a fault, not a property of the checkout."
   exit 1
 fi
 

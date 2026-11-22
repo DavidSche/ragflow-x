@@ -158,7 +158,13 @@ say "§5.7 sentence identity (frozen file <-> doc/301)"
 if [ ! -f "$PREREG_FILE" ]; then
   bad "$PREREG_FILE does not exist"
 elif [ ! -f "$DOC_301" ]; then
-  bad "doc/develop/301-*.md is missing: the sentences cannot be compared, and 'I could not compare' is not 'they match'"
+    # doc/ is gitignored (.gitignore:91): a clean checkout — CI, or a fresh clone —
+    # does not carry it at all. The comparison then did not happen, and that is a
+    # different sentence from "the two agree". Exit 3 says which; the release gate
+    # records it as N/A under --ci and as FAIL for any run that could tag.
+    na=1
+    say "N/A   doc/develop/301-*.md is not in this tree: doc/ is gitignored by policy (.gitignore:91),"
+  say "      so this comparison did not run in this checkout — the code-side checks above did."
 else
   quotes="$(grep -o '"quote": "[^"]*"' "$PREREG_FILE" | sed 's/^"quote": "//; s/"$//' || true)"
   count="$(printf '%s\n' "$quotes" | grep -c . || true)"
@@ -188,6 +194,11 @@ say ""
 if [ "$fail" -ne 0 ]; then
   say "kc2-prereg: FAIL"
   exit 1
+fi
+if [ "${na:-0}" = "1" ]; then
+  say "kc2-prereg: N/A — every check that could run held, but 301 is not in this"
+  say "  checkout, so the three quotes were not compared against it. Exit 3."
+  exit 3
 fi
 say "kc2-prereg: PASS (offline instrument; the live reading is doc/305 §2.17, not this script's)"
 exit 0

@@ -171,7 +171,13 @@ fi
 
 # ── ③ the manual documents the loop it asks people to run ────────────────
 if [ ! -f "$MANUAL" ]; then
-  bad "$MANUAL is missing: the people who run T02 have no instructions"
+    # doc/ is gitignored (.gitignore:91): a clean checkout — CI, or a fresh clone —
+    # does not carry it at all. The comparison then did not happen, and that is a
+    # different sentence from "the two agree". Exit 3 says which; the release gate
+    # records it as N/A under --ci and as FAIL for any run that could tag.
+    na=1
+    say "N/A   $MANUAL (doc/operations/gold-labeling-manual.md) is not in this tree: doc/ is gitignored by policy (.gitignore:91),"
+  say "      so this comparison did not run in this checkout — the code-side checks above did."
 else
   for shape in 'goldtool.exe adjudicate --stub' 'goldtool.exe adjudicate --check'; do
     if grep -qF -- "$shape" "$MANUAL"; then
@@ -207,6 +213,12 @@ say ""
 if [ "$fail" -ne 0 ]; then
   say "adjudicate: FAIL"
   exit 1
+fi
+if [ "${na:-0}" = "1" ]; then
+  say "adjudicate: N/A — the tool half held (it derives the skeleton from the two"
+  say "  label files), but the manual that documents the loop is not in this"
+  say "  checkout. Exit 3: 「prompt 里有一个文件没人能打开」 is not 「文档齐了」."
+  exit 3
 fi
 say "adjudicate: PASS (skeleton derived from the two label files; the manual documents it; T02's remaining blocker is a human)"
 exit 0

@@ -35,13 +35,18 @@ CASE_DIRS=()
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
-# make_report <dir> <verdict> <releasable> <rev> <version> <finished_at>
+# make_report <dir> <verdict> <releasable> <rev> <version> <finished_at> [check_status]
+#
+# `check_status` (optional) adds one required static row with that status. It exists so
+# the hook can be asked about a status the gate itself only writes under `--ci` (N/A):
+# a report is a JSON file, and the question "what if a partial run were dressed up as a
+# release run" deserves an answer that is a test rather than an argument.
 make_report() {
-  local dir="$1" verdict="$2" releasable="$3" rev="$4" version="$5" finished="$6"
+  local dir="$1" verdict="$2" releasable="$3" rev="$4" version="$5" finished="$6" check="${7:-}"
   mkdir -p "$dir/tmp/release-gate-selftest"
-  "$PY" - "$dir/tmp/release-gate-selftest/summary.json" "$verdict" "$releasable" "$rev" "$version" "$finished" <<'PY'
+  "$PY" - "$dir/tmp/release-gate-selftest/summary.json" "$verdict" "$releasable" "$rev" "$version" "$finished" "$check" <<'PY'
 import json, sys
-path, verdict, releasable, rev, version, finished = sys.argv[1:7]
+path, verdict, releasable, rev, version, finished, check = sys.argv[1:8]
 doc = {
     "schema": "rgx.release-gate.v1",
     "verdict": verdict,
@@ -51,7 +56,8 @@ doc = {
     "finished_at": finished,
     "git": {"rev": rev, "short": rev[:12], "branch": "main", "tag": version, "dirty": False, "dirty_files": 0},
     "artifacts": {"frontend_asset": "index-selftest.js", "served_asset": "index-selftest.js"},
-    "checks": [],
+    "checks": ([{"id": "s18.docs-ledger", "tier": "static", "required": True,
+                 "status": check, "seconds": 0, "note": "selftest row"}] if check else []),
 }
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(doc, fh)
@@ -112,7 +118,13 @@ if [ $? -ne 0 ]; then PASS=$((PASS + 1)); echo "PASS  tag deletion refused"; els
 d="$WORK/good"; make_report "$d" PASS true "$SHA" "$TAG" "$NOW"
 expect "matching fresh releasable report: allowed" 0 "$d" "refs/tags/$TAG"
 
-# 9. ordinary branches are never gated — this protects releases, not work.
+# 9. a report whose required row is N/A (the status a `--ci` run uses when the tree
+# carries no doc/) must not become a release report by being renamed, hand-edited, or
+# carried from CI: the hook requires every required row to say PASS.
+d="$WORK/na-row"; make_report "$d" "PASS (ci: 1 not applicable)" true "$SHA" "$TAG" "$NOW" "N/A"
+expect "a required row is N/A: refused" 1 "$d" "refs/tags/$TAG"
+
+# 10. ordinary branches are never gated — this protects releases, not work.
 d="$WORK/branch"; mkdir -p "$d"
 expect "branch push is not gated" 0 "$d" "refs/heads/feature/x"
 

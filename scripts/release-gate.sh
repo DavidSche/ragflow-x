@@ -38,6 +38,18 @@
 #   SKIP     a required check was not run (deselected, or its preconditions
 #            are absent) — the run is INCOMPLETE, never silently green
 #   MISSING  a live suite script is not on this machine — also INCOMPLETE
+#   N/A      the check needs an input this tree does not carry, and this is a
+#            `--ci` run. `doc/` is gitignored by policy (.gitignore:91), so a
+#            clean checkout has no 301/304/305, no specification/12 and no
+#            labeling manual; five static checks compare code against those
+#            documents and can only answer "not here". A check script says so
+#            with exit 3, and the gate is the one place that decides what that
+#            means: a `--ci` run records `N/A` and keeps the row visible; every
+#            other run turns the same exit code into **FAIL**. CI cannot run the
+#            live tier and therefore can never be `releasable`, so "CI green"
+#            and "may be tagged" stay two different sentences. This is the only
+#            status whose meaning depends on the profile, and it is written down
+#            here rather than discovered in a log.
 #
 # Exit codes: 0 = PASS (and releasable when a version was given), 1 = FAIL,
 # 2 = INCOMPLETE (something required did not run, or the report could not be
@@ -176,7 +188,7 @@ should_run() { # id
 run_check() {
   local id="$1" t="$2" req="$3" desc="$4"
   shift 4
-  local status note="" log="" t0=$SECONDS
+  local status note="" log="" t0=$SECONDS rc=0
   if should_run "$id"; then
     log="$OUT/checks/$id.log"
     printf '$ %s\n\n' "$*" > "$log"
@@ -185,9 +197,20 @@ run_check() {
     if "$@" >> "$log" 2>&1; then
       status="PASS"
     else
-      status="FAIL"
+      rc=$?
+      # Exit 3 = "this tree cannot answer this question" (a document the check
+      # compares against is not in the checkout). Only a `--ci` run is allowed
+      # to record that as N/A; anywhere else it is a failure, because a run that
+      # could push a tag must not be able to lose a check by losing its input.
+      if [ "$rc" = "3" ] && [ "$CI" = "1" ]; then
+        status="N/A"
+        note="$desc — not applicable in this tree (the check needs a document that is not in the checkout; see the log for which one)"
+      else
+        status="FAIL"
+        note="$desc"
+      fi
     fi
-    note="$desc"
+    [ -n "$note" ] || note="$desc"
   else
     status="SKIP"
     req=0
@@ -196,7 +219,9 @@ run_check() {
   local secs=$((SECONDS - t0))
   record "$id" "$t" "$req" "$status" "$secs" "$log" "$note"
   printf '[%s] %-30s %3ss\n' "$status" "$id" "$secs"
-  if [ "$status" = "FAIL" ]; then
+  # N/A gets its tail shown too: "not applicable" without "which document" is a
+  # status nobody can check.
+  if [ "$status" = "FAIL" ] || [ "$status" = "N/A" ]; then
     echo "      ---- tail of $log ----"
     tail -n 25 "$log" | sed 's/^/      /'
   fi
@@ -507,6 +532,8 @@ FAILED=0
 INCOMPLETE=0
 REQ_TOTAL=0
 REQ_PASS=0
+NA_COUNT=0
+NA_LIST=()
 REASONS=()
 for i in "${!R_ID[@]}"; do
   [ "${R_REQ[$i]}" = "1" ] || continue
@@ -514,6 +541,10 @@ for i in "${!R_ID[@]}"; do
   case "${R_STATUS[$i]}" in
     PASS) REQ_PASS=$((REQ_PASS + 1)) ;;
     FAIL) FAILED=$((FAILED + 1)); REASONS+=("${R_ID[$i]}: FAIL") ;;
+    # N/A is counted apart from both: it is not a pass (the numerator stays
+    # honest), and it is not a blocking reason *in a CI run*, which is the only
+    # profile that can produce it.
+    N/A) NA_COUNT=$((NA_COUNT + 1)); NA_LIST+=("${R_ID[$i]}") ;;
     *) INCOMPLETE=$((INCOMPLETE + 1)); REASONS+=("${R_ID[$i]}: ${R_STATUS[$i]}") ;;
   esac
 done
@@ -524,6 +555,13 @@ if [ "$FAILED" -gt 0 ]; then
   VERDICT="FAIL"; EXIT_CODE=1
 elif [ "$INCOMPLETE" -gt 0 ]; then
   VERDICT="INCOMPLETE"; EXIT_CODE=2
+elif [ "$NA_COUNT" -gt 0 ]; then
+  # The word itself carries the caveat: a report that says `PASS` must be one
+  # where every required check had an input and held. `PASS (ci: ...)` cannot be
+  # grepped as PASS, cannot satisfy `releasable`, and prints its own shortfall in
+  # the verdict line rather than in a footnote below it.
+  VERDICT="PASS (ci: $NA_COUNT not applicable)"
+  EXIT_CODE=0
 fi
 
 FRONTEND_ASSET=""
@@ -677,6 +715,11 @@ printf 'RELEASE GATE: %s   required %s/%s passed   (tier=%s profile=%s)\n' \
 if [ "${#REASONS[@]}" -gt 0 ]; then
   echo "blocking:"
   for r in "${REASONS[@]}"; do echo "  - $r"; done
+fi
+if [ "$NA_COUNT" -gt 0 ]; then
+  printf 'not applicable: %s (this tree carries no doc/ — .gitignore:91 — so these compared code against a document they could not open)\n' "$NA_COUNT"
+  for r in "${NA_LIST[@]}"; do echo "  - $r"; done
+  echo "  CI may report them as N/A; a release-intent run may not, and would have called them FAIL."
 fi
 if [ "$RELEASABLE" = "true" ]; then
   echo "releasable: yes  (tag $VERSION on $GIT_SHORT may be pushed)"

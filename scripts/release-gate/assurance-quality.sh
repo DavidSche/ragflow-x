@@ -176,7 +176,13 @@ if [ ! -f "$SRC_FILE" ]; then
   bad "$SRC_FILE does not exist"
 else
   if [ ! -f "$DOC_301" ]; then
-    bad "doc/develop/301-*.md is missing: the sentences cannot be compared, and 'I could not compare' is not 'they match'"
+    # doc/ is gitignored (.gitignore:91): a clean checkout — CI, or a fresh clone —
+    # does not carry it at all. The comparison then did not happen, and that is a
+    # different sentence from "the two agree". Exit 3 says which; the release gate
+    # records it as N/A under --ci and as FAIL for any run that could tag.
+    na=1
+    say "N/A   doc/develop/301-*.md is not in this tree: doc/ is gitignored by policy (.gitignore:91),"
+  say "      so this comparison did not run in this checkout — the code-side checks above did."
   else
     rows="$(quality_rows "$SRC_FILE")"
     count="$(printf '%s\n' "$rows" | grep -c '^| ' || true)"
@@ -200,6 +206,11 @@ say ""
 if [ "$fail" -ne 0 ]; then
   say "assurance-quality: FAIL"
   exit 1
+fi
+if [ "${na:-0}" = "1" ]; then
+  say "assurance-quality: N/A — every check that could run held, but 301 is not in"
+  say "  this checkout, so the five sentences were not compared against it. Exit 3."
+  exit 3
 fi
 say "assurance-quality: PASS (offline instrument; the live reading is doc/305 §2.16, not this script's)"
 exit 0
