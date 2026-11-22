@@ -126,7 +126,9 @@ func manifestAgreementOf(ag Agreement, raw []Label, goldItems int, ok bool) mani
 func runAssemble(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("assemble", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	poolPath := fs.String("pool", "", "pool JSONL produced by `goldtool pool`")
+	poolPath := fs.String("pool", "", "pool JSONL the labels were drawn from — the worksheet "+
+		"sample written by `sample --out`, not the pool it was drawn from, unless they are the "+
+		"same file (a bigger pool is one `pool_outside_sample` problem, not missing labels)")
 	labelA := fs.String("labels-a", "", "annotator A label file")
 	labelB := fs.String("labels-b", "", "annotator B label file")
 	adjPath := fs.String("adjudication", "", "optional adjudication file (required when A and B disagree)")

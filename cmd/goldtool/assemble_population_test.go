@@ -193,3 +193,22 @@ func TestManifestSeparatesPopulationFromPool(t *testing.T) {
 		t.Fatalf("the manifest must carry the population statement, once: %v", codes(man.Problems))
 	}
 }
+
+// TestAssembleUsageNamesTheSampleNotThePool locks the one sentence that was most likely
+// to be read as an invitation: the flag help used to say `--pool` takes "pool JSONL
+// produced by `goldtool pool`", which is exactly the file that produced 251
+// `unlabelled_item` problems. A usage string that points at the wrong file is a doc bug
+// in the same class as `kappa --labels` without `--worksheet` (3e312f6).
+func TestAssembleUsageNamesTheSampleNotThePool(t *testing.T) {
+	errFile, read := captureStderr(t)
+	code := runAssemble([]string{"--help"}, devnull(t), errFile)
+	usage := read()
+	if code != exitUsage {
+		t.Fatalf("--help is a usage exit, got %d", code)
+	}
+	for _, want := range []string{"worksheet sample", "not the pool it was drawn from", "pool_outside_sample"} {
+		if !strings.Contains(usage, want) {
+			t.Fatalf("assemble --pool help must name the sample (%q missing):\n%s", want, usage)
+		}
+	}
+}
