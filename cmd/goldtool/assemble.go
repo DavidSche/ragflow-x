@@ -248,7 +248,28 @@ func assembleItems(pool []Item, a, b []Label, adj []Adjudication, requireAll boo
 		var notes []string
 		if aLabel.Verdict == bLabel.Verdict {
 			verdict = aLabel.Verdict
-			quoteStatus, quote, evIDs = mergeQuote(aLabel, bLabel)
+			// Question ① is a fact, not a preference. If the two annotators disagree about
+			// whether the quoted text is in the evidence, one of them is wrong, and the gold
+			// file must record which one was right. Falling back to A's answer (the old
+			// behaviour) made that disagreement vanish at the exact place the manual says the
+			// two questions must never be merged (doc/301 §9.1 "两步不许合并").
+			sa, sb := labelQuoteStatus(aLabel), labelQuoteStatus(bLabel)
+			if sa != sb {
+				r, adjudicated := adjByItem[id]
+				if !adjudicated || trimSpace(r.QuoteStatus) == "" {
+					problems = append(problems, Problem{"quote_status_disagreement",
+						fmt.Sprintf("%s: verdicts agree (%s) but question ① does not: A=%q B=%q — one of them is "+
+							"wrong about whether the quote is in the evidence, so gold may not pick one; an "+
+							"adjudication row must settle it (with quote_status)", id, aLabel.Verdict, sa, sb)})
+					continue
+				}
+				quoteStatus, quote = trimSpace(r.QuoteStatus), r.Quote
+				evIDs = r.EvidenceIDs
+				notes = append(notes, fmt.Sprintf("quote_status adjudicated by %s: A=%s B=%s reason=%s",
+					r.Adjudicator, sa, sb, r.Reason))
+			} else {
+				quoteStatus, quote, evIDs = mergeQuote(aLabel, bLabel)
+			}
 		} else {
 			r, ok := adjByItem[id]
 			if !ok {
@@ -297,6 +318,16 @@ func assembleItems(pool []Item, a, b []Label, adj []Adjudication, requireAll boo
 		out = append(out, it)
 	}
 	return out, problems
+}
+
+// labelQuoteStatus reads a label's answer to question ①. When the field is absent it falls
+// back to the only other thing the row says about it — whether a quote text is present — so
+// that an older file is compared on what it meant rather than on whitespace.
+func labelQuoteStatus(l Label) string {
+	if s := trimSpace(l.QuoteStatus); s != "" {
+		return s
+	}
+	return quoteStatusFrom(l.Quote)
 }
 
 func boolCount(bs ...bool) int {

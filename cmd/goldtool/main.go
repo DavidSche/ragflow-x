@@ -16,6 +16,7 @@
 //	pool       export candidates from published revisions of a live database (read-only)
 //	sample     draw the annotation worksheet out of a pool export (deterministic)
 //	validate   check a gold file against doc/301 §9.1 (offline, no database)
+//	labels     stub and check the two per-annotator label files (the hand-written end of T02)
 //	kappa      pairwise Cohen's κ over per-annotator label files (offline)
 //	assemble   labels + adjudication -> redacted, validated, frozen gold file
 //	preds      runtime claim evaluations -> the predictions file `eval` scores
@@ -52,6 +53,8 @@ usage:
                     [--strategy random|stratified --stratum K --targets "k=n,..."]
                     [--seed N] [--allow-short]
   goldtool validate --gold FILE.jsonl [--labels FILE.jsonl] [--strict-coverage]
+  goldtool labels   --stub --worksheet worksheet.jsonl --annotator NAME --out labels-NAME.jsonl
+  goldtool labels   --check --worksheet worksheet.jsonl --labels labels-NAME.jsonl
   goldtool kappa    --labels FILE.jsonl [--min 0.70]
   goldtool assemble --pool pool.jsonl --labels-a a.jsonl --labels-b b.jsonl
                     [--adjudication adj.jsonl] --version v1 --out DIR
@@ -59,8 +62,7 @@ usage:
                     [--mode full] [--quiet]
   goldtool prereg   --freeze --exp E1|E2 --sample worksheet.jsonl
                     --sample-receipt receipt.json --author NAME --out prereg.json
-                    [--pool pool.jsonl] [--arms "rule-v1, ..."]
-                    [--arms "rule-v1, single-model, ..."]
+                    [--pool pool.jsonl] [--arms "rule-v1, single-model, ..."]
   goldtool prereg   --check prereg.json
   goldtool eval     --gold DIR/gold-v1.jsonl --pred pred.jsonl --exp E1|E2
                     [--prereg prereg.json [--arm LABEL]] [--method NAME] [--out report.md]
@@ -83,6 +85,8 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runSample(args[1:], stdout, stderr)
 	case "validate":
 		return runValidate(args[1:], stdout, stderr)
+	case "labels":
+		return runLabels(args[1:], stdout, stderr)
 	case "kappa":
 		return runKappa(args[1:], stdout, stderr)
 	case "assemble":
