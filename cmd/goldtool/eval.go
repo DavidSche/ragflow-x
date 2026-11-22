@@ -149,6 +149,16 @@ func runEval(args []string, stdout, stderr *os.File) int {
 		return exitUsage
 	}
 
+	// Before judging anything: was this file accepted by the assembly that wrote it? A
+	// refused assembly (exit 1) still writes the JSONL so an operator can see what was
+	// wrong; scoring that draft here would turn its problems into rows that look measured.
+	if refusals := goldRefusals(*goldPath); len(refusals) > 0 {
+		for _, r := range refusals {
+			fmt.Fprintf(stderr, "goldtool eval: --gold: %s\n", r)
+		}
+		return exitInvariant
+	}
+
 	items, err := readItems(*goldPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "goldtool eval: %v\n", err)

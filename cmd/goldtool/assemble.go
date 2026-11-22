@@ -199,16 +199,24 @@ func runAssemble(args []string, stdout, stderr *os.File) int {
 	}
 	name := fmt.Sprintf("report-assurance-gold.%s.jsonl", *version)
 	goldPath := filepath.Join(*outDir, name)
-	body := strings.Join(lines, "\n")
-	if len(lines) > 0 {
-		body += "\n"
+	if err := writeJSONL(goldPath, lines); err != nil {
+		fmt.Fprintf(stderr, "goldtool assemble: write %s: %v\n", goldPath, err)
+		return exitUsage
+	}
+	// The hash is taken from the bytes that are on disk, not from the string we meant to
+	// write: `eval` and `preds` re-hash this path and refuse a mismatch, so the manifest
+	// must describe the file rather than the intention.
+	sum, size, err := fileSum(goldPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "goldtool assemble: %v\n", err)
+		return exitUsage
 	}
 
 	// The manifest is written even when there are problems: a rejected assembly is
 	// evidence too ("we tried, κ was 0.61, we fixed the manual"). Only a clean one is
 	// allowed to be the file the plan points at.
 	man := manifest{
-		Version: *version, File: name, SHA256: hashString(body), Bytes: len(body),
+		Version: *version, File: name, SHA256: sum, Bytes: size,
 		Items:       len(gold),
 		Verdicts:    countBy(gold, func(i Item) string { return i.GoldVerdict }),
 		QuoteStatus: countBy(gold, func(i Item) string { return i.GoldQuoteStatus }),
@@ -228,12 +236,10 @@ func runAssemble(args []string, stdout, stderr *os.File) int {
 		man.Adjudicator = adj[0].Adjudicator
 	}
 
-	if err := writeJSONL(goldPath, lines); err != nil {
-		fmt.Fprintf(stderr, "goldtool assemble: write %s: %v\n", goldPath, err)
-		return exitUsage
-	}
 	manLines, _ := json.MarshalIndent(man, "", "  ")
-	manPath := filepath.Join(*outDir, fmt.Sprintf("report-assurance-gold.%s.manifest.json", *version))
+	// The path derivation is shared with the readers (`goldRefusals`): one function, so a
+	// writer and a checker can never disagree about where the sidecar lives.
+	manPath := sidecarManifestPath(goldPath)
 	if err := os.WriteFile(manPath, append(manLines, '\n'), 0o644); err != nil {
 		fmt.Fprintf(stderr, "goldtool assemble: write manifest: %v\n", err)
 		return exitUsage

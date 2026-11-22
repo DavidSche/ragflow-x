@@ -141,6 +141,16 @@ func runPreds(args []string, stdout, stderr *os.File) int {
 		return exitUsage
 	}
 
+	// The population must be a file an assembly accepted: `preds` copies verdicts out of a
+	// run and binds them to these item ids, so transcribing them against a draft gold file
+	// would make the predictions look like they belong to a gold set that does not exist yet.
+	if refusals := goldRefusals(*itemsPath); len(refusals) > 0 {
+		for _, r := range refusals {
+			fmt.Fprintf(stderr, "goldtool preds: --items: %s\n", r)
+		}
+		return exitInvariant
+	}
+
 	items, err := readItems(*itemsPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "goldtool preds: %v\n", err)
