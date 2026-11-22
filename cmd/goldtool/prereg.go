@@ -212,6 +212,9 @@ func runPrereg(args []string, stdout, stderr *os.File) int {
 	fs.SetOutput(stderr)
 	freeze := fs.Bool("freeze", false, "write a new pre-registration file (refuses to overwrite one)")
 	checkPath := fs.String("check", "", "validate an existing pre-registration file")
+	digestMode := fs.Bool("digest", false, "write a digest of the frozen file (no corpus needed; doc/304 §7 item 18)")
+	preregIn := fs.String("prereg", "", "the frozen file to digest (with --digest)")
+	digestFile := fs.String("digest-file", "", "the digest to check --check against (proves the file is the frozen one)")
 	exp := fs.String("exp", "", "experiment to freeze: E1 or E2 (doc/301 §9.2)")
 	samplePath := fs.String("sample", "", "the frozen primary sample (worksheet) the metrics will be computed on")
 	poolPath := fs.String("pool", "", "the pool the sample was drawn from")
@@ -222,16 +225,63 @@ func runPrereg(args []string, stdout, stderr *os.File) int {
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	if *freeze == (*checkPath != "") {
-		fmt.Fprintln(stderr, "goldtool prereg: pass exactly one of --freeze or --check")
+	modes := 0
+	for _, on := range []bool{*freeze, *checkPath != "", *digestMode} {
+		if on {
+			modes++
+		}
+	}
+	if modes != 1 {
+		fmt.Fprintln(stderr, "goldtool prereg: pass exactly one of --freeze, --check FILE or --digest "+
+			"(three different jobs: write the freeze, verify it, or pin it without the corpus)")
 		return exitUsage
+	}
+	if !*digestMode && strings.TrimSpace(*preregIn) != "" {
+		fmt.Fprintln(stderr, "goldtool prereg: --prereg is the file to digest and only means something with --digest")
+		return exitUsage
+	}
+	if *digestMode {
+		return runPreregDigest(*preregIn, *out, *digestFile, stdout, stderr)
 	}
 
 	if *checkPath != "" {
+		if strings.TrimSpace(*digestFile) != "" {
+			// Answer the first question first: is this the file that was frozen? On a clean
+			// clone the corpus is absent, so without the digest both questions end as the same
+			// "cannot verify" — and the stronger one (this is the frozen file) gets no answer.
+			d, err := readPreregDigest(*digestFile)
+			if err != nil {
+				fmt.Fprintf(stderr, "goldtool prereg: %v\n", err)
+				return exitUsage
+			}
+			if dps := checkPreregDigest(d, *checkPath); len(dps) > 0 {
+				for _, dp := range dps {
+					fmt.Fprintf(stderr, "goldtool prereg: %s\n", dp)
+				}
+				return exitInvariant
+			}
+			fmt.Fprintf(stdout, "goldtool prereg: %s is the frozen file (sha256 %s matches %s)\n",
+				*checkPath, d.PreregSHA256, *digestFile)
+		}
 		p, err := readPrereg(*checkPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "goldtool prereg: %v\n", err)
 			return exitUsage
+		}
+		if strings.TrimSpace(*digestFile) != "" {
+			// The digest repeats each input's hash and row count. Compare the copy with the frozen
+			// file's own records before trusting either: an edited digest used to pass silently.
+			d, derr := readPreregDigest(*digestFile)
+			if derr != nil {
+				fmt.Fprintf(stderr, "goldtool prereg: %v\n", derr)
+				return exitUsage
+			}
+			if aps := checkPreregDigestAgrees(d, p); len(aps) > 0 {
+				for _, ap := range aps {
+					fmt.Fprintf(stderr, "goldtool prereg: %s\n", ap)
+				}
+				return exitInvariant
+			}
 		}
 		problems, gaps := checkPrereg(p)
 		for _, g := range gaps {
@@ -244,6 +294,13 @@ func runPrereg(args []string, stdout, stderr *os.File) int {
 		case len(problems) > 0:
 			return exitInvariant
 		case len(gaps) > 0:
+			if strings.TrimSpace(*digestFile) != "" {
+				// The digest has already settled "is this the frozen file"; what is left is only
+				// the corpus, and the sentence says so instead of letting one exit 3 cover both.
+				fmt.Fprintf(stdout, "goldtool prereg: %s is the frozen file and consistent with the code's "+
+					"thresholds; %d input(s) are absent here (exit 3, corpus only)\n", *checkPath, len(gaps))
+				return exitIncomplete
+			}
 			fmt.Fprintf(stdout, "goldtool prereg: %s is consistent with the code's thresholds, but %d input(s) "+
 				"could not be hashed (exit 3)\n", *checkPath, len(gaps))
 			return exitIncomplete

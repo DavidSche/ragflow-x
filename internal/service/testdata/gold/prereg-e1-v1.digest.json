@@ -1,0 +1,24 @@
+{
+  "schema": "rgx.goldtool.prereg.digest/1",
+  "prereg_file": "prereg-e1-v1.json",
+  "prereg_sha256": "66eb1669bd0deb5caa15921415109d0db6845d80dd6770db13908d10e7f2d76d",
+  "bytes": 5439,
+  "experiment": "E1",
+  "frozen_at": "2026-11-21T15:13:21Z",
+  "author": "RAGFlow-X 质量与评测（T05）",
+  "inputs": [
+    {
+      "role": "sample",
+      "name": "worksheet-primary-v1.jsonl",
+      "sha256": "5e8e5d01dd637b1322020340e77391120014a14db699038456b3e6078c111779",
+      "items": 120
+    },
+    {
+      "role": "pool",
+      "name": "pool-v5.jsonl",
+      "sha256": "9317640041565b934da019a218b9a435bafdb04271e204345e912b861f70651c",
+      "items": 371
+    }
+  ],
+  "why": "其输入（样本/池）是否仍然存在、是否被替换 —— 那些文件不在仓库里，那部分仍以 exit 3 报告（doc/304 §7 item 18）"
+}

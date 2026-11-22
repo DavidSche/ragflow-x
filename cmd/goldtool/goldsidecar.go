@@ -38,11 +38,11 @@ func sidecarManifestPath(goldPath string) string {
 // and what the assembly thought of it. Unknown fields are ignored on purpose — a
 // consumer must not break because `assemble` learned a new count.
 type goldSidecar struct {
-	// File is recorded for humans and for audit, but deliberately *not* compared with the
-	// path we were handed: valid spellings differ (`tmp/x.jsonl` and `./tmp/x.jsonl` are
-	// the same file), so a string comparison would refuse correct usage. Identity here is
-	// "the sidecar next to the path you were given", and the bytes are pinned by SHA256.
-	// A real path-identity check needs canonicalisation (os.SameFile): 304 §7 item 20.
+	// File is the name the assembly wrote next to the gold file (a basename, resolved
+	// against the manifest's own directory). It is compared by *identity*, never by string:
+	// `tmp/x.jsonl` and `./tmp/x.jsonl` are the same file, and a string compare would refuse
+	// correct usage. `os.SameFile` is the comparison, and a name that cannot be resolved is
+	// "cannot compare" rather than "different" — the additive rule holds (304 §7 item 20).
 	File     string    `json:"file"`
 	SHA256   string    `json:"sha256"`
 	Items    int       `json:"items"`
@@ -72,6 +72,23 @@ func goldRefusals(goldPath string) []string {
 	}
 
 	var out []string
+	// Identity: does the manifest name the file we were handed? The manifest records a
+	// basename, resolved against its own directory — a *different* file next to a copied
+	// manifest would otherwise be judged with another file's counts and κ. A name that
+	// cannot be resolved is not evidence of a mismatch (the corpus may have moved with the
+	// manifest), so it is left to the sha256 below, which is the claim that actually matters.
+	if rec := strings.TrimSpace(ms.File); rec != "" {
+		if !filepath.IsAbs(rec) {
+			rec = filepath.Join(filepath.Dir(mpath), rec)
+		}
+		ri, ierr := os.Stat(rec)
+		gi, gerr := os.Stat(goldPath)
+		if ierr == nil && gerr == nil && !os.SameFile(ri, gi) {
+			out = append(out, fmt.Sprintf("%s names %s, which is a different file from %s: a manifest that "+
+				"describes another file's count, κ and problems would be quoted as this file's evidence",
+				mpath, ms.File, goldPath))
+		}
+	}
 	if ms.SHA256 != "" {
 		sum, _, err := fileSum(goldPath)
 		if err != nil {
@@ -89,6 +106,21 @@ func goldRefusals(goldPath string) []string {
 			headRunes(ms.Problems[0].String(), 120)))
 	}
 	return out
+}
+
+// sidecarFingerprint reports the manifest a run was judged against, and that manifest's own
+// sha256, so the receipt records *which* file made the claim. This is provenance, not
+// authentication (304 §7 item 19): it lets a reviewer pin the manifest in a review note and
+// notice that it changed later; it does not stop someone editing the manifest and the gold
+// file together, which is why the documented threat model is operator error, not tampering.
+// Empty strings when there is no sidecar — a worksheet or a hand-built fixture claims nothing.
+func sidecarFingerprint(goldPath string) (path, sum string) {
+	mpath := sidecarManifestPath(goldPath)
+	s, _, err := fileSum(mpath)
+	if err != nil {
+		return "", ""
+	}
+	return mpath, s
 }
 
 // fileSum hashes the bytes on disk and reports their size. It is the one place a gold

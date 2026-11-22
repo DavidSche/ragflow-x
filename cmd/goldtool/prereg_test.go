@@ -11,6 +11,11 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
+// modeSentence is the usage sentence that names the three jobs. Asserted once as a whole
+// rather than three times as fragments (304 §7 item 18): the test cares that every mode is
+// named, not that the line is spelled in one particular order.
+const modeSentence = "pass exactly one of --freeze, --check FILE or --digest"
+
 func runPreregCmd(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	stdout, err := os.CreateTemp(t.TempDir(), "stdout-*")
@@ -288,8 +293,8 @@ func TestPreregFreezeFlagDiscipline(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"no mode", []string{"--exp", "E1"}, "exactly one of --freeze or --check"},
-		{"both modes", []string{"--freeze", "--check", "x.json"}, "exactly one of --freeze or --check"},
+		{"no mode", []string{"--exp", "E1"}, modeSentence},
+		{"both modes", []string{"--freeze", "--check", "x.json"}, modeSentence},
 		{"E0 is not judgeable", []string{"--freeze", "--exp", "E0", "--sample", f.sample, "--author", "x",
 			"--out", filepath.Join(f.dir, "e0.json")}, "no judging"},
 		{"no author", []string{"--freeze", "--exp", "E1", "--sample", f.sample,
@@ -712,5 +717,285 @@ func TestPreregQuoteRendersBothNotations(t *testing.T) {
 		if got := quoteRenders(c.th); got != c.want {
 			t.Fatalf("quoteRenders(%s, %q) = %v, want %v", fmtThreshold(c.th), c.th.Quote, got, c.want)
 		}
+	}
+}
+
+// trackedPrereg is the frozen E1 file that ships in the tree, and the digest beside it. The
+// digest is *derived*, not transcribed: it was produced by `prereg --digest` over this exact
+// file, and the test below regenerates it in memory and compares. That is the whole point of
+// 304 §7 item 18 — on a clean clone the corpus is absent, so `--check` can only exit 3; the
+// digest is what still answers "is this the frozen file".
+func trackedPrereg(t *testing.T) (preregPath, digestPath string) {
+	t.Helper()
+	dir := filepath.Join("..", "..", "internal", "service", "testdata", "gold")
+	return filepath.Join(dir, "prereg-e1-v1.json"), filepath.Join(dir, "prereg-e1-v1.digest.json")
+}
+
+// TestPreregDigestIsDerivedFromTheTrackedFreeze: if someone edits the frozen file (or the
+// digest) the two stop matching, and `--check --digest-file` says so before anything else.
+// A hand-written digest would be a second copy of the claim, not a check of it.
+func TestPreregDigestIsDerivedFromTheTrackedFreeze(t *testing.T) {
+	preregPath, digestPath := trackedPrereg(t)
+	p, err := readPrereg(preregPath)
+	if err != nil {
+		t.Fatalf("read tracked prereg: %v", err)
+	}
+	tracked, err := readPreregDigest(digestPath)
+	if err != nil {
+		t.Fatalf("read tracked digest: %v", err)
+	}
+	derived, err := buildPreregDigest(p, preregPath)
+	if err != nil {
+		t.Fatalf("build digest: %v", err)
+	}
+	want, _ := json.MarshalIndent(derived, "", "  ")
+	got, err := os.ReadFile(digestPath)
+	if err != nil {
+		t.Fatalf("read digest bytes: %v", err)
+	}
+	if strings.TrimSpace(string(got)) != strings.TrimSpace(string(want)) {
+		t.Fatalf("the tracked digest is not the one the tool derives from the tracked freeze\n%s\nwant:\n%s",
+			got, want)
+	}
+	if problems := checkPreregDigest(tracked, preregPath); len(problems) > 0 {
+		t.Fatalf("the tracked pair does not check out: %v", problems)
+	}
+	if tracked.Why != preregDigestWhy {
+		t.Fatalf("digest's why = %q, want the constant (a digest that explains itself wrongly is worse than "+
+			"a silent one)", tracked.Why)
+	}
+}
+
+// TestPreregCheckRefusesAFileTheDigestDoesNotPin: one added byte is enough — a threshold
+// edited after the freeze must be a named violation (exit 1), not an "unverifiable" (exit 3).
+func TestPreregCheckRefusesAFileTheDigestDoesNotPin(t *testing.T) {
+	preregPath, digestPath := trackedPrereg(t)
+	raw, err := os.ReadFile(preregPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	edited := filepath.Join(t.TempDir(), "prereg-e1-v1.json")
+	if err := os.WriteFile(edited, append(raw, '\n'), 0o644); err != nil {
+		t.Fatalf("write edited copy: %v", err)
+	}
+	code, stdout, stderr := runPreregCmd(t, "--check", edited, "--digest-file", digestPath)
+	if code != exitInvariant {
+		t.Fatalf("exit = %d, want %d (invariant): a file the digest does not pin is not the frozen one\n%s%s",
+			code, exitInvariant, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "is not the frozen file") {
+		t.Fatalf("refusal does not say the file is not the frozen one:\n%s", stderr)
+	}
+	if strings.Contains(stdout, "is the frozen file") {
+		t.Fatalf("a refused file was announced as the frozen one:\n%s", stdout)
+	}
+}
+
+// TestPreregCheckWithDigestNarrowsTheExit3ToTheCorpus: on a machine without `tmp/gold/` the
+// only remaining gap is the corpus, and the sentence must say so. Without the digest the
+// same run cannot distinguish "the inputs are missing" from "this file may not even be the
+// freeze" — that ambiguity is what 304 §7 item 18 is about.
+func TestPreregCheckWithDigestNarrowsTheExit3ToTheCorpus(t *testing.T) {
+	preregPath, _ := trackedPrereg(t)
+	dir := t.TempDir()
+	// The same freeze, but its inputs point at files that do not exist: exactly the clean
+	// clone shape, expressed without touching the tracked file.
+	p, err := readPrereg(preregPath)
+	if err != nil {
+		t.Fatalf("read tracked prereg: %v", err)
+	}
+	for i := range p.Inputs {
+		p.Inputs[i].Path = filepath.Join(dir, "absent-"+filepath.Base(p.Inputs[i].Path))
+	}
+	raw, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	moved := filepath.Join(dir, "prereg-e1-v1.json")
+	if err := os.WriteFile(moved, append(raw, '\n'), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// A digest for *this* copy, so the identity question is settled and only the corpus is left.
+	frozen, err := readPrereg(moved)
+	if err != nil {
+		t.Fatalf("read moved: %v", err)
+	}
+	d, err := buildPreregDigest(frozen, moved)
+	if err != nil {
+		t.Fatalf("build digest: %v", err)
+	}
+	dpath := filepath.Join(dir, "prereg-e1-v1.digest.json")
+	if err := writePreregDigest(dpath, d); err != nil {
+		t.Fatalf("write digest: %v", err)
+	}
+
+	code, stdout, stderr := runPreregCmd(t, "--check", moved, "--digest-file", dpath)
+	if code != exitIncomplete {
+		t.Fatalf("exit = %d, want %d: the corpus is absent, which is unverifiable, not a violation\n%s%s",
+			code, exitIncomplete, stdout, stderr)
+	}
+	for _, needle := range []string{"is the frozen file", "corpus only"} {
+		if !strings.Contains(stdout, needle) {
+			t.Fatalf("stdout does not carry %q:\n%s", needle, stdout)
+		}
+	}
+	if !strings.Contains(stderr, "is not present here") {
+		t.Fatalf("the gap does not name the missing input:\n%s", stderr)
+	}
+
+	// Without the digest the same run keeps the old, wider sentence: two questions, one exit.
+	code, stdout, _ = runPreregCmd(t, "--check", moved)
+	if code != exitIncomplete {
+		t.Fatalf("exit = %d without the digest, want %d", code, exitIncomplete)
+	}
+	if !strings.Contains(stdout, "could not be hashed") {
+		t.Fatalf("the undigested run no longer reports the wider gap:\n%s", stdout)
+	}
+}
+
+// TestPreregDigestRefusesToOverwrite: a digest that can be rewritten in place records the
+// current file, not the frozen one. Same discipline, and the same exit code, as `--freeze`.
+func TestPreregDigestRefusesToOverwrite(t *testing.T) {
+	preregPath, _ := trackedPrereg(t)
+	out := filepath.Join(t.TempDir(), "prereg-e1-v1.digest.json")
+	code, _, stderr := runPreregCmd(t, "--digest", "--prereg", preregPath, "--out", out)
+	if code != exitOK {
+		t.Fatalf("first digest: exit = %d, want 0\n%s", code, stderr)
+	}
+	code, _, stderr = runPreregCmd(t, "--digest", "--prereg", preregPath, "--out", out)
+	if code != exitUsage {
+		t.Fatalf("second digest: exit = %d, want %d\n%s", code, exitUsage, stderr)
+	}
+	if !strings.Contains(stderr, "records the current file, not the frozen one") {
+		t.Fatalf("the refusal does not explain why overwriting is refused:\n%s", stderr)
+	}
+}
+
+// TestPreregDigestRefusesABrokenFreeze: digesting a file that fails its own checks would pin
+// the breakage as the agreement.
+func TestPreregDigestRefusesABrokenFreeze(t *testing.T) {
+	preregPath, _ := trackedPrereg(t)
+	p, err := readPrereg(preregPath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	p.Experiment = "E9"
+	raw, _ := json.MarshalIndent(p, "", "  ")
+	broken := filepath.Join(t.TempDir(), "prereg-broken.json")
+	if err := os.WriteFile(broken, append(raw, '\n'), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "prereg-broken.digest.json")
+	code, _, stderr := runPreregCmd(t, "--digest", "--prereg", broken, "--out", out)
+	if code != exitInvariant {
+		t.Fatalf("exit = %d, want %d: a broken freeze is not digestable\n%s", code, exitInvariant, stderr)
+	}
+	if !strings.Contains(stderr, "refusing to digest") {
+		t.Fatalf("the refusal is not named:\n%s", stderr)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Fatalf("a refused digest was still written to %s", out)
+	}
+}
+
+// TestPreregModesAreExclusive: three jobs, three modes. Passing two at once must be a usage
+// sentence, not "the first flag wins" — a `--check --digest` typo would otherwise look like
+// a check that silently rewrote nothing.
+func TestPreregModesAreExclusive(t *testing.T) {
+	preregPath, _ := trackedPrereg(t)
+	cases := [][]string{
+		{"--check", preregPath, "--digest"},
+		{"--freeze", "--digest"},
+		{"--check", preregPath, "--freeze"},
+	}
+	for _, args := range cases {
+		code, _, stderr := runPreregCmd(t, args...)
+		if code != exitUsage {
+			t.Fatalf("%v: exit = %d, want %d\n%s", args, code, exitUsage, stderr)
+		}
+		if !strings.Contains(stderr, "pass exactly one of --freeze, --check FILE or --digest") {
+			t.Fatalf("%v: usage sentence missing:\n%s", args, stderr)
+		}
+	}
+	// `--prereg` is the digest's input, not a synonym for `--check`.
+	code, _, stderr := runPreregCmd(t, "--check", preregPath, "--prereg", preregPath)
+	if code != exitUsage || !strings.Contains(stderr, "only means something with --digest") {
+		t.Fatalf("--prereg outside --digest: exit = %d, stderr = %s", code, stderr)
+	}
+}
+
+// TestPreregCheckRefusesADigestThatDisagreesWithItsOwnInputs: the digest repeats each input's
+// hash and row count, and the frozen file carries the same numbers. Two records of one fact are
+// only worth having if disagreement is audible — before this test, editing a copy's input hash
+// left `--check --digest-file` green (found by running the experiment, not by reading the code).
+func TestPreregCheckRefusesADigestThatDisagreesWithItsOwnInputs(t *testing.T) {
+	preregPath, digestPath := trackedPrereg(t)
+	d, err := readPreregDigest(digestPath)
+	if err != nil {
+		t.Fatalf("read tracked digest: %v", err)
+	}
+	if len(d.Inputs) == 0 || d.Inputs[0].Role != "sample" {
+		t.Fatalf("tracked digest has no sample input to edit: %+v", d.Inputs)
+	}
+	d.Inputs[0].SHA256 = strings.Repeat("1", 64)
+	edited := filepath.Join(t.TempDir(), "prereg-e1-v1.digest.json")
+	raw, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if err := os.WriteFile(edited, append(raw, '\n'), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	code, stdout, stderr := runPreregCmd(t, "--check", preregPath, "--digest-file", edited)
+	if code != exitInvariant {
+		t.Fatalf("exit = %d, want %d: a digest whose copy of the input hash was edited describes a "+
+			"different freeze\nstdout:%s\nstderr:%s", code, exitInvariant, stdout, stderr)
+	}
+	for _, want := range []string{"the digest's input 1", "disagrees with the frozen file's",
+		"the copy was edited"} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("refusal does not contain %q:\n%s", want, stderr)
+		}
+	}
+	// Both sides must be visible: a sentence that only says "disagrees" leaves the operator
+	// unable to tell which record to trust.
+	if !strings.Contains(stderr, strings.Repeat("1", 12)) ||
+		!strings.Contains(stderr, d.Inputs[0].Name) {
+		t.Fatalf("the refusal does not print both records:\n%s", stderr)
+	}
+
+	// The untouched digest still passes, so the check is about disagreement and not about
+	// digests being suspect in general.
+	code, stdout, stderr = runPreregCmd(t, "--check", preregPath, "--digest-file", digestPath)
+	if code == exitInvariant {
+		t.Fatalf("the tracked digest was refused after the cross-check was added:\n%s%s", stdout, stderr)
+	}
+}
+
+// TestPreregCheckRefusesADigestWithADifferentInputCount: dropping an input from the copy is the
+// same edit as changing its hash, one level up — the freeze bound two files, the digest claims
+// one. Counted separately because the sentence differs and a `len` mismatch is the cheap bug.
+func TestPreregCheckRefusesADigestWithADifferentInputCount(t *testing.T) {
+	preregPath, digestPath := trackedPrereg(t)
+	d, err := readPreregDigest(digestPath)
+	if err != nil {
+		t.Fatalf("read tracked digest: %v", err)
+	}
+	d.Inputs = d.Inputs[:len(d.Inputs)-1]
+	edited := filepath.Join(t.TempDir(), "prereg-e1-v1.digest.json")
+	raw, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if err := os.WriteFile(edited, append(raw, '\n'), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	code, _, stderr := runPreregCmd(t, "--check", preregPath, "--digest-file", edited)
+	if code != exitInvariant {
+		t.Fatalf("exit = %d, want %d\n%s", code, exitInvariant, stderr)
+	}
+	if !strings.Contains(stderr, "the digest records 1 input(s), the frozen file records 2") {
+		t.Fatalf("the count mismatch is not named with both numbers:\n%s", stderr)
 	}
 }

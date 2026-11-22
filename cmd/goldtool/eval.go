@@ -86,6 +86,12 @@ type evalReceipt struct {
 	// was not bound to one — which the report says out loud, because an unbound run cannot
 	// claim it followed a rule written before the numbers existed.
 	Prereg *preregBinding `json:"prereg,omitempty"`
+	// Manifest / ManifestSHA256 name the sidecar the judgment was allowed by, and the
+	// sidecar's own hash. Provenance, not authentication (304 §7 item 19): a reviewer can
+	// pin these in a note and see that they changed; nobody claims the manifest is
+	// tamper-proof. Both are omitted when there is no sidecar (a worksheet claims nothing).
+	Manifest       string `json:"manifest,omitempty"`
+	ManifestSHA256 string `json:"manifest_sha256,omitempty"`
 }
 
 const (
@@ -200,6 +206,7 @@ func runEval(args []string, stdout, stderr *os.File) int {
 	receipt, problems := evaluateExperiment(experiment, *method, items, preds)
 	receipt.GoldFile, receipt.PredFile = *goldPath, *predPath
 	receipt.Prereg = binding
+	receipt.Manifest, receipt.ManifestSHA256 = sidecarFingerprint(*goldPath)
 	if len(problems) > 0 {
 		for _, p := range problems {
 			fmt.Fprintf(stderr, "goldtool eval: %s\n", p)
@@ -1049,6 +1056,12 @@ func renderEvalMarkdown(r evalReceipt) string {
 			orDash(r.Prereg.SampleID), r.Prereg.SampleItems, r.Prereg.GoldItems)
 	} else {
 		b.WriteString("- 预注册：**未引用**（本报告的行仍按 doc/301 §9.2 判定，但不能主张「照抄冻结规则」）\n")
+	}
+	if r.Manifest != "" {
+		// Provenance, not authentication (304 §7 item 19): the reader can pin these two
+		// strings in a review note and see later that they changed. Nothing here defends
+		// against a manifest edited together with the gold file.
+		fmt.Fprintf(&b, "- 伴随件：`%s` sha256 `%s`（记录来源，不构成签名）\n", r.Manifest, r.ManifestSHA256)
 	}
 	b.WriteString("\n")
 	if r.Prereg != nil && len(r.Prereg.PlanDrift) > 0 {

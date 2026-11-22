@@ -97,6 +97,11 @@ type predsReceipt struct {
 	MethodsSeen map[string]int `json:"methods_seen_in_these_revisions"`
 	Degraded    []string       `json:"degraded_runs"`
 	Rejected    []string       `json:"rejected_rows"`
+	// Manifest / ManifestSHA256: which sidecar allowed this transcription, and its hash.
+	// Same provenance-only claim as `eval` (304 §7 item 19) — omitted when the items file
+	// has no sidecar, which is the normal case for a worksheet.
+	Manifest       string `json:"manifest,omitempty"`
+	ManifestSHA256 string `json:"manifest_sha256,omitempty"`
 }
 
 type predRunRef struct {
@@ -193,6 +198,7 @@ func runPreds(args []string, stdout, stderr *os.File) int {
 	receipt.ItemsFile = *itemsPath
 	receipt.MethodsSeen = seen
 	receipt.Items = len(items)
+	receipt.Manifest, receipt.ManifestSHA256 = sidecarFingerprint(*itemsPath)
 
 	if len(problems) > 0 {
 		for _, p := range problems {

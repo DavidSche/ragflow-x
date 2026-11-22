@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -223,5 +224,133 @@ func TestValidateDescribesARefusedDraftWithoutQualifyingIt(t *testing.T) {
 	}
 	if _, err := os.Stat(report); !os.IsNotExist(err) {
 		t.Fatalf("eval wrote %s for a refused draft", report)
+	}
+}
+
+// writeManifestAs writes a sidecar whose `file` field is `as` (the manifest's own record of
+// which file it describes). `assemble` always writes a basename; a test needs to be able to
+// write a wrong one.
+func writeManifestAs(t *testing.T, goldPath, as, sha string) string {
+	t.Helper()
+	ms := map[string]any{"version": "v1", "file": as, "sha256": sha, "items": GoldSize()}
+	raw, err := json.Marshal(ms)
+	if err != nil {
+		t.Fatalf("encode sidecar: %v", err)
+	}
+	mpath := sidecarManifestPath(goldPath)
+	if err := os.WriteFile(mpath, raw, 0o644); err != nil {
+		t.Fatalf("write sidecar: %v", err)
+	}
+	return mpath
+}
+
+// TestEvalRefusesAManifestThatNamesAnotherFile: the manifest records which file it
+// describes. A copied manifest beside a *different* gold file would otherwise lend its
+// counts, κ and problems to that file — the numbers would look measured, and they would be
+// another file's numbers. The comparison is by identity (os.SameFile), so the manifest's
+// basename resolved against its own directory is the correct spelling and must pass.
+func TestEvalRefusesAManifestThatNamesAnotherFile(t *testing.T) {
+	gold := evalGold(t)
+	goldPath, predPath := writeEvalFiles(t, gold, perfectPredictions(gold))
+	sha, err := hashFile(goldPath)
+	if err != nil {
+		t.Fatalf("hash gold: %v", err)
+	}
+	other := strings.TrimSuffix(goldPath, ".jsonl") + "-other.jsonl"
+	if err := os.WriteFile(other, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write other file: %v", err)
+	}
+	mpath := writeManifestAs(t, goldPath, filepath.Base(other), sha)
+
+	code, _, stderr := runEvalCmd(t, "--gold", goldPath, "--pred", predPath, "--exp", "E1", "--method", "control")
+	if code != exitInvariant {
+		t.Fatalf("exit = %d, want %d: a manifest describing another file is not this file's evidence\n%s",
+			code, exitInvariant, stderr)
+	}
+	for _, needle := range []string{"names", filepath.Base(other), "a different file from", mpath} {
+		if !strings.Contains(stderr, needle) {
+			t.Fatalf("refusal does not carry %q:\n%s", needle, stderr)
+		}
+	}
+	if strings.Contains(stderr, "describes a different file") {
+		t.Fatalf("an identity mismatch was reported as a stale hash: two faults, two sentences\n%s", stderr)
+	}
+}
+
+// TestEvalAcceptsAManifestThatNamesTheFileByBasename: `assemble` writes a basename, and a
+// consumer must resolve it against the manifest's directory. This is the regression guard
+// for the identity check above: a string compare against the path we were handed would
+// refuse the one spelling the producer actually writes.
+func TestEvalAcceptsAManifestThatNamesTheFileByBasename(t *testing.T) {
+	gold := evalGold(t)
+	goldPath, predPath := writeEvalFiles(t, gold, perfectPredictions(gold))
+	sha, err := hashFile(goldPath)
+	if err != nil {
+		t.Fatalf("hash gold: %v", err)
+	}
+	writeManifestAs(t, goldPath, filepath.Base(goldPath), sha)
+
+	code, stdout, stderr := runEvalCmd(t, "--gold", goldPath, "--pred", predPath, "--exp", "E1", "--method", "control")
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0: the producer's own spelling was refused\n%s", code, stderr)
+	}
+	if !strings.Contains(stdout, "unsupported_false_positive_rate") {
+		t.Fatalf("report missing the primary metric:\n%s", stdout)
+	}
+}
+
+// TestEvalAcceptsAMovedPairWithNoManifest: a copy with no sidecar claims nothing. The
+// identity check must not turn "this copy was never assembled" into "this copy is wrong".
+func TestEvalAcceptsAMovedPairWithNoManifest(t *testing.T) {
+	gold := evalGold(t)
+	goldPath, predPath := writeEvalFiles(t, gold, perfectPredictions(gold))
+	moved := strings.TrimSuffix(goldPath, ".jsonl") + "-moved.jsonl"
+	if err := os.WriteFile(moved, []byte(readAll(t, goldPath)), 0o644); err != nil {
+		t.Fatalf("write moved copy: %v", err)
+	}
+	if _, err := os.Stat(sidecarManifestPath(moved)); !os.IsNotExist(err) {
+		t.Fatalf("fixture unexpectedly has a sidecar beside the copy")
+	}
+	code, _, stderr := runEvalCmd(t, "--gold", moved, "--pred", predPath, "--exp", "E1", "--method", "control")
+	if code != exitOK {
+		t.Fatalf("exit = %d, want 0: an unclaimed copy is not a contradiction (304 §7 item 20)\n%s", code, stderr)
+	}
+}
+
+// TestEvalRecordsTheManifestItWasJudgedBy: the report must name the sidecar and its own
+// hash, so a reviewer can pin them when the evidence is collected (304 §7 item 19). This is
+// provenance, not authentication — the test asserts the recorded value is the manifest's
+// actual hash, so a stale or invented string would fail.
+func TestEvalRecordsTheManifestItWasJudgedBy(t *testing.T) {
+	gold := evalGold(t)
+	goldPath, predPath := writeEvalFiles(t, gold, perfectPredictions(gold))
+	sha, err := hashFile(goldPath)
+	if err != nil {
+		t.Fatalf("hash gold: %v", err)
+	}
+	mpath := writeManifestAs(t, goldPath, filepath.Base(goldPath), sha)
+	want, _, err := fileSum(mpath)
+	if err != nil {
+		t.Fatalf("hash manifest: %v", err)
+	}
+
+	code, stdout, stderr := runEvalCmd(t, "--gold", goldPath, "--pred", predPath, "--exp", "E1", "--method", "control")
+	if code != exitOK {
+		t.Fatalf("exit = %d:\n%s", code, stderr)
+	}
+	if !strings.Contains(stdout, mpath) || !strings.Contains(stdout, want) {
+		t.Fatalf("report does not record the manifest it was judged by (%s sha256 %s):\n%s", mpath, want, stdout)
+	}
+	if !strings.Contains(stdout, "记录来源，不构成签名") {
+		t.Fatalf("report does not say the manifest hash is provenance, not a signature:\n%s", stdout)
+	}
+
+	// No sidecar: nothing claimed, so nothing recorded. An empty field would look like a
+	// manifest that hashed to nothing.
+	if p, s := sidecarFingerprint(strings.TrimSuffix(goldPath, ".jsonl") + "-absent.jsonl"); p != "" || s != "" {
+		t.Fatalf("sidecarFingerprint on a path with no manifest = (%q, %q), want empty", p, s)
+	}
+	if p, s := sidecarFingerprint(goldPath); p != mpath || s != want {
+		t.Fatalf("sidecarFingerprint = (%q, %q), want (%q, %q)", p, s, mpath, want)
 	}
 }

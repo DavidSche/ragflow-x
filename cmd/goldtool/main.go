@@ -69,7 +69,8 @@ usage:
   goldtool prereg   --freeze --exp E1|E2 --sample worksheet.jsonl
                     --sample-receipt receipt.json --author NAME --out prereg.json
                     [--pool pool.jsonl] [--arms "rule-v1, single-model, ..."]
-  goldtool prereg   --check prereg.json
+  goldtool prereg   --check prereg.json [--digest-file prereg.json.digest.json]
+  goldtool prereg   --digest --prereg prereg.json --out prereg.json.digest.json
   goldtool eval     --gold DIR/gold-v1.jsonl --pred pred.jsonl --exp E1|E2
                     [--prereg prereg.json [--arm LABEL]] [--method NAME] [--out report.md]
   goldtool kc2 prereg  --freeze --author NAME --out prereg-kc2-v1.json
