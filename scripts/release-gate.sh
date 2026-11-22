@@ -260,6 +260,7 @@ static tier (always required)
   s13.assurance-gold        scripts/release-gate/assurance.sh (doc/301 G-A1..A8: 12 rows with n + CP, 44117-44123 in 5 places)
   s14.assurance-quality     scripts/release-gate/assurance-quality.sh (doc/301 §9.4: 5 self-checks, each able to fail, sentences verbatim in 301)
   s15.kc2-prereg            scripts/release-gate/kc2-prereg.sh (doc/301 §5.7: KC-2 thresholds frozen, bidirectional check, quotes verbatim in 301)
+  s16.probes-selfcheck      scripts/release-gate/probes.sh (doc/304 §7 item 12: T02/T16 probes tracked, no credential stored, --offline contract)
   s10.changelog             CHANGELOG.md carries the --version section
   s11.release-notes         .github/release-notes/<version>.md (optional, reported)
 build tier (required when selected)
@@ -371,6 +372,12 @@ if tier_selected static; then
   run_check "s14.assurance-quality" "static" 1 "doc/301 §9.4 self-checks (5 rows, fail+unverified probes, sentences verbatim)"     bash scripts/release-gate/assurance-quality.sh
 
   run_check "s15.kc2-prereg" "static" 1 "doc/301 §5.7 KC-2 pre-registration (3 thresholds frozen, bidirectional check, quotes verbatim)"     bash scripts/release-gate/kc2-prereg.sh
+
+  # doc/304 §7 item 12: the two probes that produced T02's pool and T16's drill were in
+  # `localenv/`, which .gitignore excludes — reproducible evidence, un-runnable instrument.
+  # They are tracked now, and the price of tracking them is that no file may hold a
+  # credential. That refusal, the `--offline` contract and the decoupling are all here.
+  run_check "s16.probes-selfcheck" "static" 1 "live probes tracked + credential-free (doc/304 §7 item 12)"     bash scripts/release-gate/probes.sh
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
