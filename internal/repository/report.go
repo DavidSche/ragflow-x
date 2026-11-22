@@ -1163,11 +1163,20 @@ func (s *store) SetReportStatus(
 // deleted, and `cleanup_hold_until` must not have passed. `cleanup_hold_until IS
 // NULL` is treated as "no window" — a row deleted before the column existed has no
 // recorded grace period, and inventing one on read would be worse than refusing.
+//
+// The window is the half-open interval `[deleted_at, cleanup_hold_until)`: at the
+// closing instant exactly one owner acts, and it is the purge
+// (`ListExpiredReportIDs` takes `cleanup_hold_until <= now`), never the restore. The
+// comparison below is therefore strict. With `>=` a `force=true` delete — which
+// writes a zero-length window (`hold = deleted_at`) — stayed *open at the instant it
+// was created*, so a restore whose clock read the same instant resurrected a row the
+// caller explicitly asked to lose (observed once as a flaky
+// `TestRestoreReportRefusesAForceDeletedReport` in the release gate, rooted here).
 func (s *store) RestoreReport(ctx context.Context, tenantID, reportID string, now time.Time) (bool, error) {
 	result := s.WithContext(ctx).Model(&model.Report{}).
 		Where("tenant_id = ? AND id = ?", tenantID, reportID).
 		Where("deleted_at IS NOT NULL").
-		Where("cleanup_hold_until IS NOT NULL AND cleanup_hold_until >= ?", now).
+		Where("cleanup_hold_until IS NOT NULL AND cleanup_hold_until > ?", now).
 		Updates(map[string]interface{}{
 			"deleted_at":         nil,
 			"cleanup_hold_until": nil,

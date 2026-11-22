@@ -801,9 +801,11 @@ func (s *Service) SoftDeleteReport(ctx context.Context, actorID, tenantID, repor
 	}
 	holdUntil := now.AddDate(0, 0, holdDays)
 	if force {
-		// Zero-length window: `RestoreReport` requires `cleanup_hold_until >= now`,
-		// so this is the one write that closes the door while keeping the row for
-		// the purge audit trail.
+		// Zero-length window: `RestoreReport` requires `cleanup_hold_until > now`, so
+		// the window `[deleted_at, hold)` is empty and this is the one write that
+		// closes the door while keeping the row for the purge audit trail. It must be
+		// strict there: `hold = now` with a `>=` predicate is a window that is still
+		// open at the instant it was created (E79).
 		holdUntil = now
 	}
 	if err := s.Store.SoftDeleteReport(ctx, tenantID, reportID, now, holdUntil); err != nil {

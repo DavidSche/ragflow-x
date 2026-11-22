@@ -202,3 +202,91 @@ func TestForceDeleteRequiresManage(t *testing.T) {
 		t.Fatalf("a refused force delete must leave the report live: %v", err)
 	}
 }
+
+// TestForceDeleteWindowIsClosedAtTheInstantItWasCreated (E79) pins the *boundary* of the
+// recovery window rather than the ordinary case. The window is the half-open interval
+// `[deleted_at, cleanup_hold_until)`: at the closing instant exactly one operation acts,
+// and it is the purge, never the restore.
+//
+// The service-level refusal does not pin that: it only exercises "the clock is a little
+// later than the delete", which is why a `>=` predicate passed every run until one
+// same-instant clock read resurrected a force-deleted report in the release gate
+// (2026-11-22 17:22, `TestRestoreReportRefusesAForceDeletedReport`). This test asks the
+// store directly, at the exact instant, so the answer cannot depend on how long the test
+// takes or how coarse the clock is.
+func TestForceDeleteWindowIsClosedAtTheInstantItWasCreated(t *testing.T) {
+	fx := newReportFixture(t, "restore-force-boundary")
+	ctx := context.Background()
+	admin, err := fx.svc.CreateUser(ctx, fx.tenantID, "", CreateUserRequest{
+		Username: "report-admin-boundary", Password: "secret123", Role: model.RoleTenantAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := fx.svc.CreateReport(ctx, admin.ID, fx.tenantID, "req-restore-0004",
+		reportCreateRequest(fx.datasetLink))
+	if err != nil {
+		t.Fatalf("create report: %v", err)
+	}
+	if err := fx.svc.SoftDeleteReport(ctx, admin.ID, fx.tenantID, created.Report.ID, "合规", true); err != nil {
+		t.Fatalf("force delete: %v", err)
+	}
+
+	row, err := fx.svc.Store.GetReportIncludingDeleted(ctx, fx.tenantID, created.Report.ID)
+	if err != nil || row == nil {
+		t.Fatalf("read deleted report: %v / %v", row, err)
+	}
+	if row.DeletedAt == nil || row.CleanupHoldUntil == nil {
+		t.Fatalf("force delete must record a zero-length window, got deleted=%v hold=%v",
+			row.DeletedAt, row.CleanupHoldUntil)
+	}
+	if !row.CleanupHoldUntil.Equal(*row.DeletedAt) {
+		t.Fatalf("force delete must collapse the window to zero, got %v -> %v",
+			*row.DeletedAt, *row.CleanupHoldUntil)
+	}
+
+	// The exact closing instant. "The window still holds" must be false here: a
+	// zero-length window covers no time at all.
+	restored, err := fx.svc.Store.RestoreReport(ctx, fx.tenantID, created.Report.ID, *row.CleanupHoldUntil)
+	if err != nil {
+		t.Fatalf("restore at the boundary: %v", err)
+	}
+	if restored {
+		t.Fatal("a force-deleted report was restored at the closing instant of its zero-length window: " +
+			"`force` means \"do not keep it\", so the window must be empty, not open for the same instant")
+	}
+	if _, err := fx.svc.GetReport(ctx, admin.ID, fx.tenantID, created.Report.ID); err == nil {
+		t.Fatal("a refused restore must not make the report visible again")
+	}
+
+	// A real window is still a window: the strict comparison must not close it early.
+	other, err := fx.svc.CreateReport(ctx, admin.ID, fx.tenantID, "req-restore-0005",
+		reportCreateRequest(fx.datasetLink))
+	if err != nil {
+		t.Fatalf("create second report: %v", err)
+	}
+	if err := fx.svc.SoftDeleteReport(ctx, admin.ID, fx.tenantID, other.Report.ID, "归档", false); err != nil {
+		t.Fatalf("soft delete second report: %v", err)
+	}
+	plain, err := fx.svc.Store.GetReportIncludingDeleted(ctx, fx.tenantID, other.Report.ID)
+	if err != nil || plain == nil || plain.CleanupHoldUntil == nil || plain.DeletedAt == nil {
+		t.Fatalf("read soft-deleted report: %v / %v", plain, err)
+	}
+	if !plain.CleanupHoldUntil.After(*plain.DeletedAt) {
+		t.Fatalf("a soft delete must open a real window, got %v -> %v", *plain.DeletedAt, *plain.CleanupHoldUntil)
+	}
+	restored, err = fx.svc.Store.RestoreReport(ctx, fx.tenantID, other.Report.ID, plain.CleanupHoldUntil.Add(-time.Nanosecond))
+	if err != nil || !restored {
+		t.Fatalf("one nanosecond before the close must still restore: restored=%v err=%v", restored, err)
+	}
+	if err := fx.svc.SoftDeleteReport(ctx, admin.ID, fx.tenantID, other.Report.ID, "again", false); err != nil {
+		t.Fatalf("re-delete: %v", err)
+	}
+	again, err := fx.svc.Store.GetReportIncludingDeleted(ctx, fx.tenantID, other.Report.ID)
+	if err != nil || again == nil || again.CleanupHoldUntil == nil {
+		t.Fatalf("read re-deleted report: %v / %v", again, err)
+	}
+	if restored, err = fx.svc.Store.RestoreReport(ctx, fx.tenantID, other.Report.ID, *again.CleanupHoldUntil); err != nil || restored {
+		t.Fatalf("the closing instant belongs to the purge, not the restore: restored=%v err=%v", restored, err)
+	}
+}
