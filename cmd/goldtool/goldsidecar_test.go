@@ -354,3 +354,58 @@ func TestEvalRecordsTheManifestItWasJudgedBy(t *testing.T) {
 		t.Fatalf("sidecarFingerprint = (%q, %q), want (%q, %q)", p, s, mpath, want)
 	}
 }
+
+// TestEvalAcceptsASecondNameForTheSameBytes pins what "identity" actually means for the two
+// ways one file gets a second name, because the layer above (`os.SameFile`) answers by
+// device+inode and not by path — and until this test ran, the answer was an assumption
+// (304 §7 item 20 called it "未闭合: 软链接 + os.SameFile 在 Windows 上的行为").
+//
+// Hard link: two directory entries, one file. `Stat` reports the same identity, the bytes
+// are the same bytes, so the manifest's sha256/counts describe the file we were handed and
+// the run must go through. A refusal here would be a false positive on correct usage.
+//
+// Symlink: `Stat` follows the link, so identity also holds — same reasoning, same answer.
+// On Windows creating one needs either Developer Mode or SeCreateSymbolicLinkPrivilege, so
+// an environment that cannot make the link is *skipped with the reason printed*, not
+// passed: "the OS refused to build the fixture" is not evidence about the check.
+func TestEvalAcceptsASecondNameForTheSameBytes(t *testing.T) {
+	gold := evalGold(t)
+	goldPath, predPath := writeEvalFiles(t, gold, perfectPredictions(gold))
+	sha, err := hashFile(goldPath)
+	if err != nil {
+		t.Fatalf("hash gold: %v", err)
+	}
+	// The manifest is written beside the *original*, naming it — then copied next to the
+	// second name. This is the operator move under test: "I moved the file, I brought the
+	// manifest along."
+	mpath := writeManifestAs(t, goldPath, filepath.Base(goldPath), sha)
+
+	cases := []struct {
+		name string
+		make func(from, to string) error
+	}{
+		{"hardlink", os.Link},
+		{"symlink", os.Symlink},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			alias := strings.TrimSuffix(goldPath, ".jsonl") + "-" + tc.name + ".jsonl"
+			if err := tc.make(goldPath, alias); err != nil {
+				t.Skipf("this environment cannot create a %s (%v): the fixture is unavailable, "+
+					"which says nothing about the identity check", tc.name, err)
+			}
+			raw, err := os.ReadFile(mpath)
+			if err != nil {
+				t.Fatalf("read manifest: %v", err)
+			}
+			if err := os.WriteFile(sidecarManifestPath(alias), raw, 0o644); err != nil {
+				t.Fatalf("copy manifest: %v", err)
+			}
+			code, _, stderr := runEvalCmd(t, "--gold", alias, "--pred", predPath, "--exp", "E1", "--method", "control")
+			if code != exitOK {
+				t.Fatalf("exit = %d, want 0: a second name for the same bytes is the case the "+
+					"manifest already describes (304 §7 item 20)\n%s", code, stderr)
+			}
+		})
+	}
+}
