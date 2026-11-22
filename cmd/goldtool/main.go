@@ -55,7 +55,7 @@ usage:
   goldtool validate --gold FILE.jsonl [--labels FILE.jsonl] [--strict-coverage]
   goldtool labels   --stub --worksheet worksheet.jsonl --annotator NAME --out labels-NAME.jsonl
   goldtool labels   --check --worksheet worksheet.jsonl --labels labels-NAME.jsonl
-  goldtool kappa    --labels FILE.jsonl [--min 0.70]
+  goldtool kappa    --labels FILE.jsonl --worksheet WORKSHEET.jsonl [--min 0.70]
   goldtool assemble --pool pool.jsonl --labels-a a.jsonl --labels-b b.jsonl
                     [--adjudication adj.jsonl] --version v1 --out DIR
   goldtool preds    --dsn DSN --items FILE.jsonl --method NAME --out pred.jsonl
