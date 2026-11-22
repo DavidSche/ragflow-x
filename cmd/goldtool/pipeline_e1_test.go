@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,6 +70,18 @@ func TestPipelineFromWorksheetToE1Report(t *testing.T) {
 	if code, _, errText := runPreregCmd(t, "--check", preregPath); code != exitOK {
 		t.Fatalf("the file it just froze does not check out (%d):\n%s", code, errText)
 	}
+	// The third junction, asserted rather than assumed: the hash the freeze records must be
+	// the hash of the worksheet the annotators are about to open. If --freeze ever hashed a
+	// different file than --stub was pointed at, the freeze would look binding and bind
+	// nothing.
+	frozen := readPreregFile(t, preregPath)
+	if got, want := frozen.Inputs[0].SHA256, fileSHA256(t, f.sample); got != want {
+		t.Fatalf("the frozen sample hash is %s, but the worksheet is %s", got, want)
+	}
+	if frozen.Inputs[0].Items != len(items) {
+		t.Fatalf("the frozen sample records %d items, the worksheet has %d",
+			frozen.Inputs[0].Items, len(items))
+	}
 
 	// 2. Skeleton for each annotator, then fill it. The ids come out of the stub file, not
 	//    out of this test: if --stub ever emitted a wrong or truncated id, κ and assemble
@@ -83,6 +97,10 @@ func TestPipelineFromWorksheetToE1Report(t *testing.T) {
 			"--labels", stubPath); code != exitIncomplete {
 			t.Fatalf("an untouched stub must be unfinished (exit %d), got %d:\n%s",
 				exitIncomplete, code, errText)
+		} else if !strings.Contains(errText, "it is unfinished") {
+			// Exit 3 has to read as "not finished", not as "nothing to report": the sentence is
+			// the difference between a pass and a check that has not happened yet.
+			t.Fatalf("exit 3 does not say the file is unfinished:\n%s", errText)
 		}
 		ids := stubIDs(t, stubPath)
 		if len(ids) != len(items) {
@@ -286,6 +304,25 @@ func runCapturing(t *testing.T, args ...string) (int, string) {
 	stdout, _ := os.ReadFile(outFile.Name())
 	stderr, _ := os.ReadFile(errFile.Name())
 	return code, string(stdout) + string(stderr)
+}
+
+// readPreregFile decodes a frozen prereg file and insists it records its inputs.
+func readPreregFile(t *testing.T, path string) preregFile {
+	t.Helper()
+	var f preregFile
+	if err := json.Unmarshal([]byte(readFileText(t, path)), &f); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	if len(f.Inputs) == 0 {
+		t.Fatalf("%s: the frozen file records no inputs", path)
+	}
+	return f
+}
+
+func fileSHA256(t *testing.T, path string) string {
+	t.Helper()
+	sum := sha256.Sum256([]byte(readFileText(t, path)))
+	return fmt.Sprintf("%x", sum)
 }
 
 func readFileText(t *testing.T, path string) string {
