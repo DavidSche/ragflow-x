@@ -130,7 +130,9 @@ func TestPipelineFromWorksheetToE1Report(t *testing.T) {
 	}
 
 	// 3. κ over the merged file: the two annotators agree everywhere, so κ = 1 — which also
-	//    proves the merged file is the shape `kappa` accepts.
+	//    proves the merged file is the shape `kappa` accepts, and that the worksheet it is
+	//    measured against is the one `labels --stub` handed out (κ without a denominator is
+	//    just a number people agreed on).
 	mergedPath := filepath.Join(dir, "labels-merged.jsonl")
 	mergeLabelFiles(t, mergedPath, filled["qa"], filled["pm"])
 	kappaOut, err := os.CreateTemp(t.TempDir(), "kappa-*")
@@ -138,7 +140,8 @@ func TestPipelineFromWorksheetToE1Report(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer kappaOut.Close()
-	if code := run([]string{"kappa", "--labels", mergedPath}, kappaOut, devnull); code != exitOK {
+	if code := run([]string{"kappa", "--labels", mergedPath, "--worksheet", f.sample},
+		kappaOut, devnull); code != exitOK {
 		t.Fatalf("kappa on a perfectly agreeing pair exited %d", code)
 	}
 	rawKappa, err := os.ReadFile(kappaOut.Name())
@@ -146,11 +149,17 @@ func TestPipelineFromWorksheetToE1Report(t *testing.T) {
 		t.Fatal(err)
 	}
 	var ag Agreement
-	if err := json.Unmarshal(rawKappa, &ag); err != nil {
+	// `kappa` prints the number a human reads ("κ 1.000 over 120 pair(s)") and then the
+	// receipt; the JSON is the last line, same as `labels`.
+	if err := json.Unmarshal(lastJSONLine(rawKappa), &ag); err != nil {
 		t.Fatalf("kappa output is not the Agreement JSON: %v\n%s", err, rawKappa)
 	}
 	if ag.Pairs == 0 || ag.Kappa != 1 {
 		t.Fatalf("κ over two identical files: pairs=%d kappa=%v", ag.Pairs, ag.Kappa)
+	}
+	if ag.WorksheetItems != len(items) || ag.LabelledByAll != len(items) || ag.MissingCells != 0 {
+		t.Fatalf("κ receipt does not account for the worksheet: items=%d labelled_by_all=%d missing=%d (want %d/0)",
+			ag.WorksheetItems, ag.LabelledByAll, ag.MissingCells, len(items))
 	}
 
 	// 4. assemble + validate, the same pair the κ gate accepts.
@@ -348,6 +357,15 @@ func readFileText(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(raw)
+}
+
+// lastJSONLine picks the receipt out of a command's stdout, which starts with a sentence
+// meant for a person.
+func lastJSONLine(b []byte) []byte {
+	if i := strings.LastIndex(string(b), "\n{\n"); i >= 0 {
+		return b[i+1:]
+	}
+	return b
 }
 
 func firstLines(s string, lines int) string {
