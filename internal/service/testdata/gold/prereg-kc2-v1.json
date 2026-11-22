@@ -1,0 +1,61 @@
+{
+  "schema": "rgx.goldtool.kc2prereg/1",
+  "experiment": "KC-2",
+  "ref": "doc/301 §5.7",
+  "frozen_at": "2026-11-22T10:51:22Z",
+  "author": "RAGFlow-X 质量与评测（T11）",
+  "primary_metric": "evidence_coverage",
+  "decision": "lift ≥10pp 且回溯 100% 且成本增幅 ≤30% → 允许在实验开关下用于报告取证；否则保持关闭并写负面实测报告。",
+  "arms": [
+    {
+      "name": "control",
+      "behavior": "传统 raw retrieval（现状）",
+      "evidence_source": "原始 chunk"
+    },
+    {
+      "name": "treatment",
+      "behavior": "Compiled Locator 辅助定位 + Raw Retrieval：先用 locator hint 只缩小文档范围（source_document_ids），再对原文检索与取证；不做页级缩小（该能力不存在）",
+      "evidence_source": "仍然是原始 chunk（编译件只参与「去哪里找」）"
+    }
+  ],
+  "thresholds": [
+    {
+      "key": "kc2LiftFloorPP",
+      "unit": "pp",
+      "value": 10,
+      "quote": "lift ≥10pp",
+      "ref": "301 §5.7"
+    },
+    {
+      "key": "kc2TraceabilityFloor",
+      "unit": "rate",
+      "value": 1,
+      "quote": "原文可回溯率 **100%**",
+      "ref": "301 §5.7"
+    },
+    {
+      "key": "kc2CostDeltaCeiling",
+      "unit": "rate",
+      "value": 0.3,
+      "quote": "成本增幅 ≤30%",
+      "ref": "301 §5.7"
+    }
+  ],
+  "plan": {
+    "sections_per_arm": 30,
+    "note": "每臂 30 节，沿用 301 §9.2 的 E2 口径；不足 30 节时判定为 unverified，不改门槛。"
+  },
+  "invariants": [
+    "原文可回溯率 100%（每条引用都能回到 raw chunk）",
+    "编译件不得进入 EvidenceSnapshot、不得出现在证据引用里",
+    "compiled 组不得把编译产物直接当检索结果：Treatment 的证据来源仍然是原始 chunk",
+    "PoC 期间不得打开默认检索、自动增强、默认路由或 Release Gate"
+  ],
+  "not_claimed": [
+    "lift 的判定量是点估计：两个 CP 区间相减不是配对差分的区间，本文件不为 lift 预注册任何区间。",
+    "sections_per_arm=30 是预注册的规划量（沿用 §9.2 E2 的 30 节口径），不是 §5.7 的门槛；样本不足时结论是 unverified，不是 refused。",
+    "frozen_at 是自述时间：机器可检的只有阈值与编译常量一致、两臂定义与 §5.7 一致（git 历史是唯一的旁证）。",
+    "页级定位没有预注册，因为该能力不存在（§5.7 能力边界）；它若要做，验收第一条是同一 artifact 三次投影的页锚点一致。",
+    "本文件不预注册成本模型之外的东西：token 按 §9.3 计，耗时只作次指标，不计入 30%。"
+  ]
+}

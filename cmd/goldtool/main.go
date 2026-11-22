@@ -22,6 +22,7 @@
 //	preds      runtime claim evaluations -> the predictions file `eval` scores
 //	prereg     freeze the E1/E2 decision rules, sample hash and arms before the run
 //	eval       (gold, predictions[, prereg]) -> E1/E2 experiment report with CP intervals
+//	kc2        freeze, collect and judge doc/301 §5.7's KC-2 experiment (T11)
 //
 // Exit codes:
 //
@@ -66,6 +67,10 @@ usage:
   goldtool prereg   --check prereg.json
   goldtool eval     --gold DIR/gold-v1.jsonl --pred pred.jsonl --exp E1|E2
                     [--prereg prereg.json [--arm LABEL]] [--method NAME] [--out report.md]
+  goldtool kc2 prereg  --freeze --author NAME --out prereg-kc2-v1.json
+  goldtool kc2 prereg  --check prereg-kc2-v1.json
+  goldtool kc2 collect --dsn DSN --control-revision ID --treatment-revision ID --out items.jsonl
+  goldtool kc2 eval    --items items.jsonl --prereg prereg-kc2-v1.json [--out report.md]
 
 The DSN is only ever used inside a read-only transaction: this tool annotates
 history, it never writes it.
@@ -97,6 +102,8 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runPrereg(args[1:], stdout, stderr)
 	case "eval":
 		return runEval(args[1:], stdout, stderr)
+	case "kc2":
+		return runKC2(args[1:], stdout, stderr)
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage)
 		return exitOK

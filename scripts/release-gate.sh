@@ -259,6 +259,7 @@ static tier (always required)
   s12.gate-selftest         scripts/release-gate/selftest.sh (the hook refuses what it should)
   s13.assurance-gold        scripts/release-gate/assurance.sh (doc/301 G-A1..A8: 12 rows with n + CP, 44117-44123 in 5 places)
   s14.assurance-quality     scripts/release-gate/assurance-quality.sh (doc/301 §9.4: 5 self-checks, each able to fail, sentences verbatim in 301)
+  s15.kc2-prereg            scripts/release-gate/kc2-prereg.sh (doc/301 §5.7: KC-2 thresholds frozen, bidirectional check, quotes verbatim in 301)
   s10.changelog             CHANGELOG.md carries the --version section
   s11.release-notes         .github/release-notes/<version>.md (optional, reported)
 build tier (required when selected)
@@ -368,6 +369,8 @@ if tier_selected static; then
   # whether each of the five has an observed failing direction, and whether the five
   # sentences are still §9.4's sentences rather than a paraphrase that asks for less.
   run_check "s14.assurance-quality" "static" 1 "doc/301 §9.4 self-checks (5 rows, fail+unverified probes, sentences verbatim)"     bash scripts/release-gate/assurance-quality.sh
+
+  run_check "s15.kc2-prereg" "static" 1 "doc/301 §5.7 KC-2 pre-registration (3 thresholds frozen, bidirectional check, quotes verbatim)"     bash scripts/release-gate/kc2-prereg.sh
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
