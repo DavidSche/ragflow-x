@@ -261,6 +261,7 @@ static tier (always required)
   s14.assurance-quality     scripts/release-gate/assurance-quality.sh (doc/301 §9.4: 5 self-checks, each able to fail, sentences verbatim in 301)
   s15.kc2-prereg            scripts/release-gate/kc2-prereg.sh (doc/301 §5.7: KC-2 thresholds frozen, bidirectional check, quotes verbatim in 301)
   s16.probes-selfcheck      scripts/release-gate/probes.sh (doc/304 §7 item 12: T02/T16 probes tracked, no credential stored, --offline contract)
+  s17.adjudicate            scripts/release-gate/adjudicate.sh (doc/304 §7 item 25: the adjudication skeleton is derived, the manual documents it, 13 tests named)
   s10.changelog             CHANGELOG.md carries the --version section
   s11.release-notes         .github/release-notes/<version>.md (optional, reported)
 build tier (required when selected)
@@ -378,6 +379,12 @@ if tier_selected static; then
   # They are tracked now, and the price of tracking them is that no file may hold a
   # credential. That refusal, the `--offline` contract and the decoupling are all here.
   run_check "s16.probes-selfcheck" "static" 1 "live probes tracked + credential-free (doc/304 §7 item 12)"     bash scripts/release-gate/probes.sh
+
+  # doc/304 §7 item 25: T02's chain had one file left that a human transcribed by hand, and the
+  # manual said so in as many words (`--adjudication` 是这块里唯一必须人手写的文件). The tool
+  # derives it now; this row holds the two halves a `go test` cannot: that the 13 named tests are
+  # still there, and that the page people actually read documents the step it used to skip.
+  run_check "s17.adjudicate" "static" 1 "adjudication skeleton derived from the label files (doc/304 §7 item 25)"     bash scripts/release-gate/adjudicate.sh
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'

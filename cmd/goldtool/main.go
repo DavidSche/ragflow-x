@@ -17,6 +17,7 @@
 //	sample     draw the annotation worksheet out of a pool export (deterministic)
 //	validate   check a gold file against doc/301 §9.1 (offline, no database)
 //	labels     stub and check the two per-annotator label files (the hand-written end of T02)
+//	adjudicate derive the rows that need a decision and check the third person's file (T02)
 //	kappa      pairwise Cohen's κ over per-annotator label files (offline)
 //	assemble   labels + adjudication -> redacted, validated, frozen gold file
 //	preds      runtime claim evaluations -> the predictions file `eval` scores
@@ -56,6 +57,10 @@ usage:
   goldtool validate --gold FILE.jsonl [--labels FILE.jsonl] [--strict-coverage]
   goldtool labels   --stub --worksheet worksheet.jsonl --annotator NAME --out labels-NAME.jsonl
   goldtool labels   --check --worksheet worksheet.jsonl --labels labels-NAME.jsonl
+  goldtool adjudicate --stub --worksheet worksheet.jsonl --labels-a a.jsonl --labels-b b.jsonl
+                    --out adjudication.jsonl
+  goldtool adjudicate --check --worksheet worksheet.jsonl --labels-a a.jsonl --labels-b b.jsonl
+                    --adjudication adjudication.jsonl
   goldtool kappa    --labels FILE.jsonl --worksheet WORKSHEET.jsonl [--min 0.70]
   goldtool assemble --pool pool.jsonl --labels-a a.jsonl --labels-b b.jsonl
                     [--adjudication adj.jsonl] --version v1 --out DIR
@@ -92,6 +97,8 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runValidate(args[1:], stdout, stderr)
 	case "labels":
 		return runLabels(args[1:], stdout, stderr)
+	case "adjudicate":
+		return runAdjudicate(args[1:], stdout, stderr)
 	case "kappa":
 		return runKappa(args[1:], stdout, stderr)
 	case "assemble":
