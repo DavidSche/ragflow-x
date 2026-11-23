@@ -82,6 +82,7 @@ scripts/release-gate.sh --list                        # 列出所有检查项
 * `--only` 里任何一个 token 不在集合内 → **exit 2**，并把全部 id 打印出来。前缀不是简写：`--only=s16` 曾经一个都没选中，于是每条 check 落 `SKIP`、`required` 成 `0/0`、顶行打 `PASS`；
 * `--skip` 的未知 token 同样 exit 2 —— 那个方向更安静：「以为排除了，其实还在跑」；
 * `--only X --skip X` 这类**空选集 → exit 2**；
+* 同一个旗子可以给多次，语义是**并集**（`--only a --only b` 选两条、`--skip a --skip b` 排除两条）。第一版是赋值，`--skip a --skip b` 静默只排除了 `b`（304 §4 E114）；
 * 最后一道闸：`RUNS=0` 一律 exit 2，**绝不落 `PASS`**。
 
 `selftest.sh` 有 6 例选集用例，并且 `--selftest` 会把四条规则各删一条造 4 个变异体，要求用例**全部变红**（`SELFTEST OK: 4 gate mutants refused`）——一条只为好看而存在的检查，本身就是这个门禁要防的东西。

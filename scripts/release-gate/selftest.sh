@@ -207,6 +207,12 @@ expect_gate "prefix is not a shorthand: the id list is printed" 2 "s16.probes-se
 expect_gate "--only names an unknown id: exit 2" 2 "names no check in this file: s99.nope"   -- --tier static --only s99.nope
 expect_gate "--skip names an unknown id: exit 2" 2 "names no check in this file: s99.nope"   -- --tier static --skip s99.nope
 expect_gate "--only X --skip X: empty selection, exit 2" 2 "selected 0 checks out of"   -- --tier static --only s18.docs-ledger --skip s18.docs-ledger
+
+# 同一个标志给两次。第一版的解析是赋值（`SKIP="${2:-}"`），于是 `--skip a --skip b` 静默地
+# 只排除了 `b`：运维以为自己排除了两个，实际排除一个。这正是 E98 逐条拒绝的那种安静谎话，
+# 只是换成了"重复的旗子"这一种写法。下面两条在旧解析下一个会 PASS 1/1、一个会 PASS 1/1。
+expect_gate "--skip twice accumulates: both excluded, 0 checks, exit 2" 2 "selected 0 checks out of"   -- --tier static --only s16.probes-selfcheck,s19.docs-ledger-snapshot --skip s19.docs-ledger-snapshot --skip s16.probes-selfcheck
+expect_gate "--only twice accumulates: 2 selected, 2 run" 0 "required 2/2 passed"   -- --tier static --only s16.probes-selfcheck --only s19.docs-ledger-snapshot
 # The two ids below are chosen for what they *do not* need: `s19` reads a snapshot that is
 # in the checkout, and `s16` reads the probes, so both answer the same way in a tree with
 # `doc/` and in a clean clone — which is where CI runs this suite (`.gitignore:91`).

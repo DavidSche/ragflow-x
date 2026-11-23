@@ -117,10 +117,10 @@ while [ $# -gt 0 ]; do
     --label=*) LABEL="${1#*=}"; shift ;;
     --out) OUT="${2:-}"; shift 2 ;;
     --out=*) OUT="${1#*=}"; shift ;;
-    --only) ONLY="${2:-}"; shift 2 ;;
-    --only=*) ONLY="${1#*=}"; shift ;;
-    --skip) SKIP="${2:-}"; shift 2 ;;
-    --skip=*) SKIP="${1#*=}"; shift ;;
+    --only) ONLY="${ONLY:+$ONLY,}${2:-}"; shift 2 ;;
+    --only=*) ONLY="${ONLY:+$ONLY,}${1#*=}"; shift ;;
+    --skip) SKIP="${SKIP:+$SKIP,}${2:-}"; shift 2 ;;
+    --skip=*) SKIP="${SKIP:+$SKIP,}${1#*=}"; shift ;;
     --ci) CI=1; shift ;;
     --list) LIST=1; shift ;;
     -h|--help) usage 0 ;;
