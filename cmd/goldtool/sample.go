@@ -51,6 +51,11 @@ type sampleReceipt struct {
 	Strata          []stratumCount `json:"strata"`
 	Shortfall       []stratumCount `json:"shortfall,omitempty"`
 	Problems        []Problem      `json:"problems,omitempty"`
+	// Blind, when `--blind-out` was used, is the annotation packet: the same rows with
+	// no prior_*/gold_* key. It sits beside `out` rather than replacing it because the
+	// worksheet is the sampling record and the packet is the reading material, and a
+	// receipt naming only one of them would make the other unaccounted for.
+	Blind *blindBlock `json:"blind,omitempty"`
 }
 
 type stratumCount struct {
@@ -85,12 +90,17 @@ func runSample(args []string, stdout, stderr *os.File) int {
 	allowShort := fs.Bool("allow-short", false, "write the worksheet even when a stratum cannot be filled (exit 3)")
 	role := fs.String("role", "", "primary | supplementary (default: random→primary, stratified→supplementary)")
 	side := fs.String("side", "items", "items (one claim per row) | candidates (one frozen candidate row per row)")
+	blindOut := fs.String("blind-out", "", "also write an annotation packet: the same rows with no prior_*/gold_* key (doc/301 §9.1 rule 3)")
 	quiet := fs.Bool("quiet", false, "do not print the JSON receipt")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
 	if strings.TrimSpace(*poolPath) == "" || strings.TrimSpace(*out) == "" {
 		fmt.Fprintln(stderr, "goldtool sample: --pool and --out are required")
+		return exitUsage
+	}
+	if err := blindTargetOK(*out, *blindOut); err != nil {
+		fmt.Fprintf(stderr, "goldtool sample: %v\n", err)
 		return exitUsage
 	}
 	if *side != "items" && *side != "candidates" {
@@ -184,7 +194,7 @@ func runSample(args []string, stdout, stderr *os.File) int {
 		// different set of rows on this side: two files sharing an id would look like
 		// two draws of one sample.
 		receipt.SampleID = fmt.Sprintf("%s-%s-candidates-%d", receipt.Role, receipt.Strategy, receipt.Seed)
-		return runCandidateSide(sorted, receipt, *out, *strategy, *targets, *n, *allowShort, *quiet, rng, stdout, stderr)
+		return runCandidateSide(sorted, receipt, *out, *blindOut, *strategy, *targets, *n, *allowShort, *quiet, rng, stdout, stderr)
 	}
 	receipt.Available = len(sorted)
 	if *strategy == "stratified" {
@@ -211,6 +221,9 @@ func runSample(args []string, stdout, stderr *os.File) int {
 			fmt.Fprintf(stderr, "goldtool sample: %v\n", err)
 			return exitUsage
 		}
+		if code, ok := writeBlindIfAsked(&receipt, *blindOut, itemRows(selected), stderr); !ok {
+			return code
+		}
 		if !*quiet {
 			_ = receipt.writeSampleReceipt(stdout)
 		}
@@ -235,6 +248,9 @@ func runSample(args []string, stdout, stderr *os.File) int {
 	if err := writeSample(*out, chosen); err != nil {
 		fmt.Fprintf(stderr, "goldtool sample: %v\n", err)
 		return exitUsage
+	}
+	if code, ok := writeBlindIfAsked(&receipt, *blindOut, itemRows(chosen), stderr); !ok {
+		return code
 	}
 	code := exitOK
 	if len(chosen) < *n {

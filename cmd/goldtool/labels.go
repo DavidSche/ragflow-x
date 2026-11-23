@@ -69,7 +69,12 @@ type labelsReceipt struct {
 	ByVerdict       map[string]int `json:"by_verdict,omitempty"`
 	ByQuoteStatus   map[string]int `json:"by_quote_status,omitempty"`
 	Problems        []Problem      `json:"problems,omitempty"`
-	OK              bool           `json:"ok"`
+	// Packet, when `--packet` was given, is the file the annotator reads: the chain from
+	// sample to a filled label file is checked, not assumed.
+	Packet       string `json:"packet,omitempty"`
+	PacketSHA256 string `json:"packet_sha256,omitempty"`
+	PacketRows   int    `json:"packet_rows,omitempty"`
+	OK           bool   `json:"ok"`
 }
 
 func runLabels(args []string, stdout, stderr *os.File) int {
@@ -81,6 +86,7 @@ func runLabels(args []string, stdout, stderr *os.File) int {
 	labelsPath := fs.String("labels", "", "label JSONL to check (--check)")
 	annotator := fs.String("annotator", "", "the annotator this file belongs to")
 	out := fs.String("out", "", "stub output path (--stub)")
+	packetPath := fs.String("packet", "", "annotation packet from `sample --blind-out`: the file the annotator actually reads (--stub)")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -113,12 +119,12 @@ func runLabels(args []string, stdout, stderr *os.File) int {
 	}
 
 	if *stub {
-		return labelsStub(items, *worksheet, sum, *annotator, *out, stdout, stderr)
+		return labelsStub(items, *worksheet, sum, *packetPath, *annotator, *out, stdout, stderr)
 	}
 	return labelsCheck(items, *worksheet, sum, *labelsPath, *annotator, stdout, stderr)
 }
 
-func labelsStub(items []Item, worksheet, sum, annotator, out string, stdout, stderr *os.File) int {
+func labelsStub(items []Item, worksheet, sum, packet, annotator, out string, stdout, stderr *os.File) int {
 	if trimSpace(annotator) == "" {
 		fmt.Fprintln(stderr, "goldtool labels: --annotator is required with --stub; a stub without a name is a file "+
 			"two people can both fill in and merge into one opinion")
@@ -142,6 +148,19 @@ func labelsStub(items []Item, worksheet, sum, annotator, out string, stdout, std
 		return exitInvariant
 	}
 
+	// The skeleton is the only file the annotator writes, but the packet is the only file
+	// they *read*: checking it here is where "the answer is not in the packet" stops being a
+	// promise made by the packet's writer and becomes a refusal by the stub.
+	var pk packetSummary
+	if trimSpace(packet) != "" {
+		var err error
+		pk, err = checkPacket(packet, items)
+		if err != nil {
+			fmt.Fprintf(stderr, "goldtool labels: %v\n", err)
+			return exitInvariant
+		}
+	}
+
 	lines := make([]string, 0, len(items))
 	for _, it := range items {
 		raw, err := json.Marshal(stubRow{ItemID: it.ItemID, Annotator: trimSpace(annotator)})
@@ -158,12 +177,17 @@ func labelsStub(items []Item, worksheet, sum, annotator, out string, stdout, std
 
 	fmt.Fprintf(stdout, "goldtool labels: stub for %q over %d item(s) -> %s\n", trimSpace(annotator), len(items), out)
 	fmt.Fprintf(stdout, "  worksheet %s  sha256 %s\n", worksheet, sum)
+	if pk.Rows > 0 {
+		fmt.Fprintf(stdout, "  packet    %s  sha256 %s  (%d row(s), no prior_*/gold_* key)\n",
+			pk.Path, pk.SHA256, pk.Rows)
+	}
 	fmt.Fprintf(stdout, "  fill in, per row: verdict, quote_status, quote (unless not_provided), "+
 		"evidence_ids (snapshot ids only), candidate_chunk_id (only when a candidate row is the basis), note\n")
 	fmt.Fprintf(stdout, "  then: goldtool labels --check --worksheet %s --labels %s\n", worksheet, out)
 	printJSON(stdout, labelsReceipt{
 		Schema: labelsSchema, Mode: "stub", Worksheet: worksheet, WorksheetSHA256: sum,
-		File: out, Annotator: trimSpace(annotator), Items: len(items), Rows: len(lines), OK: true,
+		File: out, Annotator: trimSpace(annotator), Items: len(items), Rows: len(lines),
+		Packet: pk.Path, PacketSHA256: pk.SHA256, PacketRows: pk.Rows, OK: true,
 	})
 	return exitOK
 }

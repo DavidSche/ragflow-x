@@ -114,7 +114,7 @@ func candidateRowsOf(items []Item) []worksheetRow {
 
 // runCandidateSide draws rows, prints the two-group split, and refuses to look like a
 // completed draw when a group is short.
-func runCandidateSide(items []Item, receipt sampleReceipt, out, strategy, targets string,
+func runCandidateSide(items []Item, receipt sampleReceipt, out, blindOut, strategy, targets string,
 	n int, allowShort, quiet bool, rng *rand.Rand, stdout, stderr *os.File) int {
 
 	rows := candidateRowsOf(items)
@@ -185,6 +185,9 @@ func runCandidateSide(items []Item, receipt sampleReceipt, out, strategy, target
 	if err := writeCandidateRows(out, chosen, receipt.SampleID); err != nil {
 		fmt.Fprintf(stderr, "goldtool sample: %v\n", err)
 		return exitUsage
+	}
+	if code, ok := writeBlindIfAsked(&receipt, blindOut, candidateRowValues(chosen), stderr); !ok {
+		return code
 	}
 	if !quiet {
 		_ = receipt.writeSampleReceipt(stdout)
