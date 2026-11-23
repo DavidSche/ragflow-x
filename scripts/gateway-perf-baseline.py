@@ -19,6 +19,31 @@ p50/p95/max。GW-2 问的是另一个问题：**并发上去之后网关自己�
    （`CompleteGatewayIdempotency` 命中回放，不走上游）。这两条路径的耗时
    差一个数量级，混在一格里报 p95 是自欺。
 
+## 三种数，三套口径（E92，doc/304 §4）
+
+一次跑出来的 `iter` 个数字可能来自三条完全不同的路径，混在一个 p50/p95 里就等于
+自己造结论：
+
+| 路径 | 走到哪 | 能不能当模型时延 |
+| --- | --- | --- |
+| 冷态真实请求 | 网关 → 上游模型 | 能（但样本不够就不能判） |
+| 热态 `Idempotency-Key` 命中 | 网关 → 重试账本（**不走上游**） | **不能** |
+| 上游 429 | 网关 → 上游，被配额挡回 | **不能** |
+
+所以热态格一律标 `measurement: replay`，它们的数字单独成表、永远不会判 `pass`，
+并且不参与「模型时延」的判定分布。`--rpm` 的节流也只对**真的要走上游**的格生效：
+回放请求不出进程，它撞不到上游配额。
+
+## 限速与重试（上游 20 次/分）
+
+AMD 池实测配额是 20 次/分（`maximum 20 requests per minute for this OneClick user`）。
+一次性发 24 格 × 20 样本 ≈ 480 次真实调用必然被挡回，而「被挡回」和「很快」在延迟
+表里长得一模一样。于是：
+
+- `--rpm N`：全局令牌桶，按 `60/N` 秒的间隔串行放行（`0` = 不限）；
+- `--max-retries N`：拿到 `429` 时按上游的 `Retry-After` 退避重试，重试**不**计入新样本；
+- 每个请求都留 `{ts, ms, status, attempts}`，报告里能看到它被挡过几次。
+
 ## 格的判定
 
 每格按 `P95 ≤ 阈值` 且 `错误率 ≤ 上限` 两端判定，输出 `pass` / `fail` /
@@ -72,7 +97,64 @@ MIN_SAMPLES = 20
 
 # 三个并发档。1 是「没有人抢」的地板，8 是常规租户负载，32 是压测档；
 # 三个档都测，才知道延迟是「网关自己的」还是「上游排队的」。
+# 注意：151 上那两次真跑因为上游 20 次/分的配额，用的是**显式** `--concurrency 1,2,4`
+# （见 305 §2.21）。默认档与报告里的档不是同一组，数字不可互相比较。
 CONCURRENCY_TIERS = (1, 8, 32)
+
+
+def pacer_interval(rpm):
+    """把 rpm 换成「两次请求之间至少隔多久」。0 或不设 = 不节流。
+
+    用「最小间隔」而不是令牌桶，是因为这里只需要**不超过**配额：令牌桶允许瞬间
+    打满一秒的额度，而上游计的是分钟窗口，瞬时打满正是它记 429 的形状。
+    """
+    if not rpm or rpm <= 0:
+        return None
+    return 60.0 / float(rpm)
+
+
+class Pacer:
+    """跨格共享的串行节流器。第一次请求不等待，之后按最小间隔放行。"""
+
+    def __init__(self, rpm):
+        self.interval = pacer_interval(rpm)
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    def wait(self):
+        if self.interval is None:
+            return 0.0
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._next)
+            self._next = start + self.interval
+        delay = start - now
+        if delay > 0:
+            time.sleep(delay)
+        return delay
+
+
+def retry_after_seconds(headers):
+    """上游 `Retry-After`（秒数形式）→ float；没有或不可解析 → None。
+
+    只认秒数：HTTP-date 形式需要时钟同步，而这里的时钟本来就不可信。
+    """
+    if not headers:
+        return None
+    raw = None
+    for key, value in headers.items():
+        if key.lower() == "retry-after":
+            raw = value
+            break
+    if raw is None:
+        return None
+    try:
+        seconds = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    if seconds < 0:
+        return None
+    return min(seconds, 120.0)
 
 
 def quantile_nearest_rank(values, q):
@@ -89,11 +171,15 @@ def quantile_nearest_rank(values, q):
     return ordered[min(rank, n) - 1]
 
 
-def summarize(durations_ms, errors, q=None):
+def summarize(durations_ms, errors, q=None, measurement="latency"):
     """把一格的原始观测压成结论。
 
     `errors` 是失败请求数，`len(durations_ms)` 是本格**实际发出**的请求数；
     两者同源，所以错误率自带分母。空格返回全 `None` + `unverified`。
+
+    `measurement="replay"` 的格（`Idempotency-Key` 命中回放）只给数字、**永不**
+    给 `pass`：那 30ms 是账本回放，不是模型时延，拿它跟 2s 的阈值比出来的绿是
+    自己造的（E92）。
     """
     total = len(durations_ms)
     if total == 0:
@@ -107,6 +193,7 @@ def summarize(durations_ms, errors, q=None):
             "max_ms": None,
             "verdict": "unverified",
             "reason": "no requests issued",
+            "measurement": measurement,
         }
     summary = {
         "samples": total,
@@ -116,7 +203,13 @@ def summarize(durations_ms, errors, q=None):
         "p95_ms": round(quantile_nearest_rank(durations_ms, 0.95), 3),
         "p99_ms": round(quantile_nearest_rank(durations_ms, 0.99), 3),
         "max_ms": round(max(durations_ms), 3),
+        "measurement": measurement,
     }
+    if measurement == "replay":
+        # 数字留着（它说明幂等命中确实没走上游），但判定不在这里。
+        summary["verdict"] = "unverified"
+        summary["reason"] = "replay path (Idempotency-Key hit), not model latency"
+        return summary
     limit = (q or {}).get("p95_limit_ms")
     # 样本不足时不给结论：3 个样本的 p99 是第三大的那个数，被它判死或判活
     # 都一样没有信息量。
@@ -202,6 +295,12 @@ def plan_cells(routes, tiers, include_live):
                             "p95_limit_ms": (
                                 STREAM_P95_MS if mode == "stream" else NON_STREAM_P95_MS
                             ),
+                            # 热态 + 幂等路由 = 回放：不走上游，也不进模型时延的账。
+                            "measurement": (
+                                "replay"
+                                if route.get("idempotent", False) and thermal == "hot"
+                                else "latency"
+                            ),
                         }
                     )
     return cells
@@ -213,7 +312,11 @@ def plan_cells(routes, tiers, include_live):
 
 
 def http_call(url, method, body, headers, timeout):
-    """发一次请求，返回 (status, elapsed_ms, body_bytes)。异常折成 status=-1。"""
+    """发一次请求，返回 (status, elapsed_ms, body_bytes, response_headers)。
+
+    头也返回，是因为 `429` 的 `Retry-After` 在响应头里：不读它就只能瞎猜退避
+    间隔，而猜短了会把上游的限流窗口一直踩住。异常折成 status=-1、头为空。
+    """
     data = body.encode("utf-8") if body is not None else None
     request = urllib.request.Request(url, data=data, method=method)
     for key, value in headers.items():
@@ -229,15 +332,28 @@ def http_call(url, method, body, headers, timeout):
     except urllib.error.HTTPError as exc:
         payload = exc.read() if exc.fp else b""
         status = exc.code
+        resp_headers = dict(exc.headers.items()) if exc.headers else {}
     except Exception:  # noqa: BLE001 - 网络类异常一律记为 -1，由调用方判失败
         payload = b""
         status = -1
-    return status, (time.perf_counter() - started) * 1000.0, payload
+        resp_headers = {}
+    else:
+        resp_headers = dict(response.headers.items()) if response.headers else {}
+    return status, (time.perf_counter() - started) * 1000.0, payload, resp_headers
 
 
-def run_cell(cell, route, base, headers, iterations, timeout):
-    """跑一格：`iterations` 个请求，按并发档并发发出。"""
-    durations, errors = [], 0
+def run_cell(cell, route, base, headers, iterations, timeout, pacer=None, max_retries=0):
+    """跑一格：`iterations` 个请求，按并发档并发发出。
+
+    返回 `(durations_ms, errors, records)`。`records` 是每个请求一行
+    `{ts, ms, status, attempts}`：没有它，"这次跑得慢" 和 "这次被 429 挡了三次"
+    在汇总里长得一样。
+
+    节流只对**真的要走上游**的格生效（见文件头）：回放请求不出进程。
+    """
+    durations, records = [], []
+    errors = 0
+    lock = threading.Lock()
     per_request_headers = dict(headers)
     if route.get("needs_api_key"):
         per_request_headers["Authorization"] = "Bearer " + os.environ.get("RGX_API_KEY", "")
@@ -245,27 +361,57 @@ def run_cell(cell, route, base, headers, iterations, timeout):
         per_request_headers["Authorization"] = "Bearer " + os.environ.get("RGX_TOKEN", "")
     if cell["mode"] == "stream":
         per_request_headers["Accept"] = "text/event-stream"
+    # 幂等回放是本地账本命中，不消耗上游配额；给它也节流只会白白拉长跑批时间。
+    paced = (
+        pacer is not None
+        and route.get("needs_upstream", False)
+        and cell.get("measurement") != "replay"
+    )
 
     def worker(_index):
         nonlocal errors
         # 热态复用同一个 Idempotency-Key（网关侧命中回放），冷态每个请求一个新 key。
+        request_headers = dict(per_request_headers)
         if route.get("idempotent", False):
             if cell["thermal"] == "hot":
-                per_request_headers["Idempotency-Key"] = "perf-%s-hot" % cell["route"]
+                request_headers["Idempotency-Key"] = "perf-%s-hot" % cell["route"]
             else:
-                per_request_headers["Idempotency-Key"] = "perf-%s-cold-%d-%d" % (
+                request_headers["Idempotency-Key"] = "perf-%s-cold-%d-%d" % (
                     cell["route"],
                     threading.get_ident(),
                     int(time.perf_counter() * 1e6),
                 )
-        status, elapsed, _ = http_call(
-            base + route["path"], route["method"], route.get("body"), per_request_headers, timeout
-        )
-        durations.append(elapsed)
-        # 4xx 也算失败：401/403/429 在性能报告里要是绿的，这份基线就会把
-        # 「被限流拒绝」读成「很快」。
-        if status < 200 or status >= 400:
-            errors += 1
+        attempts = 0
+        while True:
+            if paced:
+                pacer.wait()
+            status, elapsed, _, resp_headers = http_call(
+                base + route["path"], route["method"], route.get("body"), request_headers, timeout
+            )
+            attempts += 1
+            # 429 = 上游配额挡回。按上游给的 Retry-After 退避再试；重试**不**产生
+            # 新样本，否则"被挡 5 次"会被算成"测了 5 次"。
+            if status == 429 and attempts <= max_retries:
+                delay = retry_after_seconds(resp_headers)
+                if delay is None:
+                    delay = min(30.0, 1.5 * attempts)
+                time.sleep(delay)
+                continue
+            break
+        with lock:
+            durations.append(elapsed)
+            records.append(
+                {
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "ms": round(elapsed, 3),
+                    "status": status,
+                    "attempts": attempts,
+                }
+            )
+            # 4xx 也算失败：401/403/429 在性能报告里要是绿的，这份基线就会把
+            # 「被限流拒绝」读成「很快」。
+            if status < 200 or status >= 400:
+                errors += 1
 
     tier = max(1, cell["concurrency"])
     threads = []
@@ -279,7 +425,7 @@ def run_cell(cell, route, base, headers, iterations, timeout):
             threads = []
     for started in threads:
         started.join()
-    return durations, errors
+    return durations, errors, records
 
 
 def routes_for(base):
@@ -327,7 +473,7 @@ def routes_for(base):
 
 
 def login(base, user, password, timeout):
-    status, _, payload = http_call(
+    status, _, payload, _ = http_call(
         base + "/api/v1/auth/login",
         "POST",
         json.dumps({"username": user, "password": password}),
@@ -344,7 +490,7 @@ def login(base, user, password, timeout):
 
 
 def render_markdown(report):
-    lines = [
+    header = [
         "# 网关性能基线（doc/301 §5.10 GW-2 / T14）",
         "",
         "生成：`scripts/gateway-perf-baseline.py`　目标：`%s`　时间：%s"
@@ -359,48 +505,86 @@ def render_markdown(report):
             ERROR_RATE_MAX * 100,
         ),
         "",
-        "| 格 | 请求 | 错误 | 错误率 | P50 | P95 | P99 | max | 判定 | 依据 |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-    ]
-    for cell in report["cells"]:
-        if cell["skipped"]:
-            lines.append(
-                "| %s | — | — | — | — | — | — | — | **unverified** | 跳过：%s |"
-                % (cell["id"], cell["skip_reason"])
-            )
-            continue
-        summary = cell["summary"]
-        rate = "—" if summary["error_rate"] is None else "%.2f%%" % (summary["error_rate"] * 100)
-        def ms(key):
-            value = summary.get(key)
-            return "—" if value is None else "%.0f" % value
-        lines.append(
-            "| %s | %d | %d | %s | %s | %s | %s | %s | **%s** | %s |"
-            % (
-                cell["id"],
-                summary["samples"],
-                summary["errors"],
-                rate,
-                ms("p50_ms"),
-                ms("p95_ms"),
-                ms("p99_ms"),
-                ms("max_ms"),
-                summary["verdict"],
-                summary["reason"],
-            )
-        )
-    counts = report["verdict_counts"]
-    lines += [
-        "",
-        "判定分布：pass=%d fail=%d unverified=%d" % (
-            counts.get("pass", 0),
-            counts.get("fail", 0),
-            counts.get("unverified", 0),
+        "节流：%s　最大重试：%d　实际重试次数：%d　路由：%s"
+        % (
+            "不限" if not report.get("rpm") else "%d 次/分" % report["rpm"],
+            report.get("max_retries", 0),
+            report.get("retries_total", 0),
+            ", ".join(report.get("routes") or []),
         ),
-        "",
+    ]
+
+    def table(cells, title, note):
+        if not cells:
+            return []
+        lines = [
+            "",
+            "## %s" % title,
+            "",
+            "| 格 | 请求 | 错误 | 错误率 | P50 | P95 | P99 | max | 被挡/重试 | 判定 | 依据 |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+        for cell in cells:
+            if cell["skipped"]:
+                lines.append(
+                    "| %s | — | — | — | — | — | — | — | — | **unverified** | 跳过：%s |"
+                    % (cell["id"], cell["skip_reason"])
+                )
+                continue
+            summary = cell["summary"]
+            rate = "—" if summary["error_rate"] is None else "%.2f%%" % (summary["error_rate"] * 100)
+
+            def ms(key):
+                value = summary.get(key)
+                return "—" if value is None else "%.0f" % value
+
+            retries = cell.get("retries", 0)
+            lines.append(
+                "| %s | %d | %d | %s | %s | %s | %s | %s | %s | **%s** | %s |"
+                % (
+                    cell["id"],
+                    summary["samples"],
+                    summary["errors"],
+                    rate,
+                    ms("p50_ms"),
+                    ms("p95_ms"),
+                    ms("p99_ms"),
+                    ms("max_ms"),
+                    "—" if not retries else "%d" % retries,
+                    summary["verdict"],
+                    summary["reason"],
+                )
+            )
+        lines += ["", note]
+        return lines
+
+    live = [cell for cell in report["cells"] if cell.get("measurement") != "replay"]
+    replay = [cell for cell in report["cells"] if cell.get("measurement") == "replay"]
+    lines = list(header)
+    lines += table(
+        live,
+        "真实请求（照这项阈值判定）",
         "> `unverified` 不是通过：样本不足、阈值未声明、或该格需要上游模型 tokens"
         "（`--skip-live`）都落在这里。一份全是 `unverified` 的报告说明这次没有测，"
         "不说明网关很快。",
+    )
+    lines += table(
+        replay,
+        "幂等回放（`Idempotency-Key` 命中，**不**走上游）",
+        "> 这些数字是网关读重试账本回来的，**不是**模型时延，因此它们一律 `unverified`："
+        "拿 30ms 的回放去比 2s 的阈值，得到的绿是自己造的（doc/304 §4 E92）。"
+        "它们证明的是幂等命中确实没有二次调用上游。",
+    )
+    counts = report["verdict_counts"]
+    lines += [
+        "",
+        "判定分布：pass=%d fail=%d unverified=%d（其中幂等回放 %d 格）"
+        % (
+            counts.get("pass", 0),
+            counts.get("fail", 0),
+            counts.get("unverified", 0),
+            len(replay),
+        ),
     ]
     overhead = report.get("overhead")
     if overhead:
@@ -418,7 +602,7 @@ def render_markdown(report):
             " `ragflow_x_http_request_duration_seconds` 两族直方图在真机跑起来之后可以"
             "按 route 相除得到该比值。",
         ]
-    return "\n".join(lines) + "\n"
+    return chr(10).join(lines) + chr(10)
 
 
 def run(args):
@@ -431,7 +615,15 @@ def run(args):
         os.environ["RGX_TOKEN"] = token
 
     routes = routes_for(base)
+    if args.routes:
+        wanted = {part.strip() for part in args.routes.split(",") if part.strip()}
+        known = {route["name"] for route in routes}
+        unknown = sorted(wanted - known)
+        if unknown:
+            raise SystemExit("--routes: unknown route(s) %s (known: %s)" % (", ".join(unknown), ", ".join(sorted(known))))
+        routes = [route for route in routes if route["name"] in wanted]
     cells = plan_cells(routes, args.concurrency, include_live=not args.skip_live)
+    pacer = Pacer(args.rpm)
     by_name = {route["name"]: route for route in routes}
     results, verdicts = [], {}
     for cell in cells:
@@ -446,13 +638,23 @@ def run(args):
             results.append(cell)
             verdicts["unverified"] = verdicts.get("unverified", 0) + 1
             continue
-        durations, errors = run_cell(
-            cell, route, base, {"Content-Type": "application/json"}, args.iter, timeout
+        durations, errors, records = run_cell(
+            cell,
+            route,
+            base,
+            {"Content-Type": "application/json"},
+            args.iter,
+            timeout,
+            pacer=pacer,
+            max_retries=args.max_retries,
         )
+        cell["requests"] = records
+        cell["retries"] = sum(max(0, record["attempts"] - 1) for record in records)
         summary = summarize(
             durations,
             errors,
             q={"p95_limit_ms": cell["p95_limit_ms"]},
+            measurement=cell.get("measurement", "latency"),
         )
         cell["summary"] = summary
         verdicts[summary["verdict"]] = verdicts.get(summary["verdict"], 0) + 1
@@ -481,6 +683,10 @@ def run(args):
         "base": base,
         "tiers": list(args.concurrency),
         "iterations": args.iter,
+        "routes": [route["name"] for route in routes],
+        "rpm": args.rpm,
+        "max_retries": args.max_retries,
+        "retries_total": sum(cell.get("retries", 0) for cell in results if not cell["skipped"]),
         "timer_note": (
             "客户端计时用 time.perf_counter；在 Windows 上仍受系统定时器刻度限制，"
             "P50 印 0ms 表示「低于一个刻度」，不是真的 0。服务端视角的分布请看 "
@@ -519,8 +725,11 @@ def run(args):
 
 def selftest():
     failures = []
+    # 断言条数由自己数，不手写：手写的数字会在下次加断言时变成谎话。
+    total = [0]
 
     def check(name, condition, detail=""):
+        total[0] += 1
         if not condition:
             failures.append("%s %s" % (name, detail))
 
@@ -575,6 +784,123 @@ def selftest():
         "%d != %d" % (len(skipped), 4 * len(CONCURRENCY_TIERS)),
     )
 
+    # ── E92：回放不是模型时延 ──────────────────────────────────────────────
+    # 同一批数字，标成 replay 就不许判 pass：它的 p95 再好看也没测模型。
+    replay = summarize([1.0] * (MIN_SAMPLES * 2), 0, q={"p95_limit_ms": 100}, measurement="replay")
+    check("replay-never-passes", replay["verdict"] == "unverified", replay["verdict"])
+    check("replay-keeps-numbers", replay["p95_ms"] == 1.0, replay["p95_ms"])
+
+    # 热态只有幂等路由才是回放；控制面路由（无 Idempotency-Key）的热态仍是真实请求。
+    hot = {cell["id"]: cell for cell in plan_cells(routes, (1,), include_live=True)}
+    check(
+        "idempotent-hot-is-replay",
+        hot["gateway-chat|non_stream|c1|hot"]["measurement"] == "replay",
+        hot["gateway-chat|non_stream|c1|hot"]["measurement"],
+    )
+    check(
+        "control-hot-is-latency",
+        hot["healthz|non_stream|c1|hot"]["measurement"] == "latency",
+        hot["healthz|non_stream|c1|hot"]["measurement"],
+    )
+    check(
+        "cold-is-latency",
+        hot["gateway-chat|non_stream|c1|cold"]["measurement"] == "latency",
+        hot["gateway-chat|non_stream|c1|cold"]["measurement"],
+    )
+
+    # ── 限速与 Retry-After ────────────────────────────────────────────────
+    check("rpm-interval", pacer_interval(20) == 3.0, pacer_interval(20))
+    check("rpm-off", pacer_interval(0) is None and pacer_interval(None) is None)
+    check("retry-after-seconds", retry_after_seconds({"Retry-After": "7"}) == 7.0)
+    check("retry-after-missing", retry_after_seconds({"X-Other": "7"}) is None)
+    check("retry-after-garbage", retry_after_seconds({"Retry-After": "Wed, 21 Oct"}) is None)
+    check("retry-after-capped", retry_after_seconds({"Retry-After": "99999"}) == 120.0)
+    pacer = Pacer(600)  # 0.1s 间隔
+    started = time.monotonic()
+    for _ in range(3):
+        pacer.wait()
+    elapsed = time.monotonic() - started
+    check("pacer-spaces-requests", elapsed >= 0.18, elapsed)
+
+    # ── 限速不变量：**重试也要经过同一个全局限速器** ─────────────────────────
+    # 反面实现（初始请求过 limiter、429 后的重试直接发出）在报告里长得完全正常：
+    # 重试不计样本、429 也没进错误率，于是没人会发现它偷跑了配额。
+    class CountingPacer(Pacer):
+        def __init__(self, rpm):
+            super().__init__(rpm)
+            self.waits = 0
+
+        def wait(self):
+            self.waits += 1
+            return super().wait()
+
+    live_route = {
+        "name": "gateway-chat",
+        "path": "/v1/chat/completions",
+        "method": "POST",
+        "body": '{"model":"m","messages":[],"max_tokens":16}',
+        "needs_upstream": True,
+        "needs_api_key": False,
+        "needs_jwt": False,
+        "idempotent": True,
+        "non_stream": True,
+        "stream": True,
+    }
+    cell = {
+        "id": "gateway-chat|non_stream|c1|cold",
+        "route": "gateway-chat",
+        "mode": "non_stream",
+        "concurrency": 1,
+        "thermal": "cold",
+        "measurement": "latency",
+    }
+    stub_calls = []
+    real_http_call = globals()["http_call"]
+
+    def stub_429_then_200(url, method, body, headers, timeout):
+        stub_calls.append(headers.get("Idempotency-Key"))
+        if len(stub_calls) == 1:
+            return 429, 5.0, b"", {"Retry-After": "0"}
+        return 200, 6.0, b"{}", {}
+
+    globals()["http_call"] = stub_429_then_200
+    try:
+        counting = CountingPacer(100000)  # 间隔 0.6ms，只数次数不等时间
+        _, retry_errors, retry_records = run_cell(
+            cell, live_route, "http://stub", {}, 1, 5.0, pacer=counting, max_retries=2
+        )
+    finally:
+        globals()["http_call"] = real_http_call
+    check("retry-passes-the-pacer", counting.waits == 2, counting.waits)
+    check(
+        "retry-is-not-a-sample",
+        len(retry_records) == 1 and retry_records[0]["attempts"] == 2,
+        retry_records,
+    )
+    check(
+        "retry-reports-final-status",
+        retry_records[0]["status"] == 200 and retry_errors == 0,
+        (retry_records[0]["status"], retry_errors),
+    )
+
+    # 回放格不节流：它不出进程，给它排队只会把跑批时间拉长。
+    counting_replay = CountingPacer(100000)
+    globals()["http_call"] = lambda *a, **k: (200, 1.0, b"{}", {})
+    try:
+        run_cell(
+            dict(cell, measurement="replay"),
+            live_route,
+            "http://stub",
+            {},
+            3,
+            5.0,
+            pacer=counting_replay,
+            max_retries=0,
+        )
+    finally:
+        globals()["http_call"] = real_http_call
+    check("replay-is-not-paced", counting_replay.waits == 0, counting_replay.waits)
+
     # 开销占比：总 P50 小于地板时不能算出负占比。
     share = gateway_overhead_share(10.0, 20.0)
     check("overhead-clamped", share["gateway_overhead_upper_ms"] == 0.0)
@@ -585,7 +911,7 @@ def selftest():
         for failure in failures:
             sys.stderr.write("  - %s\n" % failure)
         return 1
-    sys.stdout.write("selftest OK: 16 assertions\n")
+    sys.stdout.write("selftest OK: %d assertions\n" % total[0])
     return 0
 
 
@@ -605,6 +931,23 @@ def main(argv=None):
         "--skip-live",
         action="store_true",
         help="skip cells that need real upstream model tokens (they become unverified, never pass)",
+    )
+    parser.add_argument(
+        "--rpm",
+        type=int,
+        default=0,
+        help="global cap of requests per minute for cells that reach the upstream (0 = unlimited)",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=0,
+        help="retry a request this many times on HTTP 429, honouring Retry-After (default 0)",
+    )
+    parser.add_argument(
+        "--routes",
+        default="",
+        help="comma separated route names to run (default: all). e.g. gateway-chat",
     )
     parser.add_argument("--selftest", action="store_true", help="run offline self-checks and exit")
     args = parser.parse_args(argv)
