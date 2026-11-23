@@ -65,6 +65,16 @@ Two consequences worth stating, because both are checks rather than conventions:
 * the ssh password is resolved lazily, inside `psql()`, so a cheap slice
   (`--only S1,S2,S5`) never demands a value it will not use.
 
+The walk is wider than this directory. `s16` scans every tracked shell/python under
+`scripts/` and `test/` for the same three shapes — a literal assignment, a `${VAR:-literal}`
+default, and a literal as the *default argument* of `os.environ.get(ENV, "literal")`. The
+last one is why the walk exists: doc/304 §7 item 24 removed two real console passwords from
+files that sit outside `scripts/probes/`, and an older version of this check looked only
+here. One exemption is allowed, by variable, env name and value together: the e2e workspace
+account (`WS_PASS`), which the same file creates and then logs in with — a fixture, not a
+credential. The historical-name scan takes no exemption, so a real password pasted behind
+that variable name is still refused.
+
 ## The writer and the gate are two files, on purpose
 
 `w4_wiki_pilot.py` is the **writer** (S1 dataset → S2 canvas + published version → S3 upload

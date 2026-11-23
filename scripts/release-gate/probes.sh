@@ -13,7 +13,9 @@
 #
 #   ① no credential is stored: no non-empty literal assigned to a *PASSWORD*/*SECRET*
 #     /*TOKEN* name, and none of the drill's historical strings, in any tracked file of
-#     `scripts/probes/`;
+#     `scripts/probes/` — and the same two shapes over every tracked shell/python in
+#     `scripts/` and `test/`, because item 24's tail found that this row only ever looked
+#     inside `scripts/probes/` while the two files that *had* a credential lived outside it;
 #   ② a missing credential is a *usage* sentence (exit 2) that names the variable, and it
 #     fires **before** the first HTTP call — so the failure is never blamed on a host;
 #   ③ `--offline` still prints the whole contract: every requirement, every step. A step
@@ -74,7 +76,7 @@ say()  { printf '%s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 good() { printf 'ok    %s\n' "$*"; }
 
-# ── selftest: ten mutations, each of which must be refused ──────────────────
+# ── selftest: thirteen mutations, each of which must be refused ──────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
@@ -219,6 +221,55 @@ def _post_that_should_not_exist(client, path):
   say "ok      a repair predicate that permits a write over a running parse -> refused"
   cp "$WAIT" "$tmp/w4_wait_state.py"
 
+  # ⑪ the gap item 24 left open: the credential shapes were only ever looked for inside
+  # `scripts/probes/`, so a `${VAR:-literal}` default in `scripts/` or `test/e2e/` had no
+  # reader. The mutation is a scratch tree instead of a tracked file (proving a refusal must
+  # not require editing one); the walk's *scope* is asserted separately in the normal run —
+  # by name, for the two files item 24 names. Mutation plus scope assertion, not either alone.
+  mkdir -p "$tmp/scan"
+  printf '#!/usr/bin/env bash\nAX_PASS="${RAGRFLOW_X_PASS:-RgxTest#2026a}"\n' > "$tmp/scan/compare.sh"
+  out="$(PROBES_SCAN_ROOT="$tmp/scan" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'a tracked script stores a credential'; then
+    say "SELFTEST FAIL: a literal hidden in a \${VAR:-literal} default outside scripts/probes was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a literal hidden outside scripts/probes/ -> refused"
+
+  # ⑫ the other half of ⑪: the scope assertion. A walk that quietly stops covering a file
+  # is a check that keeps printing `ok` while looking at less — the same failure as an
+  # `--only` that selects nothing. Pointing the walk at a list that omits one of item 24's
+  # two files must be refused, and by name.
+  git ls-files scripts test 2>/dev/null | grep -E '\.(sh|py|mjs|js)$' \
+    | grep -vE '^scripts/probes/|^scripts/release-gate/probes\.sh$' \
+    | grep -vF 'test/e2e/scenario-templates/e2e_scenario_templates.py' > "$tmp/scan-list.txt"
+  out="$(PROBES_SCAN_LIST="$tmp/scan-list.txt" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'no longer covers a file item 24 names'; then
+    say "SELFTEST FAIL: a credential walk that stopped covering an e2e script was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a credential walk that lost one of item 24's files -> refused"
+
+  # ⑬ the exemption's width. `WS_PASS` is allowed by variable *and* env name *and* value
+  # together; changing the value must stop the exemption matching. Without this mutation the
+  # exemption is a name-only allowlist, and a real password could hide behind a fixture's name.
+  mkdir -p "$tmp/scan2/scenario-templates"
+  sed 's/RGX_E2E_WS_PASS", "E2e#2026pass"/RGX_E2E_WS_PASS", "E2e#2026sealed"/' \
+    test/e2e/scenario-templates/e2e_scenario_templates.py > "$tmp/scan2/scenario-templates/e2e_scenario_templates.py"
+  if grep -qF 'E2e#2026sealed' "$tmp/scan2/scenario-templates/e2e_scenario_templates.py"; then
+    out="$(PROBES_SCAN_ROOT="$tmp/scan2" bash "$0" 2>&1)"; rc=$?
+    if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'a tracked script stores a credential'; then
+      say "SELFTEST FAIL: the WS_PASS exemption accepted a changed value"
+      say "$out"
+      exit 1
+    fi
+    say "ok      the WS_PASS exemption after its value changed -> refused"
+  else
+    say "SELFTEST FAIL: the WS_PASS exemption mutation could not be built (the line moved)"
+    exit 1
+  fi
+
   say "SELFTEST OK"
   exit 0
 fi
@@ -255,14 +306,20 @@ fi
 # The shape, not a word list: `SOMETHING_PASSWORD = "…"` with a non-empty literal. A
 # requirement resolved from the environment (`os.environ.get("…", "")`) has no literal and
 # is what every credential here must look like.
-# Two shapes, because a literal hides in two places: assigned directly, or hidden inside a
+# Three shapes, because a literal hides in three places: assigned directly, hidden inside a
 # `${VAR:-literal}` default (the value then contains a `$`, so the first pattern skips it —
-# that hole was found by re-adding the old default to another script and watching this
-# check stay green).
+# that hole was found by re-adding the old default to another script and watching this check
+# stay green), and hidden as the **default argument** of `os.environ.get(ENV, "literal")`
+# (doc/304 E111 — the same hole one language over: the literal sits in the call's second
+# argument, which neither of the other two patterns resembles).
+# Defined once, here, and reused by (1b) so the two walks cannot disagree about what a
+# literal is.
+PYHIDDEN='^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN|KEY)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*os\.environ\.get\([[:space:]]*"[^"]+"[[:space:]]*,[[:space:]]*"[^"$]+'
 secret_hits="$(
   { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
     grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
     grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
+    grep -nE "$PYHIDDEN" "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
   } | sed '/^$/d')"
 if [ -z "$secret_hits" ]; then
   good "no credential literal is assigned in any probe (the shape check, not a word list)"
@@ -278,6 +335,81 @@ if [ -z "$hist_hits" ]; then
 else
   bad "a historical drill credential is back in the tree"
   printf '%s\n' "$hist_hits" | head -5
+fi
+
+# ── ①b the same shapes outside `scripts/probes/` (doc/304 §7 item 24) ────────
+# Item 24 removed two literals and said out loud what it did not cover: the shape check
+# only walks `scripts/probes/`, so the two files that actually carried a credential —
+# `scripts/template-capability-compare.sh` and the e2e scenario script — were guarded by a
+# hand grep rather than by this row. Two halves close it, and neither alone would:
+#   · the walk covers every tracked shell/python under `scripts/` and `test/`, and *asserts
+#     by name* that the two files item 24 names are still in it (a walk that silently shrinks
+#     is how a check stops checking);
+#   · `--selftest` mutation ⑪ puts a `${VAR:-literal}` default into a scratch tree and
+#     requires a refusal.
+# One exemption, by exact line shape: `WS_PASS` in the e2e scripts is created *and* used by
+# the same file, which item 24 calls a fixture and not a credential. Allowed by variable, env
+# name and value all together, so changing any of the three stops the exemption matching. The
+# historical-name scan below takes no exemption at all.
+SCAN_SKIP='^scripts/probes/|^scripts/release-gate/probes\.sh$'
+scan_files() {
+  if [ -n "${PROBES_SCAN_LIST:-}" ]; then   # `--selftest` only: prove the scope assertion
+    cat "$PROBES_SCAN_LIST"
+  elif [ -n "${PROBES_SCAN_ROOT:-}" ]; then   # `--selftest` only: read a scratch tree
+    find "$PROBES_SCAN_ROOT" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.mjs' -o -name '*.js' \)
+  else
+    git ls-files scripts test 2>/dev/null | grep -E '\.(sh|py|mjs|js)$' | grep -vE "$SCAN_SKIP"
+  fi
+}
+SCAN_LIST="$(scan_files)"
+if [ -z "${PROBES_SCAN_ROOT:-}" ]; then
+  scan_n="$(printf '%s\n' "$SCAN_LIST" | grep -c . || true)"
+  scan_lost=""
+  for f in scripts/template-capability-compare.sh test/e2e/scenario-templates/e2e_scenario_templates.py; do
+    printf '%s\n' "$SCAN_LIST" | grep -qxF "$f" || scan_lost="$scan_lost $f"
+  done
+  if [ -n "$scan_lost" ]; then
+    bad "the credential walk no longer covers a file item 24 names:$scan_lost"
+  elif [ "$scan_n" -lt 20 ]; then
+    bad "the credential walk covers only $scan_n tracked file(s): a shrinking scope is how this row stops checking"
+  else
+    good "the credential walk covers $scan_n tracked scripts under scripts/ and test/ (item 24's two files by name)"
+  fi
+fi
+# The three shapes, as in ①, plus the exempt line shape. `grep -n` prints `line:content`, so
+# the exemption is matched against that, and the file is prefixed afterwards.
+DIRECT='^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN|API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+'
+HIDDEN='^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN|API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'
+EXEMPT='^[0-9]+:WS_PASS = os\.environ\.get\("RGX_E2E_WS_PASS", "E2e#2026pass"\)$'
+tree_hits=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  hits="$( { grep -nE "$DIRECT" "$f" 2>/dev/null || true; grep -nE "$HIDDEN" "$f" 2>/dev/null || true; grep -nE "$PYHIDDEN" "$f" 2>/dev/null || true; } )"
+  case "$f" in
+    */scenario-templates/*|test/e2e/scenario-templates/*) hits="$(printf '%s\n' "$hits" | grep -vE "$EXEMPT" || true)" ;;
+  esac
+  [ -n "$hits" ] && tree_hits="$tree_hits$(printf '%s\n' "$hits" | sed "s|^|$f:|")"$'\n'
+done <<< "$SCAN_LIST"
+if [ -z "$tree_hits" ]; then
+  good "no credential literal outside scripts/probes/ either (the same three shapes, item 24's tail)"
+else
+  bad "a tracked script stores a credential"
+  printf '%s\n' "$tree_hits" | sed '/^$/d' | head -5
+fi
+# The historical names, over the same walk and with no exemption: this is the check that
+# would catch `WS_PASS = "RgxTest#2026a"` even though the shape exemption above allows the
+# variable name. Two mechanisms, two different questions.
+tree_hist=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  h="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor|MPZMtiIw' "$f" 2>/dev/null || true)"
+  [ -n "$h" ] && tree_hist="$tree_hist$(printf '%s\n' "$h" | sed "s|^|$f:|")"$'\n'
+done <<< "$SCAN_LIST"
+if [ -z "$tree_hist" ]; then
+  good "no historical drill credential anywhere in the walk (no exemption applies here)"
+else
+  bad "a historical drill credential is outside scripts/probes/ too"
+  printf '%s\n' "$tree_hist" | sed '/^$/d' | head -5
 fi
 # A credential must not reach the evidence either: the drill writes `summary.json` and
 # `summary.md` under `tmp/`, and a password in an artifact is a password in a chat message.
