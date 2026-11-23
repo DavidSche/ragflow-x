@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
 // poolExport is what `goldtool pool` prints after writing the file. It exists so
@@ -32,9 +34,110 @@ type poolExport struct {
 	// another section. It is printed because the number is the *reason* the dedup unit
 	// is the section: without it, "candidate_rows went from 0 to N" reads as if the
 	// freeze had been broken, when in fact the filter stopped deleting real rows.
-	CandidatesElsewhere int          `json:"candidate_rows_cited_elsewhere"`
-	EvidenceRows        int          `json:"evidence_rows"`
-	Coverage            poolCoverage `json:"coverage"`
+	CandidatesElsewhere int `json:"candidate_rows_cited_elsewhere"`
+	EvidenceRows        int `json:"evidence_rows"`
+	// Material is the W-2 side of the receipt: "does this export contain the material a
+	// stratified draw of the frozen plan needs", answered without changing the plan.
+	Material poolMaterial `json:"material"`
+	Coverage poolCoverage `json:"coverage"`
+}
+
+// poolMaterial is doc/304 §1.3 W-2's re-scan reading, printed instead of hand-counted.
+//
+// W-2's decision was "expand the corpus, then re-scan `pool` and check whether the
+// per-stratum candidate counts support the plan that is already frozen". Two of those
+// numbers were not in the receipt before this: how many items carry a frozen candidate
+// row at all, how many carry none. They were computed by a person reading the JSONL,
+// which is exactly the reading that changes when the file changes.
+//
+// ExportStampDates is printed *because* it is easy to misread. `Item.AsOfDate` is
+// `stamp(time.Now())` at export time (pool.go's mergeRevision call), so one distinct value
+// means "the export ran on one day" and nothing at all about the span of time the corpus
+// covers. An earlier round of doc/304 read `distinct as_of_date = 1` as "the corpus is a
+// single snapshot"; it is not, and the field name here says so.
+//
+// ConflictingUpperBound is deliberately an upper bound and not a quota, and its *unit* is
+// the reason it lives here rather than being derived by the reader. `candsample.go` draws
+// **rows**, not claims: the worksheet's unit is `(item_id, candidate_index)`, because one
+// claim can carry two candidates and "we drew 120 items" says nothing about how many rows
+// an annotator will judge. So the ceiling on E2's 24 `conflicting` samples is the number of
+// frozen candidate **rows** — an export with 36 rows across 30 items can yield at most 36
+// conflicting samples, not 30. Getting this unit wrong is exactly the mistake doc/304 §1.3
+// W-1 warns about (60 条 treatment data is not 60 model calls): printing a plausible number
+// with the wrong denominator is worse than printing no number.
+//
+// The plan's 24 is a target and this field never edits it — an upper bound of 36 does not
+// license drawing 36, and an item's rows being frozen does not make them contradictory
+// (only the annotator decides that).
+type poolMaterial struct {
+	ItemsWithCandidate    int      `json:"items_with_candidate_rows"`
+	ItemsWithoutCandidate int      `json:"items_without_candidate_rows"`
+	CandidateRows         int      `json:"candidate_rows"`
+	ExportStampDates      []string `json:"export_stamp_dates"`
+	ItemsWithoutStamp     int      `json:"items_without_export_stamp"`
+	ConflictingUpperBound int      `json:"conflicting_upper_bound"`
+	// NotMeasured names the strata this receipt says *nothing* about, so that
+	// `conflicting_upper_bound` reaching the plan cannot be read as "the plan is covered".
+	NotMeasured []poolMaterialGap `json:"not_measured"`
+	Note        string            `json:"note"`
+}
+
+// poolMaterialGap is a stratum plus why the pool cannot state its material as a count.
+type poolMaterialGap struct {
+	Stratum string `json:"stratum"`
+	Why     string `json:"why"`
+}
+
+// poolMaterialNote rides in the receipt so a reader of the JSON — or of a CI log — does
+// not have to guess whether the bound is a decision, or guess which denominator it uses.
+const poolMaterialNote = "conflicting_upper_bound counts frozen candidate rows, the unit " +
+	"`goldtool sample` draws (doc/301 §9.1 restricts E2's conflicting samples to frozen " +
+	"candidates); it is a ceiling in rows, not a quota, and it does not change the frozen plan " +
+	"(doc/304 §1.3 W-2)"
+
+// poolMaterialStampNote is the other half of "do not read this as corpus history".
+const poolMaterialStampNote = "ExportStampDates are the export's own as_of_date values, " +
+	"which are stamp(time.Now()) at export time: one value means the export ran on one day, " +
+	"and this field says nothing about the time the corpus spans"
+
+// poolMaterialNotMeasured is a constant, not a computed list. `outdated` is the stratum the
+// plan names (12) and the pool cannot count: report_consistency.go derives `outdated` from
+// one document stating a key twice with different values, which is a property of chunk
+// *content*, and the pool carries no per-evidence date to count it by. Leaving the list
+// empty would let a green `conflicting` bound imply a green plan.
+var poolMaterialNotMeasured = []poolMaterialGap{{
+	Stratum: model.ReportVerdictOutdated,
+	Why: "the pool carries no per-evidence date and no same-document key grouping, and " +
+		"report_consistency.go derives `outdated` from content; counting it needs a content " +
+		"scan, not a receipt over this file",
+}}
+
+// poolMaterialOf is the pure half of the receipt: no database, no clock, so the numbers
+// can be asserted in a unit test rather than trusted from a live run.
+func poolMaterialOf(items []Item) poolMaterial {
+	material := poolMaterial{Note: poolMaterialNote, NotMeasured: poolMaterialNotMeasured}
+	seen := make(map[string]struct{}, 4)
+	for _, item := range items {
+		if len(item.CandidatePool) > 0 {
+			material.ItemsWithCandidate++
+		} else {
+			material.ItemsWithoutCandidate++
+		}
+		material.CandidateRows += len(item.CandidatePool)
+		date := strings.TrimSpace(item.AsOfDate)
+		if date == "" {
+			material.ItemsWithoutStamp++
+			continue
+		}
+		seen[date] = struct{}{}
+	}
+	material.ExportStampDates = make([]string, 0, len(seen))
+	for date := range seen {
+		material.ExportStampDates = append(material.ExportStampDates, date)
+	}
+	sort.Strings(material.ExportStampDates)
+	material.ConflictingUpperBound = material.CandidateRows
+	return material
 }
 
 // poolCoverage states the three coverage floors of §9.1 as measured facts. The
@@ -140,6 +243,7 @@ func runPool(args []string, stdout, stderr *os.File) int {
 	}
 	receipt.Datasets = len(ds)
 	receipt.Templates = distinctSet(items, func(i Item) string { return i.Source.TemplateKey })
+	receipt.Material = poolMaterialOf(items)
 	receipt.Coverage = poolCoverage{
 		MinRevisions: *minRev, GotRevisions: receipt.Revisions,
 		MinDatasets: *minDs, GotDatasets: receipt.Datasets,

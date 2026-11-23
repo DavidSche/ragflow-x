@@ -14,6 +14,7 @@
 // Subcommands:
 //
 //	pool       export candidates from published revisions of a live database (read-only)
+//	pool-material  read an existing pool export and print the W-2 material reading (offline)
 //	sample     draw the annotation worksheet out of a pool export (deterministic)
 //	validate   check a gold file against doc/301 §9.1 (offline, no database)
 //	labels     stub and check the two per-annotator label files (the hand-written end of T02)
@@ -51,6 +52,7 @@ const usage = `goldtool - gold-set tooling for report assurance (doc/301 §9.1)
 
 usage:
   goldtool pool     --dsn DSN --out pool.jsonl [--max-revisions 40] [--tenant ID]
+  goldtool pool-material --in pool.jsonl [--quiet]
   goldtool sample   --pool pool.jsonl --out worksheet.jsonl [--n 120]
                     [--strategy random|stratified --stratum K --targets "k=n,..."]
                     [--seed N] [--allow-short]
@@ -92,6 +94,8 @@ func run(args []string, stdout, stderr *os.File) int {
 	switch args[0] {
 	case "pool":
 		return runPool(args[1:], stdout, stderr)
+	case "pool-material":
+		return runPoolMaterial(args[1:], stdout, stderr)
 	case "sample":
 		return runSample(args[1:], stdout, stderr)
 	case "validate":
