@@ -18,9 +18,16 @@
 #     fires **before** the first HTTP call — so the failure is never blamed on a host;
 #   ③ `--offline` still prints the whole contract: every requirement, every step. A step
 #     silently deleted from `STEPS_DOC` is a step nobody notices the drill no longer runs;
-#   ④ the two probes share `probe_common` and not each other — T02's seed probe importing
+#   ④ the probes share `probe_common` and not each other — T02's seed probe importing
 #     the T16 drill is the coupling item 12 named, and it is what made the pair
 #     un-runnable outside `localenv/` in the first place.
+#
+# v1.41 adds a third probe (`w4_artifact_landing.py`) to the same contract. It measures
+# W-4 (doc/304 §7 item 23) and its whole point is that "not yet" must stay distinguishable
+# from "done": the four states A/B/C/D are separate readings, and only A+B+C+D together may
+# print as 成立 (exit 0). So this check holds one more thing for it — ⑤ its own
+# `--selftest` passes, because a verdict nobody has proved can fail is a verdict that
+# reads green on the day the writer starts lying.
 #
 # What this does NOT cover, said out loud: it never contacts a host. The live readings are
 # doc/305 §2.3 (pool) and §4.3 (11/11 PASS), not this script's.
@@ -39,6 +46,15 @@ cd "$ROOT" || exit 1
 DIR="${PROBES_DIR:-scripts/probes}"
 T16="$DIR/t16_live_drill.py"
 T02="$DIR/t02_seed_gold_pool.py"
+W4="$DIR/w4_artifact_landing.py"
+# The W-4 *writer* is deliberately not a variable here: this check must never gain a
+# path to it (doc/304 E97 — a gate that can start a compile can lose a dataset). What
+# it runs instead is the writer's pure wait classifier, whose tests cannot write.
+WAIT="$DIR/w4_wait_state.py"
+WAITTEST="$DIR/test_w4_wait_state.py"
+# The W-4 *diagnosis* probe. Also read-only, also not a writer: it reads the engine's
+# ingestion logs, which is where the Compiler failure reason actually lives (doc/304 E103).
+EVID="$DIR/w4_compiler_evidence.py"
 COMMON="$DIR/probe_common.py"
 README="$DIR/README.md"
 
@@ -58,12 +74,12 @@ say()  { printf '%s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 good() { printf 'ok    %s\n' "$*"; }
 
-# ── selftest: four mutations, each of which must be refused ──────────────────
+# ── selftest: ten mutations, each of which must be refused ──────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
-  say "selftest: can this check refuse? (a re-added password, a hidden one, a deleted step, a re-coupled pair)"
-  cp "$COMMON" "$T16" "$T02" "$README" "$tmp"/ 2>/dev/null
+  say "selftest: can this check refuse? (a re-added password, a hidden one, a deleted step, a re-coupled pair, a gate that runs the writer, a diagnosis probe that can write, a repair predicate that widens into 'safe')"
+  cp "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$README" "$tmp"/ 2>/dev/null
 
   # ① a credential put back: a name that ends in _PASSWORD with a working literal. This is
   # the exact string v1.28 removed, and nothing about the probe's behaviour changes.
@@ -114,6 +130,95 @@ DEFAULT_PASS="${RGX_VERIFY_PASS:-RgxTest#2026a}"
   fi
   say "ok      a literal hidden in a \${VAR:-literal} default -> refused"
 
+  # ⑤ the new probe's own verdict rule: 'not_yet' must never print as 成立. The mutation
+  # makes `verdict_d` call an empty revision established — exactly the shape a tired
+  # patch takes when someone wants the W-4 row to turn green.
+  sed 's/if hinted <= 0:/if False:/' "$W4" > "$tmp/w4_artifact_landing.py"
+  out="$("$PY" "$tmp/w4_artifact_landing.py" --selftest 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'failed'; then
+    say "SELFTEST FAIL: a W-4 verdict that reports 'not yet' as established was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a W-4 verdict that reports 'not yet' as established -> refused"
+  cp "$W4" "$tmp/w4_artifact_landing.py"
+
+  # ⑥ the separation requirement 6 names: a gate line that could start a compile. The
+  # mutation makes probes.sh *look like* it runs the writer; nothing is executed (the copy
+  # is only read), and the wait-state tests must refuse it.
+  # The name is assembled from two pieces on purpose: the test below refuses any single
+  # line of *this file* that carries the writer's executable token, so the mutation text
+  # itself must not look like such a line.
+  W="w4_wiki_"; W="${W}pilot.py"
+  { cat "$0"; printf '
+%s
+' "out=\"\$(\"\$PY\" \"\$DIR/$W\" --status 2>&1)\""; }     > "$tmp/probes-executes-writer.sh"
+  out="$(PROBES_SH="$tmp/probes-executes-writer.sh" "$PY" "$WAITTEST" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'must not run the writer'; then
+    say "SELFTEST FAIL: a gate line that runs the W-4 writer was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a gate line that would run the W-4 writer -> refused"
+
+  # ⑦ a diagnosis probe that gained a writing verb: the read-only claim is the only reason
+  # this file may point at a live dataset, so a `.post(` added anywhere must be refused.
+  { cat "$EVID"; printf '
+
+def _post_that_should_not_exist(client, path):
+    return client.session.post(path)
+'; }     > "$tmp/w4_compiler_evidence.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'can write'; then
+    say "SELFTEST FAIL: a diagnosis probe that can write was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a diagnosis probe with a .post( call -> refused"
+  cp "$EVID" "$tmp/w4_compiler_evidence.py"
+
+  # ⑧ the guard lifted off the seam: the method is still checked *somewhere* (the function
+  # is still defined and still tested), it just no longer runs before the socket. This is
+  # the mutation that reads as a harmless refactor.
+  sed 's/^        assert_read_only(method) .*$/        pass  # guard removed/'     "$EVID" > "$tmp/w4_compiler_evidence.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'not called above the request seam'; then
+    say "SELFTEST FAIL: a read-only guard lifted off the request seam was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a read-only guard lifted off the request seam -> refused"
+  cp "$EVID" "$tmp/w4_compiler_evidence.py"
+
+  # ⑨ doc/304 §7 item 34's forbidden downgrade, in its most plausible shape. Delete the
+  # "there must be something to repair" clause and the repair predicate authorises a write
+  # on a healthy set: it becomes `safe` under a second name, and the S6 dispatch loses the
+  # contradiction check that is the whole reason the bind gate exists. The test that must
+  # go red is the one named below — not "some test failed".
+  sed 's/^    if not failed:$/    if False:/' "$WAIT" > "$tmp/w4_wait_state.py"
+  out="$(PROBES_SH="$0" "$PY" "$tmp/test_w4_wait_state.py" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'test_a_clean_set_has_nothing_to_repair'; then
+    say "SELFTEST FAIL: a repair predicate that authorises a write with nothing to repair was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a repair predicate that authorises a write with nothing to repair -> refused"
+  cp "$WAIT" "$tmp/w4_wait_state.py"
+
+  # ⑩ the other direction, and the one that looks helpful: keep every rule but let a *busy*
+  # set be repaired. A second dispatch queues behind the parse that is already running, and
+  # the config write in the same action is refused by the engine (code 102). The point of a
+  # client-side gate is to refuse before the socket does.
+  sed 's/^    if busy:$/    if False:/' "$WAIT" > "$tmp/w4_wait_state.py"
+  out="$(PROBES_SH="$0" "$PY" "$tmp/test_w4_wait_state.py" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'test_busy_refuses_the_repair'; then
+    say "SELFTEST FAIL: a repair predicate that permits a second dispatch over a running parse was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a repair predicate that permits a write over a running parse -> refused"
+  cp "$WAIT" "$tmp/w4_wait_state.py"
+
   say "SELFTEST OK"
   exit 0
 fi
@@ -122,7 +227,7 @@ say "live probes (doc/304 §7 item 12) — tracked, hermetic half only"
 
 # ── ⓪ the files exist and compile ───────────────────────────────────────────
 missing=0
-for f in "$COMMON" "$T16" "$T02" "$README"; do
+for f in "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$README"; do
   if [ -f "$f" ]; then
     good "$f is in the tree"
   else
@@ -138,8 +243,8 @@ fi
 if [ -z "$PY" ]; then
   bad "no python on PATH: the probes cannot be compiled, and 'I did not compile' is not 'they compile'"
 else
-  if out="$("$PY" -m py_compile "$COMMON" "$T16" "$T02" 2>&1)"; then
-    good "all three compile ($PY -m py_compile)"
+  if out="$("$PY" -m py_compile "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>&1)"; then
+    good "all seven compile ($PY -m py_compile)"
   else
     bad "a probe does not compile"
     printf '%s\n' "$out" | tail -5
@@ -155,8 +260,9 @@ fi
 # that hole was found by re-adding the old default to another script and watching this
 # check stay green).
 secret_hits="$(
-  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" 2>/dev/null || true
-    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" 2>/dev/null || true
+  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
   } | sed '/^$/d')"
 if [ -z "$secret_hits" ]; then
   good "no credential literal is assigned in any probe (the shape check, not a word list)"
@@ -166,7 +272,7 @@ else
 fi
 # The drill's own history, by name: these are the strings v1.28 removed, and a recurrence
 # means someone pasted the old `localenv` copy back in.
-hist_hits="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor' "$COMMON" "$T16" "$T02" "$README" 2>/dev/null || true)"
+hist_hits="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor|MPZMtiIw' "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$README" 2>/dev/null || true)"
 if [ -z "$hist_hits" ]; then
   good "none of the historical drill credentials appear (RgxTest / RgxDrill / zhixiang@)"
 else
@@ -177,7 +283,12 @@ fi
 # `summary.md` under `tmp/`, and a password in an artifact is a password in a chat message.
 # The shape checked is "the password flows to exactly two places — the login and nothing
 # else", which is what a `"password": args.password` added to a summary dict would break.
-for f in "$T16" "$T02"; do
+if grep -q 'client.login_with_key(api_key)' "$EVID" && ! grep -qE 'json\.dumps\([^)]*api_key|"api_key":' "$EVID"; then
+  good "w4_compiler_evidence.py sends the key to the login seam and never into the evidence"
+else
+  bad "w4_compiler_evidence.py does not keep the API key out of the evidence"
+fi
+for f in "$T16" "$T02" "$W4"; do
   base="$(basename "$f")"
   uses="$(grep -c 'args\.password' "$f" || true)"
   leak="$(grep -n 'args\.password' "$f" | grep -iE 'dump|summary|json\.dumps|evidence' || true)"
@@ -189,13 +300,15 @@ for f in "$T16" "$T02"; do
 done
 
 # ── ② a missing credential is a usage sentence, before the network ──────────
-for spec in "$T16:RGX_VERIFY_PASS:--only S1" "$T02:RGX_VERIFY_PASS:"; do
+for spec in "$T16:RGX_VERIFY_PASS:--only S1" "$T02:RGX_VERIFY_PASS:" "$W4:RGX_VERIFY_PASS:--dataset ds-placeholder" \
+            "$EVID:RGX_ENGINE_KEY:--dataset ds-placeholder"; do
   file="${spec%%:*}"; rest="${spec#*:}"; var="${rest%%:*}"; extra="${rest#*:}"
   base="$(basename "$file")"
   # `env -u` on every credential variable: the check must not depend on the operator's shell
   # having exported something (that is how a default silently replaces a requirement).
   # shellcheck disable=SC2086
   out="$(env -u RGX_VERIFY_PASS -u RGX_VERIFY_USER -u RGX_DRILL_SSH_PASS -u RGX_BASE \
+           -u RGX_ENGINE_KEY -u RGX_ENGINE_BASE \
            "$PY" "$file" $extra 2>&1)"; rc=$?
   if [ "$rc" -eq 2 ]; then
     good "$base without a password: exit 2 (usage, not a product result)"
@@ -221,7 +334,7 @@ done
 check_offline() {  # file, want_steps, want_vars
   local file="$1" want_steps="$2" want_vars="$3" base out rc got
   base="$(basename "$file")"
-  out="$(env -u RGX_VERIFY_PASS -u RGX_DRILL_SSH_PASS "$PY" "$file" --offline 2>&1)"; rc=$?
+  out="$(env -u RGX_VERIFY_PASS -u RGX_DRILL_SSH_PASS -u RGX_ENGINE_KEY "$PY" "$file" --offline 2>&1)"; rc=$?
   if [ "$rc" -eq 0 ]; then
     good "$base --offline exits 0 (a laptop with no host can read the contract)"
   else
@@ -256,9 +369,11 @@ check_offline() {  # file, want_steps, want_vars
 
 check_offline "$T16" 11 "RGX_VERIFY_BASE RGX_VERIFY_PASS RGX_DRILL_SSH_PASS"
 check_offline "$T02" 5 "RGX_BASE RGX_VERIFY_PASS"
+check_offline "$W4" 5 "RGX_BASE RGX_VERIFY_PASS"
+check_offline "$EVID" 7 "RGX_ENGINE_BASE RGX_ENGINE_KEY"
 
 # ── ④ the pair is decoupled, and both sit on probe_common ───────────────────
-for f in "$T16" "$T02"; do
+for f in "$T16" "$T02" "$W4" "$EVID"; do
   base="$(basename "$f")"
   if grep -qE '^from probe_common import|^    .*probe_common' "$f"; then
     good "$base imports probe_common"
@@ -273,6 +388,74 @@ else
 fi
 # The skip must stay a distinct sentence in the drill: a skipped step that prints as a pass
 # is the failure mode exit code 3 exists to prevent.
+# ── ⑤ the W-4 probe can prove its own verdicts fail ─────────────────────────
+out="$("$PY" "$W4" --selftest 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'SELFTEST OK'; then
+  good "w4_artifact_landing.py --selftest: $(printf '%s' "$out" | head -1)"
+else
+  bad "w4_artifact_landing.py --selftest failed (rc=$rc): the W-4 verdicts are unproven"
+  printf '%s
+' "$out" | tail -5
+fi
+
+# ── ⑥ the wait classifier decides, and it can refuse ────────────────────────
+# Why here: the pilot may not write under a document whose own state is not idle, and the
+# 2026-11-23 loss happened because the old check read `run` and nothing else. The tests are
+# a separate file that imports only the pure module, so running them here cannot start a
+# compile — that separation is itself one of the tests (`test_probes_sh_never_executes_the_writer`).
+out="$(PROBES_SH="$0" "$PY" "$WAITTEST" 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'SELFTEST OK'; then
+  good "test_w4_wait_state.py: $(printf '%s' "$out" | sed -n 's/.*wait-state selftest: \([0-9]*\) case.*/\1/p') case(s), idle/busy/failed/unknown, timeout fails closed"
+else
+  bad "test_w4_wait_state.py failed (rc=$rc): the wait classifier's refusals are unproven"
+  printf '%s
+' "$out" | tail -8
+fi
+
+# ── ⑦ the W-4 diagnosis probe can be wrong, and says which way ──────────────
+# Its verdict is a sentence about *someone else's* system, so the failure mode that matters
+# is confident, not cautious: calling an unclassified message `named` would hand W-4 a
+# root cause it does not have. `--selftest` asserts the exact verdict *and* exit code for
+# each case, so a permissive classifier turns it red.
+out="$("$PY" "$EVID" --selftest 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'SELFTEST OK'; then
+  good "w4_compiler_evidence.py --selftest: $(printf '%s' "$out" | grep -c '^ok ' ) case(s), named/unknown/no-failure/contradicted kept apart"
+else
+  bad "w4_compiler_evidence.py --selftest failed (rc=$rc): its verdicts are unproven"
+  printf '%s
+' "$out" | tail -6
+fi
+
+# ── ⑧ the diagnosis probe reads, by construction ────────────────────────────
+# doc/304 E103: this probe is allowed to *read why* a compile failed and is not allowed to
+# do anything else — no re-ingest, no re-trigger, no delete, no config change. Three
+# properties make that checkable without trusting the docstring: exactly one request seam,
+# the guard called above it, and no verb-taking helpers anywhere in the file.
+seams="$(grep -c 'client\.api(' "$EVID" || true)"
+if [ "${seams:-0}" = "1" ]; then
+  good "w4_compiler_evidence.py has exactly one request seam (client.api appears once)"
+else
+  bad "w4_compiler_evidence.py has ${seams:-0} request seams, want 1: the write surface is no longer one place"
+fi
+if grep -qE '^[[:space:]]+assert_read_only\(method\)' "$EVID"; then
+  good "the guard sits above the seam, so a refused method never reaches the socket"
+else
+  bad "the read-only guard is not called above the request seam"
+fi
+verbs="$(grep -nE '\.(post|put|patch|delete)\(' "$EVID" || true)"
+if [ -z "$verbs" ]; then
+  good "no .post/.put/.patch/.delete call exists in the diagnosis probe"
+else
+  bad "the diagnosis probe can write:"
+  printf '%s
+' "$verbs" | head -5
+fi
+if grep -q 'does NOT advance W-4' "$EVID"; then
+  good "the probe says out loud that a named cause does not advance A/B/C/D"
+else
+  bad "the probe does not separate 'cause named' from 'artifact landed'"
+fi
+
 if grep -q 'CaseSkip' "$T16"; then
   good "the drill still has a SKIP that is not a PASS"
 else

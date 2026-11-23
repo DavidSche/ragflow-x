@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """Shared pieces of the live probes: one HTTP client and one credential contract.
 
-Doc/304 §7 item 12 said the two probes that produced T02's data half and T16's live
+Doc/304 §7 item 12 said the probes that produced T02's data half and T16's live
 drill lived in `localenv/` (gitignored), so a clone could read the evidence in doc/305
-but could not run it. They live here now. Moving them into the repository has one
+but could not run it. They live here now (and W-4's probe joined them in v1.41). Moving them into the repository has one
 price: nothing in a tracked file may be a credential.
 
 Hence the rule this module exists to enforce:
@@ -97,6 +97,24 @@ class Client:
             raise EnvUnavailable(f"login returned no token: {body}")
         self.token = token
         self.session.headers["Authorization"] = "Bearer " + token
+
+    def login_with_key(self, api_key: str) -> None:
+        """Engine-side auth: a bearer API key, no login round-trip.
+
+        The console (19193) takes a username/password and returns a token; the engine
+        (9380) takes a `Bearer ragflow-…` key. Same header, different provenance, so it is
+        a second method rather than a flag — and a key is *not* a password: there is no
+        user to name, and a failed key surfaces as an HTTP 401 on the first read rather
+        than a login error nobody can interpret.
+
+        Only `w4_compiler_evidence.py` uses this: the ingestion logs that hold the
+        Compiler failure reason are served by the engine, not the console (doc/304 E103).
+        """
+        key = (api_key or "").strip()
+        if not key:
+            raise EnvUnavailable("an empty API key was provided")
+        self.token = key
+        self.session.headers["Authorization"] = "Bearer " + key
 
     def request(self, method: str, path: str, **kw):
         # `json_body` is this probe family's name for the JSON payload; requests calls
