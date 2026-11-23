@@ -28,6 +28,8 @@ done
 if [ -z "$PY" ]; then echo "selftest: python is required" >&2; exit 2; fi
 if [ ! -f "$HOOK" ]; then echo "selftest: $HOOK is missing" >&2; exit 2; fi
 
+GATE="${GATE_OVERRIDE:-$ROOT/scripts/release-gate.sh}"
+
 PASS=0
 FAIL=0
 CASE_DIRS=()
@@ -82,6 +84,48 @@ expect() {
   fi
 }
 
+# ── --selftest: can these cases go red? ──────────────────────────────────────
+# Every other check in this system has to prove its own failing direction (doc/301 §9.4,
+# doc/304 §5.3). The selection cases above are new, so each of the four rules gets a
+# mutant gate with that rule deleted; the suite must fail against every one of them.
+if [ "${1:-}" = "--selftest" ]; then
+  MUT="$ROOT/tmp/gate-mut-$$"; mkdir -p "$MUT"
+  trap 'rm -rf "$MUT"' EXIT
+  MUTANTS=()
+  MUTANTS+=('--only unknown-id rule|  if [ -n "$UNKNOWN_ONLY" ]; then|  if false; then')
+  MUTANTS+=('--only empty-selection rule|  if [ "$SELECTED" -eq 0 ]; then|  if false; then')
+  MUTANTS+=('--skip unknown-id rule|  if [ -n "$UNKNOWN_SKIP" ]; then|  if false; then')
+  MUTANTS+=('the RUNS=0 guard|if [ "$RUNS" -eq 0 ]; then|if false; then')
+  KILLED=0
+  for spec in "${MUTANTS[@]}"; do
+    name="${spec%%|*}"; rest="${spec#*|}"; from="${rest%%|*}"; to="${rest#*|}"
+    cp "$GATE" "$MUT/gate.sh"
+    "$PY" - "$MUT/gate.sh" "$from" "$to" <<'PYMUT'
+import io, sys
+path, old, new = sys.argv[1:4]
+s = io.open(path, encoding="utf-8").read()
+if s.count(old) != 1:
+    sys.exit("pattern not found exactly once: %r" % old)
+io.open(path, "w", encoding="utf-8", newline=chr(10)).write(s.replace(old, new))
+PYMUT
+    if [ $? -ne 0 ]; then FAIL=$((FAIL + 1)); echo "FAIL  mutant '$name' could not be built"; continue; fi
+    if GATE_OVERRIDE="$MUT/gate.sh" bash "$0" >"$MUT/$name.log" 2>&1; then
+      FAIL=$((FAIL + 1)); echo "FAIL  mutant gate '$name' still passed the suite"
+      sed 's/^/      /' "$MUT/$name.log" | tail -5
+    else
+      KILLED=$((KILLED + 1))
+      echo "OK    mutant gate '$name' was caught: $(grep -c '^FAIL' "$MUT/$name.log" || true) case(s) went red"
+    fi
+  done
+  echo
+  if [ "$KILLED" -eq 4 ] && [ "$FAIL" -eq 0 ]; then
+    echo "SELFTEST OK: 4 gate mutants refused"
+    exit 0
+  fi
+  echo "SELFTEST FAIL: $KILLED of 4 gate mutants caught, $FAIL failure(s)"
+  exit 1
+fi
+
 NOW=$("$PY" -c 'import datetime;print(datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))')
 STALE=$("$PY" -c 'import datetime;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(hours=100)).strftime("%Y-%m-%dT%H:%M:%SZ"))')
 
@@ -127,6 +171,52 @@ expect "a required row is N/A: refused" 1 "$d" "refs/tags/$TAG"
 # 10. ordinary branches are never gated — this protects releases, not work.
 d="$WORK/branch"; mkdir -p "$d"
 expect "branch push is not gated" 0 "$d" "refs/heads/feature/x"
+
+# ── 11–15: the gate's own selection (doc/304 §4 E98) ────────────────────────
+# `--only=s16,s19` used to match nothing (ids are `s16.probes-selfcheck`), every row became
+# SKIP, `required` came out 0/0 and the gate printed PASS. `releasable` stayed false, so
+# nothing could ship on it — but "PASS" over zero checks is the reading this system exists
+# to prevent, so the selection itself is now a checked surface:
+#   · a prefix is exit 2 and prints the whole id list,
+#   · an id that does not exist is exit 2 (for --only and for --skip),
+#   · `--only X --skip X` is exit 2 (an empty selection is a usage error, not a pass),
+#   · a normal selection still runs exactly the named checks.
+expect_gate() {  # name want_rc want_text -- args...  ($GATE, so --selftest can point at a mutant)
+  local name="$1" want="$2" want_text="$3"; shift 3
+  [ "$1" = "--" ] && shift
+  local out rc
+  out=$(bash "$GATE" "$@" --out "$WORK/gate-$RANDOM" 2>&1); rc=$?
+  if [ "$rc" -ne "$want" ]; then
+    FAIL=$((FAIL + 1)); printf 'FAIL  %-46s (exit %s, want %s)
+' "$name" "$rc" "$want"
+    printf '%s
+' "$out" | tail -5 | sed 's/^/      /'
+  elif ! printf '%s' "$out" | grep -qF -- "$want_text"; then
+    FAIL=$((FAIL + 1)); printf 'FAIL  %-46s (exit %s but no "%s")
+' "$name" "$rc" "$want_text"
+    printf '%s
+' "$out" | tail -5 | sed 's/^/      /'
+  else
+    PASS=$((PASS + 1)); printf 'PASS  %-46s (exit %s, said "%s")
+' "$name" "$rc" "$want_text"
+  fi
+}
+
+expect_gate "prefix --only=s16,s19: exit 2, ids listed" 2 "names no check in this file: s16 s19"   -- --tier static --only s16,s19
+expect_gate "prefix is not a shorthand: the id list is printed" 2 "s16.probes-selfcheck"   -- --tier static --only s16,s19
+expect_gate "--only names an unknown id: exit 2" 2 "names no check in this file: s99.nope"   -- --tier static --only s99.nope
+expect_gate "--skip names an unknown id: exit 2" 2 "names no check in this file: s99.nope"   -- --tier static --skip s99.nope
+expect_gate "--only X --skip X: empty selection, exit 2" 2 "selected 0 checks out of"   -- --tier static --only s18.docs-ledger --skip s18.docs-ledger
+expect_gate "a normal selection still runs exactly what it names" 0 "required 2/2 passed"   -- --tier static --only s18.docs-ledger,s19.docs-ledger-snapshot
+
+# Deselect the entire static tier. The ids come from `--list`, not from a list typed here,
+# so adding a check cannot quietly turn this case into a partial run.
+STATIC_IDS=$(bash "$GATE" --list 2>/dev/null   | awk '/^static tier/{f=1;next} /^[a-z].*tier/{f=0} f && NF {print $1}'   | paste -sd, -)
+if [ -n "$STATIC_IDS" ]; then
+  expect_gate "--skip the whole static tier: 0 checks ran, exit 2" 2 "0 checks ran"     -- --tier static --skip "$STATIC_IDS"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL  --skip the whole static tier: could not read ids from --list"
+fi
 
 echo
 echo "selftest: $PASS passed, $FAIL failed"

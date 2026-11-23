@@ -22,7 +22,8 @@
 # Tiers
 # -----
 #   static  code-level contracts: secret scan, formatting of touched files,
-#           vet/build, RBAC route contracts, append-only migrations, the whole
+#           vet/build, RBAC route contracts,
+#           append-only migrations, the whole
 #           backend test suite, frontend typecheck + unit tests, changelog and
 #           release notes for the version. Runs anywhere (CI included).
 #   build   the artifact: production frontend build, the packaging rehearsal
@@ -184,6 +185,87 @@ should_run() { # id
   return 0
 }
 
+# ── E98: a selection that selects nothing is a usage error, not a pass ──────
+# `--only=s16,s19` used to match nothing (ids are `s16.probes-selfcheck`, not `s16`),
+# every check was recorded as SKIP, `required` came out 0/0 and the gate printed PASS.
+# `releasable` stayed false, so nothing could ship on it — but a report that says PASS
+# without having run a check is exactly the reading this whole file exists to prevent.
+#
+# Three rules, and they are the *only* place selection is validated:
+#   ① the id set is derived from this file (the `run_check`/`run_suite` calls), not typed
+#      a second time, so a new check is known the moment it is declared;
+#   ② an `--only` token that names no check is exit 2 and prints the whole id list — a
+#      prefix is a typo, not a shorthand, and silently ignoring it is how s19 stopped
+#      running;
+#   ③ a selection that ends up empty (either way, including `--only X --skip X`) is exit 2
+#      as well; and if the run somehow still reaches the verdict with RUNS=0, the summary
+#      refuses to print PASS (the guard after the verdict closes that hole).
+SELF="$(cd -- "$(dirname -- "$0")" 2>/dev/null && pwd)/$(basename -- "$0")"
+known_ids() {
+  grep -oE '^[[:space:]]*run_(check|suite)[[:space:]]+"[^"]+"' "$SELF" \
+    | sed -E 's/.*"([^"]+)"$/\1/' \
+    | grep -v '\$' | sort -u   # `run_suite "$sid"` in the manifest loop is not an id
+}
+split_ids() {
+  printf '%s' "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d'
+}
+KNOWN_IDS="$(known_ids)"
+
+if [ -n "$ONLY" ]; then
+  UNKNOWN_ONLY=""
+  while IFS= read -r token; do
+    [ -n "$token" ] || continue
+    printf '%s
+' "$KNOWN_IDS" | grep -qxF -- "$token" || UNKNOWN_ONLY="$UNKNOWN_ONLY $token"
+  done <<< "$(split_ids "$ONLY")"
+  if [ -n "$UNKNOWN_ONLY" ]; then
+    {
+      echo "release-gate: --only names no check in this file:$UNKNOWN_ONLY"
+      echo "  ids are matched exactly and completely (no prefixes, no fuzzy match) — doc/304 §4 E98."
+      echo "  known ids:"
+      printf '%s
+' "$KNOWN_IDS" | sed 's/^/    /'
+    } >&2
+    exit 2
+  fi
+  SELECTED=0
+  while IFS= read -r token; do
+    [ -n "$token" ] || continue
+    if should_run "$token"; then SELECTED=$((SELECTED + 1)); fi
+  done <<< "$(split_ids "$ONLY")"
+  if [ "$SELECTED" -eq 0 ]; then
+    {
+      echo "release-gate: --only/--skip selected 0 checks out of $(printf '%s
+' "$KNOWN_IDS" | grep -c .)"
+      echo "  every check --only named is also in --skip: that run would check nothing, so it is"
+      echo "  a usage error (exit 2) rather than a PASS with required 0/0."
+    } >&2
+    exit 2
+  fi
+fi
+
+# `--skip` gets the same treatment for the same reason, in the quieter direction: a skip
+# naming a check that does not exist means the operator believed something was excluded
+# when it was not. Say so instead of silently running it.
+if [ -n "$SKIP" ]; then
+  UNKNOWN_SKIP=""
+  while IFS= read -r token; do
+    [ -n "$token" ] || continue
+    printf '%s
+' "$KNOWN_IDS" | grep -qxF -- "$token" || UNKNOWN_SKIP="$UNKNOWN_SKIP $token"
+  done <<< "$(split_ids "$SKIP")"
+  if [ -n "$UNKNOWN_SKIP" ]; then
+    {
+      echo "release-gate: --skip names no check in this file:$UNKNOWN_SKIP"
+      echo "  (a skip that matches nothing excluded nothing — doc/304 §4 E98)"
+      echo "  known ids:"
+      printf '%s
+' "$KNOWN_IDS" | sed 's/^/    /'
+    } >&2
+    exit 2
+  fi
+fi
+
 # run_check <id> <tier> <required 1|0> <description> <command...>
 run_check() {
   local id="$1" t="$2" req="$3" desc="$4"
@@ -288,6 +370,7 @@ static tier (always required)
   s16.probes-selfcheck      scripts/release-gate/probes.sh (doc/304 §7 item 12: T02/T16 probes tracked, no credential stored, --offline contract)
   s17.adjudicate            scripts/release-gate/adjudicate.sh (doc/304 §7 item 25: the adjudication skeleton is derived, the manual documents it, 13 tests named)
   s18.docs-ledger           scripts/release-gate/docs-ledger.sh (doc/304 §7 items 2 and 3: §2/§3/§6/§7 shapes, 301 §14.J tail + derived footer, 305 §2 order)
+  s19.docs-ledger-snapshot  scripts/release-gate/docs-ledger-snapshot.sh (doc/304 §7 item 26: the tracked ledger snapshot, sha256 freshness, selftest refuses 6 mutations)
   s10.changelog             CHANGELOG.md carries the --version section
   s11.release-notes         .github/release-notes/<version>.md (optional, reported)
 build tier (required when selected)
@@ -419,6 +502,13 @@ if tier_selected static; then
   # that is the review, and a gate that claimed it would be the exact lie §7 item 3 warns of.
   run_check "s18.docs-ledger" "static" 1 "tracking doc + plan appendix shapes (doc/304 §7 items 2/3, selftest refuses 6 mutations)"     bash scripts/release-gate/docs-ledger.sh
 
+  # s18 reads the documents themselves, so a clean checkout (no `doc/`, .gitignore:91) can only
+  # answer "N/A". 304 §7 item 26 chose route ① on 2026-11-23: freeze the ledger facts into a
+  # tracked snapshot and judge *that* in CI, with a sha256 freshness check against the
+  # documents wherever they exist. Without this line, "CI is green" would keep meaning "the
+  # ledger was not there to check", which is the gap item 26 named.
+  run_check "s19.docs-ledger-snapshot" "static" 1 "tracked ledger snapshot: schema/closed sets/order + sha256 freshness (doc/304 §7 item 26)"     bash scripts/release-gate/docs-ledger-snapshot.sh
+
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
 
@@ -548,6 +638,14 @@ for i in "${!R_ID[@]}"; do
     *) INCOMPLETE=$((INCOMPLETE + 1)); REASONS+=("${R_ID[$i]}: ${R_STATUS[$i]}") ;;
   esac
 done
+
+# The last line of defence for E98: a run that recorded no check at all is not a PASS,
+# whatever route got it here (an empty `--skip` set, a tier with nothing under it).
+if [ "$RUNS" -eq 0 ]; then
+  echo "release-gate: 0 checks ran (tier=$TIER profile=$PROFILE only='$ONLY' skip='$SKIP')" >&2
+  echo "  a report with no checks is a usage error (exit 2), not a PASS — nothing was verified" >&2
+  exit 2
+fi
 
 VERDICT="PASS"
 EXIT_CODE=0

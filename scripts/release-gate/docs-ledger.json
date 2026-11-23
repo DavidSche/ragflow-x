@@ -1,0 +1,281 @@
+{
+  "schema": "rgx.docs-ledger/1",
+  "note": "provenance, not a signature: this records what the ledger said when it was frozen and it is checked by sha256 against the documents. It proves rows exist, words are in the closed set, numbering has no holes and nothing changed since — never that an evidence cell still proves its claim.",
+  "generated_by": "scripts/release-gate/docs-ledger.sh --write-snapshot",
+  "generated_at": "",
+  "sources": [
+    {
+      "path": "doc/develop/304-v0.7实施情况与跟踪：可信证据、问答收口与网关保障.md",
+      "sha256": "1e052ee4860826702ea05152f60b02f6b2d5e1d4c0aef59f005a473f4cb2b14d",
+      "bytes": 350641,
+      "lines": 697
+    },
+    {
+      "path": "doc/develop/301-v0.7下一阶段工作计划：可信证据、问答收口与网关保障.md",
+      "sha256": "4207336d515fe1a345e6f1f439b42914962ad2aee1a2cef8f0ec6892d5892bc5",
+      "bytes": 304187,
+      "lines": 1684
+    },
+    {
+      "path": "doc/develop/305-v0.7实测与演练报告：网关压测、E0-E3与live drill.md",
+      "sha256": "d0ff95935cca86fb37c70fbba1170215c199af84cd037d5d5c0e11b78ca4ae4e",
+      "bytes": 177471,
+      "lines": 1850
+    }
+  ],
+  "ledger": {
+    "tasks": [
+      {
+        "id": "T01",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T02",
+        "status": "进行中",
+        "evidence": true
+      },
+      {
+        "id": "T03",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T04",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T04b",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T05",
+        "status": "进行中",
+        "evidence": true
+      },
+      {
+        "id": "T06",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T07",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T08",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T09",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T10",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T11",
+        "status": "进行中",
+        "evidence": true
+      },
+      {
+        "id": "T12",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T13",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T14",
+        "status": "进行中",
+        "evidence": true
+      },
+      {
+        "id": "T15",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T16",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T17",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T18",
+        "status": "未开始",
+        "evidence": true
+      },
+      {
+        "id": "T19",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T20",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T21",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T22",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T23",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T24",
+        "status": "未开始",
+        "evidence": true
+      },
+      {
+        "id": "T25",
+        "status": "已完成",
+        "evidence": true
+      }
+    ],
+    "deviations": [
+      "D-01",
+      "D-02",
+      "D-03",
+      "D-04",
+      "D-05",
+      "D-06",
+      "D-07",
+      "D-08",
+      "D-09",
+      "D-10",
+      "D-11"
+    ],
+    "changelog": [
+      "v1.55",
+      "v1.54",
+      "v1.53",
+      "v1.52",
+      "v1.51",
+      "v1.50",
+      "v1.49",
+      "v1.48",
+      "v1.47",
+      "v1.46",
+      "v1.45",
+      "v1.44",
+      "v1.43",
+      "v1.42",
+      "v1.40",
+      "v1.39",
+      "v1.38",
+      "v1.37",
+      "v1.36",
+      "v1.35",
+      "v1.34",
+      "v1.33",
+      "v1.32",
+      "v1.31",
+      "v1.30",
+      "v1.29",
+      "v1.28",
+      "v1.27",
+      "v1.26",
+      "v1.25",
+      "v1.24",
+      "v1.23",
+      "v1.22",
+      "v1.21",
+      "v1.20",
+      "v1.18",
+      "v1.17",
+      "v1.16",
+      "v1.15",
+      "v1.14",
+      "v1.13",
+      "v1.12",
+      "v1.11",
+      "v1.10",
+      "v1.9",
+      "v1.8",
+      "v1.7",
+      "v1.6",
+      "v1.5",
+      "v1.4",
+      "v1.3",
+      "v1.2",
+      "v1.1",
+      "v1.0",
+      "v0.9",
+      "v0.8",
+      "v0.7",
+      "v0.6",
+      "v0.5",
+      "v0.4",
+      "v0.3",
+      "v0.2",
+      "v0.1"
+    ],
+    "s7_items": 35,
+    "e_tail": {
+      "301 §14.J": {
+        "first": 78,
+        "last": 108,
+        "next": 109,
+        "rows": 31
+      },
+      "304 §4": {
+        "first": 41,
+        "last": 110,
+        "next": 111,
+        "rows": 70
+      }
+    },
+    "s2x_305": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26
+    ]
+  }
+}

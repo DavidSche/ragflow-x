@@ -33,9 +33,16 @@
 # claim it sits beside. That is a review, and it is exactly what §7 items 2/3 ask a person
 # to do; the gate only guarantees the cell is not empty and the vocabulary did not drift.
 #
+# ⑧ `--write-snapshot` freezes exactly these facts into `scripts/release-gate/docs-ledger.json`
+# (304 §7 item 26, route ① 2026-11-23). The snapshot is what `s19.docs-ledger-snapshot` reads
+# in a tree without `doc/`, so CI judges the ledger instead of recording N/A for it. It is
+# written *only* when every check above passes: a broken document is never frozen into an
+# artifact that a clean checkout would then read as "checked".
+#
 # Usage:
-#   bash scripts/release-gate/docs-ledger.sh             # the check (hermetic, <1s)
-#   bash scripts/release-gate/docs-ledger.sh --selftest  # prove the check can fail
+#   bash scripts/release-gate/docs-ledger.sh                  # the check (hermetic, <1s)
+#   bash scripts/release-gate/docs-ledger.sh --selftest        # prove the check can fail
+#   bash scripts/release-gate/docs-ledger.sh --write-snapshot  # freeze the facts (needs doc/)
 #
 # LEDGER_304 / LEDGER_301 / LEDGER_305 exist for `--selftest` only: proving a refusal must
 # not require editing a document that five audits already green.
@@ -47,6 +54,10 @@ cd "$ROOT" || exit 1
 D304="${LEDGER_304:-doc/develop/304-v0.7实施情况与跟踪：可信证据、问答收口与网关保障.md}"
 D301="${LEDGER_301:-doc/develop/301-v0.7下一阶段工作计划：可信证据、问答收口与网关保障.md}"
 D305="${LEDGER_305:-doc/develop/305-v0.7实测与演练报告：网关压测、E0-E3与live drill.md}"
+
+SNAP="${LEDGER_SNAPSHOT_OUT:-scripts/release-gate/docs-ledger.json}"
+MODE="check"
+[ "${1:-}" = "--write-snapshot" ] && MODE="snapshot"
 
 say()  { printf '%s\n' "$*"; }
 
@@ -167,6 +178,12 @@ fi
 #     document in a tree that otherwise has them. That is exit 1, because it is a fault
 #     to find, not a property of the checkout.
 if [ ! -d "$(dirname "$D304")" ]; then
+  if [ "$MODE" = "snapshot" ]; then
+    say "docs-ledger: N/A — --write-snapshot cannot freeze documents this tree does not have."
+    say "  The snapshot is generated where doc/develop exists and then committed; freezing"
+    say "  nothing would produce an empty artifact that a clean checkout reads as \"checked\"."
+    exit 3
+  fi
   say "docs-ledger: N/A — doc/develop is not in this tree, so 304 §2/§3/§6/§7, 301 §14.J and"
   say "  305 §2 could not be read. Nothing was compared; reading nothing is not a pass."
   say "  Exit 3: N/A under --ci, FAIL for a run that could tag."
@@ -183,12 +200,13 @@ if [ ! -f "$D304" ] || [ ! -f "$D301" ] || [ ! -f "$D305" ]; then
 fi
 
 say "docs ledger (doc/304 §7 items 2 and 3) — §2 / §3 / §6 / §7, 301 §14.J, 305 §2 — hermetic"
-"$PYTHON" - "$D304" "$D301" "$D305" <<'PY'
-import io, re, sys
+"$PYTHON" - "$D304" "$D301" "$D305" "$MODE" "$SNAP" <<'PY'
+import hashlib, io, json, os, re, sys
 
-d304, d301, d305 = sys.argv[1:4]
+d304, d301, d305, mode, snap_path = sys.argv[1:6]
 fails = []
 oks = 0
+snap = {'tasks': [], 'deviations': [], 'changelog': [], 's7': None, 'e_tail': {}, 's2x': []}
 
 def ok(msg):
     global oks
@@ -268,6 +286,8 @@ for header, hcells, rows in tables:
             bad("304 §2 第 %d 行 %s 没有 §0 闭集里的状态词" % (lineno, tid))
             continue
         word = status[0]
+        snap['tasks'].append({'id': tid, 'status': word, 'evidence': bool(status[1]) and
+                              bool((rc[rc.index(status[1]) + 1] if rc.index(status[1]) + 1 < len(rc) else '').strip('— `'))})
         if word not in STATUS_OK:
             shape_bad += 1
             bad("304 §2 第 %d 行 %s 的状态 %s 不在 §0 的闭集 %s 里" %
@@ -337,6 +357,7 @@ else:
             bad3 += 1
             bad("304 §3 第 %d 行 D-%02d 的处置 %r 不在 §0 的三值闭集里" %
                 (lineno, nums[-1], (m.group(1) if m else rc[7][:24])))
+    snap['deviations'] = ['D-%02d' % n for n in nums]
     if nums != list(range(1, len(nums) + 1)):
         bad("304 §3 的编号不是从 D-01 起连续的：%s" % nums)
     elif bad3 == 0:
@@ -360,6 +381,7 @@ else:
         m = re.match(r'^\| \d{4}-\d{2}-\d{2} \| v(\d+)\.(\d+) \|', l)
         if m:
             vers.append((int(m.group(1)), int(m.group(2))))
+    snap['changelog'] = ['v%d.%d' % v for v in vers]
     if len(vers) < 5:
         bad("304 §6 只读到 %d 个版本行，变更记录不像一份历史" % len(vers))
     else:
@@ -374,6 +396,7 @@ else:
 if i7 is not None:
     sec = lines[i7:]
     nums = [int(m.group(1)) for m in (re.match(r'^\| (\d+) \|', l) for l in sec) if m]
+    snap['s7'] = len(nums)
     if nums != list(range(1, len(nums) + 1)):
         bad("304 §7 的编号不连续（1..%d 应为 %s）：%s" % (len(nums), '1..N', nums))
     else:
@@ -395,6 +418,7 @@ def check_e_tail(name, lines, a, b, first):
     nums = [n for _, n in rows]
     gaps = [(x, y) for x, y in zip(nums, nums[1:]) if y != x + 1]
     head = nums[-1]
+    snap['e_tail'][name] = {'first': nums[0], 'last': head, 'next': head + 1, 'rows': len(nums)}
     m = re.search(r'E41–\*\*E(\d+)\*\* 已用，下一条从 \*\*E(\d+)\*\* 起',
                   '\n'.join(lines[a:b]))
     if gaps:
@@ -435,6 +459,7 @@ else:
 # third-level headings and reported 2.3 / 2.3 / 2.3 as duplicates.
 lines305 = load(d305)
 secs = [int(m.group(1)) for m in (re.match(r'^## 2\.(\d+)(?!\d)', l) for l in lines305) if m]
+snap['s2x'] = secs
 if len(secs) < 5:
     bad("305 只读到 %d 个 `## 2.x` 小节" % len(secs))
 elif len(set(secs)) != len(secs):
@@ -444,6 +469,44 @@ elif secs != sorted(secs):
 else:
     ok("305 的 %d 个 `## 2.x` 小节编号递增且不重复（2.%d … 2.%d）" %
        (len(secs), secs[0], secs[-1]))
+
+if mode == 'snapshot':
+    if fails:
+        print("")
+        print("docs-ledger: refusing to freeze a document that fails its own shape check (%d problem(s))" % len(fails))
+        sys.exit(1)
+    def fingerprint(p):
+        raw = io.open(p, 'rb').read()
+        return {
+            'path': p.replace(os.sep, '/'),
+            'sha256': hashlib.sha256(raw).hexdigest(),
+            'bytes': len(raw),
+            'lines': raw.count(b'\n') + (0 if raw.endswith(b'\n') else 1),
+        }
+    doc = {
+        'schema': 'rgx.docs-ledger/1',
+        'note': ('provenance, not a signature: this records what the ledger said when it was '
+                 'frozen and it is checked by sha256 against the documents. It proves rows '
+                 'exist, words are in the closed set, numbering has no holes and nothing '
+                 'changed since — never that an evidence cell still proves its claim.'),
+        'generated_by': 'scripts/release-gate/docs-ledger.sh --write-snapshot',
+        'generated_at': os.environ.get('LEDGER_NOW', ''),
+        'sources': [fingerprint(p) for p in (d304, d301, d305)],
+        'ledger': {
+            'tasks': snap['tasks'],
+            'deviations': snap['deviations'],
+            'changelog': snap['changelog'],
+            's7_items': snap['s7'],
+            'e_tail': snap['e_tail'],
+            's2x_305': snap['s2x'],
+        },
+    }
+    io.open(snap_path, 'w', encoding='utf-8', newline='\n').write(
+        json.dumps(doc, ensure_ascii=False, indent=2) + '\n')
+    print("docs-ledger: wrote %s (%d tasks, %d deviations, %d changelog rows, %d §7 items, %d bytes of sources)" %
+          (snap_path, len(snap['tasks']), len(snap['deviations']), len(snap['changelog']),
+           snap['s7'] or 0, sum(s['bytes'] for s in doc['sources'])))
+    sys.exit(0)
 
 print("")
 if fails:
