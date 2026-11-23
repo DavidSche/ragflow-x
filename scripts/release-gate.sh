@@ -371,6 +371,7 @@ static tier (always required)
   s17.adjudicate            scripts/release-gate/adjudicate.sh (doc/304 §7 item 25: the adjudication skeleton is derived, the manual documents it, 13 tests named)
   s18.docs-ledger           scripts/release-gate/docs-ledger.sh (doc/304 §7 items 2 and 3: §2/§3/§6/§7 shapes, 301 §14.J tail + derived footer, 305 §2 order)
   s19.docs-ledger-snapshot  scripts/release-gate/docs-ledger-snapshot.sh (doc/304 §7 item 26: the tracked ledger snapshot, sha256 freshness, selftest refuses 6 mutations)
+  s21.blind-packet          scripts/release-gate/blind-packet.sh (doc/304 §4 E112 / §7 item 36: the annotator reads a packet with no prior_*/gold_*, 11 named tests, 4 selftest mutations)
   s10.changelog             CHANGELOG.md carries the --version section
   s11.release-notes         .github/release-notes/<version>.md (optional, reported)
 build tier (required when selected)
@@ -508,6 +509,14 @@ if tier_selected static; then
   # documents wherever they exist. Without this line, "CI is green" would keep meaning "the
   # ledger was not there to check", which is the gap item 26 named.
   run_check "s19.docs-ledger-snapshot" "static" 1 "tracked ledger snapshot: schema/closed sets/order + sha256 freshness (doc/304 §7 item 26)"     bash scripts/release-gate/docs-ledger-snapshot.sh
+
+  # doc/304 §4 E112 named its own gap: the packet rule was held by `go test` alone, and the
+  # gate's only goldtool row (`s17.adjudicate`) runs `-run TestAdjudicate`, so eleven blind
+  # tests could be deleted without turning anything red. This row is the reader. It holds the
+  # tests, the two flags on `--help`, the two refusals in the code, and the manual sentence
+  # that says what to read instead of what to ignore — and its selftest proves each of the
+  # four can fail, including "the packet silently stops stripping".
+  run_check "s21.blind-packet" "static" 1 "annotation packet: no prior_*/gold_* key, the stub verifies it before writing (doc/304 §4 E112, §7 item 36)"     bash scripts/release-gate/blind-packet.sh
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'

@@ -55,9 +55,10 @@ usage:
   goldtool pool-material --in pool.jsonl [--quiet]
   goldtool sample   --pool pool.jsonl --out worksheet.jsonl [--n 120]
                     [--strategy random|stratified --stratum K --targets "k=n,..."]
-                    [--seed N] [--allow-short]
+                    [--seed N] [--allow-short] [--blind-out PACKET.jsonl]
   goldtool validate --gold FILE.jsonl [--labels FILE.jsonl] [--strict-coverage]
   goldtool labels   --stub --worksheet worksheet.jsonl --annotator NAME --out labels-NAME.jsonl
+                    [--packet PACKET.jsonl]   # the file the annotator reads (no prior_*/gold_*)
   goldtool labels   --check --worksheet worksheet.jsonl --labels labels-NAME.jsonl
   goldtool adjudicate --stub --worksheet worksheet.jsonl --labels-a a.jsonl --labels-b b.jsonl
                     --out adjudication.jsonl
