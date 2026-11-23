@@ -207,7 +207,14 @@ expect_gate "prefix is not a shorthand: the id list is printed" 2 "s16.probes-se
 expect_gate "--only names an unknown id: exit 2" 2 "names no check in this file: s99.nope"   -- --tier static --only s99.nope
 expect_gate "--skip names an unknown id: exit 2" 2 "names no check in this file: s99.nope"   -- --tier static --skip s99.nope
 expect_gate "--only X --skip X: empty selection, exit 2" 2 "selected 0 checks out of"   -- --tier static --only s18.docs-ledger --skip s18.docs-ledger
-expect_gate "a normal selection still runs exactly what it names" 0 "required 2/2 passed"   -- --tier static --only s18.docs-ledger,s19.docs-ledger-snapshot
+# The two ids below are chosen for what they *do not* need: `s19` reads a snapshot that is
+# in the checkout, and `s16` reads the probes, so both answer the same way in a tree with
+# `doc/` and in a clean clone — which is where CI runs this suite (`.gitignore:91`).
+# Naming `s18` here was the first version of this case and it was subtly wrong: in a clean
+# clone `s18` exits 3, the gate records FAIL (not N/A, because this suite does not pass
+# `--ci`), and the case failed for every reader who does not carry `doc/` — a selftest that
+# only passes on the author's machine is the failure mode it exists to catch.
+expect_gate "a normal selection still runs exactly what it names" 0 "required 2/2 passed"   -- --tier static --only s16.probes-selfcheck,s19.docs-ledger-snapshot
 
 # Deselect the entire static tier. The ids come from `--list`, not from a list typed here,
 # so adding a check cannot quietly turn this case into a partial run.
