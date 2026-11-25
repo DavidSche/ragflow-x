@@ -769,3 +769,211 @@ func TestP0_PG_007_PostgresAlertDeliveryLifecycleIsRestartableAndTenantScoped(t 
 		t.Fatalf("resolved deliveries remain compensable: items=%+v err=%v", compensable, err)
 	}
 }
+
+// TestPostgresCostAttributionOrdersByAggregatedTokens pins the knowledge-ops
+// cost-attribution aggregate to PostgreSQL: the ORDER BY must sort on the SUM()
+// outputs, because referencing the bare tokens_in/tokens_out columns is rejected
+// under GROUP BY (SQLSTATE 42803). SQLite accepts it, so only this contract test
+// catches a regression that would 500 the operations board in production.
+func TestPostgresCostAttributionOrdersByAggregatedTokens(t *testing.T) {
+	store := newPostgresContractStore(t)
+	ctx := context.Background()
+	tenantID := id.New()
+	now := time.Now().UTC()
+	seed := []model.CostMetric{
+		{RequestID: id.New(), TenantID: tenantID, UserID: id.New(), Date: "2026-11-16",
+			XDatasetID: "dataset-small", TokensIn: 10, TokensOut: 5, CreatedAt: now},
+		{RequestID: id.New(), TenantID: tenantID, UserID: id.New(), Date: "2026-11-16",
+			XDatasetID: "dataset-large", TokensIn: 100, TokensOut: 50, CreatedAt: now},
+	}
+	for index := range seed {
+		if _, err := store.RecordCostMetric(ctx, &seed[index]); err != nil {
+			t.Fatalf("record cost metric %d: %v", index, err)
+		}
+	}
+
+	rows, err := store.SummarizeCostAttribution(ctx, tenantID, false, "2026-11-16", "2026-11-16", "")
+	if err != nil {
+		t.Fatalf("summarize cost attribution: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2 (%+v)", len(rows), rows)
+	}
+	if rows[0].DatasetID != "dataset-large" {
+		t.Fatalf("first row = %q, want dataset-large (ordered by total tokens desc)", rows[0].DatasetID)
+	}
+}
+
+// TestPostgresAggregateReadPathsExecute runs every repository read that aggregates
+// (COUNT/SUM with GROUP BY, or ORDER BY over aggregate outputs) against PostgreSQL.
+//
+// SQLite silently accepts a projection or ordering expression that PostgreSQL rejects
+// with SQLSTATE 42803 ("column ... must appear in the GROUP BY clause or be used in
+// an aggregate function"), so SQLite unit tests cannot prove these statements are
+// valid. That is exactly how the knowledge-ops board's cost-attribution query shipped
+// broken: green suite, 500 in production. A bare column added to any query below now
+// fails here instead of on a deployed board.
+func TestPostgresAggregateReadPathsExecute(t *testing.T) {
+	store := newPostgresContractStore(t)
+	ctx := context.Background()
+	tenantID := id.New()
+	now := time.Now().UTC()
+	day := now.Format("2006-01-02")
+	windowFrom, windowTo := now.AddDate(0, 0, -30), now.Add(time.Minute)
+
+	costs := []model.CostMetric{
+		{RequestID: id.New(), TenantID: tenantID, UserID: id.New(), ChatID: "chat-a", Date: day,
+			XDatasetID: "dataset-small", TokensIn: 10, TokensOut: 5, CreatedAt: now},
+		{RequestID: id.New(), TenantID: tenantID, UserID: id.New(), ChatID: "chat-a", Date: day,
+			XDatasetID: "dataset-large", TokensIn: 100, TokensOut: 50, CreatedAt: now},
+	}
+	for index := range costs {
+		if _, err := store.RecordCostMetric(ctx, &costs[index]); err != nil {
+			t.Fatalf("record cost metric %d: %v", index, err)
+		}
+	}
+	events := []model.KnowledgeOpsEvent{
+		{RequestID: id.New(), TenantID: tenantID, AppType: "assistant", AppID: "assistant-a",
+			Question: "how do I onboard", Status: model.KnowledgeOpsCompleted, CitationsCount: 2,
+			DurationMs: 120, TokensIn: 10, TokensOut: 4, UserID: id.New(), CreatedAt: now},
+		{RequestID: id.New(), TenantID: tenantID, AppType: "assistant", AppID: "assistant-a",
+			Question: "how do I onboard", Status: model.KnowledgeOpsNoAnswer, CitationsCount: 0,
+			DurationMs: 200, TokensIn: 12, TokensOut: 3, UserID: id.New(), CreatedAt: now},
+	}
+	for index := range events {
+		if err := store.UpsertKnowledgeOpsEvent(ctx, &events[index]); err != nil {
+			t.Fatalf("record knowledge ops event %d: %v", index, err)
+		}
+	}
+	governance := []model.DocumentGovernance{
+		{ID: id.New(), TenantID: tenantID, DatasetID: "dataset-small", DocumentID: "doc-a",
+			Level: model.GovernanceLevelInternal, Authority: model.GovernanceDefaultAuthority,
+			Status: model.GovernanceStatusPublished, Source: model.GovernanceSourceManual,
+			ApprovalState: model.GovernanceApprovalApproved, CreatedBy: id.New(),
+			CreatedAt: now, UpdatedAt: now},
+		{ID: id.New(), TenantID: tenantID, DatasetID: "dataset-large", DocumentID: "doc-b",
+			Level: model.GovernanceLevelConfidential, Authority: model.GovernanceDefaultAuthority,
+			Status: model.GovernanceStatusPublished, Source: model.GovernanceSourceManual,
+			ApprovalState: model.GovernanceApprovalPending, CreatedBy: id.New(),
+			CreatedAt: now, UpdatedAt: now},
+	}
+	for index := range governance {
+		if err := store.UpsertDocumentGovernance(ctx, &governance[index]); err != nil {
+			t.Fatalf("record document governance %d: %v", index, err)
+		}
+	}
+
+	paths := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{"knowledge ops summary", func(t *testing.T) {
+			summary, err := store.KnowledgeOpsSummary(ctx, tenantID, false, day, day)
+			if err != nil {
+				t.Fatalf("summary: %v", err)
+			}
+			if summary == nil {
+				t.Fatal("nil summary")
+			}
+		}},
+		{"cost attribution", func(t *testing.T) {
+			rows, err := store.SummarizeCostAttribution(ctx, tenantID, false, day, day, "")
+			if err != nil {
+				t.Fatalf("attribution: %v", err)
+			}
+			if len(rows) != 2 {
+				t.Fatalf("rows = %d, want 2 (%+v)", len(rows), rows)
+			}
+		}},
+		{"top queries", func(t *testing.T) {
+			rows, err := store.TopKnowledgeQueries(ctx, tenantID, false, day, day, 10)
+			if err != nil {
+				t.Fatalf("top queries: %v", err)
+			}
+			if len(rows) != 1 || rows[0].Requests != 2 {
+				t.Fatalf("rows = %+v, want the single question asked twice", rows)
+			}
+		}},
+		{"operational attribution", func(t *testing.T) {
+			rows, err := store.SummarizeOperationsByAttribution(ctx, tenantID, false, OperationalReportFilter{
+				DateFrom: day, DateTo: day,
+			})
+			if err != nil {
+				t.Fatalf("operational attribution: %v", err)
+			}
+			if len(rows) != 1 {
+				t.Fatalf("rows = %d, want 1 (%+v)", len(rows), rows)
+			}
+		}},
+		{"answer quality counts", func(t *testing.T) {
+			if _, err := store.AnswerQualityCounts(ctx, tenantID, false, windowFrom, windowTo); err != nil {
+				t.Fatalf("answer quality: %v", err)
+			}
+		}},
+		{"document governance list", func(t *testing.T) {
+			items, total, err := store.ListDocumentGovernance(ctx, tenantID, DocumentGovernanceFilter{}, 1, 10)
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			if total != 2 || len(items) != 2 {
+				t.Fatalf("total = %d, items = %d, want 2 and 2", total, len(items))
+			}
+			for _, item := range items {
+				if item.ID == "" || item.DatasetID == "" {
+					t.Fatalf("paging read returned a non-row projection: %+v", item)
+				}
+			}
+		}},
+		{"template instance last used", func(t *testing.T) {
+			if _, err := store.ListTemplateInstanceLastUsed(ctx, tenantID); err != nil {
+				t.Fatalf("last used: %v", err)
+			}
+		}},
+		{"answer activity by assistant", func(t *testing.T) {
+			if _, err := store.AnswerActivityByAssistant(ctx, tenantID, []string{"assistant-a"}, windowFrom); err != nil {
+				t.Fatalf("answer activity: %v", err)
+			}
+		}},
+		{"team project counts", func(t *testing.T) {
+			if _, err := store.TeamProjectCounts(ctx, []string{"team-a"}); err != nil {
+				t.Fatalf("team project counts: %v", err)
+			}
+		}},
+		{"model provider resource counts", func(t *testing.T) {
+			if _, _, err := store.CountModelProviderResourcesForScope(ctx, false, []string{tenantID}); err != nil {
+				t.Fatalf("provider counts: %v", err)
+			}
+		}},
+		{"knowledge task summary", func(t *testing.T) {
+			if _, err := store.KnowledgeTaskSummary(ctx, tenantID, false); err != nil {
+				t.Fatalf("task summary: %v", err)
+			}
+		}},
+		{"parse task status summary", func(t *testing.T) {
+			if _, err := store.ParseTaskStatusSummary(ctx, tenantID); err != nil {
+				t.Fatalf("parse summary: %v", err)
+			}
+		}},
+		{"cost metric by chat", func(t *testing.T) {
+			if _, err := store.SumCostMetricByChat(ctx, tenantID, "chat-a"); err != nil {
+				t.Fatalf("chat usage: %v", err)
+			}
+		}},
+		{"assurance settled tokens", func(t *testing.T) {
+			if _, _, err := store.SumAssuranceSettledTokens(ctx, tenantID, now.Format("2006-01")); err != nil {
+				t.Fatalf("settled tokens: %v", err)
+			}
+		}},
+		{"knowledge impact", func(t *testing.T) {
+			if _, err := store.GetKnowledgeImpactFacts(ctx, tenantID, "dataset-small"); err != nil {
+				t.Fatalf("impact facts: %v", err)
+			}
+			if _, _, _, _, err := store.GetKnowledgeImpactAffectedLists(ctx, tenantID, "dataset-small"); err != nil {
+				t.Fatalf("impact lists: %v", err)
+			}
+		}},
+	}
+	for _, path := range paths {
+		t.Run(path.name, path.run)
+	}
+}

@@ -77,8 +77,13 @@ func (s *store) ListDocumentGovernance(
 	}
 	var items []model.DocumentGovernance
 	var total int64
-	q.Group("id") // ensure count stays per-row even with the unique index pair
-	if err := q.Count(&total).Error; err != nil {
+	// The count must stay per-row even with the paired unique index, so the GROUP BY
+	// applies to the count only. Handing it to the paging read as well would emit
+	// `SELECT * ... GROUP BY id`, which PostgreSQL tolerates only because id is the
+	// primary key (functional dependency) and which would fail as soon as this query
+	// gains a join. Session(&gorm.Session{}) gives the count a copy of the conditions
+	// instead of sharing the builder with the read below.
+	if err := q.Session(&gorm.Session{}).Group("id").Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	offset, limit := paginate(page, pageSize)

@@ -30,7 +30,6 @@ import { loadBranding } from "../lib/branding";
 import { BrandLogo, BrandName } from "../components/BrandIdentity";
 import {
   NAVIGATION_VIEW_DEFAULT_EXPANDED,
-  NAVIGATION_VIEW_PROFILES,
   resolveNavigationGroups,
   resolveNavigationView,
 } from "../lib/navigationRoles";
@@ -53,7 +52,6 @@ export function AppSidebar() {
     ),
     [identityRole, permissionsData],
   );
-  const profile = NAVIGATION_VIEW_PROFILES[view];
   const groups = resolveNavigationGroups(
     view,
     Object.keys(resources ?? {}).filter((name) => resources[name]?.hasList),
@@ -94,14 +92,14 @@ export function AppSidebar() {
               asChild
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
+              {/* The brand lockup carries only the product's own identity. The
+                  view label (平台管理员视图 / …) used to sit under the name and was
+                  clipped in a 256px sidebar; the view is already expressed by the
+                  navigation groups themselves and by `data-view`, so it is not
+                  repeated here. */}
               <LinkBase to="/">
                 <BrandLogo />
-                <span className="flex flex-col">
-                  <BrandName />
-                  <span className="text-xs font-normal text-sidebar-foreground/70">
-                    {translate(profile.labelKey)}
-                  </span>
-                </span>
+                <BrandName />
               </LinkBase>
             </SidebarMenuButton>
           </SidebarMenuItem>

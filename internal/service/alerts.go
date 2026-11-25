@@ -15,12 +15,22 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/notify"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
 // RecordAlert implements notify.Sink. Persistence failures are logged by the
 // hub and do not block approval facts or outbound webhook delivery.
 func (s *Service) RecordAlert(ctx context.Context, event notify.Event) error {
+	// Only the hub fills in a missing event ID. Emitters that call the sink
+	// directly (the dataset/document reconcilers) do not, and an empty primary
+	// key made the insert collide with every previous anonymous alert
+	// (CreateAlertEvent is ON CONFLICT (id) DO NOTHING): the worklist kept one
+	// unreachable row whose `id` rendered as "", so "claim" posted to
+	// /alerts//claimed and every later alert was silently dropped.
+	if event.ID == "" {
+		event.ID = id.New()
+	}
 	tenantID := alertTenantID(event)
 	occurredAt := event.OccurredAt
 	if occurredAt.IsZero() {
@@ -420,6 +430,28 @@ func manualAlertDeliveryLeaseOwner(actor string) string {
 // filter across tenants.
 func (s *Service) ListAlerts(ctx context.Context, tenantID string, scopeAll bool, page, pageSize int, filter repository.AlertFilter) ([]model.AlertEvent, int64, error) {
 	return s.Store.ListAlertEvents(ctx, tenantID, scopeAll, page, pageSize, filter)
+}
+
+// AlertActorNames resolves the user IDs stored on alerts (acked_by) to display
+// names. The worklist used to show the raw 32-char user ID, which is not
+// something an operator can act on; unknown/removed users are left out so the
+// caller can fall back to the ID.
+func (s *Service) AlertActorNames(ctx context.Context, ids []string) map[string]string {
+	names := make(map[string]string, len(ids))
+	for _, userID := range ids {
+		if userID == "" {
+			continue
+		}
+		if _, done := names[userID]; done {
+			continue
+		}
+		user, err := s.Store.GetUser(ctx, userID)
+		if err != nil || user == nil || user.Username == "" {
+			continue
+		}
+		names[userID] = user.Username
+	}
+	return names
 }
 
 // UpdateAlertStatus marks an alert read or claims it for operations.

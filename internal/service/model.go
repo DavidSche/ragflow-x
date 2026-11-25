@@ -1025,10 +1025,24 @@ type CreateModelRouteRequest struct {
 	TargetModel string
 }
 
+// validateModelRouteNames 拒掉「看着有值、其实当不了标识」的别名与目标模型（304 §4 E95）。
+//
+// 只判空白不够：`" Qwen3.8-27B"` 与 `"Qwen3.8-27B"` 是两条永远匹配不上的路由，
+// 而配置页上两者看起来一模一样。所以带上首尾空白的也拒，让人现在就改。
+func validateModelRouteNames(alias, target string) error {
+	if strings.TrimSpace(alias) == "" || strings.TrimSpace(target) == "" {
+		return httperr.BadRequest(40031, "provider_id, model_alias and target_model are required (blank values are not identifiers)")
+	}
+	if alias != strings.TrimSpace(alias) || target != strings.TrimSpace(target) {
+		return httperr.BadRequest(40031, "model_alias and target_model must not have leading or trailing whitespace")
+	}
+	return nil
+}
+
 // CreateModelRoute creates a routing rule under a tenant's provider.
 func (s *Service) CreateModelRoute(ctx context.Context, tenantID string, req CreateModelRouteRequest) (*model.ModelRoute, error) {
-	if req.ProviderID == "" || req.ModelAlias == "" || req.TargetModel == "" {
-		return nil, httperr.BadRequest(40031, "provider_id, model_alias and target_model are required")
+	if err := validateModelRouteNames(req.ModelAlias, req.TargetModel); err != nil {
+		return nil, err
 	}
 	p, err := s.Store.GetModelProvider(ctx, tenantID, req.ProviderID)
 	if err != nil {
@@ -1069,6 +1083,18 @@ func (s *Service) UpdateModelRoute(ctx context.Context, tenantID, id string, req
 	pin, err := s.ValidateEnterpriseModelRoutePin(ctx, r)
 	if err != nil {
 		return nil, err
+	}
+	if req.ModelAlias != "" || req.TargetModel != "" {
+		alias, target := r.ModelAlias, r.TargetModel
+		if req.ModelAlias != "" {
+			alias = req.ModelAlias
+		}
+		if req.TargetModel != "" {
+			target = req.TargetModel
+		}
+		if err := validateModelRouteNames(alias, target); err != nil {
+			return nil, err
+		}
 	}
 	if pin != nil && req.TargetModel != "" && req.TargetModel != r.TargetModel {
 		return nil, httperr.BadRequest(40031, "pinned model route target cannot change")

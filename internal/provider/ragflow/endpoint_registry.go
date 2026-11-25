@@ -135,8 +135,9 @@ var endpointRegistry = []EndpointRecord{
 	// v1.0.0 has no per-model chat endpoint (the old
 	// `POST /providers/{p}/instances/{i}/models/{m}` answers 404 on the live
 	// engine, probed 2026-11-18), and this is the only route that answers a bare
-	// prompt. See HTTPClient.ChatToModel for the live evidence.
-	{Method: "POST", Path: "/chat/completions", Stability: EndpointDocumented, Evidence: "docs §Converse with chat assistant (legacy chats/{id}/completions deprecated); also the direct-model form `{model,messages}` used by ChatToModel — live-verified 2026-11-18 on 4.151: 200 with `{code:0,data:{answer}}`, while every `/providers/{p}/instances/{i}/models/{m}` POST answered 404", ClientMethods: []string{"ChatCompletion", "StreamChatCompletion", "ChatToModel"}, UsedByCapability: []string{"chat", "stream", "references"}, MaxVerified: "v1.0.0"},
+	// prompt. See HTTPClient.ChatToModel for the live evidence, including the
+	// 2026-11-24 probe showing that `model` is ignored on v1.0.0.
+	{Method: "POST", Path: "/chat/completions", Stability: EndpointDocumented, Evidence: "docs §Converse with chat assistant (legacy chats/{id}/completions deprecated); also the direct-model form `{model,messages}` used by ChatToModel — live-verified 2026-11-18 on 4.151: 200 with `{code:0,data:{answer}}`, while every `/providers/{p}/instances/{i}/models/{m}` POST answered 404; 2026-11-24 the same route answered `{model:\"does-not-exist-xyz\"}` with 200 and a real answer, so on v1.0.0 `model` selects nothing and the tenant default chat model answers", ClientMethods: []string{"ChatCompletion", "StreamChatCompletion", "ChatToModel"}, UsedByCapability: []string{"chat", "stream", "references"}, MaxVerified: "v1.0.0"},
 
 	// ── Temporary upload (documented via deprecated alias table) ──
 	{Method: "POST", Path: "/documents/upload", Stability: EndpointDocumented, Evidence: "docs deprecated table: POST /v1/document/upload_info -> POST /api/v1/documents/upload", ClientMethods: []string{"UploadChatFile"}, UsedByCapability: []string{"chat"}, MaxVerified: "v1.0.0"},

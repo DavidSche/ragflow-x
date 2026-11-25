@@ -107,13 +107,21 @@ export const LoginPage = (props: { redirectTo?: string }) => {
     <div className="min-h-screen flex items-center justify-center px-6" aria-label="登录页面">
       <div className="w-full max-w-sm space-y-8">
         <div className="flex flex-col items-center gap-3 text-center">
+          {/* Same rule as the in-app lockup: height 40px, width follows the
+              file's aspect ratio (a wordmark must not be squeezed into a square),
+              capped so a very wide logo still leaves room for the name. */}
           <div className="flex items-center gap-2 text-lg font-semibold">
             {brand.logo ? (
-              <img src={brand.logo} alt={brand.name} className="h-8 w-8 object-contain" />
+              <img
+                src={brand.logo}
+                alt={brand.name}
+                decoding="async"
+                className="h-10 w-auto max-w-[220px] shrink-0 object-contain"
+              />
             ) : (
-              <Shell className="size-6" />
+              <Shell className="size-8" />
             )}
-            {brand.name}
+            <span className="min-w-0 break-words">{brand.name}</span>
           </div>
           <p className="text-sm text-muted-foreground">
             企业级 RAG 控制面与接入网关

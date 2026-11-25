@@ -14,6 +14,7 @@ import {
 } from "@/components/admin";
 import { IconButtonWithTooltip } from "@/components/admin/icon-button-with-tooltip";
 import { PLATFORM_TENANT_ID } from "@/lib/tenant";
+import { loadBranding } from "@/lib/branding";
 import {
   required,
   useListContext,
@@ -62,7 +63,7 @@ const TenantActions = () => {
     <CreateDialog resource="tenants" title={t("tenants.create_title")}>
       <TextInput source="name" label={t("tenants.name")} validate={required()} />
       <SelectInput source="status" label={t("tenants.status")} choices={statusChoices} />
-      <TextInput source="brand_name" label={t("tenants.brand_name")} />
+      <TextInput source="brand_name" label={t("tenants.brand_name")} maxLength={128} />
       <LogoUploadInput source="brand_logo" label="Logo" />
     </CreateDialog>
   );
@@ -154,6 +155,11 @@ const EditTenantCell = () => {
       notify(t("tenants.updated"), { type: "success" });
       setOpen(false);
       qc.invalidateQueries({ queryKey: ["tenants"] });
+      // The brand config page re-seeds the shell from the PUT response; the
+      // workspace editor wrote the same fields through a different endpoint, so
+      // refresh the shell's branding store too — otherwise editing your own
+      // workspace logo/name leaves the sidebar stale until a full reload.
+      void loadBranding();
     } catch (err) {
       notify(err instanceof ApiError ? err.displayMessage : t("tenants.update_fail"), { type: "error" });
     } finally {
@@ -191,8 +197,9 @@ const EditTenantCell = () => {
               </select>
             </div>
             <FormField label={t("tenants.brand_name")} error={brandNameField.error}>
-              <Input {...brandNameField.inputProps} />
+              <Input {...brandNameField.inputProps} maxLength={128} />
             </FormField>
+            <p className="-mt-2 text-xs text-muted-foreground">{t("tenants.brand_hint")}</p>
             <div className="space-y-2">
               <Label>Logo</Label>
               <LogoPickerRow value={brandLogo} onChange={setBrandLogo} />

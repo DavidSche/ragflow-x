@@ -197,7 +197,11 @@ func (s *store) SummarizeCostAttribution(
 	if datasetID != "" {
 		query = query.Where("x_dataset_id = ?", datasetID)
 	}
-	if err := query.Order("tokens_in + tokens_out DESC").Find(&rows).Error; err != nil {
+	// Order by the aggregates, not the bare columns: at this point tokens_in /
+	// tokens_out are SUM() outputs, and PostgreSQL rejects an ORDER BY that
+	// references a non-grouped base column (SQLSTATE 42803). SQLite tolerates it,
+	// so this only ever failed on PostgreSQL — i.e. on the real deployments.
+	if err := query.Order("COALESCE(SUM(tokens_in), 0) + COALESCE(SUM(tokens_out), 0) DESC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil

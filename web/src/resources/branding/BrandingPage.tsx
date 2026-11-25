@@ -63,7 +63,12 @@ export const BrandingPage = () => {
       <div className="space-y-6">
         <div className="space-y-2">
           <Label>{t("branding.system_name")}</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="RAGFlow-X" />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={128}
+            placeholder="RAGFlow-X"
+          />
         </div>
         <div className="space-y-2">
           <Label>{t("branding.logo")}</Label>
@@ -84,12 +89,13 @@ export const BrandingPage = () => {
 function BrandBar({ logo, name }: { logo: string; name: string }) {
   return (
     <div className="flex items-center gap-2 px-3 py-2">
+      {/* Mirrors the real sidebar lockup: 28px tall, width by aspect ratio. */}
       {logo ? (
-        <img src={logo} alt={name} className="h-6 w-6 object-contain" />
+        <img src={logo} alt={name} className="h-7 w-auto max-w-28 shrink-0 object-contain" />
       ) : (
-        <Shell className="size-5" />
+        <Shell className="size-7" />
       )}
-      <span className="text-base font-semibold">{name}</span>
+      <span className="min-w-0 truncate text-base font-semibold">{name}</span>
     </div>
   );
 }
@@ -123,12 +129,17 @@ function Preview({
         {centered && (
           <div className="flex justify-center p-6">
             <div className="flex flex-col items-center gap-2">
+              {/* Mirrors the login lockup: 40px tall, width by aspect ratio. */}
               {logo ? (
-                <img src={logo} alt={name} className="h-16 w-16 object-contain" />
+                <img
+                  src={logo}
+                  alt={name}
+                  className="h-10 w-auto max-w-[220px] shrink-0 object-contain"
+                />
               ) : (
-                <Shell className="size-16" />
+                <Shell className="size-8" />
               )}
-              <span className="text-lg font-semibold">{name}</span>
+              <span className="min-w-0 max-w-full break-words text-lg font-semibold">{name}</span>
             </div>
           </div>
         )}

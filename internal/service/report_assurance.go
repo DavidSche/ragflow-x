@@ -167,6 +167,17 @@ type AssurancePolicyResolution struct {
 	Source       map[string]string `json:"policy_source"`
 	Model        string            `json:"assurance_model,omitempty"`
 	ReviewModel  string            `json:"assurance_review_model,omitempty"`
+	// ReviewTransport is `provider_direct` or `engine_chat`: it records *how* the
+	// review question will be asked, because on this engine the answer does not
+	// say which model produced it (doc/304 E125/E127). A run whose transport is
+	// `engine_chat` reports `independence=unknown` by construction.
+	ReviewTransport string `json:"assurance_review_transport,omitempty"`
+	// ReviewTransportReason says *why* that route was chosen, in the operator's
+	// words: "the reference names no instance", "model X is not registered on
+	// instance Y", … Without it a run that silently fell back to the engine looks
+	// exactly like a run that was never meant to go direct, and the operator's only
+	// recourse is to guess which of the four gates refused (doc/304 E129).
+	ReviewTransportReason string `json:"assurance_review_transport_reason,omitempty"`
 }
 
 // resolveAssurancePolicy is the ONLY policy resolver (doc/301 §7.6 rule 1).
@@ -444,6 +455,27 @@ func (s *Service) TriggerReportAssurance(
 
 	generation := reportGenerationModelOf(revision)
 	review, independence := reportReviewModelOf(policy, generation)
+	// Freeze the route with the policy (doc/304 E127). Resolving here rather than
+	// only in the worker means the *audit row and the API view* carry the route
+	// before any money is spent, and a run that cannot address its reviewer
+	// directly says so at creation instead of after the fact.
+	if review.ModelID == "" {
+		// No reviewer configured: no model is asked, so there is no route to freeze —
+		// but "no route" must be *stated*, or the audit row is silent about the one
+		// question it exists to answer (doc/304 E129).
+		policy.ReviewTransport = assuranceTransportNone
+		policy.ReviewTransportReason = "no review model configured: the mechanical layers decide alone"
+	} else {
+		route := s.resolveAssuranceReviewRoute(ctx, tenantID, review)
+		// `reportReviewModelOf` compared two strings; the engine route cannot show
+		// that they describe the answerer (E125), so the claim weakens to `unknown`
+		// here — the one place allowed to do it.
+		independence = assuranceIndependenceFor(independence, route)
+		policy.ReviewTransport = route.Transport
+		// The reason travels with the route: a receipt that says `engine_chat` and
+		// nothing else asks the operator to re-derive which gate refused.
+		policy.ReviewTransportReason = route.Reason
+	}
 	now := time.Now().UTC()
 	policyJSON, err := json.Marshal(policy)
 	if err != nil {
@@ -489,6 +521,8 @@ func (s *Service) TriggerReportAssurance(
 		"requested_policy":    policy.Gate,
 		"release_eligibility": model.ReportAssuranceEligibilityPending,
 		"method_version":      run.MethodVersion, "model_id": run.ReviewModelID,
+		"review_transport": policy.ReviewTransport, "review_transport_reason": policy.ReviewTransportReason,
+		"independence":  run.Independence,
 		"budget_tokens": policy.BudgetTokens,
 	})
 	return assuranceRunViewOf(run), nil

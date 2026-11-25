@@ -70,9 +70,14 @@ func (h *Handler) CreateTenant(c *gin.Context) {
 		return
 	}
 	if req.Status != "" || req.BrandName != "" || req.BrandLogo != "" {
-		if _, err := h.Service.UpdateTenant(ctx, actorID, actorTenantID, t.ID, service.UpdateTenantRequest{
-			Status: req.Status, BrandName: req.BrandName, BrandLogo: req.BrandLogo,
-		}); err != nil {
+		update := service.UpdateTenantRequest{Status: req.Status}
+		if req.BrandName != "" {
+			update.BrandName = &req.BrandName
+		}
+		if req.BrandLogo != "" {
+			update.BrandLogo = &req.BrandLogo
+		}
+		if _, err := h.Service.UpdateTenant(ctx, actorID, actorTenantID, t.ID, update); err != nil {
 			response.Err(c, err)
 			return
 		}
@@ -84,11 +89,11 @@ func (h *Handler) CreateTenant(c *gin.Context) {
 // UpdateTenant edits a tenant's name/status/branding.
 func (h *Handler) UpdateTenant(c *gin.Context) {
 	var req struct {
-		Name                   string `json:"name"`
-		Status                 string `json:"status"`
-		BrandName              string `json:"brand_name"`
-		BrandLogo              string `json:"brand_logo"`
-		CompilationTokenBudget *int64 `json:"compilation_token_budget"`
+		Name                   string  `json:"name"`
+		Status                 string  `json:"status"`
+		BrandName              *string `json:"brand_name"`
+		BrandLogo              *string `json:"brand_logo"`
+		CompilationTokenBudget *int64  `json:"compilation_token_budget"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid tenant payload")

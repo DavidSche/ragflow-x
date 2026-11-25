@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -138,6 +139,71 @@ func TestRecordAlertAndLifecycle(t *testing.T) {
 	}
 	if !foundAlertAudit {
 		t.Fatal("alert.claimed audit was not recorded")
+	}
+}
+
+// Emitters that call the sink directly (dataset/document reconcilers) do not
+// set an event ID. An empty ID put the row on the empty primary key, so the
+// first anonymous alert was unreachable and every later one was dropped by
+// ON CONFLICT (id) DO NOTHING.
+func TestRecordAlertMintsMissingIDs(t *testing.T) {
+	svc := newAuthzSvc(t)
+	tenantA, _, _, _ := setupApprovalEnv(t, svc)
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if err := svc.RecordAlert(ctx, notify.Event{
+			Title: "revision impact", Severity: "warn", Type: "knowledge.incremental.impact",
+			TenantID: tenantA, Resource: "dataset", ResourceID: fmt.Sprintf("dataset-%d", i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, total, err := svc.ListAlerts(ctx, tenantA, false, 1, 20, repository.AlertFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Fatalf("anonymous alerts collided: total=%d, want 2", total)
+	}
+	seen := map[string]bool{}
+	for _, item := range items {
+		if item.ID == "" {
+			t.Fatal("alert persisted without an ID; claim/read would post to /alerts//claimed")
+		}
+		if seen[item.ID] {
+			t.Fatalf("duplicate alert ID %q", item.ID)
+		}
+		seen[item.ID] = true
+	}
+}
+
+// The worklist shows a person for 处理人, not a raw 32-char user ID.
+func TestAlertActorNamesResolveUsernames(t *testing.T) {
+	svc := newAuthzSvc(t)
+	tenantA, _, _, _ := setupApprovalEnv(t, svc)
+	ctx := context.Background()
+	users, _, err := svc.Store.ListUsers(ctx, 1, 1, repository.UserFilter{})
+	if err != nil || len(users) == 0 {
+		t.Fatalf("seed user: %v", err)
+	}
+	user := users[0]
+	if err := svc.RecordAlert(ctx, notify.Event{
+		ID: "alert-claim", Title: "failure", Severity: "error", Type: "provider_error",
+		TenantID: tenantA, Resource: "chat", ResourceID: "chat-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateAlertStatus(ctx, tenantA, "alert-claim", false, repository.AlertReview{
+		Status: model.AlertStatusClaimed, Actor: user.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	names := svc.AlertActorNames(ctx, []string{user.ID, "deleted-user"})
+	if names[user.ID] != user.Username {
+		t.Fatalf("resolved name = %q, want %q", names[user.ID], user.Username)
+	}
+	if _, ok := names["deleted-user"]; ok {
+		t.Fatal("unknown user should have no label so the caller can fall back to the ID")
 	}
 }
 

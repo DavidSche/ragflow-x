@@ -2,9 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useCanAccess, useTranslate } from "ra-core";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, unwrap, type ApiEnvelope } from "../../lib/api";
+import {
+  UsageFilterCombobox,
+  UsageFilterSelect,
+  useUsageFilterOptions,
+} from "./UsageFilterSelect";
 
 interface CostMetric {
   id: string;
@@ -63,6 +67,7 @@ export const UsageDetailPanel = () => {
     action: "governance.read",
   });
   const [filters, setFilters] = useState(emptyFilters);
+  const filterOptions = useUsageFilterOptions();
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<CostMetric[]>([]);
   const [total, setTotal] = useState(0);
@@ -104,21 +109,16 @@ export const UsageDetailPanel = () => {
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
-          {(["model", "scenario", "chat_id", "user_id", "key_id"] as const).map((key) => (
-            <Input
-              key={key}
-              aria-label={t(`usage.filter_${key}`)}
-              placeholder={t(`usage.filter_${key}`)}
-              value={filters[key]}
-              onChange={(event) => setFilter(key, event.target.value)}
-            />
-          ))}
+          {/* Dropdowns, because every one of these dimensions is an ID or a
+              closed vocabulary (model, scenario) that the caller should pick
+              from data, not retype. */}
+          <UsageFilterSelect filterKey="model" value={filters.model} options={filterOptions.models} onChange={(value) => setFilter("model", value)} />
+          <UsageFilterSelect filterKey="scenario" value={filters.scenario} options={filterOptions.scenarios} onChange={(value) => setFilter("scenario", value)} />
+          <UsageFilterCombobox filterKey="chat_id" dimension="chats" value={filters.chat_id} options={filterOptions.chats} onChange={(value) => setFilter("chat_id", value)} />
+          <UsageFilterSelect filterKey="user_id" value={filters.user_id} options={filterOptions.users} onChange={(value) => setFilter("user_id", value)} />
+          <UsageFilterSelect filterKey="key_id" value={filters.key_id} options={filterOptions.keys} onChange={(value) => setFilter("key_id", value)} />
           {governanceScope ? (
-            <Input
-              placeholder={t("usage.filter_tenant_id")}
-              value={filters.tenant_id}
-              onChange={(event) => setFilter("tenant_id", event.target.value)}
-            />
+            <UsageFilterSelect filterKey="tenant_id" value={filters.tenant_id} options={filterOptions.tenants} onChange={(value) => setFilter("tenant_id", value)} />
           ) : null}
         </div>
         {loading ? (

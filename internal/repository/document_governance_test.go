@@ -2,8 +2,11 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"gorm.io/gorm/logger"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/db"
@@ -128,6 +131,60 @@ func TestListDocumentGovernanceFiltersAndPagination(t *testing.T) {
 	}
 	if total != 2 || len(page1) != 1 {
 		t.Fatalf("pagination total=2 got total=%d len=%d", total, len(page1))
+	}
+}
+
+// captureSQLLogger records the SQL statements gorm builds. The dialect accepts the
+// grouped read silently (id is the primary key, so PostgreSQL allows the projection
+// through functional dependency), which means only the statement shape can catch a
+// GROUP BY leaking from the count into the paging read.
+type captureSQLLogger struct {
+	logger.Interface
+	stmts []string
+}
+
+func (c *captureSQLLogger) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
+	sql, _ := fc()
+	c.stmts = append(c.stmts, sql)
+}
+
+func TestListDocumentGovernanceGroupsCountOnly(t *testing.T) {
+	gdb, err := db.Open(config.Database{Driver: "sqlite", DSN: dbtest.SQLiteDSN(t, "governance-sql-shape.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrate(gdb); err != nil {
+		t.Fatal(err)
+	}
+	// The statements are captured on a live connection: dry-run leaves the previous
+	// statement's SELECT clause on the builder, so its SQL shape proves nothing here.
+	capture := &captureSQLLogger{}
+	gdb.Logger = capture
+	s := NewStore(gdb)
+	t.Cleanup(func() { _ = s.Close() })
+
+	if _, _, err := s.ListDocumentGovernance(context.Background(), "tenant", DocumentGovernanceFilter{}, 1, 10); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(capture.stmts) != 2 {
+		t.Fatalf("expected count + read statements, got %d: %q", len(capture.stmts), capture.stmts)
+	}
+	var countSQL, readSQL string
+	for _, stmt := range capture.stmts {
+		if strings.Contains(strings.ToUpper(stmt), "GROUP BY") {
+			countSQL = stmt
+		} else {
+			readSQL = stmt
+		}
+	}
+	if countSQL == "" {
+		t.Fatalf("count query lost its GROUP BY: %q", capture.stmts)
+	}
+	if readSQL == "" {
+		t.Fatalf("paging read must not carry GROUP BY: %q", capture.stmts)
+	}
+	if !strings.Contains(strings.ToUpper(readSQL), "ORDER BY") {
+		t.Fatalf("expected the paging read to keep its ORDER BY, got %q", readSQL)
 	}
 }
 

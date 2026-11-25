@@ -138,6 +138,23 @@ func (h *Handler) UsageDetail(c *gin.Context) {
 
 // OperationalAttribution returns quality/usage/cost/latency grouped by the
 // governance context attached to each TraceRun.
+// UsageFilterOptions feeds the report dropdowns with the values present in the
+// usage data (models, scenarios, users, keys, chats, tenants, projects,
+// assistants, releases).
+func (h *Handler) UsageFilterOptions(c *gin.Context) {
+	options, err := h.Service.UsageFilterOptions(
+		c.Request.Context(),
+		c.GetString(middleware.ContextUserID),
+		c.GetString(middleware.ContextTenantID),
+		c.Query("search"),
+	)
+	if err != nil {
+		response.Err(c, err)
+		return
+	}
+	response.OK(c, options)
+}
+
 func (h *Handler) OperationalAttribution(c *gin.Context) {
 	tenantID := c.GetString(middleware.ContextTenantID)
 	userID := c.GetString(middleware.ContextUserID)

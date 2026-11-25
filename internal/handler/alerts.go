@@ -34,7 +34,27 @@ func (h *Handler) ListAlerts(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OKPage(c, out, total, page, pageSize)
+	// The worklist renders a person for "处理人": resolve acked_by to a name and
+	// keep the raw ID as the fallback for deleted users.
+	ids := make([]string, 0, len(out))
+	for _, alert := range out {
+		if alert.AckedBy != "" {
+			ids = append(ids, alert.AckedBy)
+		}
+	}
+	names := h.Service.AlertActorNames(c.Request.Context(), ids)
+	rows := make([]alertRow, len(out))
+	for i, alert := range out {
+		rows[i] = alertRow{AlertEvent: alert, AckedByName: names[alert.AckedBy]}
+	}
+	response.OKPage(c, rows, total, page, pageSize)
+}
+
+// alertRow is the worklist row: the persisted alert plus the resolved name of
+// whoever claimed it.
+type alertRow struct {
+	model.AlertEvent
+	AckedByName string `json:"acked_by_name"`
 }
 
 // ListAlertDeliveries returns the restartable outbound delivery lifecycle.

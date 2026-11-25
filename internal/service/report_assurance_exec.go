@@ -164,6 +164,17 @@ func (s *Service) planReportAssurance(
 func (s *Service) executeReportAssurance(
 	ctx context.Context, run *model.ReportAssuranceRun, plan *reportAssurancePlan,
 ) error {
+	// The evaluator is chosen here rather than inside the loop so a test can hand in
+	// its own and exercise the *pipeline* — the part that decides which columns a
+	// verdict row carries (doc/304 E141). Everything else about the choice (mode,
+	// settings, route) stays in `newReportAssuranceEvaluator`.
+	return s.executeReportAssuranceWith(ctx, run, plan, s.newReportAssuranceEvaluator(ctx, run))
+}
+
+func (s *Service) executeReportAssuranceWith(
+	ctx context.Context, run *model.ReportAssuranceRun, plan *reportAssurancePlan,
+	evaluator reportAssuranceEvaluator,
+) error {
 	now := time.Now().UTC()
 	sectionByID := make(map[string]model.ReportSection, len(plan.Sections))
 	for _, section := range plan.Sections {
@@ -179,7 +190,6 @@ func (s *Service) executeReportAssurance(
 		sectionCitations[citation.SectionID] = append(sectionCitations[citation.SectionID], citation)
 	}
 
-	evaluator := s.newReportAssuranceEvaluator(run)
 	evaluations := make([]model.ReportClaimEvaluation, 0, len(plan.Claims))
 	findings := make([]model.ReportReviewFinding, 0)
 	budget := run.BudgetTokens
@@ -253,6 +263,17 @@ func (s *Service) executeReportAssurance(
 		// is precisely the false certification this pipeline exists to prevent.
 		verdict := model.ReportVerdictAbstained
 		if check.Status != reportQuoteNotFound {
+			// Name the judge *before* the call, not after it succeeds (doc/304 E141).
+			// The row has always been created with `method=deterministic`, and nothing
+			// overwrote it when the semantic layer answered, so a model verdict was
+			// stored as a rule verdict with an empty `model_id` — indistinguishable
+			// from a tier_0 run that never called a model, while `used_tokens > 0` in
+			// the same run contradicted that reading. Stamping here also covers the
+			// failure path below: a call that 503'd was still made by this evaluator,
+			// and the abstain rationale without a model id cannot be attributed.
+			evaluation.Method = evaluator.Method()
+			evaluation.ModelID = evaluator.ModelID()
+			evaluation.PromptHash = evaluator.PromptHash()
 			outcome, tokensIn, tokensOut, cacheHit, cacheSource, err := s.evaluateReportClaim(
 				ctx, evaluator, run, claim, section, plan, check, snapshotID)
 			if err != nil {

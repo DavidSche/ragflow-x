@@ -4,6 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, unwrap, type ApiEnvelope } from "../../lib/api";
+import {
+  UsageFilterCombobox,
+  UsageFilterSelect,
+  useUsageFilterOptions,
+} from "./UsageFilterSelect";
 
 interface OperationalAttributionRow {
   tenant_id: string;
@@ -52,6 +57,7 @@ export const OperationalAttributionPanel = () => {
     action: "governance.read",
   });
   const [filters, setFilters] = useState(emptyFilters);
+  const filterOptions = useUsageFilterOptions();
   const [items, setItems] = useState<OperationalAttributionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -87,15 +93,12 @@ export const OperationalAttributionPanel = () => {
       </CardHeader>
       <CardContent>
         <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
-          {(["project_id", "assistant_id", "assistant_release_id", "scenario"] as const).map((key) => (
-            <Input
-              key={key}
-              aria-label={t(`usage.filter_${key}`)}
-              placeholder={t(`usage.filter_${key}`)}
-              value={filters[key]}
-              onChange={(event) => setFilter(key, event.target.value)}
-            />
-          ))}
+          {/* Attribution dimensions are IDs from the trace ledger; picking them
+              from the data beats asking an operator to paste a 32-char ID. */}
+          <UsageFilterSelect filterKey="project_id" value={filters.project_id} options={filterOptions.projects} onChange={(value) => setFilter("project_id", value)} />
+          <UsageFilterCombobox filterKey="assistant_id" dimension="assistants" value={filters.assistant_id} options={filterOptions.assistants} onChange={(value) => setFilter("assistant_id", value)} />
+          <UsageFilterSelect filterKey="assistant_release_id" value={filters.assistant_release_id} options={filterOptions.releases} onChange={(value) => setFilter("assistant_release_id", value)} />
+          <UsageFilterSelect filterKey="scenario" value={filters.scenario} options={filterOptions.scenarios} onChange={(value) => setFilter("scenario", value)} />
           <Input
             type="date"
             aria-label={t("usage.filter_date_from")}
@@ -109,12 +112,7 @@ export const OperationalAttributionPanel = () => {
             onChange={(event) => setFilter("date_to", event.target.value)}
           />
           {governanceScope ? (
-            <Input
-              aria-label={t("usage.filter_tenant_id")}
-              placeholder={t("usage.filter_tenant_id")}
-              value={filters.tenant_id}
-              onChange={(event) => setFilter("tenant_id", event.target.value)}
-            />
+            <UsageFilterSelect filterKey="tenant_id" value={filters.tenant_id} options={filterOptions.tenants} onChange={(value) => setFilter("tenant_id", value)} />
           ) : null}
         </div>
         {loading ? (

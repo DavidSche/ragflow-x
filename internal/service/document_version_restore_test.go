@@ -92,7 +92,12 @@ func TestRestoreDocumentVersionRepublishesHistoricalVersion(t *testing.T) {
 	if restoredVersion.Status != model.DocumentVersionActive || restoredVersion.Version != 1 || restoredVersion.ContentHash != restored.ContentHash {
 		t.Fatalf("restored version identity/state changed: %+v", restoredVersion)
 	}
-	if restoredVersion.EffectiveTo != nil || restoredVersion.EffectiveFrom.Before(time.Now().UTC().Add(-time.Second)) {
+	// Restore stamps `EffectiveFrom` with `Truncate(time.Second)` (document_version.go),
+	// so the freshest legal value is up to one second *older* than "now" — a 1s window
+	// races the truncation and fails about once every few runs (caught by the release
+	// gate's s07, 2026-11-24). Two seconds keeps the intent ("starts now, not at the
+	// historical 2026-01-01") without the flake.
+	if restoredVersion.EffectiveTo != nil || restoredVersion.EffectiveFrom.Before(time.Now().UTC().Add(-2*time.Second)) {
 		t.Fatalf("restored version effective range = %+v", restoredVersion)
 	}
 	currentVersion, err := svc.Store.GetDocumentVersion(ctx, tenant.ID, current.ID)

@@ -1068,10 +1068,15 @@ func (c *HTTPClient) longFormClient() *http.Client {
 // `chat_id` and replies `{code:0,data:{answer}}` — verified live, same day.
 //
 // The provider/instance pair is kept in the signature because every caller has
-// it and it belongs in the error message, but the engine addresses models by
-// name on this route: two instances registering the same model name are not
-// distinguishable upstream, and the answer carries no model echo. That is an
-// engine limitation, recorded in doc/environment/verification/44 §6.
+// it and it belongs in the error message, and the model name is sent because a
+// later engine version may honour it. On v1.0.0 it does not: the route answers
+// the tenant's **default chat model** whatever `model` says, and the answer
+// carries no model echo. Probed on 4.151 on 2026-11-24 with a deliberately
+// unknown name (`{"model":"does-not-exist-xyz",…}` → 200 + a real answer to
+// the prompt, no upstream log line for the ainet instance, one for the
+// default's instance). Consequence for callers: "we called model X" is not
+// observable here — see doc/304 §4 E125 — so a receipt that reports X describes
+// the configuration, not the model that answered.
 func (c *HTTPClient) ChatToModel(ctx context.Context, providerName, instanceName, modelName, message string, stream, thinking bool) (string, error) {
 	if stream {
 		// The streaming form answers raw SSE, which the envelope parser cannot

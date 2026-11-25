@@ -157,11 +157,16 @@ func parseServiceDate(s string) (time.Time, bool) {
 }
 
 // UpdateTenantRequest carries editable tenant fields.
+//
+// BrandName/BrandLogo are pointers so "not sent" and "cleared" are distinct:
+// an empty string means "inherit the platform branding again", exactly like
+// PUT /branding (which writes the field unconditionally). With plain strings
+// the workspace editor could set a brand but never reset it.
 type UpdateTenantRequest struct {
 	Name                   string
 	Status                 string
-	BrandName              string
-	BrandLogo              string
+	BrandName              *string
+	BrandLogo              *string
 	CompilationTokenBudget *int64
 }
 
@@ -203,11 +208,11 @@ func (s *Service) UpdateTenant(ctx context.Context, actorID, actorTenantID, tena
 		}
 		t.Status = req.Status
 	}
-	if req.BrandName != "" {
-		t.BrandName = req.BrandName
+	if req.BrandName != nil {
+		t.BrandName = strings.TrimSpace(*req.BrandName)
 	}
-	if req.BrandLogo != "" {
-		t.BrandLogo = req.BrandLogo
+	if req.BrandLogo != nil {
+		t.BrandLogo = strings.TrimSpace(*req.BrandLogo)
 	}
 	if req.CompilationTokenBudget != nil {
 		if *req.CompilationTokenBudget < 0 {

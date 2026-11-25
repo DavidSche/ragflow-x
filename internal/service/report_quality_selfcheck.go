@@ -74,8 +74,16 @@ const (
 	qualitySelfCheckEvidenceExpectation = "100%"
 	qualitySelfCheckEvidenceMeans       = "有\"无来源的结论\"漏网"
 
-	qualitySelfCheckCitationCheck       = "`conflict_ref`（候选）出现在 `rgx_report_citation` 的次数"
-	qualitySelfCheckCitationExpectation = "0"
+	// 301 §9.4 row 4 was reworded on 2026-11-24 (第二十次修订摘要) to the criterion that
+	// can actually be evaluated: the original 「`conflict_ref`（候选）出现在
+	// `rgx_report_citation` 的次数 = 0」 named a column that table has never had, and
+	// counted as a violation a state a correct system produces (candidates are frozen
+	// *from* the same section's retrieval results). The reading that replaced it is the
+	// one this file has implemented since Q-4 was written (rule 4 above), so the pair
+	// doc <-> code now says the same thing; the history is kept in 304 E80 / §7 item 22
+	// and 305 §2.16.
+	qualitySelfCheckCitationCheck       = "`rgx_report_citation` 的列能否命名冲突候选（按列名形状），每条引用能否解析到证据快照"
+	qualitySelfCheckCitationExpectation = "0 列可命名候选；悬空快照为 0"
 	qualitySelfCheckCitationMeans       = "证据链被污染"
 
 	qualitySelfCheckAbstainCheck       = "`abstained` 各原因的占比"

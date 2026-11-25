@@ -21,6 +21,8 @@ interface AlertRow {
   detail: string;
   status: string;
   acked_by?: string;
+  /** Server-resolved username for acked_by; empty when the user was removed. */
+  acked_by_name?: string;
   acked_at?: string;
   occurred_at: string;
 }
@@ -32,16 +34,23 @@ const severityColor = (severity: string) =>
       ? "secondary"
       : "outline";
 
+/** Endpoint for a worklist action; the claim route is `/claim`, not `/claimed`. */
+export const alertStatusPath = (id: string, status: "read" | "claimed") =>
+  `/alerts/${id}/${status === "claimed" ? "claim" : "read"}`;
+
 const AlertActions = () => {
   const record = useRecordContext<AlertRow>();
   const notify = useNotify();
   const refresh = useRefresh();
   const t = useTranslate();
-  if (!record || record.status !== "open") return null;
+  // Rows written before migration 189 carry an empty id, which used to build
+  // `/alerts//claimed` and surface as a bare 404. Nothing can be claimed
+  // without a key, so the buttons stay hidden rather than failing.
+  if (!record || !record.id || record.status !== "open") return null;
 
   const update = async (status: "read" | "claimed") => {
     try {
-      await unwrap(api.post(`/alerts/${record.id}/${status}`));
+      await unwrap(api.post(alertStatusPath(record.id, status)));
       notify(t(status === "read" ? "system.alert_marked_read" : "system.alert_claimed"), { type: "success" });
       refresh();
     } catch (error) {
@@ -97,7 +106,12 @@ export const AlertList = () => {
         <DataTable.Col source="title" label={t("system.alert_title")} />
         <DataTable.Col source="resource" label={t("system.alert_resource")} className="hidden md:table-cell" />
         <DataTable.Col source="status" label={t("system.alert_status")} />
-        <DataTable.Col source="acked_by" label={t("system.alert_acked_by")} className="hidden lg:table-cell" render={(row) => row.acked_by || "-"} />
+        <DataTable.Col
+          source="acked_by"
+          label={t("system.alert_acked_by")}
+          className="hidden lg:table-cell"
+          render={(row) => row.acked_by_name || row.acked_by || "-"}
+        />
         <DataTable.Col label="">
           <AlertActions />
         </DataTable.Col>
