@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/obs"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
@@ -65,12 +66,39 @@ func (s *Service) BeginGatewayIdempotency(ctx context.Context, key *model.APIKey
 }
 
 // CompleteGatewayIdempotency marks the in-progress entry for this exact
-// execution request. A failed completion is not retried by the gateway.
+// execution request, and it now has to be able to say whether the request's books
+// were written (doc/304 §4 E147/E148).
+//
+// The rule it enforces is the one E146 showed was missing: `COMPLETED` used to be
+// written unconditionally, after a metering failure that only a log line
+// remembered. The path now resolves the request's metering intent and applies
+// meteringCompletionDecision: `recorded`/`none` complete, `failed` completes only
+// with the intent id that makes the gap recoverable, and an unreadable verdict, an
+// unwritten intent or a `pending` outcome refuse. Refusing keeps the entry
+// IN_PROGRESS, which is the loud failure: the caller's retry re-executes instead of
+// replaying a body whose books nobody can vouch for.
 func (s *Service) CompleteGatewayIdempotency(ctx context.Context, state *GatewayIdempotencyState, requestID, responseRef string) {
 	if state == nil || state.Record == nil || state.Replayed {
 		return
 	}
-	if err := s.Store.CompleteGatewayIdempotency(ctx, state.Record.ID, requestID, responseRef); err != nil {
+	verdict, err := s.meteringVerdict(ctx, state.Record.TenantID, requestID)
+	allowed, reason := meteringCompletionDecision(verdict, err)
+	if !allowed {
+		logger.Error("gateway idempotency completion deferred: "+reason,
+			"id", state.Record.ID, "request_id", requestID, "intent_id", verdict.IntentID,
+			"metering_state", verdict.State, "error", err)
+		ledger := "verdict"
+		if verdict.Unwritten {
+			ledger = "intent"
+		}
+		obs.Get().IncMeteringWriteFailure(state.Record.TenantID, ledger)
+		return
+	}
+	if verdict.State == model.MeteringFailed {
+		logger.Error("gateway request completed with metering failed",
+			"id", state.Record.ID, "request_id", requestID, "intent_id", verdict.IntentID)
+	}
+	if err := s.Store.CompleteGatewayIdempotency(ctx, state.Record.ID, requestID, responseRef, verdict.State, verdict.IntentID); err != nil {
 		logger.Warn("gateway idempotency completion failed", "id", state.Record.ID, "request_id", requestID, "error", err)
 	}
 }

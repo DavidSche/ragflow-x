@@ -463,15 +463,11 @@ func (s *Service) MeterSearchCompletion(ctx context.Context, tenantID, userID, r
 		requestID = id.New()
 	}
 	tOut := tIn / 2
-	date := time.Now().UTC().Format("2006-01-02")
-	_, _ = s.Store.RecordUsage(ctx, &model.QuotaUsage{
-		TenantID: tenantID, UserID: userID, KeyID: "", RequestID: requestID,
-		Date: date, TokensIn: tIn, TokensOut: tOut, Requests: 1,
-	})
-	_, _ = s.Store.RecordCostMetric(ctx, &model.CostMetric{
-		TenantID: tenantID, UserID: userID, RequestID: requestID, KeyID: "",
-		Date: date, Model: "search-app", Scenario: "search", TokensIn: tIn, TokensOut: tOut,
+	s.GatewayMetering(ctx, &model.MeteringIntent{
+		TenantID: tenantID, UserID: userID, RequestID: requestID,
+		Date: time.Now().UTC().Format("2006-01-02"), TokensIn: tIn, TokensOut: tOut, Requests: 1,
+		Model: "search-app", Scenario: "search",
 		EstimatedCost: (float64(tIn) + float64(tOut)) / 1000 * s.EstimatedCostPer1K,
-		Estimated:     tIn+tOut == 0, EstimationPolicyVersion: "v1",
+		Estimated:     tIn+tOut == 0,
 	})
 }

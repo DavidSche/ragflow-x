@@ -40,6 +40,16 @@ type Service struct {
 	HMACKey        []byte
 	RegisterLLM    bool
 	DataDir        string
+	// meteringUnwritten remembers, for the lifetime of this process only, the
+	// request ids whose metering intent row could not be written (doc/304 §4
+	// E148). It exists so the completion path can tell "nothing was owed" from
+	// "the record of what is owed could not be created": both look like `none` in
+	// the intent table, and only the first one may complete. It is deliberately not
+	// the recovery record — that is the intent row. If this process dies before the
+	// completion, the idempotency row stays IN_PROGRESS and the caller's retry is
+	// the recovery, which is why an in-memory window is enough.
+	meteringUnwrittenMu sync.Mutex
+	meteringUnwritten   map[string]time.Time
 	// allowPrivateProviderBaseURL is an explicit deployment exception for
 	// internal LLM gateways. Production internet-facing deployments keep it off.
 	allowPrivateProviderBaseURL bool

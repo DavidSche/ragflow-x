@@ -508,6 +508,10 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	// self-timed from a setting: the plan fixes the cadence, and a setting nothing
 	// reads would be a promise the code does not keep.
 	runner.Register(&gatewayBillingReconcileWorker{svc: s})
+	// The metering recovery sweep (doc/304 §4 E147). Minutes-scale, because a
+	// failed metering write is a served request whose books are missing now; the
+	// replay is idempotent by request_id, so the cadence is cheap.
+	runner.Register(&meteringRecoveryWorker{svc: s})
 	runner.Register(&connectorSyncWorker{svc: s})
 	runner.Register(&connectorRetentionWorker{svc: s})
 	s.SetupApprovalWorker(runner)
@@ -532,6 +536,9 @@ func (s *Service) SetupWorker(cfg WorkerConfig) *Runner {
 	}
 	if _, scheduleErr := s.ScheduleChatCitationAudit(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("citation audit schedule failed", "error", scheduleErr)
+	}
+	if _, scheduleErr := s.ScheduleMeteringRecovery(context.Background(), ""); scheduleErr != nil {
+		logger.Warn("metering recovery schedule failed", "error", scheduleErr)
 	}
 	if _, scheduleErr := s.ScheduleGatewayBillingReconcile(context.Background(), ""); scheduleErr != nil {
 		logger.Warn("gateway billing reconcile schedule failed", "error", scheduleErr)

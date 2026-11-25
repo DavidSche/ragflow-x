@@ -93,6 +93,12 @@ const (
 	// instead of silently ending it, and a day that was never reconciled is exactly
 	// the failure this job exists to make visible.
 	JobKindGatewayBillingReconcile = "gateway_billing_reconcile"
+	// JobKindMeteringRecovery replays metering intents whose ledger write never
+	// landed (doc/304 §4 E147). Minutes-scale rather than daily: a failed write
+	// is a served request whose books are missing *now*, and the replay is
+	// idempotent by `request_id`, so running it often costs nothing while
+	// waiting a day would leave a whole day of gaps in the cost report.
+	JobKindMeteringRecovery = "metering_recovery"
 )
 
 // Job lifecycle states (doc/21 §2).

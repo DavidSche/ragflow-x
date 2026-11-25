@@ -447,6 +447,48 @@ groups:
           description: "At least one daily reconciliation run closed as `failed` in the last 25 hours (doc/301 section 5.10 GW-3). The day is *unreconciled*, not clean: a dataset query or a schema regression failed the run, and `failure_reason` on the run row says which. Re-run it once fixed with `POST /api/v1/system/usage/reconcile?day=YYYY-MM-DD`; the unique `(tenant_id, day)` index makes the re-run safe and returns the stored run if it already finished."
           runbook: "doc/operations/runbooks/GatewayBillingReconcileRunbook.md"
 
+      # Gateway metering integrity (doc/304 §4 E147). Three readings, and they are
+      # three because E146 showed one cannot answer another: "a write failed" is an
+      # event, "intents are still unsettled" is a state, and "the sweep ran" is the
+      # liveness of the repair. An `unsettled == 0` from a sweep that never ran is the
+      # ambiguous zero this family exists to remove.
+      #
+      # The write-failure counter only increments after the built-in retry, so a
+      # single increment already means a served request whose books are missing now.
+
+      - alert: GatewayMeteringWriteFailed
+        expr: "sum by (tenant_id, ledger) (increase(ragflow_x_gateway_metering_write_failure_total{ledger=~\"aggregate|detail\"}[1h])) >= 1"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "A served gateway request could not be metered"
+          description: "At least one metering ledger write failed twice in the last hour (doc/304 section 4 E147), so a request was served with books that are missing or in doubt. `ledger=aggregate` means the daily quota/cost aggregate is short; `ledger=detail` means the per-request cost row is missing (the aggregate landed). The request is not lost: its intent is queued and replayed by the metering recovery sweep, which is idempotent by request id. Read the queue with `GET /api/v1/usage/metering` (the request ids and the stored cause), then confirm the replay with `ragflow_x_gateway_metering_recovered_total`."
+          runbook: "doc/operations/runbooks/GatewayBillingReconcileRunbook.md"
+
+      - alert: GatewayMeteringUnsettled
+        expr: "sum by (tenant_id) (ragflow_x_gateway_metering_unsettled_intents) > 0"
+        for: 30m
+        labels:
+          severity: critical
+          service: ragflow-x
+        annotations:
+          summary: "Metering intents have been unsettled for half an hour"
+          description: "`pending` plus `failed` intents have stayed above zero for 30 minutes (doc/304 section 4 E147). A transient blip is repaired by the request's own retry; half an hour of the same gap means the ledger writes are not recovering on their own. Every one of these rows is a served request that the day's cost report does not contain. Read them with `GET /api/v1/usage/metering` (state, attempts, last_error) and pair this alert with `GatewayMeteringRecoveryStalled`: a stale `unsettled_intents` gauge is not a clean reading."
+          runbook: "doc/operations/runbooks/GatewayBillingReconcileRunbook.md"
+
+      - alert: GatewayMeteringRecoveryStalled
+        expr: "time() - ragflow_x_gateway_metering_sweep_last_success_timestamp_seconds > 900 or absent(ragflow_x_gateway_metering_sweep_last_success_timestamp_seconds)"
+        for: 5m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "The metering recovery sweep is not running"
+          description: "No metering recovery pass has completed in 15 minutes, or the series has never appeared (doc/304 section 4 E147). The sweep is the only path that replays an intent whose ledger write failed, so while it is down the gap stays a gap and `unsettled_intents` is a stale number rather than a current one. Check that the `metering_recovery` job exists and is not stuck (`GET /api/v1/tasks/jobs?kind=metering_recovery`); the job re-arms itself, so a missing job means the last pass failed before rescheduling."
+          runbook: "doc/operations/runbooks/GatewayBillingReconcileRunbook.md"
+
       # Gateway route latency (doc/301 §5.10 GW-2 / T14). Threshold provenance is the
       # measured baseline in tmp/perf/gateway-baseline-*.md — the 2s non-stream budget
       # is the one the probe judges cells against, and the alert exists so a *steady*

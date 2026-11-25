@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -3698,6 +3699,63 @@ var migrations = []Migration{
 			// `(tenant_id, day)` is unique and is the idempotency guard: a replayed
 			// daily job cannot reconcile the same day twice and double-count findings.
 			return tx.AutoMigrate(&model.GatewayBillingReconcileRun{}, &model.GatewayBillingReconcileFinding{})
+		},
+	},
+	{
+		Version: 189,
+		Name:    "alert_event_ids_backfill",
+		Migrate: func(tx *gorm.DB) error {
+			// Alerts written by the reconcilers bypassed the notify hub, so they
+			// reached the sink without an ID and landed under the empty primary
+			// key. The worklist could neither claim nor read them (the buttons
+			// posted to /alerts//claimed) and, because CreateAlertEvent is
+			// ON CONFLICT (id) DO NOTHING, every later anonymous alert was
+			// dropped on the same key. Give the surviving row an ID and re-point
+			// its delivery rows; the service now mints IDs before insert, so this
+			// is a one-shot repair, not an ongoing convention.
+			// Upgrade tests pin a schema version by marking earlier migrations
+			// applied, so the worklist tables may not exist in that rehearsal.
+			if !tx.Migrator().HasTable(&model.AlertEvent{}) {
+				return nil
+			}
+			var orphan model.AlertEvent
+			err := tx.Where("id = ?", "").First(&orphan).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			repaired := id.New()
+			if err := tx.Model(&model.AlertEvent{}).Where("id = ?", "").Update("id", repaired).Error; err != nil {
+				return err
+			}
+			if !tx.Migrator().HasTable(&model.AlertDelivery{}) {
+				return nil
+			}
+			return tx.Model(&model.AlertDelivery{}).Where("alert_event_id = ?", "").Update("alert_event_id", repaired).Error
+		},
+	},
+	{
+		Version: 190,
+		Name:    "metering_intent",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/304 §4 E147: metering becomes a write-ahead intent plus a state,
+			// so a served request can never have books that are silently missing.
+			//
+			// The new table carries `request_id` unique — the same key
+			// `rgx_meter_request` already uses as its primary key — which is what
+			// makes a recovery replay a no-op instead of a double charge.
+			//
+			// `metering_state` on the idempotency ledger is additive with a
+			// `not_tracked` default: every row written before this migration reads
+			// as history, never as `recorded`. Neither change rewrites a book: the
+			// intent describes what is owed, the ledgers stay the only record of
+			// what was booked.
+			if err := tx.AutoMigrate(&model.MeteringIntent{}); err != nil {
+				return err
+			}
+			return tx.AutoMigrate(&model.GatewayIdempotency{})
 		},
 	},
 }

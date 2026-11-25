@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/ragflow-x/ragflow-x/internal/gateway/contract"
 	"github.com/ragflow-x/ragflow-x/internal/model"
+	"github.com/ragflow-x/ragflow-x/internal/notify"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
@@ -477,10 +479,34 @@ func (h *Handler) gatewayModelRoute(c *gin.Context, ctx context.Context, key *mo
 	modelName := gatewayModelName(body)
 	h.RecordAudit(ctx, &model.AuditLog{
 		TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.chat", Resource: "chat", ResourceID: modelName,
-		IP: c.ClientIP(), TraceID: c.GetString("request_id"),
+		DetailJSON: gatewayUpstreamDetail(res.Status), IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 	})
+	if res.Status >= 300 {
+		// doc/304 E146: 14 requests answered 429 by the provider were recorded as
+		// COMPLETED, owed nothing (correct), and were then read back by the nightly
+		// reconciliation as 14 missing metering stamps. The reading was fixed in the
+		// reconciler; the *event* was never surfaced anywhere, which is why a perf run
+		// that hit the provider's rate limit looked like a bookkeeping defect. An
+		// upstream refusal is now an event the operator can see.
+		notify.Emit(ctx, notify.Event{
+			Title: "gateway provider returned an error status", Severity: "warning",
+			TenantID: key.TenantID, Resource: "chat", Type: "provider_error",
+			ResourceID: modelName,
+			Detail: fmt.Sprintf("request %s received HTTP %d from the provider; the request completes with no metering (nothing was served)",
+				requestID, res.Status),
+		})
+	}
 	h.Service.CompleteGatewayIdempotency(ctx, idempotencyState, requestID, string(res.Body))
 	c.Data(res.Status, "application/json", res.Body)
+}
+
+// gatewayUpstreamDetail keeps the audit row useful without copying a whole body: the
+// status is what tells a 429 apart from a served completion.
+func gatewayUpstreamDetail(status int) string {
+	if status >= 300 {
+		return fmt.Sprintf(`{"upstream_status":%d}`, status)
+	}
+	return ""
 }
 
 func gatewayIdempotencyReplay(c *gin.Context, state *service.GatewayIdempotencyState) {

@@ -254,6 +254,23 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 			expression: `sum by (tenant_id) (increase(ragflow_x_gateway_billing_reconcile_runs_total{status="failed"}[25h])) >= 1`,
 			pendingFor: "5m", severity: "warning",
 		},
+		// doc/304 §4 E147 gateway metering integrity. Three readings, pinned
+		// separately because each is a different question: an event (a write failed
+		// after its retry), a state (intents still owed), and the liveness of the
+		// repair path (the sweep ran). Losing the sweep clause would let
+		// `unsettled_intents == 0` mean "nothing owed" when it means "not looked at".
+		"GatewayMeteringWriteFailed": {
+			expression: `sum by (tenant_id, ledger) (increase(ragflow_x_gateway_metering_write_failure_total{ledger=~"aggregate|detail"}[1h])) >= 1`,
+			pendingFor: "5m", severity: "warning",
+		},
+		"GatewayMeteringUnsettled": {
+			expression: `sum by (tenant_id) (ragflow_x_gateway_metering_unsettled_intents) > 0`,
+			pendingFor: "30m", severity: "critical",
+		},
+		"GatewayMeteringRecoveryStalled": {
+			expression: `time() - ragflow_x_gateway_metering_sweep_last_success_timestamp_seconds > 900 or absent(ragflow_x_gateway_metering_sweep_last_success_timestamp_seconds)`,
+			pendingFor: "5m", severity: "warning",
+		},
 		// doc/301 §5.10 GW-2 / T14 gateway route latency. The threshold is the same
 		// 2s the baseline probe judges non-stream cells against; the label is `route`
 		// (gin FullPath, internal/obs/obs.go Middleware) and deliberately not `tenant`.
@@ -275,6 +292,9 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 		"GatewayBillingReconcileMismatch": "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
 		"GatewayBillingReconcileFailed":   "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
 		"GatewayRouteLatencyHigh":         "doc/operations/runbooks/GatewayPerformanceRunbook.md",
+		"GatewayMeteringWriteFailed":      "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
+		"GatewayMeteringUnsettled":        "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
+		"GatewayMeteringRecoveryStalled":  "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
 	}
 	for alert, wantRunbook := range expectedRunbook {
 		rule, exists := rules[alert]
@@ -303,6 +323,21 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 			// Instance-wide health signals (see above).
 			continue
 		case strings.HasPrefix(alert, "GatewayBilling"):
+			if !strings.Contains(rule.Expr, "tenant_id") {
+				t.Fatalf("alert %q must retain the tenant dimension: %s", alert, rule.Expr)
+			}
+			continue
+		case strings.HasPrefix(alert, "GatewayMetering"):
+			// Two of the three are per-tenant — whose books are missing, whose gap is
+			// still open — because one tenant's recovered hour must not mask another's
+			// failed one. The liveness alert is instance-wide by definition: a stopped
+			// sweep is not a tenant's problem, and its metric carries no tenant label.
+			if alert == "GatewayMeteringRecoveryStalled" {
+				if !strings.Contains(rule.Expr, "sweep_last_success") {
+					t.Fatalf("alert %q must read the sweep's liveness series: %s", alert, rule.Expr)
+				}
+				continue
+			}
 			if !strings.Contains(rule.Expr, "tenant_id") {
 				t.Fatalf("alert %q must retain the tenant dimension: %s", alert, rule.Expr)
 			}

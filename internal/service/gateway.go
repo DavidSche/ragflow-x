@@ -33,13 +33,18 @@ func (s *Service) ChatCompletion(ctx context.Context, key *model.APIKey, rawReq 
 		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
 		return nil, err
 	}
+	upstreamReq, err := rewriteModelForUpstream(rawReq, route)
+	if err != nil {
+		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
+		return nil, err
+	}
 	apiKey, err := crypto.Decrypt(s.EncryptKey, provider.APIKeyEnc)
 	if err != nil {
 		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
 		return nil, httperr.New(502, 50220, "failed to decrypt provider credential")
 	}
 	target := strings.TrimRight(provider.BaseURL, "/") + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(rawReq))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(upstreamReq))
 	if err != nil {
 		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
 		return nil, err
@@ -75,13 +80,18 @@ func (s *Service) WriteStreamCompletion(ctx context.Context, key *model.APIKey, 
 		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
 		return 0, "", err
 	}
+	upstreamReq, err := rewriteModelForUpstream(rawReq, route)
+	if err != nil {
+		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
+		return 0, "", err
+	}
 	apiKey, err := crypto.Decrypt(s.EncryptKey, provider.APIKeyEnc)
 	if err != nil {
 		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
 		return 0, "", httperr.New(502, 50220, "failed to decrypt provider credential")
 	}
 	target := strings.TrimRight(provider.BaseURL, "/") + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(rawReq))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(upstreamReq))
 	if err != nil {
 		s.ReleaseGatewayQuotaWithBucket(ctx, key, requestID)
 		return 0, "", err
@@ -113,12 +123,7 @@ func (s *Service) WriteStreamCompletion(ctx context.Context, key *model.APIKey, 
 		if estimated {
 			tIn, tOut = estimateRequestTokens(rawReq), 64
 		}
-		_, _ = s.Store.RecordUsage(ctx, &model.QuotaUsage{
-			TenantID: key.TenantID, UserID: key.UserID, KeyID: key.ID, RequestID: requestID,
-			Date: time.Now().UTC().Format("2006-01-02"), TokensIn: tIn, TokensOut: tOut, Requests: 1,
-			Estimated: estimated, EstimationPolicyVersion: "v1",
-		})
-		s.writeCostMetric(ctx, key, route.ModelAlias, "chat", tIn, tOut, requestID, estimated)
+		s.meterGatewayModelRoute(ctx, key, route.ModelAlias, "chat", tIn, tOut, requestID, estimated)
 		s.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, tIn+tOut)
 	}()
 	for {
@@ -139,12 +144,106 @@ func (s *Service) WriteStreamCompletion(ctx context.Context, key *model.APIKey, 
 	return 200, ct, nil
 }
 
+// countTopLevelKeys 数请求体顶层对象里某个键出现了几次。
+//
+// 用 `json.Decoder` 逐个读顶层键、再把值整体跳过，而不是 `map` 反序列化：后者
+// 对重复键只会留下最后一个，正好把要判的情况吃掉。
+func countTopLevelKeys(raw []byte, key string) (int, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil {
+		return 0, err
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
+		return 0, fmt.Errorf("request body is not a JSON object")
+	}
+	count := 0
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return count, err
+		}
+		name, ok := keyTok.(string)
+		if !ok {
+			return count, fmt.Errorf("request body has a non-string key")
+		}
+		if name == key {
+			count++
+		}
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			return count, err
+		}
+	}
+	return count, nil
+}
+
+// rewriteModelForUpstream replaces the `model` field the client sent with the
+// route's target model, and only that field: every other member of the body is
+// carried through as raw JSON so numbers, nulls and nested objects keep their
+// exact spelling.
+//
+// Why (E91, 304 §4): the route decision belongs to the gateway configuration,
+// not to the caller's request body. Before this, resolveRoute matched
+// ModelAlias and then forwarded the client body verbatim, so TargetModel only
+// participated in the enterprise pin check and never reached the provider — an
+// alias that was not spelled exactly like the upstream model name died with
+// the provider's own `404 model_not_found`, and a caller could pick any
+// upstream model by writing it into `model`.
+//
+// A route without a target model is refused instead of falling back to the
+// client's spelling: guessing here would silently restore the old behaviour
+// (502/50223, non-retryable, re-save the route).
+func rewriteModelForUpstream(rawReq []byte, route *model.ModelRoute) ([]byte, error) {
+	// 空白 target 与缺失一样是「路由没说要跑哪个模型」：`"  "` 会被原样写进
+	// 请求体，上游再以 400 或 404 的形式把它变成一次难排查的失败。
+	if route == nil || strings.TrimSpace(route.TargetModel) == "" {
+		return nil, httperr.New(502, 50223, "model route has no target model")
+	}
+	// 重复键：`{"model":"a","model":"b"}` 在标准库里是「后者胜」——静默选一个，
+	// 于是「跑哪个模型」取决于键的书写顺序，而密钥/审计看到的是另一个。
+	// 这里不猜：数与 1 不等就拒绝（规范化会把歧义变成不报错的行为差异）。
+	modelKeys, err := countTopLevelKeys(rawReq, "model")
+	if err != nil {
+		return nil, httperr.BadRequest(40060, "invalid request body")
+	}
+	if modelKeys != 1 {
+		return nil, httperr.BadRequest(40060, "request body must contain exactly one top-level model field")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(rawReq, &fields); err != nil {
+		return nil, httperr.BadRequest(40060, "invalid request body")
+	}
+	encoded, err := json.Marshal(route.TargetModel)
+	if err != nil {
+		return nil, httperr.New(502, 50223, "model route has no target model")
+	}
+	fields["model"] = encoded
+	upstreamReq, err := json.Marshal(fields)
+	if err != nil {
+		return nil, httperr.BadRequest(40060, "invalid request body")
+	}
+	if route.ModelAlias != route.TargetModel {
+		logger.Info("gateway model route rewrote upstream model",
+			"route_id", route.ID, "client_model", route.ModelAlias, "upstream_model", route.TargetModel)
+	}
+	return upstreamReq, nil
+}
+
 func (s *Service) resolveRoute(ctx context.Context, tenantID string, rawReq []byte) (*model.ModelRoute, *model.ModelProvider, error) {
 	var reqBody struct {
 		Model string `json:"model"`
 	}
 	if err := json.Unmarshal(rawReq, &reqBody); err != nil {
 		return nil, nil, httperr.BadRequest(40060, "invalid request body")
+	}
+	// 重复的顶层 `model` 必须在选路由**之前**就拒掉：`map` 反序列化只留下最后
+	// 一个，于是路由按「b」选中、审计看到「a」，两边都自洽却指向不同模型。
+	// 放在这里而不是只放在转发前，是因为选错路由就已经是一次错误的分发。
+	if modelKeys, err := countTopLevelKeys(rawReq, "model"); err != nil {
+		return nil, nil, httperr.BadRequest(40060, "invalid request body")
+	} else if modelKeys > 1 {
+		return nil, nil, httperr.BadRequest(40060, "request body must contain exactly one top-level model field")
 	}
 	if reqBody.Model == "" {
 		return nil, nil, httperr.BadRequest(40061, "model is required")
@@ -192,12 +291,7 @@ func (s *Service) recordUsage(ctx context.Context, key *model.APIKey, modelName 
 	if estimated {
 		tIn, tOut = estimateRequestTokens(body), 64
 	}
-	_, _ = s.Store.RecordUsage(ctx, &model.QuotaUsage{
-		TenantID: key.TenantID, UserID: key.UserID, KeyID: key.ID, RequestID: requestID,
-		Date: time.Now().UTC().Format("2006-01-02"), TokensIn: tIn, TokensOut: tOut, Requests: 1,
-		Estimated: estimated, EstimationPolicyVersion: "v1",
-	})
-	s.writeCostMetric(ctx, key, modelName, "chat", tIn, tOut, requestID, estimated)
+	s.meterGatewayModelRoute(ctx, key, modelName, "chat", tIn, tOut, requestID, estimated)
 	s.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, tIn+tOut)
 }
 
@@ -233,17 +327,16 @@ func (s *Service) AuthorizeGatewayAgentTarget(ctx context.Context, key *model.AP
 	return nil
 }
 
-// writeCostMetric records the per-request metering detail row used for cost
-// breakdown (C1). It is idempotent by request_id and independent from the
-// daily aggregate.
-func (s *Service) writeCostMetric(ctx context.Context, key *model.APIKey, modelName, scenario string, tIn, tOut int64, requestID string, estimated bool) {
-	if _, err := s.Store.RecordCostMetric(ctx, &model.CostMetric{
+// meterGatewayModelRoute records a model-route gateway request (streaming or not)
+// through GatewayMetering, so the aggregate and the cost detail are written by the
+// same path that persists the intent. It replaced a pair of fire-and-forget writes
+// whose failures only reached a log line (doc/304 §4 E146/E147).
+func (s *Service) meterGatewayModelRoute(ctx context.Context, key *model.APIKey, modelName, scenario string, tIn, tOut int64, requestID string, estimated bool) {
+	s.GatewayMetering(ctx, &model.MeteringIntent{
 		TenantID: key.TenantID, UserID: key.UserID, KeyID: key.ID, RequestID: requestID,
-		Date: time.Now().UTC().Format("2006-01-02"), Model: modelName, Scenario: scenario,
-		TokensIn: tIn, TokensOut: tOut,
+		Date: time.Now().UTC().Format("2006-01-02"), TokensIn: tIn, TokensOut: tOut, Requests: 1,
+		Model: modelName, Scenario: scenario,
 		EstimatedCost: (float64(tIn) + float64(tOut)) / 1000 * s.EstimatedCostPer1K,
-		Estimated:     estimated, EstimationPolicyVersion: "v1",
-	}); err != nil {
-		logger.Warn("metering detail write failed", "tenant_id", key.TenantID, "user_id", key.UserID, "request_id", requestID, "error", err)
-	}
+		Estimated:     estimated,
+	})
 }

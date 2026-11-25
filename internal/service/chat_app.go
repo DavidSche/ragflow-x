@@ -12,7 +12,6 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/notify"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
-	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/sseutil"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 )
@@ -263,24 +262,17 @@ func describeStreamError(raw any) string {
 }
 
 // meterChat records a chat-app request into the daily aggregate and the
-// per-request cost detail, scoped to the key's tenant/user.
+// per-request cost detail, scoped to the key's tenant/user. The write goes through
+// GatewayMetering, which persists the intent first (doc/304 §4 E147): a served
+// request whose books failed is recoverable instead of a rotated-away log line.
 func (s *Service) meterChat(ctx context.Context, key *model.APIKey, chatID, modelName, sessionID string, tIn, tOut int64, requestID string) {
-	date := time.Now().UTC().Format("2006-01-02")
-	if _, err := s.Store.RecordUsage(ctx, &model.QuotaUsage{
+	s.GatewayMetering(ctx, &model.MeteringIntent{
 		TenantID: key.TenantID, UserID: key.UserID, KeyID: key.ID, RequestID: requestID,
-		Date: date, TokensIn: tIn, TokensOut: tOut, Requests: 1,
-	}); err != nil {
-		logger.Warn("metering aggregate write failed", "tenant_id", key.TenantID, "user_id", key.UserID, "request_id", requestID, "error", err)
-	}
-	if _, err := s.Store.RecordCostMetric(ctx, &model.CostMetric{
-		TenantID: key.TenantID, UserID: key.UserID, KeyID: key.ID, RequestID: requestID,
-		Date: date, ChatID: chatID, Model: modelName, Scenario: "chat", SessionID: sessionID,
-		TokensIn: tIn, TokensOut: tOut,
+		Date: time.Now().UTC().Format("2006-01-02"), TokensIn: tIn, TokensOut: tOut, Requests: 1,
+		ChatID: chatID, Model: modelName, Scenario: "chat", SessionID: sessionID,
 		EstimatedCost: (float64(tIn) + float64(tOut)) / 1000 * s.EstimatedCostPer1K,
-		Estimated:     tIn+tOut == 0, EstimationPolicyVersion: "v1",
-	}); err != nil {
-		logger.Warn("metering detail write failed", "tenant_id", key.TenantID, "user_id", key.UserID, "request_id", requestID, "error", err)
-	}
+		Estimated:     tIn+tOut == 0,
+	})
 }
 
 func completionUsage(resp *ragflow.CompletionResponse) (int64, int64) {

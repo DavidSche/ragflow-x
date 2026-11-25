@@ -97,3 +97,33 @@ func TestGatewayStreamErrorSkipsAlreadyReportedFailure(t *testing.T) {
 		t.Fatalf("plain failure must still emit a gateway error frame, wrote %q", sb3.String())
 	}
 }
+
+// TestGatewayUpstreamDetailNamesTheStatus pins the audit half of the E146 reading
+// fix: a served completion records no detail (there is nothing to explain), while
+// an upstream refusal records the status that tells a 429 apart from a 200. Without
+// the status, the only place a rate-limit burst left a trace was the response body.
+func TestGatewayUpstreamDetailNamesTheStatus(t *testing.T) {
+	cases := []struct {
+		status int
+		want   string
+	}{
+		{200, ""},
+		{204, ""},
+		{300, `{"upstream_status":300}`},
+		{429, `{"upstream_status":429}`},
+		{502, `{"upstream_status":502}`},
+	}
+	for _, c := range cases {
+		if got := gatewayUpstreamDetail(c.status); got != c.want {
+			t.Fatalf("gatewayUpstreamDetail(%d) = %q, want %q", c.status, got, c.want)
+		}
+		if c.want != "" {
+			var probe struct {
+				UpstreamStatus int `json:"upstream_status"`
+			}
+			if err := json.Unmarshal([]byte(c.want), &probe); err != nil || probe.UpstreamStatus != c.status {
+				t.Fatalf("detail for %d is not valid JSON carrying the status: %v", c.status, err)
+			}
+		}
+	}
+}

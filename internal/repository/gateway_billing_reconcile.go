@@ -135,13 +135,13 @@ func (s *store) GatewayBillingSnapshot(ctx context.Context, tenantID, day string
 	var idempotency []model.GatewayIdempotency
 	if err := s.WithContext(ctx).Model(&model.GatewayIdempotency{}).
 		Where("tenant_id = ? AND created_at >= ? AND created_at < ?", tenantID, from, to).
-		Select("request_id, status").
+		Select("request_id, status, metering_state").
 		Find(&idempotency).Error; err != nil {
 		return nil, err
 	}
 	for _, row := range idempotency {
 		snapshot.Idempotency = append(snapshot.Idempotency, model.GatewayBillingLedgerRef{
-			RequestID: row.RequestID, Status: row.Status,
+			RequestID: row.RequestID, Status: row.Status, MeteringState: row.MeteringState,
 		})
 	}
 

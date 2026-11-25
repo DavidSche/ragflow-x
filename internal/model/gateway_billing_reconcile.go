@@ -184,6 +184,15 @@ type GatewayBillingLedgerRef struct {
 	RequestID string
 	KeyID     string
 	Status    string
+	// MeteringState is the completed row's answer to "were this request's books
+	// written" (model/metering.go). It is carried into the comparison because
+	// `COMPLETED` alone no longer says whether anything was owed: a request whose
+	// provider answered 4xx/5xx, or an IM channel that never meters, completes with
+	// `none` — and counting that as a missing stamp is how doc/304 E146's 14
+	// `missing_meter` findings were manufactured. An empty value (a row from before
+	// the column existed, read back as `not_tracked`) stays a finding: history cannot
+	// be vouched for.
+	MeteringState string
 }
 
 // GatewayBillingReservationRef is one leaked reservation.

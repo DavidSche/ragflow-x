@@ -85,14 +85,31 @@ func reconcileGatewayBilling(snapshot *model.GatewayBillingSnapshot) gatewayBill
 		out.Checked++
 		switch ref.Status {
 		case model.IdempotencyCompleted:
-			// Served. It must be metered and it must carry a cost row.
+			// Served. What "served" owes depends on the metering state, and that
+			// dependency is the E146 correction: `COMPLETED` used to carry "request
+			// finished, response produced, books written" at once, so the reconciler
+			// read it as "books must exist" and reported every completed request that
+			// owed nothing as a hole in the books.
+			switch ref.MeteringState {
+			case model.MeteringNone:
+				// Nothing was owed (an upstream 4xx/5xx body, an IM channel). The
+				// missing stamp is the answer, not a finding — and the opposite
+				// direction is still checked: a cost row for a request that owed
+				// nothing is a charge nobody can justify.
+				if _, ok := charged[ref.RequestID]; ok {
+					add(model.GatewayBillingFindingChargedAfterFailure, ref.RequestID, ref.KeyID,
+						"completed request with metering_state=none carries a cost row")
+				}
+				continue
+			}
 			if _, ok := metered[ref.RequestID]; !ok {
-				add(model.GatewayBillingFindingMissingMeter, ref.RequestID, "",
-					"completed request has no metering stamp")
+				add(model.GatewayBillingFindingMissingMeter, ref.RequestID, ref.KeyID,
+					fmt.Sprintf("completed request has no metering stamp (metering_state=%s)",
+						meteringStateOrNotTracked(ref.MeteringState)))
 				continue
 			}
 			if _, ok := charged[ref.RequestID]; !ok {
-				add(model.GatewayBillingFindingMissingCost, ref.RequestID, "",
+				add(model.GatewayBillingFindingMissingCost, ref.RequestID, ref.KeyID,
 					"metered request has no cost row")
 			}
 		case model.IdempotencyFailed:
@@ -162,6 +179,16 @@ func reconcileGatewayBilling(snapshot *model.GatewayBillingSnapshot) gatewayBill
 // findings manufactured by the clock rather than by a defect.
 func gatewayBillingReconcileDay(now time.Time) string {
 	return now.UTC().AddDate(0, 0, -1).Format("2006-01-02")
+}
+
+// meteringStateOrNotTracked names the absence. A row with no state is not "fine",
+// it is "cannot tell" — the pre-E148 history — and the finding's detail must say
+// which of the two absences it is (doc/305 §2.45: three kinds of empty).
+func meteringStateOrNotTracked(state string) string {
+	if state == "" {
+		return model.MeteringNotTracked
+	}
+	return state
 }
 
 // gatewayBillingDayWindow returns the half-open UTC window of one day string.

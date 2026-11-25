@@ -341,7 +341,11 @@ func (s *Service) PrepareWeComCallback(ctx context.Context, cfg config.WeCom, ti
 }
 
 func (s *Service) CompleteWeComCallback(ctx context.Context, callbackContext *WeComCallbackContext, responseRef string) error {
-	return s.Store.CompleteGatewayIdempotency(ctx, callbackContext.Idempotency.ID, callbackContext.Idempotency.RequestID, responseRef)
+	// A WeCom callback is idempotency-tracked but not gateway-metered, so its
+	// verdict is `none` (nothing was owed) rather than a blank: the column's
+	// vocabulary stays closed (doc/304 §4 E147).
+	return s.Store.CompleteGatewayIdempotency(ctx, callbackContext.Idempotency.ID,
+		callbackContext.Idempotency.RequestID, responseRef, model.MeteringNone, "")
 }
 
 func (s *Service) FailWeComCallback(ctx context.Context, callbackContext *WeComCallbackContext, reason string) error {

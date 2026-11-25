@@ -77,6 +77,22 @@ type Observability struct {
 	gatewayBillingReconcileCheckedTotal  *prometheus.CounterVec
 	gatewayBillingReconcileFindingsTotal *prometheus.CounterVec
 	gatewayBillingReconcileTokensTotal   *prometheus.CounterVec
+	// Metering writes have their own reading because the ledger writes can fail
+	// *after* a request was served (doc/304 §4 E146/E147). The daily reconcile can
+	// only report the consequence (`missing_meter`); these two say why and how
+	// much is still owed, which is what the recovery sweep works from.
+	meteringWriteFailure *prometheus.CounterVec
+	meteringUnsettled    *prometheus.GaugeVec
+	meteringRecovered    prometheus.Counter
+	// meteringUnsettledMu guards the published tenant set below. The gauge is
+	// thread safe, but "which tenants did the last sweep publish" is not, and
+	// deleting the vanished series without that record would delete live ones.
+	meteringUnsettledMu      sync.Mutex
+	meteringUnsettledTenants map[string]struct{}
+	// meteringSweepLastSuccess answers "did the repair path run", which is the
+	// other half of the E146 lesson: `unsettled=0` and "the sweep has not run since
+	// the last deploy" are different readings, and a gauge alone cannot say which.
+	meteringSweepLastSuccess prometheus.Gauge
 
 	approvalSubmittedTotal                    *prometheus.CounterVec
 	approvalExecutionTotal                    *prometheus.CounterVec
@@ -519,6 +535,26 @@ func New(cfg config.Observability) *Observability {
 			Name: "reconcile_findings_total",
 			Help: "Gateway billing ledger disagreements by kind (doc/301 T21): missing_meter/missing_cost/charged_after_failure/duplicate_request/stale_reservation/quota_drift/usage_drift. Expected steady state is zero.",
 		}, []string{"tenant_id", "kind"})
+		o.meteringWriteFailure = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "gateway_metering",
+			Name: "write_failure_total",
+			Help: "Metering ledger writes that failed after the retry (doc/301 T21 / doc/304 §4 E147), by `ledger` (aggregate/detail/intent/verdict). A non-zero series means a request was served with books that are missing or in doubt; the intent row and the recovery sweep carry the repair. `tenant_id` is present because the first question is whose books are missing, and one tenant's clean hour must not dilute another's failed one.",
+		}, []string{"tenant_id", "ledger"})
+		o.meteringUnsettled = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "gateway_metering",
+			Name: "unsettled_intents",
+			Help: "Metering intents still `pending` or `failed` after the last recovery sweep (doc/304 §4 E147), by tenant. Zero is the steady state; a flat non-zero value means the sweep cannot write the ledgers and that tenant's day is short. A tenant that no longer owes anything loses its series on the next publish, so a repaired tenant cannot leave a stale page behind — and the sweep never clears the whole vector first, because that would expose a scrape to a false `0` for every tenant at once (doc/304 §4 E148).",
+		}, []string{"tenant_id"})
+		o.meteringRecovered = prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "gateway_metering",
+			Name: "recovered_total",
+			Help: "Metering intents replayed successfully by the recovery sweep (doc/304 §4 E147). The replay is idempotent by request_id, so this counts repaired gaps, never extra charges.",
+		})
+		o.meteringSweepLastSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "gateway_metering",
+			Name: "sweep_last_success_timestamp_seconds",
+			Help: "Unix time of the last metering recovery sweep that completed (doc/304 §4 E147), whether or not it had anything to replay. Its absence or staleness is the reading that `unsettled_intents == 0` cannot give: not run is not the same as nothing owed.",
+		})
 		o.gatewayBillingReconcileTokensTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace, Subsystem: "gateway_billing",
 			Name: "reconcile_tokens_total",
@@ -560,7 +596,8 @@ func New(cfg config.Observability) *Observability {
 			o.reportAssuranceTokensTotal, o.reportAssuranceFindingsOpen,
 			o.assuranceQuotaDriftRatio, o.assuranceSettlementDrift,
 			o.gatewayBillingReconcileRunsTotal, o.gatewayBillingReconcileCheckedTotal,
-			o.gatewayBillingReconcileFindingsTotal, o.gatewayBillingReconcileTokensTotal)
+			o.gatewayBillingReconcileFindingsTotal, o.gatewayBillingReconcileTokensTotal,
+			o.meteringWriteFailure, o.meteringUnsettled, o.meteringRecovered, o.meteringSweepLastSuccess)
 	}
 
 	o.setupTracer(cfg)
@@ -1321,4 +1358,61 @@ func (o *Observability) RecordGatewayBillingReconcile(tenantID, status string, c
 // Shutdown flushes tracing spans and releases resources.
 func (o *Observability) Shutdown(ctx context.Context) error {
 	return o.shutdown(ctx)
+}
+
+// IncMeteringWriteFailure records a failed metering ledger write by ledger name.
+// The reading exists because the consequence alone (a `missing_meter` finding the
+// next day) cannot say whether the write was attempted, retried, or never reached
+// the ledger — the gap E146 had to mark unexplained (doc/304 §4 E147).
+func (o *Observability) IncMeteringWriteFailure(tenantID, ledger string) {
+	if o.metricsEnabled && o.meteringWriteFailure != nil {
+		o.meteringWriteFailure.WithLabelValues(tenantID, ledger).Inc()
+	}
+}
+
+// PublishMeteringUnsettled replaces the published per-tenant gap in one step: the
+// tenants in `byTenant` are written, and the tenants that were published by an
+// earlier sweep but are absent now lose their series (doc/304 §4 E148).
+//
+// It is deliberately not `Reset()` followed by the loop. A reset empties the whole
+// vector before the values are written, so a scrape landing in that window reads
+// `0` for every tenant — the same mistake as reporting an unreadable count as zero,
+// just harder to see. Deleting only the vanished series keeps every other tenant's
+// value readable throughout, and the repair is still observable: a tenant whose gap
+// was filled disappears instead of paging forever on history.
+func (o *Observability) PublishMeteringUnsettled(byTenant map[string]int64) {
+	if !o.metricsEnabled || o.meteringUnsettled == nil {
+		return
+	}
+	o.meteringUnsettledMu.Lock()
+	defer o.meteringUnsettledMu.Unlock()
+	if o.meteringUnsettledTenants == nil {
+		o.meteringUnsettledTenants = map[string]struct{}{}
+	}
+	for tenantID, n := range byTenant {
+		o.meteringUnsettled.WithLabelValues(tenantID).Set(float64(n))
+		o.meteringUnsettledTenants[tenantID] = struct{}{}
+	}
+	for tenantID := range o.meteringUnsettledTenants {
+		if _, ok := byTenant[tenantID]; !ok {
+			o.meteringUnsettled.DeleteLabelValues(tenantID)
+			delete(o.meteringUnsettledTenants, tenantID)
+		}
+	}
+}
+
+// SetMeteringSweepSuccess records that a recovery pass completed. It is set on
+// every pass, including the ones that had nothing to do, because the question it
+// answers is "is the repair path alive", not "was there a gap".
+func (o *Observability) SetMeteringSweepSuccess(at time.Time) {
+	if o.metricsEnabled && o.meteringSweepLastSuccess != nil {
+		o.meteringSweepLastSuccess.Set(float64(at.Unix()))
+	}
+}
+
+// AddMeteringRecovered counts intents the sweep repaired.
+func (o *Observability) AddMeteringRecovered(n int) {
+	if o.metricsEnabled && o.meteringRecovered != nil && n > 0 {
+		o.meteringRecovered.Add(float64(n))
+	}
 }

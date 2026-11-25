@@ -27,7 +27,7 @@ func TestP0_IDEM_001_BeginGatewayIdempotencyConflictAndReplay(t *testing.T) {
 	if err != nil || first.Record == nil || first.Replayed {
 		t.Fatalf("begin first: state=%+v err=%v", first, err)
 	}
-	if err := svc.Store.CompleteGatewayIdempotency(ctx, first.Record.ID, "req-1", `{"ok":true}`); err != nil {
+	if err := svc.Store.CompleteGatewayIdempotency(ctx, first.Record.ID, "req-1", `{"ok":true}`, model.MeteringNone, ""); err != nil {
 		t.Fatal(err)
 	}
 

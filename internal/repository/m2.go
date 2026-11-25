@@ -772,13 +772,33 @@ type QuotaRepo interface {
 		ctx context.Context, tenantID string, scopeAll bool,
 		dateFrom, dateTo, datasetID string,
 	) ([]model.KnowledgeOpsCostAttribution, error)
+	// UsageFilterOptions lists the distinct values present in the cost ledger
+	// and governance trace, so the usage reports can offer dropdowns instead of
+	// free-text IDs.
+	UsageFilterOptions(ctx context.Context, tenantID string, scopeAll bool, search string) (UsageFilterOptions, error)
 
 	// Gateway idempotency is caller-facing, unlike MeterRequest which only
 	// prevents duplicate usage accounting for the same execution request.
 	CreateGatewayIdempotency(ctx context.Context, r *model.GatewayIdempotency) (bool, error)
 	GetGatewayIdempotency(ctx context.Context, tenantID, principalID, idempotencyKey string) (*model.GatewayIdempotency, error)
-	CompleteGatewayIdempotency(ctx context.Context, id, requestID, responseRef string) error
+	// CompleteGatewayIdempotency takes the metering verdict because a completion
+	// that cannot say whether the books were written is the shape E146 found
+	// (doc/304 §4 E147): `COMPLETED` used to be written unconditionally, after a
+	// metering failure that only a log line remembered.
+	CompleteGatewayIdempotency(ctx context.Context, id, requestID, responseRef, meteringState, meteringIntentID string) error
 	FailGatewayIdempotency(ctx context.Context, id, requestID, responseRef string) error
+
+	// Metering intents are the write-ahead record of "this request must be metered"
+	// (doc/304 §4 E147). Prepare is idempotent by request_id, settle is additive on
+	// attempts, and the list is the recovery sweep's input.
+	CreateMeteringIntentIfAbsent(ctx context.Context, m *model.MeteringIntent) (bool, error)
+	GetMeteringIntent(ctx context.Context, requestID string) (*model.MeteringIntent, error)
+	SettleMeteringIntent(ctx context.Context, id, state, lastError string, attempts int) error
+	ListMeteringIntentsByState(ctx context.Context, states []string, olderThan time.Time, limit int) ([]model.MeteringIntent, error)
+	CountMeteringIntentsByState(ctx context.Context, states []string) (int64, error)
+	CountMeteringIntentsForTenant(ctx context.Context, tenantID string, scopeAll bool, states []string) (map[string]int64, error)
+	ListUnsettledMeteringIntents(ctx context.Context, tenantID string, scopeAll bool, limit int) ([]model.MeteringIntent, error)
+	CountUnsettledMeteringIntentsByTenant(ctx context.Context) (map[string]int64, error)
 }
 
 func (s *store) CreateTask(ctx context.Context, t *model.Task) error {
@@ -957,11 +977,18 @@ func (s *store) GetGatewayIdempotency(ctx context.Context, tenantID, principalID
 	return &record, err
 }
 
-func (s *store) CompleteGatewayIdempotency(ctx context.Context, id, requestID, responseRef string) error {
+func (s *store) CompleteGatewayIdempotency(ctx context.Context, id, requestID, responseRef, meteringState, meteringIntentID string) error {
+	if meteringState == "" {
+		// An empty verdict is not a verdict. The caller must resolve one of the five
+		// values in model/metering.go; refusing here keeps the column's vocabulary
+		// closed instead of letting a blank mean "whatever this caller thought".
+		return errors.New("metering state is required to complete a gateway idempotency entry")
+	}
 	return s.WithContext(ctx).Model(&model.GatewayIdempotency{}).
 		Where("id = ? AND request_id = ? AND status = ?", id, requestID, model.IdempotencyInProgress).
 		Updates(map[string]interface{}{
 			"status": model.IdempotencyCompleted, "response_ref": responseRef,
+			"metering_state": meteringState, "metering_intent_id": meteringIntentID,
 			"completed_at": time.Now().UTC(),
 		}).Error
 }

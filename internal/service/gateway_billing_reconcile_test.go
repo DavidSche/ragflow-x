@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -251,6 +252,85 @@ func TestReconcileGatewayBillingPure(t *testing.T) {
 			}
 			if out.Findings != len(out.Rows) {
 				t.Fatalf("findings = %d, rows = %d", out.Findings, len(out.Rows))
+			}
+		})
+	}
+}
+
+// TestReconcileGatewayBillingReadsMeteringState is the E146 correction in one place.
+//
+// The nightly run of 2026-11-23 reported 14 `missing_meter` findings. All 14 were
+// completed requests whose provider had answered 429 (
+// `{"error":{"message":"Rate limit exceeded: maximum 20 requests per minute…"}}`),
+// so nothing was served, nothing was owed, and no metering row existed — correctly.
+// The reconciler could not tell that apart from a lost write, because `COMPLETED`
+// meant three things at once until E147 split them. It reads the split now:
+//
+//	none          nothing owed      → no finding (a cost row is still a finding)
+//	not_tracked   cannot vouch      → missing_meter, and the detail says which absence
+//	recorded      books were written → a missing meter row is a contradiction, still reported
+//
+// The 14 historical rows stay reported if that day is ever re-reconciled: they
+// predate the column and read back as `not_tracked`, which is exactly the honest
+// answer. What changed is that the *next* upstream-error request cannot manufacture
+// the same finding.
+func TestReconcileGatewayBillingReadsMeteringState(t *testing.T) {
+	cases := []struct {
+		name      string
+		state     string
+		charged   bool
+		wantKinds []string
+		wantIn    string // a sentence the finding detail must carry, if any
+	}{
+		{
+			name:  "nothing owed is not a hole in the books",
+			state: model.MeteringNone,
+		},
+		{
+			name:  "nothing owed but charged is still a finding",
+			state: model.MeteringNone, charged: true,
+			wantKinds: []string{model.GatewayBillingFindingChargedAfterFailure},
+			wantIn:    "metering_state=none",
+		},
+		{
+			name:      "history cannot be vouched for",
+			state:     "",
+			wantKinds: []string{model.GatewayBillingFindingMissingMeter},
+			wantIn:    "metering_state=not_tracked",
+		},
+		{
+			name:      "recorded without a meter row is a contradiction and stays reported",
+			state:     model.MeteringRecorded,
+			wantKinds: []string{model.GatewayBillingFindingMissingMeter},
+			wantIn:    "metering_state=recorded",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshot := model.GatewayBillingSnapshot{
+				Idempotency: []model.GatewayBillingLedgerRef{
+					{RequestID: "r1", KeyID: "k1", Status: model.IdempotencyCompleted, MeteringState: tc.state},
+				},
+			}
+			if tc.charged {
+				snapshot.Charged = []model.GatewayBillingLedgerRef{{RequestID: "r1", KeyID: "k1"}}
+			}
+			out := reconcileGatewayBilling(&snapshot)
+			if out.Checked != 2 {
+				t.Fatalf("checked = %d, want 2 (one retry row + the usage pair)", out.Checked)
+			}
+			if len(out.Rows) != len(tc.wantKinds) {
+				t.Fatalf("findings = %v, want %v", out.Rows, tc.wantKinds)
+			}
+			for i, kind := range tc.wantKinds {
+				if out.Rows[i].Kind != kind {
+					t.Fatalf("kind = %q, want %q", out.Rows[i].Kind, kind)
+				}
+			}
+			if tc.wantIn != "" {
+				if len(out.Rows) == 0 || !strings.Contains(out.Rows[0].Detail, tc.wantIn) {
+					t.Fatalf("detail = %q, want it to name %q", out.Rows, tc.wantIn)
+				}
 			}
 		})
 	}

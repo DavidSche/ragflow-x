@@ -88,17 +88,25 @@ const (
 // fingerprint so a repeated key cannot create a second row; fingerprint is then
 // compared to reject Method/Target/Body conflicts.
 type GatewayIdempotency struct {
-	ID                 string     `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID           string     `gorm:"column:tenant_id;size:32;not null;uniqueIndex:idx_gateway_idempotency_key" json:"tenant_id"`
-	PrincipalID        string     `gorm:"column:principal_id;size:32;not null;uniqueIndex:idx_gateway_idempotency_key" json:"principal_id"`
-	IdempotencyKey     string     `gorm:"column:idempotency_key;size:128;not null;uniqueIndex:idx_gateway_idempotency_key" json:"idempotency_key"`
-	RequestFingerprint string     `gorm:"column:request_fingerprint;size:64;not null" json:"request_fingerprint"`
-	Status             string     `gorm:"column:status;size:16;not null;default:IN_PROGRESS" json:"status"`
-	RequestID          string     `gorm:"column:request_id;size:64;not null;index" json:"request_id"`
-	ResponseRef        string     `gorm:"column:response_ref;type:text" json:"response_ref"`
-	CreatedAt          time.Time  `gorm:"column:created_at" json:"created_at"`
-	ExpiresAt          time.Time  `gorm:"column:expires_at;not null;index" json:"expires_at"`
-	CompletedAt        *time.Time `gorm:"column:completed_at" json:"completed_at"`
+	ID                 string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID           string `gorm:"column:tenant_id;size:32;not null;uniqueIndex:idx_gateway_idempotency_key" json:"tenant_id"`
+	PrincipalID        string `gorm:"column:principal_id;size:32;not null;uniqueIndex:idx_gateway_idempotency_key" json:"principal_id"`
+	IdempotencyKey     string `gorm:"column:idempotency_key;size:128;not null;uniqueIndex:idx_gateway_idempotency_key" json:"idempotency_key"`
+	RequestFingerprint string `gorm:"column:request_fingerprint;size:64;not null" json:"request_fingerprint"`
+	Status             string `gorm:"column:status;size:16;not null;default:IN_PROGRESS" json:"status"`
+	RequestID          string `gorm:"column:request_id;size:64;not null;index" json:"request_id"`
+	ResponseRef        string `gorm:"column:response_ref;type:text" json:"response_ref"`
+	// MeteringState answers, at completion time, the question E146 could not
+	// answer after the fact: did this request's metering land? `COMPLETED` used
+	// to carry three meanings at once (request finished, response produced,
+	// books written); the third one is now a separate column, with the
+	// vocabulary in model/metering.go. `not_tracked` is the default so rows
+	// completed before this column existed read as history, never as `recorded`.
+	MeteringState    string     `gorm:"column:metering_state;size:16;not null;default:not_tracked" json:"metering_state"`
+	MeteringIntentID string     `gorm:"column:metering_intent_id;size:32" json:"metering_intent_id"`
+	CreatedAt        time.Time  `gorm:"column:created_at" json:"created_at"`
+	ExpiresAt        time.Time  `gorm:"column:expires_at;not null;index" json:"expires_at"`
+	CompletedAt      *time.Time `gorm:"column:completed_at" json:"completed_at"`
 }
 
 func (GatewayIdempotency) TableName() string { return "rgx_gateway_idempotency" }
