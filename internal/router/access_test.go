@@ -71,6 +71,7 @@ func protectedRoutes() []string {
 		"GET /api/v1/usage/details",
 		"GET /api/v1/usage/attribution",
 		"GET /api/v1/usage/export",
+		"GET /api/v1/usage/metering",
 		"GET /api/v1/usage/reconcile",
 		"GET /api/v1/usage/reconcile/:runId/findings",
 		"POST /api/v1/system/usage/reconcile",

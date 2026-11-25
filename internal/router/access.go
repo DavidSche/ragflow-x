@@ -321,6 +321,7 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/usage", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/details", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/attribution", Action: "read", Resource: "usage"},
+		{Method: "GET", Path: "/api/v1/usage/metering", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/reconcile", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/reconcile/:runId/findings", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/audit", Action: "read", Resource: "audit"},

@@ -32,6 +32,17 @@ type Config struct {
 	ConversationRouting ConversationRouting `yaml:"conversation_routing"`
 	OIDC                OIDC                `yaml:"oidc"`
 	IM                  IM                  `yaml:"im"`
+	Docs                Docs                `yaml:"docs"`
+}
+
+type Docs struct {
+	Enabled bool `yaml:"enabled"`
+	// RequireAdmin gates the three doc resources behind a platform administrator.
+	// doc/310 §13.1 puts it as a requirement, not an option: "生产环境：额外要求平台
+	// 管理员认证与授权". The default is the safe side (true), and a development box
+	// opts out explicitly — the plan forbids inferring the policy from the server
+	// mode inside route registration, so the switch lives here and only here.
+	RequireAdmin bool `yaml:"require_admin"`
 }
 
 // OIDC configures an enterprise authorization-code flow. Users are matched to
@@ -628,6 +639,7 @@ func defaults() *Config {
 		FactGuard:    FactGuard{Mode: "warn"},
 		KnowledgeOps: KnowledgeOps{AnswerabilityEnabled: true, NoEvidenceSimilarity: 0.30, MaxCitationsPerDocument: 3, AbstainRateWarn: 0.24, CitationRateBaseline: 0.70, TopSimilarityFloor: 0.35},
 		OIDC:         OIDC{RequireEmailVerified: true},
+		Docs:         Docs{Enabled: false, RequireAdmin: true},
 		IM:           IM{WeCom: WeCom{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, Feishu: Feishu{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}, DingTalk: DingTalk{HTTPTimeoutSec: 10, MaxMessageRunes: 2000}},
 		ConversationRouting: ConversationRouting{
 			Mode: "recommend_only", ConfidenceThreshold: 0.86, ConfidenceMargin: 0.12,
@@ -718,6 +730,8 @@ func applyEnv(cfg *Config) {
 	setStr(&cfg.OIDC.AuthURL, "RGX_OIDC_AUTH_URL")
 	setStr(&cfg.OIDC.TokenURL, "RGX_OIDC_TOKEN_URL")
 	setStr(&cfg.OIDC.JWKSURL, "RGX_OIDC_JWKS_URL")
+	setBool(&cfg.Docs.Enabled, "RGX_DOCS_ENABLED")
+	setBool(&cfg.Docs.RequireAdmin, "RGX_DOCS_REQUIRE_ADMIN")
 	setStrSlice(&cfg.OIDC.Scopes, "RGX_OIDC_SCOPES")
 	setStrSlice(&cfg.OIDC.AllowedEmailDomains, "RGX_OIDC_ALLOWED_EMAIL_DOMAINS")
 	setBool(&cfg.OIDC.RequireEmailVerified, "RGX_OIDC_REQUIRE_EMAIL_VERIFIED")

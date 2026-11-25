@@ -79,6 +79,13 @@ jobs:
           go build ./...
           go vet ./...
 
+      # Static sibling of the PostgreSQL contract tests: a paging read that shares its
+      # builder with the count inherits the count's GROUP BY / projection, which SQLite
+      # accepts and PostgreSQL rejects (the knowledge-ops 500). Runs through the Makefile
+      # target so the nightly also covers `make check-gorm-builders` itself.
+      - name: GORM shared-builder guard
+        run: make check-gorm-builders
+
       - name: Validate Prometheus rules
         run: |
           prometheus_version=3.14.0

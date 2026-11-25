@@ -42,6 +42,15 @@ type testApp struct {
 
 func newTestApp(t *testing.T) *testApp {
 	t.Helper()
+	return newTestAppWith(t, nil)
+}
+
+// newTestAppWith is newTestApp with a chance to adjust the configuration before
+// the router is built (used by the OpenAPI exposure tests: whether /docs and
+// /swagger exist, and whether they demand an administrator, is a route-table
+// fact, so it has to be decided before router.New).
+func newTestAppWith(t *testing.T, mutate func(*config.Config)) *testApp {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	cfg := config.Config{
@@ -52,6 +61,9 @@ func newTestApp(t *testing.T) *testApp {
 			DSN:    dbtest.SQLiteDSN(t, "test.db"),
 		},
 		RAGFlow: config.RAGFlow{Provider: "mock"},
+	}
+	if mutate != nil {
+		mutate(&cfg)
 	}
 
 	gdb, err := db.Open(cfg.Database)

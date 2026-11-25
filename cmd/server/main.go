@@ -1,6 +1,20 @@
 // Command ragflow-x-server is the RAGFlow-X API server (gateway + control plane).
 package main
 
+// @title RAGFlow-X API
+// @version 1.0.0
+// @description RAGFlow-X backend HTTP API, gateway and control-plane endpoints.
+// @host localhost:8080
+// @BasePath /
+// @schemes http https
+// @securityDefinitions.bearerauth BearerAuth
+// @description JWT bearer token for protected control-plane APIs
+// @bearerformat JWT
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
+// @description API key for gateway APIs
+
 import (
 	"context"
 	"errors"
@@ -10,6 +24,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	_ "github.com/ragflow-x/ragflow-x/internal/docs"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
 	"github.com/ragflow-x/ragflow-x/internal/obs"

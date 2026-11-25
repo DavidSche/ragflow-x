@@ -6,8 +6,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"github.com/ragflow-x/ragflow-x/internal/config"
+	"github.com/ragflow-x/ragflow-x/internal/docs"
 	"github.com/ragflow-x/ragflow-x/internal/handler"
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/obs"
@@ -31,6 +34,23 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 	)
 	// Only expose the logos subdirectory publicly; the rest of DataDir stays private.
 	r.Static("/api/v1/static/logos", filepath.Join(cfg.App.DataDir, "logos"))
+
+	if cfg.Docs.Enabled {
+		// doc/310 §13.1: the three resources are security resources, and production
+		// requires a platform administrator. Gating lives here, in one place, rather
+		// than being inferred from the server mode.
+		docsGroup := r.Group("/")
+		if cfg.Docs.RequireAdmin {
+			docsGroup.Use(middleware.Auth(h.Service.JWT, h.Service), middleware.PlatformAdminOnly())
+		}
+		docsGroup.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		docsGroup.GET("/docs/openapi.json", func(c *gin.Context) {
+			c.Data(200, "application/json; charset=utf-8", docs.OpenAPISpecJSON)
+		})
+		docsGroup.GET("/docs/openapi.yaml", func(c *gin.Context) {
+			c.Data(200, "application/yaml; charset=utf-8", docs.OpenAPISpecYAML)
+		})
+	}
 	if cfg.Observability.MetricsEnabled {
 		r.GET(cfg.Observability.MetricsPath, middleware.DynamicMetricsAuth(func() (string, []string) {
 			observability := h.Service.CurrentObservabilityConfig()
@@ -223,12 +243,16 @@ func New(cfg config.Config, h *handler.Handler, limiter ratelimit.Limiter) *gin.
 		protected.DELETE("/tasks", h.DeleteTasks)
 		protected.POST("/tasks/sync", h.SyncTasks)
 		protected.GET("/usage", h.Usage)
+		protected.GET("/usage/filter-options", h.UsageFilterOptions)
 		protected.GET("/usage/details", h.UsageDetail)
 		protected.GET("/usage/attribution", h.OperationalAttribution)
 		protected.GET("/usage/export", h.ExportUsageReport)
 		// GW-3 / T21: the daily four-ledger billing check. The tenant-facing read
 		// surface is under `/usage` (it is a usage question), while the on-demand run
 		// is under `/system` because it walks every tenant's ledgers.
+		// E147: the metering gap itself — served requests whose books never landed —
+		// next to the usage reads it invalidates.
+		protected.GET("/usage/metering", h.GatewayMeteringHealth)
 		protected.GET("/usage/reconcile", h.GatewayBillingReconcileRuns)
 		protected.GET("/usage/reconcile/:runId/findings", h.GatewayBillingReconcileFindings)
 		protected.GET("/audit", h.ListAudits)

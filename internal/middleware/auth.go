@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/jwt"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
 )
@@ -67,6 +68,23 @@ func Auth(verifier AuthVerifier, lifecycle TenantLifecycleGate) gin.HandlerFunc 
 				c.Abort()
 				return
 			}
+		}
+		c.Next()
+	}
+}
+
+// PlatformAdminOnly rejects authenticated callers that are not platform
+// administrators. It is meant to be composed after Auth: Auth answers "who is
+// this" (401), this answers "may they see this" (403). doc/310 §13.1 requires the
+// distinction — an anonymous 401 and a logged-in-but-not-admin 403 are two
+// different answers, and collapsing them into one would tell a tenant user that
+// the resource does not exist while telling an anonymous caller that it does.
+func PlatformAdminOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetString(ContextRole) != model.RolePlatformAdmin {
+			response.Fail(c, http.StatusForbidden, 403, "platform administrator required")
+			c.Abort()
+			return
 		}
 		c.Next()
 	}

@@ -131,6 +131,12 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
+      # Static, database-free sibling of the PostgreSQL contract tests: a paging read
+      # that shares its builder with the count query inherits the count's GROUP BY /
+      # projection, which SQLite accepts and PostgreSQL rejects (the knowledge-ops 500).
+      - name: GORM shared-builder guard
+        run: go run ./cmd/gormguard ./internal
+
       - name: Install CJK fonts (PDF export)
         if: runner.os == 'Linux'
         run: |
@@ -537,3 +543,28 @@ jobs:
           path: web/playwright-report
           retention-days: 7
           if-no-files-found: ignore
+
+  # ------------------------------------------------------------------
+  # OpenAPI docs freshness and route coverage
+  # ------------------------------------------------------------------
+  openapi-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check generated artifacts are fresh
+        run: make swagger-check
+      - name: Check untracked generated artifacts
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=all -- internal/docs/)" ]; then
+            echo "Untracked OpenAPI artifacts detected"
+            git status --porcelain --untracked-files=all -- internal/docs/
+            exit 1
+          fi
+      - name: Run OpenAPI route coverage
+        run: go test ./internal/router/ -run '^TestOpenAPIRouteCoverage$' -count=1
+      - name: Run OpenAPI security consistency
+        run: go test ./internal/router/ -run '^TestOpenAPISecurityMatchesRoutePolicy$' -count=1
