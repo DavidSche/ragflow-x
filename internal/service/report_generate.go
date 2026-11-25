@@ -696,6 +696,16 @@ func (r *reportSectionRun) writeSectionAttempt(section *model.ReportSection) (te
 	raw, callErr := r.svc.RAGFlow.ChatToModel(r.ctx,
 		r.snapshot.Model.Provider, r.snapshot.Model.Instance, r.snapshot.Model.Name,
 		prompt, false, false)
+	// doc/304 §4 E154: `now` above is the instant `BeginReportSection` wrote into
+	// `started_at`. Reusing it for the writes below made `finished_at` a second
+	// copy of the start instant, so `finished_at - started_at` was structurally 0
+	// — live 2026-11-25: 5/5 sections of a published revision, all 419-byte hints,
+	// all `started_at == finished_at` to the microsecond. §7 item 23's "section
+	// duration" therefore had no reader and no reading. One write, one instant:
+	// settlement, evidence expiry and the commit's `finished_at` all carry this
+	// value, and `reportFinishClock` states "after the start" instead of hoping
+	// two clock reads land in different ticks.
+	now = reportFinishClock(now)
 	if callErr != nil {
 		return r.handleCallFailure(section, charge, callErr)
 	}
@@ -807,6 +817,22 @@ func reportSectionRetryable(cause error) bool {
 	default:
 		return false
 	}
+}
+
+// reportFinishClock is the instant a section's post-call writes are stamped with.
+//
+// `reportSectionRun.writeSectionAttempt` opens with `now := time.Now().UTC()` and
+// hands that value to `BeginReportSection`, which is what `started_at` ends up
+// holding. Every finish write needs a *later* instant, so this returns
+// `max(now, started+1µs)`: the floor is what makes "finished after started" true by
+// construction rather than by clock resolution, which is the same lesson E153
+// taught about `checked_at` (doc/304 §4).
+func reportFinishClock(started time.Time) time.Time {
+	now := time.Now().UTC()
+	if floor := started.Add(time.Microsecond); !now.After(floor) {
+		return floor
+	}
+	return now
 }
 
 // settleCall converts the reservation into the measured cost.

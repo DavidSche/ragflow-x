@@ -410,6 +410,18 @@ func TestReportGenerateWritesSectionsWithEvidence(t *testing.T) {
 		if section.Attempt != 1 {
 			t.Fatalf("a section written once must be at attempt 1, got %d", section.Attempt)
 		}
+		// doc/304 §4 E154: `finished_at` used to be the same instant `started_at`
+		// holds, so a section recorded its start twice and §7 item 23's duration
+		// column subtracted a value from itself. Both clocks must exist and the
+		// finish must be strictly later.
+		if section.StartedAt == nil || section.FinishedAt == nil {
+			t.Fatalf("section %s must record both clocks: %+v", section.SectionKey, section)
+		}
+		if !section.FinishedAt.After(*section.StartedAt) {
+			t.Fatalf("section %s finished_at must be after started_at: start=%s finish=%s",
+				section.SectionKey, section.StartedAt.Format(time.RFC3339Nano),
+				section.FinishedAt.Format(time.RFC3339Nano))
+		}
 		if section.RequiresEvidence && section.CitationCount == 0 {
 			t.Fatalf("section %s requires evidence and cited it, but recorded 0 citations", section.SectionKey)
 		}
@@ -844,4 +856,32 @@ func (fx *reportFixture) reportSection(t *testing.T, sectionID string) model.Rep
 		t.Fatalf("load section %s: %v", sectionID, err)
 	}
 	return row
+}
+
+// TestReportFinishClockIsAfterTheStartInstant pins the one fact §7 item 23 needs
+// from a section row: `finished_at` is a *different* instant from `started_at`.
+//
+// The start is deliberately one hour in the future, so every real clock read is
+// before it and the guard is the only thing that can make the assertion hold. A
+// test that instead writes a section and compares two `time.Now()` reads would pass
+// on a coarse clock for the wrong reason — the same trap E153 hit with
+// `checked_at`, where a Windows clock tick covered two probes.
+func TestReportFinishClockIsAfterTheStartInstant(t *testing.T) {
+	started := time.Now().UTC().Add(time.Hour)
+	finished := reportFinishClock(started)
+	if !finished.After(started) {
+		t.Fatalf("finished_at must be after started_at: start=%s finish=%s",
+			started.Format(time.RFC3339Nano), finished.Format(time.RFC3339Nano))
+	}
+	// The floor is exactly one microsecond, not "some later tick": a caller that
+	// reads this number back can tell what the value means.
+	if want := started.Add(time.Microsecond); !finished.Equal(want) {
+		t.Fatalf("a start this far ahead must be bumped by exactly 1µs: want=%s got=%s",
+			want.Format(time.RFC3339Nano), finished.Format(time.RFC3339Nano))
+	}
+	// And a start in the past is not touched: the real clock wins.
+	past := time.Now().UTC().Add(-time.Minute)
+	if bumped := reportFinishClock(past); !bumped.After(past.Add(time.Microsecond)) {
+		t.Fatalf("a past start must keep the wall clock, got %s", bumped.Format(time.RFC3339Nano))
+	}
 }
