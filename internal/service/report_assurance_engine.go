@@ -75,7 +75,15 @@ func estimateAssuranceTokens(text string) int64 {
 //
 // The decision is per run, not per claim: two claims of one run evaluated by two
 // different models would make the run's accuracy unauditable.
-func (s *Service) newReportAssuranceEvaluator(run *model.ReportAssuranceRun) reportAssuranceEvaluator {
+//
+// The transport is resolved here as well as at trigger time (doc/304 E127): the
+// trigger freezes the route into the run's policy, and the worker re-resolves it
+// from the same rows so that the evaluator calls the path the receipt names. The
+// two resolutions are deterministic over the same data, and the execution-time one
+// wins where they differ — it is the one that actually runs.
+func (s *Service) newReportAssuranceEvaluator(
+	ctx context.Context, run *model.ReportAssuranceRun,
+) reportAssuranceEvaluator {
 	if run.Mode == model.ReportAssuranceModeCitationAudit {
 		// `citation_audit` is QA-2's offline sample: layer ① only, no model call, no
 		// cost. It exists so sample checks can run on a schedule without a budget.
@@ -87,9 +95,85 @@ func (s *Service) newReportAssuranceEvaluator(run *model.ReportAssuranceRun) rep
 		// failure (§5.1.1).
 		return &reportAssuranceRuleEvaluator{}
 	}
+	route := s.resolveAssuranceReviewRoute(ctx, run.TenantID, reviewRefOfRun(run))
+	// E127's write-up promised this comparison; until now only the route was logged.
+	// A frozen `provider_direct` that executes as `engine_chat` is the one divergence
+	// that matters — the receipt would name a path the call did not take — so it is
+	// reported as a warning rather than left to whoever diffs two log lines.
+	if mismatch, detail := frozenReviewTransportMismatch(run.PolicyJSON, route.Transport); mismatch {
+		logger.Warn("report assurance review route differs from the frozen policy", "run_id", run.ID, "detail", detail)
+	}
+	return s.assuranceModelEvaluatorFor(run, route)
+}
+
+// frozenReviewTransportMismatch compares the transport frozen at trigger time with the
+// one the worker resolved. It is a pure function so the comparison can be tested
+// without a database, a policy resolver or a log capture.
+//
+// An empty frozen value is *not* a mismatch: runs created before the transport was
+// frozen (and runs that never configured a reviewer) have nothing to compare against,
+// and inventing a divergence there would train readers to ignore the warning.
+func frozenReviewTransportMismatch(policyJSON, resolved string) (bool, string) {
+	var frozen AssurancePolicyResolution
+	if err := json.Unmarshal([]byte(policyJSON), &frozen); err != nil {
+		return false, ""
+	}
+	if frozen.ReviewTransport == "" || frozen.ReviewTransport == resolved {
+		return false, ""
+	}
+	return true, "frozen " + frozen.ReviewTransport + " (" + frozen.ReviewTransportReason + "), resolved " + resolved
+}
+
+// reviewRefOfRun reconstructs the operator's reference from the run row.
+//
+// `ReviewModelID` stores the **whole** `model@instance@provider` string, because that
+// is what a receipt has to quote. The name therefore has to be split back out: passing
+// the raw string as the name matches no registered model, silently drops the run onto
+// the engine route, and leaves a frozen policy that says `provider_direct` while the
+// call went to the engine — a receipt describing something that did not happen, which
+// is exactly the failure this transport exists to remove (doc/304 E127).
+func reviewRefOfRun(run *model.ReportAssuranceRun) ReportModelRef {
+	reference := strings.TrimSpace(run.ReviewModelID)
+	ref := ReportModelRef{ModelID: reference, Provider: run.ReviewProvider, Instance: run.ReviewDeployment}
+	if name, _, found := strings.Cut(reference, "@"); found {
+		ref.Name = strings.TrimSpace(name)
+	}
+	return ref
+}
+
+// assuranceModelEvaluatorFor builds the semantic evaluator for an already-resolved
+// route. It is separate from the resolver so a test can pin the transport without a
+// database: the decision (`assuranceReviewRouteOf`) and the wiring are two things,
+// and only one of them needs rows.
+func (s *Service) assuranceModelEvaluatorFor(
+	run *model.ReportAssuranceRun, route assuranceReviewRoute,
+) reportAssuranceEvaluator {
+	effective := assuranceIndependenceFor(run.Independence, route)
+	logAssuranceReviewRoute(run.ID, route, run.Independence, effective)
+	// Two identities, and they are not the same fact (doc/304 E142):
+	//
+	//   * `requested` is what the call asks for. On the direct route that is the
+	//     registered model name; on the engine route it is the name handed to
+	//     RAGFlow, which ignores `model` (E125) — asking is still a real request.
+	//   * `evidence` is what the stored row may **claim**. Only a direct call
+	//     addresses a named model, so only there can the row wear the name. On the
+	//     engine route the row keeps `method=semantic` (a model did judge) and an
+	//     empty `model_id` (we cannot say which one); the run's
+	//     `assurance_review_transport`, its reason and `independence=unknown` carry
+	//     the explanation. Before this split the row named the operator's reference
+	//     on a route that never sent it to anyone.
+	requested := route.Model
+	if requested == "" {
+		requested = run.ReviewModelID
+	}
+	evidence := ""
+	if route.Direct() && route.Model != "" {
+		evidence = route.Model
+	}
 	return &reportAssuranceModelEvaluator{
-		svc: s, modelID: run.ReviewModelID, provider: run.ReviewProvider,
-		instance: run.ReviewDeployment, independence: run.Independence,
+		svc: s, modelID: evidence, provider: run.ReviewProvider,
+		instance: run.ReviewDeployment, independence: effective,
+		transport: s.assuranceTransportOf(route, run.ReviewProvider, run.ReviewDeployment, requested),
 	}
 }
 
@@ -121,6 +205,10 @@ type reportAssuranceModelEvaluator struct {
 	provider     string
 	instance     string
 	independence string
+	// transport is how the question is asked. It is an interface rather than a
+	// bool so the engine path and the direct path each stay one small, testable
+	// thing (doc/304 E127).
+	transport assuranceReviewTransport
 }
 
 func (e *reportAssuranceModelEvaluator) ModelID() string      { return e.modelID }
@@ -150,7 +238,13 @@ func (e *reportAssuranceModelEvaluator) Evaluate(
 	ctx context.Context, in reportAssuranceEvalInput,
 ) (reportAssuranceEvalOutcome, error) {
 	prompt := buildReportAssurancePrompt(in)
-	answer, err := e.svc.RAGFlow.ChatToModel(ctx, e.provider, e.instance, e.modelID, prompt, false, false)
+	transport := e.transport
+	if transport == nil {
+		// A caller that built the evaluator by hand still gets a working call; the
+		// engine route is the narrower claim, not a broken one.
+		transport = &engineReviewTransport{svc: e.svc, provider: e.provider, instance: e.instance, model: e.modelID}
+	}
+	answer, err := transport.Chat(ctx, prompt)
 	if err != nil {
 		return reportAssuranceEvalOutcome{}, err
 	}
@@ -210,6 +304,17 @@ func parseReportAssuranceAnswer(answer string) reportAssuranceEvalOutcome {
 		}
 	}
 	verdict := strings.TrimSpace(parsed.Verdict)
+	if verdict == "" {
+		// A well-formed object without a `verdict` field is a different failure from
+		// a verdict outside the closed set, and the operator needs to see which: the
+		// first is almost always a prompt/model mismatch ("it answered a different
+		// question"), the second a policy violation. `json.Unmarshal` accepts
+		// unknown fields silently, so this branch is the only place that can say so.
+		return reportAssuranceEvalOutcome{
+			Verdict:   model.ReportVerdictAbstained,
+			Rationale: "review model JSON has no verdict field",
+		}
+	}
 	if !reportAssuranceVerdictFromModel(verdict) {
 		// The closed set is enforced here and not by trust: `not_required` and
 		// `not_evaluated` are policy decisions the model must not be able to make.

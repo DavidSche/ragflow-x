@@ -13,6 +13,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/model"
@@ -83,6 +84,25 @@ func TestTriggeringARunIsAuditedOnTheOwningTenant(t *testing.T) {
 	if detail["release_eligibility"] != model.ReportAssuranceEligibilityPending {
 		t.Fatalf("fresh run audited as %v, want pending", detail["release_eligibility"])
 	}
+	// The audit row must also answer *how* the review will be asked and, when it is
+	// not the direct route, *why* (doc/304 E129). This fixture tenant configures no
+	// review model, so the honest pair is `engine_chat` + a reason that says which
+	// input was missing — a blank reason would send the operator back to the logs.
+	// The pair has to agree with the run row: a run that configured no reviewer asked
+	// no model (`none`), and a run that did configures one must name the route it
+	// would take. Either way the audit row states it — silence is the defect.
+	transport, _ := detail["review_transport"].(string)
+	if view.ReviewModel == "" {
+		if transport != assuranceTransportNone {
+			t.Fatalf("run has no review model but the audit says transport=%q, want %q", transport, assuranceTransportNone)
+		}
+	} else if transport != assuranceTransportEngine && transport != assuranceTransportProviderDirect {
+		t.Fatalf("run reviews with %q but the audit says transport=%q", view.ReviewModel, transport)
+	}
+	reason, _ := detail["review_transport_reason"].(string)
+	if strings.TrimSpace(reason) == "" {
+		t.Fatalf("audited transport has no reason (detail=%v): a fallback nobody can explain is a ticket", detail)
+	}
 }
 
 func TestAdjudicatingAFindingIsAuditedOnTheOwningTenant(t *testing.T) {
@@ -148,5 +168,55 @@ func TestTheAckAndTheRunShareOneAuditChain(t *testing.T) {
 	// the run" is a fact even when two rows share a timestamp.
 	if ack.Seq <= started.Seq {
 		t.Fatalf("ack seq %d is not after the run's %d", ack.Seq, started.Seq)
+	}
+}
+
+// TestTheAuditRowNamesTheReviewRouteItWillTake covers the other half of the pair: a run
+// whose tenant *did* configure a reviewer. Without it the `engine_chat` + reason branch
+// of the trigger is only covered by the pure resolver, and deleting the assignment that
+// copies the reason into the frozen policy would go unnoticed (doc/304 E129).
+func TestTheAuditRowNamesTheReviewRouteItWillTake(t *testing.T) {
+	fx := newAssuranceScopeFixture(t, "audit-route")
+	ctx := context.Background()
+	enableAssuranceForScopeTest(t, fx.svc)
+
+	// A reference that names no registered instance: the resolver must land on the
+	// engine route and say which gate refused.
+	current, err := fx.svc.Store.GetCurrentSettingRevision(ctx)
+	if err != nil {
+		t.Fatalf("current settings revision: %v", err)
+	}
+	expected := int64(0)
+	if current != nil {
+		expected = current.Revision
+	}
+	if _, err := fx.svc.UpdateSystemSettings(ctx, "admin", SystemSettingsPatchRequest{
+		ExpectedRevision: expected,
+		Changes: map[string]interface{}{
+			"report.assurance_review_model": "Qwen/Qwen3.8-27B-FP8@no-such-instance@ainet",
+		},
+		Note:      "review route audit test",
+		Confirmed: true,
+	}); err != nil {
+		t.Fatalf("set review model: %v", err)
+	}
+
+	view, err := fx.svc.TriggerReportAssurance(ctx, fx.owner.ID, fx.tenantID, fx.reportID, 1,
+		"req-audit-route", ReportAssuranceTriggerInput{Mode: model.ReportAssuranceModeFull})
+	if err != nil {
+		t.Fatalf("trigger: %v", err)
+	}
+	row := requireAuditOnTheTenantChain(t, fx.reportFixture, "report.assurance_started", fx.owner.ID, fx.reportID)
+	detail := reportAuditRowDetail(t, row)
+	if detail["review_transport"] != assuranceTransportEngine {
+		t.Fatalf("audited transport = %v, want %q — the reference names no instance",
+			detail["review_transport"], assuranceTransportEngine)
+	}
+	reason, _ := detail["review_transport_reason"].(string)
+	if !strings.Contains(reason, "no-such-instance") {
+		t.Fatalf("reason = %q, want it to name the instance the reference addresses", reason)
+	}
+	if view.Independence != model.ReportIndependenceUnknown {
+		t.Fatalf("independence = %q, want %q on the engine route", view.Independence, model.ReportIndependenceUnknown)
 	}
 }
