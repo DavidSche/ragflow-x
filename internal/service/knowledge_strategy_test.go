@@ -407,6 +407,76 @@ func TestKnowledgeCapabilityProbePassesOnlyAfterThreeConsecutiveCompiledHits(t *
 	}
 }
 
+// TestKnowledgeProbeNeverReusesAClockTickAlreadyUsed pins the *ordering* fact the
+// three-consecutive-pass promotion rests on (doc/304 §4 E153).
+//
+// `ProbeKnowledgeStrategy` decides the promotion from the newest 3 probe rows, and
+// `ListKnowledgeCapabilityProbes` orders them by `checked_at` with a random id as the
+// tiebreaker. Two probes taken inside one clock tick therefore order by coin flip, and
+// three passes can be read as one (window [pass, failed, pass]) — which is how
+// TestKnowledgeCapabilityProbePassesOnlyAfterThreeConsecutiveCompiledHits failed inside a
+// full-suite run and passed in isolation. The fix makes a probe's `checked_at` strictly
+// later than every earlier probe of the same strategy; this test seeds an *ahead-of-now*
+// row so the assertion does not depend on the clock's granularity or on machine load.
+func TestKnowledgeProbeNeverReusesAClockTickAlreadyUsed(t *testing.T) {
+	ctx := context.Background()
+	svc := newToolRegistryService(t)
+	tenant, user, project := id.New(), id.New(), id.New()
+	datasetID := createKnowledgeStrategyDatasetNamed(t, svc, tenant, project, "Clock Strategy Dataset")
+	probeDatasetID := createKnowledgeStrategyDatasetNamed(t, svc, tenant, project, "Clock Probe Dataset")
+	input := knowledgeStrategyInput(datasetID, model.KnowledgeStrategyCompiled)
+	input.RAGFlowCapability = model.RAGFlowCapabilityKnowledgeCompilation
+	input.Config = `{"dataset_id":"` + probeDatasetID + `","compilation_template":"tree"}`
+	strategy, err := svc.CreateKnowledgeStrategy(ctx, tenant, user, input)
+	if err != nil {
+		t.Fatalf("create strategy: %v", err)
+	}
+	probeDatasetLink, err := svc.Store.GetDatasetLink(ctx, tenant, probeDatasetID)
+	if err != nil || probeDatasetLink == nil {
+		t.Fatalf("get probe dataset link: link=%+v err=%v", probeDatasetLink, err)
+	}
+
+	// A row stamped in the future is what a clock tick *coarser* than two probes looks
+	// like to the reader: the newer probe sorts below the older one.
+	seededAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	seeded := &model.KnowledgeCapabilityProbe{
+		ID: id.New(), TenantID: tenant, StrategyID: strategy.ID,
+		Status: model.KnowledgeProbeStatusPassed, LatencyMs: 1,
+		ProbeKey: "knowledge-strategy-probe", RAGFlowVersion: "1.0.0-rc1",
+		Detail: "{}", CheckedAt: seededAt,
+	}
+	if err := svc.Store.CreateKnowledgeCapabilityProbe(ctx, seeded); err != nil {
+		t.Fatalf("seed probe: %v", err)
+	}
+
+	svc.RAGFlow = knowledgeProbeStub{
+		chunks: []map[string]interface{}{{
+			"id": "chunk-1", "dataset_id": probeDatasetLink.RAGFlowDatasetID, "compile_kwd": "tree",
+		}},
+		artifacts: []ragflow.DatasetArtifact{{Slug: "entity/tree", Title: "Tree", PageType: "entity"}},
+	}
+	taken, err := svc.ProbeKnowledgeStrategy(ctx, tenant, user, strategy.ID)
+	if err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if taken.Status != model.KnowledgeProbeStatusPassed {
+		t.Fatalf("probe did not pass: %+v", taken)
+	}
+
+	recent, err := svc.Store.ListKnowledgeCapabilityProbes(ctx, tenant, strategy.ID, 2)
+	if err != nil || len(recent) != 2 {
+		t.Fatalf("list probes: n=%d err=%v", len(recent), err)
+	}
+	if recent[0].ID != taken.ID {
+		t.Fatalf("the probe just taken is not the newest row: newest=%s taken=%s",
+			recent[0].ID, taken.ID)
+	}
+	if !recent[0].CheckedAt.After(seeded.CheckedAt) {
+		t.Fatalf("the probe just taken is not newer than the seeded row: taken=%s seeded=%s",
+			recent[0].CheckedAt, seeded.CheckedAt)
+	}
+}
+
 func TestKnowledgeCapabilityProbeAcceptsPlainRetrievalEvidence(t *testing.T) {
 	ctx := context.Background()
 	svc := newToolRegistryService(t)

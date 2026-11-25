@@ -417,6 +417,28 @@ func (s *Service) ProbeKnowledgeStrategy(
 		Detail: string(detail), CheckedAt: now,
 	}
 	err = s.Store.WithinTransaction(ctx, func(tx repository.Store) error {
+		// `checked_at` is the only ordering key of the promotion window
+		// (`ListKnowledgeCapabilityProbes` orders by it and breaks ties on a random id),
+		// and two probes taken inside one clock tick carry the *same* value. A tie then
+		// decides the window by coin flip: three passes ordered [pass, failed, pass] read
+		// as one consecutive pass, so a strategy that was probed three times in a row
+		// stays `unknown`. That is not a slow machine being slow — it is the reading
+		// changing with nothing in the domain having changed (doc/304 §4 E153), and it
+		// was observed as TestKnowledgeCapabilityProbePassesOnlyAfterThreeConsecutiveCompiledHits
+		// failing under a full-suite run and passing in isolation.
+		//
+		// Make "newer" a fact rather than a hope: never reuse a timestamp an earlier probe
+		// of this strategy already used. The cost is one indexed read per probe.
+		latest, err := tx.ListKnowledgeCapabilityProbes(ctx, tenantID, strategy.ID, 1)
+		if err != nil {
+			return err
+		}
+		if len(latest) > 0 {
+			if floor := latest[0].CheckedAt.Add(time.Microsecond); !now.After(floor) {
+				now = floor
+			}
+		}
+		probe.CheckedAt = now
 		if err := tx.CreateKnowledgeCapabilityProbe(ctx, probe); err != nil {
 			return err
 		}
