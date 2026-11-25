@@ -13,7 +13,8 @@
 # What is enforced for refs/tags/v*:
 #   - the newest tmp/release-gate-*/summary.json says verdict=PASS;
 #   - releasable=true (tier=all, profile=release, clean tree, built == served);
-#   - git.rev equals the commit the tag points at;
+#   - git.rev equals the commit the tag points at (the tag object is peeled first: an
+#     annotated tag's sha is not the commit's — see the 2026-11-25 block below);
 #   - version equals the tag name;
 #   - the report is younger than RGX_GATE_MAX_AGE_HOURS (default 72).
 # Non-tag pushes are untouched: this hook gates releases, not work.
@@ -61,7 +62,16 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     continue
   fi
 
-  "$py" - "$report" "$tag" "$local_sha" "${RGX_GATE_MAX_AGE_HOURS:-72}" <<'PY' || status=1
+  # `local_sha` is the object git is pushing, and for an annotated tag that object is the
+  # *tag*, not the commit it points at. Comparing the report's git.rev against it refuses
+  # every annotated release — 2026-11-25: v0.6.5's first push was blocked with "the tag
+  # points at bf82d0431fb4" while `git rev-parse v0.6.5^{commit}` was the very commit the
+  # report named (doc/304 §4 E158). So peel when the object is in this repository. When it
+  # is not — the selftest feeds throwaway shas on purpose — fall back to the raw sha, which
+  # keeps the old behaviour there and can never match a report written for a real commit.
+  commit=$(git rev-parse -q --verify "$local_sha^{commit}" 2>/dev/null) || commit="$local_sha"
+
+  "$py" - "$report" "$tag" "$commit" "${RGX_GATE_MAX_AGE_HOURS:-72}" <<'PY' || status=1
 import json, os, sys
 from datetime import datetime, timezone
 

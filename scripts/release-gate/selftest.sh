@@ -14,7 +14,7 @@
 set -uo pipefail
 
 ROOT=$(cd -- "$(dirname -- "$0")/../.." && pwd)
-HOOK="$ROOT/scripts/git-hooks/pre-push"
+HOOK="${HOOK_OVERRIDE:-$ROOT/scripts/git-hooks/pre-push}"
 WORK="$ROOT/tmp/gate-selftest-$$"
 ZERO=0000000000000000000000000000000000000000
 SHA=1111111111111111111111111111111111111111
@@ -68,9 +68,11 @@ PY
 
 # expect <name> <expected 0|1> <dir-with-fake-tmp> <ref>
 expect() {
-  local name="$1" want="$2" dir="$3" ref="$4"
+  # $5 is the object git hands the hook. It defaults to a throwaway sha (nothing peels),
+  # and the annotated-tag cases pass a real tag object so the peel path is exercised.
+  local name="$1" want="$2" dir="$3" ref="$4" sha="${5:-$SHA}"
   local out rc
-  out=$(cd "$dir" && printf '%s %s %s %s\n' "$ref" "$SHA" "$ref" "$ZERO" | sh "$HOOK" 2>&1)
+  out=$(cd "$dir" && printf '%s %s %s %s\n' "$ref" "$sha" "$ref" "$ZERO" | sh "$HOOK" 2>&1)
   rc=$?
   local got=0
   [ "$rc" -ne 0 ] && got=1
@@ -117,12 +119,35 @@ PYMUT
       echo "OK    mutant gate '$name' was caught: $(grep -c '^FAIL' "$MUT/$name.log" || true) case(s) went red"
     fi
   done
+  # 5th mutant: the hook that does not peel. Only the annotated-tag cases can see it — with
+  # the peel removed every throwaway-sha case above still passes while the honest v0.6.5
+  # push is refused (doc/304 §4 E158).
+  cp "$ROOT/scripts/git-hooks/pre-push" "$MUT/hook.sh"
+  "$PY" - "$MUT/hook.sh" <<'PYMUT'
+import io, sys
+path = sys.argv[1]
+s = io.open(path, encoding="utf-8").read()
+old = 'commit=$(git rev-parse -q --verify "$local_sha^{commit}" 2>/dev/null) || commit="$local_sha"'
+if s.count(old) != 1:
+    sys.exit("peel line not found exactly once")
+io.open(path, "w", encoding="utf-8", newline=chr(10)).write(s.replace(old, 'commit="$local_sha"'))
+PYMUT
+  if [ $? -ne 0 ]; then
+    FAIL=$((FAIL + 1)); echo "FAIL  mutant 'the pre-push peel' could not be built"
+  elif HOOK_OVERRIDE="$MUT/hook.sh" GATE_OVERRIDE="$GATE" bash "$0" >"$MUT/hook-no-peel.log" 2>&1; then
+    FAIL=$((FAIL + 1)); echo "FAIL  mutant hook 'no peel' still passed the suite"
+    sed 's/^/      /' "$MUT/hook-no-peel.log" | tail -5
+  else
+    KILLED=$((KILLED + 1))
+    echo "OK    mutant hook 'no peel' was caught: $(grep -c '^FAIL' "$MUT/hook-no-peel.log" || true) case(s) went red"
+  fi
+
   echo
-  if [ "$KILLED" -eq 4 ] && [ "$FAIL" -eq 0 ]; then
-    echo "SELFTEST OK: 4 gate mutants refused"
+  if [ "$KILLED" -eq 5 ] && [ "$FAIL" -eq 0 ]; then
+    echo "SELFTEST OK: 5 mutants refused (4 gate rules + the pre-push peel)"
     exit 0
   fi
-  echo "SELFTEST FAIL: $KILLED of 4 gate mutants caught, $FAIL failure(s)"
+  echo "SELFTEST FAIL: $KILLED of 5 mutants caught, $FAIL failure(s)"
   exit 1
 fi
 
@@ -161,6 +186,32 @@ if [ $? -ne 0 ]; then PASS=$((PASS + 1)); echo "PASS  tag deletion refused"; els
 # 8. the honest case: a matching, fresh, releasable report lets the tag through.
 d="$WORK/good"; make_report "$d" PASS true "$SHA" "$TAG" "$NOW"
 expect "matching fresh releasable report: allowed" 0 "$d" "refs/tags/$TAG"
+
+# 8b/8c. an annotated tag is an *object*: git hands the hook the tag's own sha, not the
+# commit's, while the report names a commit. So the hook must peel before comparing —
+# v0.6.5's first push was refused with "the tag points at bf82d0431fb4" while that tag
+# peeled to the very commit the report was written for (doc/304 §4 E158). Both directions
+# are asserted, because a hook that peels and then compares nothing passes the first one.
+peel="$WORK/peel"
+mkdir -p "$peel"
+(
+  cd "$peel" || exit 1
+  git init -q .
+  git -c user.email=selftest@example.invalid -c user.name=selftest commit -q --allow-empty -m one
+  git -c user.email=selftest@example.invalid -c user.name=selftest commit -q --allow-empty -m two
+  git -c user.email=selftest@example.invalid -c user.name=selftest tag -a "$TAG" -m two
+)
+tag_obj=$(cd "$peel" && git rev-parse "refs/tags/$TAG")
+tag_commit=$(cd "$peel" && git rev-parse "refs/tags/$TAG^{commit}")
+tag_parent=$(cd "$peel" && git rev-parse "HEAD~1")
+if [ -z "$tag_obj" ] || [ "$tag_obj" = "$tag_commit" ]; then
+  FAIL=$((FAIL + 1)); echo "FAIL  could not build an annotated tag for the peel cases"
+else
+  make_report "$peel" PASS true "$tag_commit" "$TAG" "$NOW"
+  expect "an annotated tag, peeled to its commit: allowed" 0 "$peel" "refs/tags/$TAG" "$tag_obj"
+  make_report "$peel" PASS true "$tag_parent" "$TAG" "$NOW"
+  expect "an annotated tag, peeled to another commit: refused" 1 "$peel" "refs/tags/$TAG" "$tag_obj"
+fi
 
 # 9. a report whose required row is N/A (the status a `--ci` run uses when the tree
 # carries no doc/) must not become a release report by being renamed, hand-edited, or
