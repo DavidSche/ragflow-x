@@ -68,6 +68,21 @@ func (s *Service) CreateAPIKey(ctx context.Context, tenantID, userID, name strin
 	return raw, k, nil
 }
 
+// apiKeyExpiredAt reports whether a key is already dead at `now`.
+//
+// The comparison is inclusive: the instant a key expires is *past* it. This is not
+// pedantry. A rotation with grace 0 stores `expired_at = time.Now()`, and the wall
+// clock is quantised — on Windows to a tick of about a millisecond — so the very
+// next request can read the same instant the key was retired at. With a strict
+// `now.After(expired_at)` the retired secret stayed usable for that tick, and
+// `TestAPIKeyRotationKeepsTheOldKeyUntilItsWindowCloses` failed about once in
+// twenty-five runs under load (`s07.go-test-all` red on a tree that was fine).
+// Grace 0 means "dead when the response returns", so equal must be dead
+// (doc/304 §4 E144).
+func apiKeyExpiredAt(expiredAt *time.Time, now time.Time) bool {
+	return expiredAt != nil && !now.Before(*expiredAt)
+}
+
 // ListAPIKeys returns a tenant's gateway keys (without hashes).
 func (s *Service) ListAPIKeys(ctx context.Context, tenantID string) ([]model.APIKey, error) {
 	return s.Store.ListAPIKeys(ctx, tenantID)
@@ -201,7 +216,7 @@ func (s *Service) ResolveAPIKey(ctx context.Context, raw string) (*model.APIKey,
 	if tenant == nil || tenant.Status != model.TenantStatusActive {
 		return nil, httperr.Forbidden("workspace is disabled")
 	}
-	if k.ExpiredAt != nil && time.Now().After(*k.ExpiredAt) {
+	if apiKeyExpiredAt(k.ExpiredAt, time.Now()) {
 		return nil, httperr.Unauthorized("api key expired")
 	}
 	if err := s.Store.TouchAPIKey(ctx, k.ID); err != nil {
