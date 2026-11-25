@@ -201,6 +201,30 @@ RAGFlow-X 是企业私有环境的 AI/RAG 控制面。产品语义使用 **工�
 - Fact Guard 运行时 API 不新增 RBAC 资源：`POST /tool-routing/answer-runs`、`POST /tool-routing/answer-runs/:answerRunId/evidence-facts` 复用 `tool-registry:execute`；`GET /tool-routing/answer-runs/:answerRunId/evidence-facts` 与 `GET /tool-routing/answer-runs/:answerRunId/fact-guard` 复用 `tool-registry:read`。该组路由仍受保护组默认拒绝约束，读响应会裁剪 LLM 原文、声明值和 FactIDs 数组。
 - 新增资源需要同步六处：`internal/router/route_registry.go`（注册表形状）、Handler 授权检查、`BuiltinPermissionMatrix()`（`PermissionCatalog()` 由它派生）、`internal/db/permission_intent.go`（`business_user` 读意图）、本表与 en 版、前端 `authProvider.ts` 的 `RESOURCE_ACCESS` 与侧边栏分组；并为存量库新增一条**纯数据幂等迁移**。`trial-run`（`doc/244`）是该流程的完整样例。
 
+### 6.1 配一个「只能对话」的角色（v0.6.5 / 迁移 191）
+
+最小可用的组合是四条授予，一条都不多：
+
+| 资源 | 动作 | 为什么需要 |
+| --- | --- | --- |
+| `chat` | `read` | 列出自己的会话（`session:create` 蕴含 `read`，此处写出便于核对） |
+| `chat` | `execute` | 在会话里提问；对话中心视图由这个键推出 |
+| `chat` | `session:create` | 新建会话。迁移 191 起它是独立动作，不再借用 `manage` |
+| `user` | `read` | `/auth/me` 与成员目录 |
+
+- **不要**给 `chat:manage`：它同时覆盖「改/删助手」与「删掉工作区内别人的会话」。历史上为达到「只对话」而授出的 `chat:manage`，应改为 `chat:session:create`。
+- 视图不需要单独配置：只有 `chat:execute` 的自定义角色被推断为 `chat-user-view`，侧栏只留对话中心、对话、检索应用三面，`/` 自动重定向到 `/conversation-center`；`deny` 先于 `allow`（与后端 `evaluate` 同序），所以显式拒绝 `chat:execute` 会退回只读视图。
+- 验证（151 测试环境实测 6/6，探针在仓库 `scripts/probes/`）：
+
+```
+RGX_BASE=http://192.168.4.151:19193 RGX_VERIFY_PASS=*** python t27_chat_only_role.py
+# S1 恰好四项 allow        S2 /auth/me 的 chat 面没有 manage
+# S3 列会话 + 开会话 200   S4 改/删助手 403、建助手 403、读 agent 403、读数据集 403
+# S5 视图 = conversation-center，更宽键 0
+```
+
+- 已知残留（`E157`，v0.6.5 未修）：删除某个用户**不会**清掉 `rgx_user_role` 绑定行，于是「为这个用户建的角色」之后删除会得到 `40083 role is assigned to users`。此时先在角色页解除绑定再删角色。
+
 ## 7. 校验基线
 
 - 权威矩阵：`internal/db/migrate.go: BuiltinPermissionMatrix()`。

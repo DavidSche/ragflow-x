@@ -15,7 +15,7 @@
 #   ① §2  — every row matches its own table's header (the two §2 tables have different
 #           column counts, so the header is derived per table, never hard-coded); the status
 #           word is one of §0's five; 证据 is non-empty; 更新于 is a real date; and the id
-#           set is exactly T01–T25 + T04b, each once (a dropped row is the failure mode that
+#           set is exactly T01–T25 + T04b + T27 + T28, each once (a dropped row is the failure mode that
 #           reads as "no news");
 #   ② §3  — D-NN contiguous from D-01, 事实/影响/处置 all non-empty, 处置 inside §0's three
 #           values (a fourth word makes the column uncountable), dates parse;
@@ -95,9 +95,9 @@ pick_python() {
 # `PYTHON: unbound variable` and reported the crash as a failure of the document.
 PYTHON="$(pick_python)" || { say "docs-ledger: FAIL — no python on PATH, so the ledger is unreadable (unreadable is not 'consistent')"; exit 1; }
 
-# ── selftest: twelve mutations, each of which must be refused ──────────────
+# ── selftest: fourteen mutations, each of which must be refused ───────────
 if [ "${1:-}" = "--selftest" ]; then
-  say "selftest: can this check refuse? (an invented status word, a dropped §7 row, a footer that disagrees with its own table, a changelog out of order, a fourth disposition word, a hole in §4's drift log, a §7 note that cites a drift row nobody wrote, a changelog row that lost its date cell in each of the two documents, a governed row out of order, a governed row renumbered onto a taken number, and a §5 that lost its governor date)"
+  say "selftest: can this check refuse? (an invented status word, a dropped §7 row, a footer that disagrees with its own table, a changelog out of order, a fourth disposition word, a hole in §4's drift log, a §7 note that cites a drift row nobody wrote, a changelog row that lost its date cell in each of the two documents, a governed row out of order, a governed row renumbered onto a taken number, a §5 that lost its governor date, and a task table no milestone knows about)"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
 
@@ -221,6 +221,16 @@ PY
   mutate "drift-row-width" "$D304" "\`report_assurance_audit_test.go\` 3 例" "\`report_assurance_audit_test.go\`|| 3 例"
   expect_refusal "304 §4 的行比表头宽"     LEDGER_304="$tmp/drift-row-width"
 
+  # ⑭ a task table appeared that no milestone knows about. It renders perfectly — a heading,
+  # a header, zero rows — and that is the shape a half-written workstream takes: the count
+  # rule exists so that "who owns this work?" is answered by the document, not by the reader.
+  mutate "fourth-table" "$D304" "### 2.2b v0.6.5 补丁（T27–T28，8 pd，不在 33 之内）" \
+    "### 2.2b v0.6.5 补丁（T27–T28，8 pd，不在 33 之内）
+
+| ID | 任务 | pd | 状态 | 证据 | 更新于 |
+| --- | --- | --- | --- | --- | --- |"
+  expect_refusal "304 §2 应有 3 张任务表" LEDGER_304="$tmp/fourth-table"
+
   say "SELFTEST OK"
   exit 0
 
@@ -321,10 +331,14 @@ DISPOSITIONS = ('按方案改代码', '按代码改方案（需评审）', '接�
 # ── ① 304 §2 ────────────────────────────────────────────────────────────────
 lines = load(d304)
 tables = list(table_after(lines, '| ID |', '## '))
-if len(tables) != 2:
-    bad("304 §2 应有 2 张任务表（v0.7.0 与 v0.7.1 两种列数），读到 %d 张" % len(tables))
+# Three, and named: v0.7.0 (7 columns), v0.7.1 (6) and the v0.6.5 patch (6, T27–T28).
+# A literal count is the point — a task table that appears without a decision is exactly
+# what this rule is for, and a fourth one means somebody grew a workstream that no
+# milestone, no pd total and no dependency map knows about.
+if len(tables) != 3:
+    bad("304 §2 应有 3 张任务表（v0.7.0 / v0.7.1 / v0.6.5 补丁），读到 %d 张" % len(tables))
 else:
-    ok("304 §2 有 2 张任务表（列数各自从表头推导：%s）" %
+    ok("304 §2 有 3 张任务表（列数各自从表头推导：%s）" %
        " / ".join(str(len(h)) for _, h, _ in tables))
 
 seen_ids = []
@@ -374,17 +388,17 @@ for header, hcells, rows in tables:
 if shape_bad == 0:
     ok("304 §2 的 %d 行全部匹配各自表头、状态在闭集内、证据非空、日期可解析" % len(seen_ids))
 
-want_ids = ['T%02d' % n for n in range(1, 26)] + ['T04b']
+want_ids = ['T%02d' % n for n in range(1, 26)] + ['T04b', 'T27', 'T28']
 want_ids.sort()
 got = sorted(seen_ids)
 if got != sorted(want_ids):
     missing = [t for t in want_ids if t not in seen_ids]
     extra = [t for t in seen_ids if t not in want_ids]
     dupes = sorted({t for t in seen_ids if seen_ids.count(t) > 1})
-    bad("304 §2 的任务 id 集不是 T01–T25 + T04b：缺 %s 多 %s 重 %s" %
+    bad("304 §2 的任务 id 集不是 T01–T25 + T04b + T27 + T28：缺 %s 多 %s 重 %s" %
         (missing or '无', extra or '无', dupes or '无'))
 else:
-    ok("304 §2 的任务 id 恰为 T01–T25 + T04b（26 行，各一次）")
+    ok("304 §2 的任务 id 恰为 T01–T25 + T04b + T27 + T28（28 行，各一次）")
 
 # ── ② 304 §3 ────────────────────────────────────────────────────────────────
 i3 = next((k for k, l in enumerate(lines) if l.startswith('## 3.')), None)

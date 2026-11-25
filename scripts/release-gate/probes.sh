@@ -59,6 +59,11 @@ WAITTEST="$DIR/test_w4_wait_state.py"
 EVID="$DIR/w4_compiler_evidence.py"
 COMMON="$DIR/probe_common.py"
 README="$DIR/README.md"
+# T27 (doc/301 §10.3): the chat-only role, on a deployed instance. Read-write by
+# design — it provisions a role and a user — so what this check enforces is that it
+# is in the tree, compiles, refuses before the network, and carries no credential.
+# Its live reading is doc/304 §5.3, not this script's exit code.
+T27="$DIR/t27_chat_only_role.py"
 
 # `command -v python3` on Windows can resolve to the Store alias; the first one that runs
 # `-c pass` wins. Same discipline as `pick_python()` in scripts/release-gate.sh.
@@ -76,12 +81,12 @@ say()  { printf '%s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 good() { printf 'ok    %s\n' "$*"; }
 
-# ── selftest: fifteen mutations, each of which must be refused ───────────────────
+# ── selftest: seventeen mutations, each of which must be refused ─────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
   say "selftest: can this check refuse? (a re-added password, a hidden one, a deleted step, a re-coupled pair, a gate that runs the writer, a diagnosis probe that can write, a repair predicate that widens into 'safe')"
-  cp "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$README" "$tmp"/ 2>/dev/null
+  cp "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T27" "$README" "$tmp"/ 2>/dev/null
 
   # ① a credential put back: a name that ends in _PASSWORD with a working literal. This is
   # the exact string v1.28 removed, and nothing about the probe's behaviour changes.
@@ -299,6 +304,30 @@ def _post_that_should_not_exist(client, path):
   say "ok      every failure treated as overtaken -> refused"
   cp "$EVID" "$tmp/w4_compiler_evidence.py"
 
+  # ⑯ the new probe's contract is *its* line, not the shared helper's: deleting a step
+  # from t27 must be visible, or a T27 drill could publish five steps and still pass this
+  # check (a contract nobody counts is a contract nobody has to keep).
+  sed '/("S4", "boundary:/d' "$T27" > "$tmp/t27_chat_only_role.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 't27_chat_only_role.py prints 5 steps'; then
+    say "SELFTEST FAIL: a step deleted from T27's contract went unnoticed"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a step deleted from T27's contract -> refused"
+  cp "$T27" "$tmp/t27_chat_only_role.py"
+
+  # ⑰ and the file has to be *inside* the credential walk, not merely next to it: a
+  # literal in t27 is the same defect item 12 named, one probe over.
+  { printf '\n'; printf '%s\n' 'DEFAULT_PASSWORD = "RgxTest#2026a"'; } >> "$tmp/t27_chat_only_role.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'stores a credential'; then
+    say "SELFTEST FAIL: a credential literal in T27 was accepted (the walk does not cover the new probe)"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a credential literal in T27 -> refused"
+
   say "SELFTEST OK"
   exit 0
 fi
@@ -307,7 +336,7 @@ say "live probes (doc/304 §7 item 12) — tracked, hermetic half only"
 
 # ── ⓪ the files exist and compile ───────────────────────────────────────────
 missing=0
-for f in "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$README"; do
+for f in "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T27" "$README"; do
   if [ -f "$f" ]; then
     good "$f is in the tree"
   else
@@ -323,8 +352,8 @@ fi
 if [ -z "$PY" ]; then
   bad "no python on PATH: the probes cannot be compiled, and 'I did not compile' is not 'they compile'"
 else
-  if out="$("$PY" -m py_compile "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>&1)"; then
-    good "all seven compile ($PY -m py_compile)"
+  if out="$("$PY" -m py_compile "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T27" 2>&1)"; then
+    good "all eight compile ($PY -m py_compile)"
   else
     bad "a probe does not compile"
     printf '%s\n' "$out" | tail -5
@@ -345,10 +374,10 @@ fi
 # literal is.
 PYHIDDEN='^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN|KEY)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*os\.environ\.get\([[:space:]]*"[^"]+"[[:space:]]*,[[:space:]]*"[^"$]+'
 secret_hits="$(
-  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
-    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
-    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
-    grep -nE "$PYHIDDEN" "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" 2>/dev/null || true
+  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" 2>/dev/null || true
+    grep -nE "$PYHIDDEN" "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" 2>/dev/null || true
   } | sed '/^$/d')"
 if [ -z "$secret_hits" ]; then
   good "no credential literal is assigned in any probe (the shape check, not a word list)"
@@ -358,7 +387,7 @@ else
 fi
 # The drill's own history, by name: these are the strings v1.28 removed, and a recurrence
 # means someone pasted the old `localenv` copy back in.
-hist_hits="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor|MPZMtiIw' "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$README" 2>/dev/null || true)"
+hist_hits="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor|MPZMtiIw' "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$README" 2>/dev/null || true)"
 if [ -z "$hist_hits" ]; then
   good "none of the historical drill credentials appear (RgxTest / RgxDrill / zhixiang@)"
 else
@@ -462,7 +491,7 @@ done
 
 # ── ② a missing credential is a usage sentence, before the network ──────────
 for spec in "$T16:RGX_VERIFY_PASS:--only S1" "$T02:RGX_VERIFY_PASS:" "$W4:RGX_VERIFY_PASS:--dataset ds-placeholder" \
-            "$EVID:RGX_ENGINE_KEY:--dataset ds-placeholder"; do
+            "$EVID:RGX_ENGINE_KEY:--dataset ds-placeholder" "$T27:RGX_VERIFY_PASS:"; do
   file="${spec%%:*}"; rest="${spec#*:}"; var="${rest%%:*}"; extra="${rest#*:}"
   base="$(basename "$file")"
   # `env -u` on every credential variable: the check must not depend on the operator's shell
@@ -532,9 +561,10 @@ check_offline "$T16" 11 "RGX_VERIFY_BASE RGX_VERIFY_PASS RGX_DRILL_SSH_PASS"
 check_offline "$T02" 5 "RGX_BASE RGX_VERIFY_PASS"
 check_offline "$W4" 5 "RGX_BASE RGX_VERIFY_PASS"
 check_offline "$EVID" 7 "RGX_ENGINE_BASE RGX_ENGINE_KEY"
+check_offline "$T27" 6 "RGX_BASE RGX_VERIFY_PASS"
 
 # ── ④ the pair is decoupled, and both sit on probe_common ───────────────────
-for f in "$T16" "$T02" "$W4" "$EVID"; do
+for f in "$T16" "$T02" "$W4" "$EVID" "$T27"; do
   base="$(basename "$f")"
   if grep -qE '^from probe_common import|^    .*probe_common' "$f"; then
     good "$base imports probe_common"

@@ -171,6 +171,29 @@ The UI derives navigation from effective permissions returned by `/auth/me`.
 Unmapped or unauthorized resources are hidden. The audit view appears only when
 the effective permission set includes `audit:read`.
 
+## The chat-only role (v0.6.5, migration 191)
+
+A role that may only use the conversation center needs exactly four grants:
+
+| Resource | Action | Why |
+| --- | --- | --- |
+| `chat` | `read` | list its own sessions (`session:create` implies `read`) |
+| `chat` | `execute` | ask questions; this key alone selects the `chat-user-view` navigation profile |
+| `chat` | `session:create` | start a session — standalone since migration 191, no longer `manage` |
+| `user` | `read` | `/auth/me` and the member directory |
+
+`chat:manage` must not be granted: it also covers editing/deleting assistants and
+deleting other members' sessions. Roles that were given `chat:manage` only to allow
+"start a chat" should be changed to `chat:session:create`. The view is inferred, not
+configured: a custom role holding `chat:execute` gets `chat-user-view` (conversation
+center, chats, search apps only) and `/` redirects to `/conversation-center`; an
+explicit `deny` outranks `allow`, so denying `chat:execute` falls back to the read-only
+view.
+
+Known residue (`E157`, not fixed in v0.6.5): deleting a user does not remove its
+`rgx_user_role` rows, so a role created for that user then fails to delete with
+`40083 role is assigned to users`. Unassign it on the role page first.
+
 ## Reconciliation and compatibility
 
 Migrations 128 and 129 backfill newer built-in permissions into databases that

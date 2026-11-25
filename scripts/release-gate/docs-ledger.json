@@ -6,21 +6,21 @@
   "sources": [
     {
       "path": "doc/develop/304-v0.7实施情况与跟踪：可信证据、问答收口与网关保障.md",
-      "sha256": "eb555b92e6faef7faafe11eed9f0f65c7b88de57fc0be285f15092c5ddff775b",
-      "bytes": 537320,
-      "lines": 902
+      "sha256": "8fa6d49127cf719471e2780270a3d0ab6f92d99787b65ba8487bfa33d199a88f",
+      "bytes": 546647,
+      "lines": 922
     },
     {
       "path": "doc/develop/301-v0.7下一阶段工作计划：可信证据、问答收口与网关保障.md",
-      "sha256": "85e8bf8e8938f2d9c704825a17775bc60207b3e83f0834239dd0eee82898a0b9",
-      "bytes": 305788,
-      "lines": 1686
+      "sha256": "d24cf881abbb3d7c31f4a9184e339796c43287d2d234863b609c295174a742b9",
+      "bytes": 307768,
+      "lines": 1698
     },
     {
       "path": "doc/develop/305-v0.7实测与演练报告：网关压测、E0-E3与live drill.md",
-      "sha256": "dcd2e68c11ac422e671402350318514306f2b3026017aab7b7f31763dfcf7ff2",
-      "bytes": 299399,
-      "lines": 3036
+      "sha256": "86a34be873d65e80516eb85473e08c9fe04b2257d32c801ecec8dc0f6cf698d4",
+      "bytes": 304158,
+      "lines": 3095
     }
   ],
   "ledger": {
@@ -154,6 +154,16 @@
         "id": "T25",
         "status": "已完成",
         "evidence": true
+      },
+      {
+        "id": "T27",
+        "status": "已完成",
+        "evidence": true
+      },
+      {
+        "id": "T28",
+        "status": "已完成",
+        "evidence": true
       }
     ],
     "deviations": [
@@ -170,6 +180,7 @@
       "D-11"
     ],
     "changelog": [
+      "v1.99",
       "v1.98",
       "v1.97",
       "v1.96",
@@ -277,7 +288,7 @@
       "v0.2",
       "v0.1"
     ],
-    "s7_items": 41,
+    "s7_items": 44,
     "e_tail": {
       "301 §14.J": {
         "first": 78,
@@ -287,9 +298,9 @@
       },
       "304 §4": {
         "first": 41,
-        "last": 155,
-        "next": 156,
-        "rows": 115
+        "last": 157,
+        "next": 158,
+        "rows": 117
       }
     },
     "s2x_305": [
@@ -345,7 +356,8 @@
       50,
       51,
       52,
-      53
+      53,
+      54
     ]
   }
 }
