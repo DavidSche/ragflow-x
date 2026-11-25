@@ -1,7 +1,9 @@
 package webfs
 
 import (
+	"compress/gzip"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -13,11 +15,17 @@ import (
 // Each build-tag variant (dist_placeholder.go / dist_embedded.go) supplies it.
 
 // Handler is the Gin no-route handler serving the embedded frontend with SPA
-// fallback. Unknown non-/api paths fall back to index.html so deep links like
-// /datasets/123 survive a hard refresh; assets are content-hashed by Vite and
-// marked immutable, while index.html is never cached.
-func Handler() gin.HandlerFunc {
-	fileServer := http.FileServer(http.FS(assets()))
+// fallback and gzip negotiation. Unknown non-/api paths fall back to index.html
+// so deep links like /datasets/123 survive a hard refresh; assets are
+// content-hashed by Vite and marked immutable, while index.html is never cached.
+func Handler() gin.HandlerFunc { return handlerFor(assets()) }
+
+// handlerFor is the same handler over an arbitrary filesystem. The seam exists
+// because the compression rules (which type, which size, which request) are the
+// part worth testing, and a test that can only see the embedded build can only
+// assert "some bytes came back".
+func handlerFor(fsys fs.FS) gin.HandlerFunc {
+	fileServer := http.FileServer(http.FS(fsys))
 	return func(c *gin.Context) {
 		// API and operational endpoints must never fall back to index.html:
 		// a missing endpoint is a JSON 404, not the UI shell.
@@ -27,31 +35,195 @@ func Handler() gin.HandlerFunc {
 			return
 		}
 
+		w := newGzipWriter(c.Writer, c.Request)
+		defer w.Close()
+		// Vary belongs on every asset/shell answer, compressed or not: a shared
+		// cache that stores the identity form and replays it to a client that
+		// asked for gzip is a cache bug, not a client bug.
+		w.Header().Add("Vary", "Accept-Encoding")
+
 		name := strings.TrimPrefix(p, "/")
 		if name == "" {
 			name = "index.html"
 		}
-		if _, err := fs.Stat(assets(), path.Clean(name)); err == nil {
+		if _, err := fs.Stat(fsys, path.Clean(name)); err == nil {
 			if name != "index.html" {
-				c.Header("Cache-Control", "public, max-age=31536000, immutable")
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 			} else {
-				c.Header("Cache-Control", "no-cache")
+				w.Header().Set("Cache-Control", "no-cache")
 			}
-			fileServer.ServeHTTP(c.Writer, c.Request)
+			fileServer.ServeHTTP(w, c.Request)
 			return
 		}
-		c.Header("Cache-Control", "no-cache")
-		c.Header("Content-Type", "text/html; charset=utf-8")
-		// Gin pre-sets 404 on the NoRoute path before this handler runs, so the
-		// SPA fallback must claim 200 explicitly — otherwise every deep link
-		// (e.g. /setup or /datasets/123) renders the app but answers 404, and
-		// curl -f / uptime checks / proxies treat a working page as an error.
-		c.Status(http.StatusOK)
-		data, err := fs.ReadFile(assets(), "index.html")
+		data, err := fs.ReadFile(fsys, "index.html")
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "frontend assets unavailable"})
 			return
 		}
-		_, _ = c.Writer.Write(data)
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Length", itoa(len(data)))
+		// Gin pre-sets 404 on the NoRoute path before this handler runs, so the
+		// SPA fallback must claim 200 explicitly — otherwise every deep link
+		// (e.g. /setup or /datasets/123) renders the app but answers 404, and
+		// curl -f / uptime checks / proxies treat a working page as an error.
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
 	}
+}
+
+// minCompressBytes is where gzip stops costing more than it saves: the header
+// alone is ~18 bytes and the CPU is paid on every request. The shell is ~1.2 KB
+// and the JS bundles are 1.4–1.7 MB, so everything that matters is far above it.
+const minCompressBytes = 1024
+
+// compressibleTypes is a closed set, not a prefix test on "text/": the bytes
+// served here are the ones Vite emitted, and a media file is already compressed.
+// Re-encoding it makes the payload larger and bills CPU per request.
+var compressibleTypes = map[string]bool{
+	"text/html":              true,
+	"text/css":               true,
+	"text/plain":             true,
+	"text/javascript":        true,
+	"application/javascript": true,
+	"application/json":       true,
+	"application/manifest+json": true,
+	"image/svg+xml":          true,
+}
+
+func compressibleType(contentType string) bool {
+	if contentType == "" {
+		return false
+	}
+	mt, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	return compressibleTypes[mt]
+}
+
+func acceptsGzip(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		token := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		// "gzip;q=0" means the client explicitly refuses it.
+		if !strings.EqualFold(token, "gzip") {
+			continue
+		}
+		if strings.Contains(strings.ToLower(part), "q=0") && !strings.Contains(strings.ToLower(part), "q=0.") {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// gzipWriter compresses a response at the moment its status and headers are
+// known, so Content-Length can be dropped before anything is written. Buffering
+// the body to decide later would mean holding a 1.7 MB bundle per concurrent
+// request; deciding at WriteHeader costs nothing.
+type gzipWriter struct {
+	gin.ResponseWriter
+	req         *http.Request
+	gz          *gzip.Writer
+	wroteHeader bool
+	closed      bool
+}
+
+func newGzipWriter(w gin.ResponseWriter, req *http.Request) *gzipWriter {
+	return &gzipWriter{ResponseWriter: w, req: req}
+}
+
+func (w *gzipWriter) shouldCompress(code int) bool {
+	if code != http.StatusOK || w.req.Method == http.MethodHead {
+		return false
+	}
+	if w.Header().Get("Content-Encoding") != "" {
+		return false
+	}
+	if !compressibleType(w.Header().Get("Content-Type")) {
+		return false
+	}
+	if n, ok := contentLength(w.Header().Get("Content-Length")); ok && n < minCompressBytes {
+		return false
+	}
+	return acceptsGzip(w.req)
+}
+
+func (w *gzipWriter) WriteHeader(code int) {
+	if w.wroteHeader {
+		w.ResponseWriter.WriteHeader(code)
+		return
+	}
+	w.wroteHeader = true
+	if w.shouldCompress(code) {
+		w.Header().Set("Content-Encoding", "gzip")
+		// The identity length is no longer the length of this body; leaving it
+		// in place truncates the response at the proxy.
+		w.Header().Del("Content-Length")
+		w.ResponseWriter.WriteHeader(code)
+		w.gz = gzip.NewWriter(w.ResponseWriter)
+		return
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *gzipWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.gz != nil {
+		return w.gz.Write(b)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *gzipWriter) WriteString(s string) (int, error) { return w.Write([]byte(s)) }
+
+func (w *gzipWriter) Flush() {
+	if w.gz != nil {
+		_ = w.gz.Flush()
+	}
+	w.ResponseWriter.Flush()
+}
+
+// Close finishes the gzip stream. Without it the last block stays in the
+// writer's buffer and the browser sees a truncated document — the failure mode
+// is an HTML page that renders halfway, which reads like a frontend bug.
+func (w *gzipWriter) Close() {
+	if w.closed {
+		return
+	}
+	w.closed = true
+	if w.gz != nil {
+		_ = w.gz.Close()
+		w.gz = nil
+	}
+}
+
+func contentLength(s string) (int64, bool) {
+	if s == "" {
+		return 0, false
+	}
+	var n int64
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return 0, false
+		}
+		n = n*10 + int64(s[i]-'0')
+	}
+	return n, true
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }
