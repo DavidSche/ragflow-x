@@ -48,10 +48,16 @@ type Label struct {
 // smaller than `WorksheetItems` the number describes a subset of the sample, and the
 // receipt says so instead of leaving the reader to compare two files by hand.
 type Agreement struct {
-	Schema              string         `json:"schema"`
-	Annotators          []string       `json:"annotators"`
-	Worksheet           string         `json:"worksheet"`
+	Schema     string   `json:"schema"`
+	Annotators []string `json:"annotators"`
+	Worksheet  string   `json:"worksheet"`
+	// Side is which unit `worksheet_items` counts: one claim per row (`items`) or one
+	// frozen candidate per row (`candidates`, doc/301 §9.1.3 一). On the candidates side a
+	// 30-claim worksheet is 36 rows, and a receipt without this field would read as an
+	// overwritten sample rather than as the unit the plan asked for.
+	Side                string         `json:"side"`
 	WorksheetItems      int            `json:"worksheet_items"`
+	WorksheetItemIDs    int            `json:"worksheet_item_ids"`
 	LabelledByAnnotator map[string]int `json:"labelled_by_annotator"`
 	LabelledByAll       int            `json:"items_labelled_by_all"`
 	MissingCells        int            `json:"annotator_item_cells_missing"`
@@ -132,12 +138,12 @@ func runKappa(args []string, stdout, stderr *os.File) int {
 		return exitUsage
 	}
 
-	items, err := readItems(*worksheetPath)
+	ws, err := readWorksheet(*worksheetPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "goldtool kappa: worksheet: %v\n", err)
 		return exitUsage
 	}
-	if len(items) == 0 {
+	if len(ws.Rows) == 0 {
 		fmt.Fprintf(stderr, "goldtool kappa: worksheet %s has no items\n", *worksheetPath)
 		return exitInvariant
 	}
@@ -147,8 +153,9 @@ func runKappa(args []string, stdout, stderr *os.File) int {
 		return exitUsage
 	}
 
-	problems := validateLabelsAgainstWorksheet(items, lines, *worksheetPath)
-	ag := Agreement{Schema: kappaSchema, Worksheet: *worksheetPath, WorksheetItems: len(items),
+	problems := validateLabelsAgainstWorksheet(ws, lines, *worksheetPath)
+	ag := Agreement{Schema: kappaSchema, Worksheet: *worksheetPath, Side: ws.Side,
+		WorksheetItems: len(ws.Rows), WorksheetItemIDs: ws.distinctItemIDs(),
 		Problems: problems, PerClass: map[string]int{}}
 
 	// κ pairs only the rows that carry a judgement. A blank verdict is not a disagreement,
@@ -169,7 +176,7 @@ func runKappa(args []string, stdout, stderr *os.File) int {
 	}
 	names := annotatorNames(lines)
 	ag.Annotators = names
-	ag.LabelledByAnnotator, ag.LabelledByAll, ag.MissingCells = coverage(items, lines, names)
+	ag.LabelledByAnnotator, ag.LabelledByAll, ag.MissingCells = coverage(ws, lines, names)
 	ag.Unfinished = ag.MissingCells > 0
 
 	if len(problems) == 0 && len(names) < 2 {
@@ -187,7 +194,7 @@ func runKappa(args []string, stdout, stderr *os.File) int {
 	}
 
 	if len(problems) == 0 {
-		pair, err := agreement(items, judged)
+		pair, err := agreementRows(ws, judged)
 		if err != nil {
 			// Reachable when a second annotator exists in the file but has not filled a single
 			// verdict yet: the coverage numbers then say "unfinished", and κ has nothing to
@@ -196,9 +203,9 @@ func runKappa(args []string, stdout, stderr *os.File) int {
 			if ag.Unfinished {
 				ag.OK = false
 				reportKappa(stdout, stderr, ag, *path)
-				fmt.Fprintf(stderr, "goldtool kappa: %v; %d of %d annotator-item cells are still blank: "+
+				fmt.Fprintf(stderr, "goldtool kappa: %v; %d of %d annotator-%s cells are still blank: "+
 					"this is not a low κ, it is unfinished (exit 3, not pass)\n", err, ag.MissingCells,
-					len(items)*max(1, len(names)))
+					len(ws.Rows)*max(1, len(names)), unitNoun(ws))
 				return exitIncomplete
 			}
 			fmt.Fprintf(stderr, "goldtool kappa: %v\n", err)
@@ -226,9 +233,9 @@ func runKappa(args []string, stdout, stderr *os.File) int {
 			"do not line up with the worksheet\n", len(problems), *path)
 		return exitInvariant
 	case ag.Unfinished:
-		fmt.Fprintf(stderr, "goldtool kappa: %d of %d annotator-item cells are blank (%d of %d items labelled by "+
+		fmt.Fprintf(stderr, "goldtool kappa: %d of %d annotator-%s cells are blank (%d of %d %s(s) labelled by "+
 			"everyone): this is not a low κ, it is unfinished (exit 3, not pass)\n",
-			ag.MissingCells, len(items)*max(1, len(names)), ag.LabelledByAll, len(items))
+			ag.MissingCells, len(ws.Rows)*max(1, len(names)), unitNoun(ws), ag.LabelledByAll, len(ws.Rows), unitNoun(ws))
 		return exitIncomplete
 	case !ag.MeetsTarget:
 		if ag.Kappa < 0.60 {
@@ -256,11 +263,11 @@ func reportKappa(stdout, stderr *os.File, ag Agreement, path string) {
 	coverage := "no labels yet"
 	switch {
 	case len(ag.Annotators) == 1:
-		coverage = fmt.Sprintf("%d item(s) labelled by the only annotator (%s)",
-			ag.LabelledByAnnotator[ag.Annotators[0]], ag.Annotators[0])
+		coverage = fmt.Sprintf("%d %s(s) labelled by the only annotator (%s)",
+			ag.LabelledByAnnotator[ag.Annotators[0]], nounForSide(ag.Side), ag.Annotators[0])
 	case len(ag.Annotators) > 1:
-		coverage = fmt.Sprintf("%d/%d item(s) labelled by everyone, %d cell(s) blank",
-			ag.LabelledByAll, ag.WorksheetItems, ag.MissingCells)
+		coverage = fmt.Sprintf("%d/%d %s(s) labelled by everyone, %d cell(s) blank",
+			ag.LabelledByAll, ag.WorksheetItems, nounForSide(ag.Side), ag.MissingCells)
 	}
 	fmt.Fprintf(stdout, "goldtool kappa: %s  %s over %d pair(s); %s\n", path, kappaText, ag.Pairs, coverage)
 	printJSON(stdout, ag)
@@ -271,12 +278,17 @@ func reportKappa(stdout, stderr *os.File, ag Agreement, path string) {
 // here because `--check` is a step an annotator may skip: the guard has to exist where
 // the number is produced, or "I ran --check" becomes the only thing standing between a
 // typo and a published κ.
-func validateLabelsAgainstWorksheet(items []Item, lines []labelledLine, worksheet string) []Problem {
-	byID := make(map[string]bool, len(items))
-	for _, it := range items {
-		byID[it.ItemID] = true
-	}
+func validateLabelsAgainstWorksheet(ws *worksheet, lines []labelledLine, worksheet string) []Problem {
+	byKey, _ := ws.byKey()
+
+	// The worksheet itself can be the fault: a repeated key is not a label problem, and on
+	// the candidates side it is the only duplicate that counts (item_id repeating is the
+	// plan, doc/301 §9.1.3 一).
 	var problems []Problem
+	if dups := ws.duplicateKeys(); len(dups) > 0 {
+		problems = append(problems, Problem{"worksheet_duplicate_row",
+			fmt.Sprintf("%s repeats %d row key(s) %v", worksheet, len(dups), cap10(dups))})
+	}
 	seen := map[string]int{}
 	for _, l := range lines {
 		at := fmt.Sprintf("line %d", l.Line)
@@ -289,19 +301,25 @@ func validateLabelsAgainstWorksheet(items []Item, lines []labelledLine, workshee
 				at + ": every row names who judged it, or two files merge into one opinion"})
 			continue
 		}
-		if !byID[l.ItemID] {
+		key, err := labelKeyForSide(l.Label, ws.Side)
+		if err != nil {
+			problems = append(problems, Problem{"label_without_candidate_index",
+				fmt.Sprintf("%s: %s", at, err)})
+			continue
+		}
+		if _, ok := byKey[key]; !ok {
 			problems = append(problems, Problem{"label_for_unknown_item",
-				fmt.Sprintf("%s: %s is not in %s — κ would skip it, so the item would never be counted", at,
-					l.ItemID, worksheet)})
+				fmt.Sprintf("%s: %s is not in %s — κ would skip it, so the row would never be counted", at,
+					key, worksheet)})
 			continue
 		}
-		key := l.ItemID + "\x00" + l.Annotator
-		if prev, dup := seen[key]; dup {
+		seenKey := key + "\x00" + l.Annotator
+		if prev, dup := seen[seenKey]; dup {
 			problems = append(problems, Problem{"duplicate_label",
-				fmt.Sprintf("%s: %s already has a judgement from %q at line %d", at, l.ItemID, l.Annotator, prev)})
+				fmt.Sprintf("%s: %s already has a judgement from %q at line %d", at, key, l.Annotator, prev)})
 			continue
 		}
-		seen[key] = l.Line
+		seen[seenKey] = l.Line
 		if v := trimSpace(l.Verdict); v != "" && !contains(GoldVerdicts, v) {
 			problems = append(problems, Problem{"label_verdict_outside_vocabulary",
 				fmt.Sprintf("%s: verdict %q is not one of %v", at, v, GoldVerdicts)})
@@ -329,26 +347,33 @@ func annotatorNames(lines []labelledLine) []string {
 }
 
 // coverage answers the question κ cannot: for how much of the worksheet do we actually
-// have everyone's opinion? `missing` counts (item, annotator) cells, so one person
+// have everyone's opinion? `missing` counts (row, annotator) cells, so one person
 // leaving two items blank is 2 missing cells, not 1 — the number a project manager
-// needs in order to know how many hours are left.
-func coverage(items []Item, lines []labelledLine, names []string) (map[string]int, int, int) {
+// needs in order to know how many hours are left. A "row" is the worksheet's own unit:
+// on the candidates side that is one (item_id, candidate_index), so a claim with two
+// candidates needs two judgements from each annotator.
+func coverage(ws *worksheet, lines []labelledLine, names []string) (map[string]int, int, int) {
+	_, order := ws.byKey()
 	filled := map[string]map[string]bool{}
 	for _, l := range lines {
 		if trimSpace(l.Verdict) == "" || trimSpace(l.Annotator) == "" {
 			continue
 		}
-		if filled[l.ItemID] == nil {
-			filled[l.ItemID] = map[string]bool{}
+		key, err := labelKeyForSide(l.Label, ws.Side)
+		if err != nil {
+			continue
 		}
-		filled[l.ItemID][l.Annotator] = true
+		if filled[key] == nil {
+			filled[key] = map[string]bool{}
+		}
+		filled[key][l.Annotator] = true
 	}
 	perName := map[string]int{}
 	all := 0
-	for _, it := range items {
+	for _, key := range order {
 		everyone := len(names) > 0
 		for _, n := range names {
-			if filled[it.ItemID][n] {
+			if filled[key][n] {
 				perName[n]++
 			} else {
 				everyone = false
@@ -360,50 +385,72 @@ func coverage(items []Item, lines []labelledLine, names []string) (map[string]in
 	}
 	missing := 0
 	for _, n := range names {
-		missing += len(items) - perName[n]
+		missing += len(order) - perName[n]
 	}
 	return perName, all, missing
 }
 
 // agreement computes the *pairwise* κ over every pair of annotators that labelled
-// overlapping items, and averages nothing: with two annotators there is one pair and
+// overlapping rows, and averages nothing: with two annotators there is one pair and
 // the average of one number is that number; with three (the adjudicator counts as one
 // only if they also labelled blindly) the per-pair numbers are what a reader needs.
+//
+// The two entry points exist because a caller either has a worksheet (the normal case,
+// labels.go) or a list of items it filters by (the tests, and the "κ over the gold set"
+// reading). Both bottom out in `agreementOver`, so the pairing rule — (item_id,
+// candidate_index) on the candidates side — is written once.
+func agreement(items []Item, labels []Label) (Agreement, error) {
+	keys := make([]string, 0, len(items))
+	for _, it := range items {
+		keys = append(keys, it.ItemID)
+	}
+	return agreementOver(keys, sideItems, labels)
+}
+
+func agreementRows(ws *worksheet, labels []Label) (Agreement, error) {
+	return agreementOver(ws.keys(), ws.Side, labels)
+}
+
+// agreementOver pairs labels by row key. `keep` is the set of rows the number is about:
+// the worksheet's rows when κ is over the sample, the gold file's claims when κ is over
+// what survived assembly.
 //
 // When `items` is non-nil, only pairs of labels whose item is in the gold file are
 // used — that is what makes "κ over the gold set" a different claim from "κ over
 // whatever we annotated".
-func agreement(items []Item, labels []Label) (Agreement, error) {
+func agreementOver(keepKeys []string, side string, labels []Label) (Agreement, error) {
 	if len(labels) == 0 {
 		return Agreement{}, fmt.Errorf("label file is empty")
 	}
 	keep := map[string]bool{}
-	if items != nil {
-		for _, it := range items {
-			keep[it.ItemID] = true
-		}
+	for _, k := range keepKeys {
+		keep[k] = true
 	}
 
-	// byItem[item][annotator] = verdict
-	byItem := map[string]map[string]string{}
+	// byRow[row][annotator] = verdict
+	byRow := map[string]map[string]string{}
 	annotators := map[string]bool{}
 	for _, l := range labels {
 		if l.Annotator == "" || l.ItemID == "" {
 			return Agreement{}, fmt.Errorf("label with empty annotator or item_id: %+v", l)
 		}
-		if items != nil && !keep[l.ItemID] {
+		key, err := labelKeyForSide(l, side)
+		if err != nil {
+			return Agreement{}, err
+		}
+		if len(keep) > 0 && !keep[key] {
 			continue
 		}
 		if !contains(GoldVerdicts, l.Verdict) {
-			return Agreement{}, fmt.Errorf("label %s/%s has verdict %q outside the gold vocabulary", l.ItemID, l.Annotator, l.Verdict)
+			return Agreement{}, fmt.Errorf("label %s/%s has verdict %q outside the gold vocabulary", key, l.Annotator, l.Verdict)
 		}
-		if byItem[l.ItemID] == nil {
-			byItem[l.ItemID] = map[string]string{}
+		if byRow[key] == nil {
+			byRow[key] = map[string]string{}
 		}
-		if _, dup := byItem[l.ItemID][l.Annotator]; dup {
-			return Agreement{}, fmt.Errorf("annotator %q labelled item %q twice", l.Annotator, l.ItemID)
+		if _, dup := byRow[key][l.Annotator]; dup {
+			return Agreement{}, fmt.Errorf("annotator %q labelled row %q twice", l.Annotator, key)
 		}
-		byItem[l.ItemID][l.Annotator] = l.Verdict
+		byRow[key][l.Annotator] = l.Verdict
 		annotators[l.Annotator] = true
 	}
 
@@ -413,16 +460,16 @@ func agreement(items []Item, labels []Label) (Agreement, error) {
 	}
 	sort.Strings(names)
 	if len(names) < 2 {
-		return Agreement{Annotators: names}, fmt.Errorf("only %d annotator(s) present; κ needs two", len(names))
+		return Agreement{Annotators: names, Side: side}, fmt.Errorf("only %d annotator(s) present; κ needs two", len(names))
 	}
 
 	// Pool the pairwise comparisons into one κ: for each pair of annotators, every
-	// common item contributes one (a,b) observation. This is the standard way to
+	// common row contributes one (a,b) observation. This is the standard way to
 	// read "two of three agreed" without inventing a majority vote.
 	var av, bv []string
 	disagreed := map[string]int{}
-	for _, it := range sortedItemIDs(byItem) {
-		perAnnotator := byItem[it]
+	for _, row := range sortedRowKeys(byRow) {
+		perAnnotator := byRow[row]
 		for i := 0; i < len(names); i++ {
 			for j := i + 1; j < len(names); j++ {
 				a, aok := perAnnotator[names[i]]
@@ -439,7 +486,7 @@ func agreement(items []Item, labels []Label) (Agreement, error) {
 		}
 	}
 	if len(av) == 0 {
-		return Agreement{Annotators: names}, nil
+		return Agreement{Annotators: names, Side: side}, nil
 	}
 
 	kappa, observed, expected, n := cohenKappa(av, bv)
@@ -448,7 +495,7 @@ func agreement(items []Item, labels []Label) (Agreement, error) {
 		disagreeTotal += c
 	}
 	return Agreement{
-		Annotators: names, Pairs: n, Observed: observed, Expected: expected,
+		Annotators: names, Side: side, Pairs: n, Observed: observed, Expected: expected,
 		Kappa: kappa, Disagreed: disagreeTotal, PerClass: disagreed,
 		MeetsTarget: kappa >= minKappa,
 	}, nil
@@ -470,9 +517,9 @@ func rootClass(a, b string) string {
 	return "other"
 }
 
-func sortedItemIDs(byItem map[string]map[string]string) []string {
-	ids := make([]string, 0, len(byItem))
-	for id := range byItem {
+func sortedRowKeys(byRow map[string]map[string]string) []string {
+	ids := make([]string, 0, len(byRow))
+	for id := range byRow {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)

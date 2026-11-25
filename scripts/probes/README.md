@@ -17,6 +17,7 @@ own: **no tracked file may contain a credential.**
 | `t16_live_drill.py` | S1–S11 against a deployed instance (doc/301 §11.1 T16) | doc/305 §4.3, 11/11 PASS |
 | `t02_seed_gold_pool.py` | K1–K5: widen the candidate scan, publish one revision per template, restore the knob (doc/304 §5.3) | doc/305 §2.3 |
 | `w4_artifact_landing.py` | S1–S5: are compiled artifacts **generated / persisted / readable / on the target revision**? (doc/304 §7 item 23, W-4) | doc/304 §5.3, §7 item 23 |
+| `w4_drill.py` | the **action** half of W-4: create a revision bound to the measured corpus, stop at `awaiting_outline`, then count `location_hints` (doc/304 §4 E152) | doc/304 §5.3, doc/305 §2.50 |
 
 ## The credential contract
 
@@ -225,6 +226,14 @@ Four design notes, each of them a mistake that was available:
 * **Contradiction is compared in one unit.** `summary.fail_count` counts *documents*; the Wiki
   list counts *runs*. Comparing them invents failures out of a three-page run history; the
   contradiction rule therefore uses file-level logs only, joined by `document_id`.
+* **A log keeps every attempt; the summary counts the current run.** On 2026-11-24 the same
+  dataset that had failed seven times the day before read `fail_count=0` while its file logs
+  still held four FAIL rows — both true, because both documents had been re-parsed since. The
+  first version of this file called that a `CONTRADICTION` and exited 1, which teaches a reader
+  that contradictions are noise. Each failure now carries `historical: true|false` ("a later
+  attempt on the same document/run succeeded"), only a failure **nothing overtook** can
+  contradict `fail_count=0`, and the report prints `0 current, 7 historical` rather than
+  dropping them: a later success neither erases the attempt nor proves it was harmless.
 
 And the sentence the probe prints at the end of every live run, because this is the mistake a
 root cause invites: **naming a cause does NOT advance W-4's A/B/C/D.** W-4 is "an artifact
@@ -264,7 +273,7 @@ python scripts/probes/t02_seed_gold_pool.py --dry-run # read the host, change no
 python scripts/probes/t02_seed_gold_pool.py           # K1–K5 for real
 
 python scripts/probes/w4_artifact_landing.py --offline            # the contract, exit 0
-python scripts/probes/w4_artifact_landing.py --selftest           # 22 verdict assertions
+python scripts/probes/w4_artifact_landing.py --selftest           # 33 verdict assertions (incl. D's population check)
 python scripts/probes/w4_artifact_landing.py --dataset <id|name>  # A/B/C, exit 3 while open
 python scripts/probes/w4_artifact_landing.py --dataset <id>        --report <id> --revision <n>                               # …and D
 
@@ -274,7 +283,7 @@ python scripts/probes/w4_wiki_pilot.py --apply          # S1–S6 for real, then
 python scripts/probes/w4_wiki_pilot.py --apply --reingest  # repair "chunks but no products"
 
 python scripts/probes/w4_compiler_evidence.py --offline                  # the contract, exit 0
-python scripts/probes/w4_compiler_evidence.py --selftest                 # 10 verdict assertions
+python scripts/probes/w4_compiler_evidence.py --selftest                 # 12 verdict assertions
 python scripts/probes/w4_compiler_evidence.py --dataset <id|name>        # why did the Compiler stage fail
 python scripts/probes/w4_compiler_evidence.py --replay tmp/w4diag/compiler-evidence.json  # re-derive offline
 ```

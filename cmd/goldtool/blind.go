@@ -125,7 +125,7 @@ func writeBlindFile(path string, rows []any) (blindBlock, error) {
 			removedNames[k] = struct{}{}
 		}
 		lines = append(lines, line)
-		if id, ok := rowItemID(row); ok {
+		if id, ok := rowKeyOf(row); ok {
 			ids = append(ids, id)
 		}
 	}
@@ -150,15 +150,41 @@ func writeBlindFile(path string, rows []any) (blindBlock, error) {
 	}, nil
 }
 
-// rowItemID reads the id out of either row shape without caring which one it is: the two
-// structs spell the field the same way in JSON, and that is the only property the packet
-// depends on.
-func rowItemID(v any) (string, bool) {
+// rowKeyOf reads the row's identity out of either shape without caring which one it is.
+// The items side's identity is `item_id`; the candidates side's is `(item_id,
+// candidate_index)` (doc/301 §9.1.3 一), and the two structs plus the raw-object reader
+// get the same `rowKey` spelling here so a candidate packet's `item_ids_sha256` names the
+// 36 rows rather than the 30 claims they come from.
+func rowKeyOf(v any) (string, bool) {
 	switch r := v.(type) {
 	case Item:
 		return r.ItemID, r.ItemID != ""
 	case worksheetRow:
-		return r.ItemID, r.ItemID != ""
+		if r.ItemID == "" {
+			return "", false
+		}
+		idx := r.CandidateIndex
+		return rowKey(r.ItemID, &idx), true
+	case map[string]json.RawMessage:
+		// `goldtool packet` reads a worksheet as objects instead of structs (so fields this
+		// build does not know survive), and without this case its receipt reported the
+		// sha256 of the empty string — a receipt field that is present, plausible and
+		// useless, which is worse than an absent one.
+		raw, ok := r["item_id"]
+		if !ok {
+			return "", false
+		}
+		var id string
+		if err := json.Unmarshal(raw, &id); err != nil || id == "" {
+			return "", false
+		}
+		if rawIdx, ok := r["candidate_index"]; ok {
+			var idx int
+			if err := json.Unmarshal(rawIdx, &idx); err == nil {
+				return rowKey(id, &idx), true
+			}
+		}
+		return id, true
 	default:
 		return "", false
 	}
@@ -168,18 +194,23 @@ func rowItemID(v any) (string, bool) {
 // packet over the worksheet. The worksheet is the sampling record (prior mix, drawn ids,
 // the receipt's `out`), and a packet at that path leaves the receipt pointing at a file
 // that no longer contains what the receipt describes.
-func blindTargetOK(worksheet, packet string) error {
-	if strings.TrimSpace(packet) == "" {
+//
+// The two paths arrive from two commands with two spellings (`sample`: --out and
+// --blind-out; `packet`: --worksheet and --out), so the flag names come in as arguments —
+// the refusal has to name the flag the operator actually typed, or it sends them to the
+// wrong line of the usage block.
+func blindTargetOK(wsPath, wsFlag, packetPath, packetFlag string) error {
+	if strings.TrimSpace(packetPath) == "" {
 		return nil
 	}
-	if filepath.Clean(worksheet) == filepath.Clean(packet) {
-		return fmt.Errorf("--blind-out must differ from --out: the worksheet is the sampling " +
-			"record (prior mix, drawn ids) and the packet is the reading material; writing " +
-			"one over the other loses the half the other one needs")
+	if filepath.Clean(wsPath) == filepath.Clean(packetPath) {
+		return fmt.Errorf("%s must differ from %s: the worksheet is the sampling "+
+			"record (prior mix, drawn ids) and the packet is the reading material; writing "+
+			"one over the other loses the half the other one needs", packetFlag, wsFlag)
 	}
-	if ws, err := os.Stat(worksheet); err == nil {
-		if pk, err := os.Stat(packet); err == nil && os.SameFile(ws, pk) {
-			return fmt.Errorf("--blind-out and --out are the same file (two names, one inode)")
+	if ws, err := os.Stat(wsPath); err == nil {
+		if pk, err := os.Stat(packetPath); err == nil && os.SameFile(ws, pk) {
+			return fmt.Errorf("%s and %s are the same file (two names, one inode)", packetFlag, wsFlag)
 		}
 	}
 	return nil
@@ -239,7 +270,7 @@ type packetSummary struct {
 // blind; this refuses to build a skeleton from a file that is not. The check is not
 // redundant with the writer: the packet is a file on a disk, and the file handed to an
 // annotator may be any file. One of the two has to look at what is actually there.
-func checkPacket(path string, items []Item) (packetSummary, error) {
+func checkPacket(path string, keys []string) (packetSummary, error) {
 	sum := packetSummary{Path: path}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -248,9 +279,9 @@ func checkPacket(path string, items []Item) (packetSummary, error) {
 	h := sha256.Sum256(raw)
 	sum.SHA256 = hex.EncodeToString(h[:])
 
-	want := make(map[string]int, len(items))
-	for _, it := range items {
-		want[it.ItemID]++
+	want := make(map[string]int, len(keys))
+	for _, k := range keys {
+		want[k]++
 	}
 	got := map[string]int{}
 	for i, line := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
@@ -269,16 +300,20 @@ func checkPacket(path string, items []Item) (packetSummary, error) {
 					"(doc/301 §9.1 rule 3)", i+1, k)
 			}
 		}
-		rawID, ok := row["item_id"]
-		if !ok {
+		if _, ok := row["item_id"]; !ok {
 			return sum, fmt.Errorf("packet line %d has no item_id: a label row could not be "+
 				"joined back to this packet", i+1)
 		}
-		var id string
-		if err := json.Unmarshal(rawID, &id); err != nil {
-			return sum, fmt.Errorf("packet line %d: item_id is not a string: %w", i+1, err)
+		// The key is derived from the row itself, so the same function that compares an
+		// items packet compares a candidates packet — and a packet that dropped
+		// `candidate_index` collapses to one key per claim and is refused as a row-set
+		// mismatch instead of passing on the strength of its item ids.
+		key, ok := rowKeyOf(row)
+		if !ok {
+			return sum, fmt.Errorf("packet line %d: item_id is not a string or candidate_index "+
+				"is not a number: the row has no usable identity", i+1)
 		}
-		got[id]++
+		got[key]++
 	}
 
 	var missing, extra []string

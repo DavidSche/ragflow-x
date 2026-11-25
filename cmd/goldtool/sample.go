@@ -99,7 +99,7 @@ func runSample(args []string, stdout, stderr *os.File) int {
 		fmt.Fprintln(stderr, "goldtool sample: --pool and --out are required")
 		return exitUsage
 	}
-	if err := blindTargetOK(*out, *blindOut); err != nil {
+	if err := blindTargetOK(*out, "--out", *blindOut, "--blind-out"); err != nil {
 		fmt.Fprintf(stderr, "goldtool sample: %v\n", err)
 		return exitUsage
 	}

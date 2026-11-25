@@ -15,7 +15,9 @@
 //
 //	pool       export candidates from published revisions of a live database (read-only)
 //	pool-material  read an existing pool export and print the W-2 material reading (offline)
+//	readiness  identity + A (corpus) + B (people) as three receipts, ready only if all pass
 //	sample     draw the annotation worksheet out of a pool export (deterministic)
+//	packet     derive the annotation packet for a worksheet drawn before --blind-out existed
 //	validate   check a gold file against doc/301 §9.1 (offline, no database)
 //	labels     stub and check the two per-annotator label files (the hand-written end of T02)
 //	adjudicate derive the rows that need a decision and check the third person's file (T02)
@@ -53,13 +55,21 @@ const usage = `goldtool - gold-set tooling for report assurance (doc/301 §9.1)
 usage:
   goldtool pool     --dsn DSN --out pool.jsonl [--max-revisions 40] [--tenant ID]
   goldtool pool-material --in pool.jsonl [--quiet]
+  goldtool readiness --pool pool.jsonl --worksheet WORKSHEET.jsonl
+                    [--labels a.jsonl,b.jsonl] [--prereg prereg-e1-v1.json]
+                    # §7 item 30: identity (same batch?) + A (corpus) + B (people), three
+                    # receipts; ready = all three pass. No --min: the κ floor is frozen.
   goldtool sample   --pool pool.jsonl --out worksheet.jsonl [--n 120]
                     [--strategy random|stratified --stratum K --targets "k=n,..."]
                     [--seed N] [--allow-short] [--blind-out PACKET.jsonl]
+  goldtool packet   --worksheet worksheet.jsonl --out PACKET.jsonl [--quiet]
+                    # packet for a worksheet drawn before sample --blind-out (304 §7 item 37)
   goldtool validate --gold FILE.jsonl [--labels FILE.jsonl] [--strict-coverage]
   goldtool labels   --stub --worksheet worksheet.jsonl --annotator NAME --out labels-NAME.jsonl
                     [--packet PACKET.jsonl]   # the file the annotator reads (no prior_*/gold_*)
   goldtool labels   --check --worksheet worksheet.jsonl --labels labels-NAME.jsonl
+                    # a clean check writes labels-NAME.seal.json next to the file: which bytes,
+                    # against which sheet (--no-seal for a read-only drill) [304 §4 E134]
   goldtool adjudicate --stub --worksheet worksheet.jsonl --labels-a a.jsonl --labels-b b.jsonl
                     --out adjudication.jsonl
   goldtool adjudicate --check --worksheet worksheet.jsonl --labels-a a.jsonl --labels-b b.jsonl
@@ -97,8 +107,12 @@ func run(args []string, stdout, stderr *os.File) int {
 		return runPool(args[1:], stdout, stderr)
 	case "pool-material":
 		return runPoolMaterial(args[1:], stdout, stderr)
+	case "readiness":
+		return runReadiness(args[1:], stdout, stderr)
 	case "sample":
 		return runSample(args[1:], stdout, stderr)
+	case "packet":
+		return runPacket(args[1:], stdout, stderr)
 	case "validate":
 		return runValidate(args[1:], stdout, stderr)
 	case "labels":

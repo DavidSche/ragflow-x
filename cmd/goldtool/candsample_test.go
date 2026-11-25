@@ -53,7 +53,7 @@ func poolWithCandidates(t *testing.T) string {
 	return writePoolFixture(t, items)
 }
 
-func readWorksheet(t *testing.T, path string) []map[string]any {
+func worksheetRows(t *testing.T, path string) []map[string]any {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -104,7 +104,7 @@ func TestSampleCandidateSideDrawsRows(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit %d, stderr=%s", code, stderr)
 	}
-	rows := readWorksheet(t, out)
+	rows := worksheetRows(t, out)
 	if len(rows) != 4 {
 		t.Fatalf("drew %d rows, want 4 (the whole candidate side of the fixture)", len(rows))
 	}
@@ -179,7 +179,7 @@ func TestSampleCandidateSideShortGroupReportsActualN(t *testing.T) {
 	if code != exitIncomplete {
 		t.Fatalf("--allow-short writes the file but still exits %d, got %d", exitIncomplete, code)
 	}
-	rows := readWorksheet(t, out)
+	rows := worksheetRows(t, out)
 	if len(rows) != 3 {
 		t.Fatalf("wrote %d rows, want 3 (2 cited elsewhere + 1 available)", len(rows))
 	}
@@ -255,7 +255,7 @@ func TestSampleDefaultSideIsItems(t *testing.T) {
 	if !strings.Contains(stdout, `"side": "items"`) {
 		t.Fatalf("default receipt should say side=items: %s", stdout)
 	}
-	rows := readWorksheet(t, out)
+	rows := worksheetRows(t, out)
 	for _, r := range rows {
 		if _, has := r["unit"]; has {
 			t.Fatalf("item-side rows must keep their old shape: %v", r)

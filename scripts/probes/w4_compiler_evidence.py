@@ -124,6 +124,11 @@ CAUSES = (
 # probe read a failed file log as healthy precisely because it only knew the word "FAIL".
 # The `status` field is *not* a run status in either shape and is never used to decide.
 FAIL_STATUS = ("FAIL", "FAILED", "4")
+# …and the spelling of the other end: file-level rows write `operation_status: "3"` for a
+# finished parse (Wiki rows write "DONE"). Only these count as "this document succeeded"; a
+# row saying `"1"` is not a success — it is the same document-code column that makes
+# `status` unusable, and reading it as success is how a failure gets called "overtaken".
+SUCCESS_STATUS = ("3", "DONE")
 
 
 # ── pure classification ────────────────────────────────────────────────────
@@ -159,6 +164,50 @@ def message_of(log):
     message = event.get("message") or ""
     return message if isinstance(message, str) else ""
 
+def begin_of(log):
+    """When the parse this log describes started — the only window marker the rows carry."""
+    if not isinstance(log, dict):
+        return ""
+    return str(log.get("process_begin_at") or "")
+
+
+def is_success(log):
+    """A log that says the document/run finished, in the spelling its stage uses."""
+    if not isinstance(log, dict):
+        return False
+    return str(log.get("operation_status") or "").strip().upper() in SUCCESS_STATUS
+
+
+def is_historical(failure, siblings, document):
+    """Did this document succeed *after* the failure recorded here?
+
+    The engine keeps every attempt in the file-level log while `ingestions/summary`
+    counts only the current run. So on a dataset that failed yesterday and succeeded
+    today the two readings disagree without either of them being wrong, and a probe
+    that calls that a contradiction teaches its reader to ignore contradictions
+    (doc/305 §2.33). A later success is evidence, not an acquittal: the failure is
+    still in this list, still named, still the same owner.
+
+    Preference is the log's own window: a *successful* row for the same document that
+    started later. Only `SUCCESS_STATUS` counts — a row that is merely "not a failure"
+    (the `"1"` spelling above) is not evidence of anything, and treating it as one is how
+    a still-failing document gets called historical. With no window at all, the fallback
+    is the document's own `chunk_count`, because that is a fact about the parse rather
+    than a code from the column E103 proved meaningless. A document that is FAILED *now*
+    is never historical.
+    """
+    started = begin_of(failure)
+    for other in siblings or []:
+        if other is failure or not is_success(other):
+            continue
+        if started and begin_of(other) > started:
+            return True
+    chunks = (document or {}).get("chunk_count") if isinstance(document, dict) else None
+    try:
+        return int(chunks or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
 
 def classify_bundle(bundle):
     """The verdict, from a collected bundle. Pure: `--replay` and `--selftest` use it.
@@ -188,12 +237,23 @@ def classify_bundle(bundle):
     # a *document*, and the dataset summary's `fail_count` counts documents. Comparing one
     # against the other is how a probe manufactures a contradiction it then reports as
     # someone else's bug.
+    documents_by_id = {str(doc.get("id")): doc for doc in (bundle.get("documents") or [])}
+    all_file_logs = bundle.get("file_logs") or {}
+
     wiki_fail_logs = [log for log in (bundle.get("wiki_logs") or []) if is_failure(log)]
     file_fail_logs = []
-    for doc_id, logs in (bundle.get("file_logs") or {}).items():
+    for doc_id, logs in all_file_logs.items():
         for log in (logs or []):
             if is_failure(log):
                 file_fail_logs.append((str(doc_id), log))
+    # The same reading applies to the compile stage: a Wiki run is one attempt in a run
+    # history too, so a later successful run overtakes an earlier failed one there as well
+    # (with no document status to fall back on — a run has no "current state" column).
+    overtaken = {id(log) for doc_id, log in file_fail_logs
+                 if is_historical(log, all_file_logs.get(doc_id) or [],
+                                  documents_by_id.get(doc_id))}
+    overtaken |= {id(log) for log in wiki_fail_logs
+                  if is_historical(log, bundle.get("wiki_logs") or [], None)}
     fail_logs = [("wiki", log) for log in wiki_fail_logs]
     fail_logs += [("file:" + doc_id[:8], log) for doc_id, log in file_fail_logs]
 
@@ -202,6 +262,7 @@ def classify_bundle(bundle):
         cause, why, evidence = classify_message(message)
         findings.append({
             "stage": stage,
+            "historical": id(log) in overtaken,
             "log_id": log.get("id"),
             "task_type": log.get("task_type") or "",
             "document_name": log.get("document_name") or "",
@@ -220,15 +281,20 @@ def classify_bundle(bundle):
         contradictions.append(
             "the dataset summary says %d document(s) failed but no failed file-level "
             "ingestion log was returned: the two readings cannot both be true" % fail_count)
-    if file_fail_logs and fail_count == 0:
+    # A failure a later success has overtaken is history, not a disagreement: the log
+    # keeps every attempt, the summary counts the current run. Only a failure that is
+    # still the newest word on its document can contradict `fail_count=0`.
+    live_fail_logs = [(doc_id, log) for doc_id, log in file_fail_logs
+                      if id(log) not in overtaken]
+    if live_fail_logs and fail_count == 0:
         contradictions.append(
-            "file-level ingestion logs report %d failed document(s) but the dataset "
-            "summary says fail_count=0" % len(file_fail_logs))
+            "file-level ingestion logs report %d failed document(s) with no later "
+            "success, but the dataset summary says fail_count=0" % len(live_fail_logs))
     for doc in (bundle.get("documents") or []):
         status_code = str(doc.get("status") or "")
         if status_code != "4":
             continue
-        failed_ids = {log.get("document_id") for _, log in file_fail_logs}
+        failed_ids = {log.get("document_id") for _, log in live_fail_logs}
         if str(doc.get("id")) not in {str(x) for x in failed_ids}:
             contradictions.append(
                 "document %s is status 4 (FAILED) with no failed file-level log"
@@ -248,7 +314,12 @@ def classify_bundle(bundle):
                                                     len(findings)))
     else:
         verdict, reason = NAMED, ", ".join(causes)
+        if overtaken:
+            reason += (" — %d of %d failure(s) here are historical: the same document(s) "
+                       "succeeded afterwards, so the summary counts a clean run while the "
+                       "log keeps the attempts" % (len(overtaken), len(findings)))
 
+    historical = [f for f in findings if f["historical"]]
     return {
         "verdict": verdict,
         "reason": reason,
@@ -256,6 +327,8 @@ def classify_bundle(bundle):
         "findings": findings,
         "contradictions": contradictions,
         "fail_runs": len(findings),
+        "failures_historical": len(historical),
+        "failures_current": len(findings) - len(historical),
         "chunks": summary.get("chunk_num"),
         "tokens": summary.get("token_num"),
         "docs": summary.get("doc_num"),
@@ -395,10 +468,12 @@ def print_report(bundle, report):
                % (len(bundle.get("documents") or []), report["fail_runs"],
                   report["chunks"], report["tokens"])))
     for finding in report["findings"]:
-        print(safe("  FAIL [%s] %s %s  %.0fs"
+        print(safe("  FAIL [%s] %s %s  %.0fs%s"
                    % (finding["stage"], finding["task_type"],
                       (finding["document_name"] or finding["log_id"] or "")[:40],
-                      finding["duration_s"] or 0)))
+                      finding["duration_s"] or 0,
+                      "  (historical: this document succeeded later)"
+                      if finding.get("historical") else "")))
         print(safe("    cause: %s  (%s)" % (finding["cause"], finding["why"])))
         if finding["evidence"]:
             print(safe("    matched: %r" % finding["evidence"]))
@@ -407,6 +482,10 @@ def print_report(bundle, report):
         print(safe("  CONTRADICTION: %s" % contradiction))
     print("")
     print(safe("verdict: %s — %s" % (report["verdict"].upper(), report["reason"])))
+    print(safe("failures: %d (%d current, %d historical) — a later success neither erases "
+               "the attempt nor proves it was harmless"
+               % (report["fail_runs"], report["failures_current"],
+                  report["failures_historical"])))
     print(safe("artifacts reported by the engine: %s"
                % ((bundle.get("artifacts") or {}).get("total"))))
     print("")
@@ -447,9 +526,10 @@ STEPS = [
 # ── the selftest: can this probe be wrong? ─────────────────────────────────
 
 def _log(message, status="FAIL", duration=1.0, task_type="Wiki", doc_id="d1",
-         document_name="doc.md", log_id="lg1"):
+         document_name="doc.md", log_id="lg1", begin=""):
     return {
         "id": log_id,
+        "process_begin_at": begin,
         "document_id": doc_id,
         "document_name": document_name,
         "task_type": task_type,
@@ -461,9 +541,9 @@ def _log(message, status="FAIL", duration=1.0, task_type="Wiki", doc_id="d1",
     }
 
 
-def _doc(doc_id="d1", status="4"):
+def _doc(doc_id="d1", status="4", chunks=0):
     return {"id": doc_id, "name": doc_id + ".md", "status": status,
-            "chunk_count": 0, "progress": 0.72, "progress_msg": ""}
+            "chunk_count": chunks, "progress": 0.72, "progress_msg": ""}
 
 
 def selftest():
@@ -474,8 +554,8 @@ def selftest():
     """
     cases = []
 
-    def case(name, expected_verdict, expected_exit, bundle):
-        cases.append((name, expected_verdict, expected_exit, bundle))
+    def case(name, expected_verdict, expected_exit, bundle, extra=None):
+        cases.append((name, expected_verdict, expected_exit, bundle, extra))
 
     # 1. the real shape from 2026-11-23: a 504 in the proxy queue, at parse time.
     case("proxy queue wait (504) at parse time", NAMED, 0, {
@@ -579,6 +659,53 @@ def selftest():
                                 operation_status="4", status="1")]},
     })
 
+    # 11. the shape the 2026-11-24 re-read actually found: the log keeps yesterday's
+    #     failures, the summary counts today's clean run, and both documents succeeded in
+    #     between. Calling that a contradiction would teach a reader that contradictions
+    #     are noise — so it must stay NAMED, and the report must say how many of the named
+    #     failures are historical (all of them), not drop them.
+    def _overtaken(report):
+        if report["contradictions"]:
+            return False, "contradictions were manufactured: %s" % report["contradictions"]
+        if report["failures_historical"] != 2 or report["failures_current"] != 0:
+            return False, "historical=%d current=%d, want 2/0" % (
+                report["failures_historical"], report["failures_current"])
+        return True, ""
+
+    case("failures a later success overtook are historical, not a contradiction",
+         NAMED, 0, {
+             "requests": [{"method": "GET", "step": "S5", "path": "/x"}],
+             "documents": [_doc("d1", status="1", chunks=9), _doc("d2", status="1", chunks=7)],
+             "summary": {"status": {"fail_count": 0, "done_count": 2}},
+             "wiki_logs": [],
+             "file_logs": {
+                 "d1": [_log('Compiler: API request failed with status 502: {"error":"proxy '
+                             'upstream error: hard deadline (absolute)"}',
+                             doc_id="d1", log_id="old1", begin="2026-11-23 22:05:37"),
+                        _log("Task completed.", status="DONE", doc_id="d1", log_id="new1",
+                             begin="2026-11-24 12:42:45")],
+                 "d2": [_log('Compiler: failed after 5 retries: API request failed with '
+                             'status 504: {"error":"proxy queue wait exceeded"}',
+                             doc_id="d2", log_id="old2", begin="2026-11-23 21:52:26"),
+                        _log("Task completed.", status="DONE", doc_id="d2", log_id="new2",
+                             begin="2026-11-24 12:41:11")],
+             },
+         }, _overtaken)
+
+    # 12. the guard this relaxation must not eat: a failure that is still the newest word
+    #     on a document which is FAILED right now, with `fail_count=0`, is a contradiction
+    #     whoever wrote it. Without this case, case 11 alone would license a probe that
+    #     renames every disagreement "historical".
+    case("a failure nothing overtook still contradicts fail_count=0", CONTRADICTED, 1, {
+        "requests": [{"method": "GET", "step": "S5", "path": "/x"}],
+        "documents": [_doc("d1", status="4")],
+        "summary": {"status": {"fail_count": 0}},
+        "wiki_logs": [],
+        "file_logs": {"d1": [_log('Compiler: API request failed with status 502: {"error":'
+                                  '"proxy upstream error: hard deadline (absolute)"}',
+                                  doc_id="d1", begin="2026-11-24 12:41:11")]},
+    })
+
     # 10. the transport guard itself, at the seam it guards: `send("POST", …)` must raise
     #     *and* the client beneath it must never be called. Asserting only the exception
     #     would pass on a guard that raises after the socket.
@@ -607,15 +734,21 @@ def selftest():
         return True, ""
 
     failed = 0
-    for name, expected_verdict, expected_exit, bundle in cases:
+    for name, expected_verdict, expected_exit, bundle, extra in cases:
         report = classify_bundle(bundle)
         got_exit = exit_code_for(report)
         if report["verdict"] != expected_verdict or got_exit != expected_exit:
             failed += 1
             print(safe("FAIL  %s -> %s/%d, want %s/%d"
                        % (name, report["verdict"], got_exit, expected_verdict, expected_exit)))
-        else:
-            print(safe("ok    %s -> %s/%d" % (name, report["verdict"], got_exit)))
+            continue
+        if extra is not None:
+            ok, why = extra(report)
+            if not ok:
+                failed += 1
+                print(safe("FAIL  %s -> %s/%d but %s" % (name, report["verdict"], got_exit, why)))
+                continue
+        print(safe("ok    %s -> %s/%d" % (name, report["verdict"], got_exit)))
     if not guard_case()[0]:
         failed += 1
         print(safe("FAIL  send('POST') -> %s" % guard_case()[1]))

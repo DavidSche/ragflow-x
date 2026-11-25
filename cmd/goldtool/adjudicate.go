@@ -81,10 +81,14 @@ type adjOpinion struct {
 // `bad_adjudication_verdict` rather than treating the empty string as "keep the annotators'
 // choice".
 type adjStubRow struct {
-	ItemID      string     `json:"item_id"`
-	DisagreesOn []string   `json:"disagrees_on"`
-	A           adjOpinion `json:"a"`
-	B           adjOpinion `json:"b"`
+	ItemID string `json:"item_id"`
+	// CandidateIndex is the second half of a candidates-side row's identity (doc/301
+	// §9.1.3 一). Empty on the items side, where the unit is the claim: a stub that wrote
+	// it there would make an agreed claim look like two rows.
+	CandidateIndex *int       `json:"candidate_index,omitempty"`
+	DisagreesOn    []string   `json:"disagrees_on"`
+	A              adjOpinion `json:"a"`
+	B              adjOpinion `json:"b"`
 	// Decided cells. Pre-filled only when the two label files already agree on them, so
 	// the blank cells in a stub are exactly the decisions the adjudicator owes.
 	Verdict          string `json:"verdict"`
@@ -96,9 +100,13 @@ type adjStubRow struct {
 
 // adjNeed is one item's case, derived from the two label files.
 type adjNeed struct {
-	ItemID      string
-	DisagreesOn []string
-	A, B        adjOpinion
+	// Key is the worksheet row this case belongs to: `item_id` on the items side,
+	// `item_id#candidate_index` on the candidates side.
+	Key            string
+	ItemID         string
+	CandidateIndex *int
+	DisagreesOn    []string
+	A, B           adjOpinion
 	// The facts the two files agree on. A row that changes one of them is not deciding a
 	// disagreement, it is overwriting an agreement.
 	Verdict          string
@@ -109,9 +117,12 @@ type adjNeed struct {
 // adjudicateReceipt is what both modes print; the fields a mode does not fill are omitted
 // rather than zero, so "0 rows" and "rows were not counted" never look alike.
 type adjudicateReceipt struct {
-	Schema          string         `json:"schema"`
-	Mode            string         `json:"mode"`
-	Worksheet       string         `json:"worksheet"`
+	Schema    string `json:"schema"`
+	Mode      string `json:"mode"`
+	Worksheet string `json:"worksheet"`
+	// Side is which unit `items` counts: claims (`items`) or frozen candidate rows
+	// (`candidates`, doc/301 §9.1.3 一).
+	Side            string         `json:"side"`
 	WorksheetSHA256 string         `json:"worksheet_sha256"`
 	LabelsA         string         `json:"labels_a"`
 	LabelsB         string         `json:"labels_b"`
@@ -119,6 +130,7 @@ type adjudicateReceipt struct {
 	LabelsBSHA256   string         `json:"labels_b_sha256,omitempty"`
 	File            string         `json:"file,omitempty"`
 	Items           int            `json:"items"`
+	ItemIDs         int            `json:"item_ids"`
 	Paired          int            `json:"items_labelled_by_both"`
 	Unpaired        []string       `json:"unpaired,omitempty"`
 	Needs           int            `json:"rows_needed"`
@@ -166,12 +178,12 @@ func runAdjudicate(args []string, stdout, stderr *os.File) int {
 		}
 	}
 
-	items, err := readItems(*worksheet)
+	ws, err := readWorksheet(*worksheet)
 	if err != nil {
 		fmt.Fprintf(stderr, "goldtool adjudicate: worksheet: %v\n", err)
 		return exitUsage
 	}
-	if len(items) == 0 {
+	if len(ws.Rows) == 0 {
 		fmt.Fprintf(stderr, "goldtool adjudicate: worksheet %s has no items\n", *worksheet)
 		return exitInvariant
 	}
@@ -191,21 +203,14 @@ func runAdjudicate(args []string, stdout, stderr *os.File) int {
 		return exitUsage
 	}
 
-	byItem := make(map[string]Item, len(items))
-	order := make([]string, 0, len(items))
-	for _, it := range items {
-		if _, dup := byItem[it.ItemID]; !dup {
-			order = append(order, it.ItemID)
-		}
-		byItem[it.ItemID] = it
-	}
+	byKey, order := ws.byKey()
 	// The sample asks; it does not answer. A worksheet that already carries `gold_verdict` is
 	// the assembled file, and deriving disagreements from it would compare two label files
 	// against a third, later opinion — the adjudicator would be reading a decision that was
 	// made after the two they are adjudicating.
-	if n := countLabelled(items); n > 0 {
-		fmt.Fprintf(stderr, "goldtool adjudicate: %s carries gold_verdict on %d of %d item(s): pass the "+
-			"worksheet the two annotators were given, not the assembled gold file\n", *worksheet, n, len(items))
+	if n := countLabelledRows(ws); n > 0 {
+		fmt.Fprintf(stderr, "goldtool adjudicate: %s carries gold_verdict on %d of %d row(s): pass the "+
+			"worksheet the two annotators were given, not the assembled gold file\n", *worksheet, n, len(ws.Rows))
 		return exitInvariant
 	}
 
@@ -216,9 +221,9 @@ func runAdjudicate(args []string, stdout, stderr *os.File) int {
 	nameA, nameB, nameProblems := adjudicateAnnotators(la, lb)
 	problems = append(problems, nameProblems...)
 
-	ia := indexLabels(la, &problems, "labels-a", byItem)
-	ib := indexLabels(lb, &problems, "labels-b", byItem)
-	needs, unpaired := adjudicationNeeds(items, ia, ib)
+	ia := indexLabelsByRow(la, &problems, "labels-a", byKey, ws.Side)
+	ib := indexLabelsByRow(lb, &problems, "labels-b", byKey, ws.Side)
+	needs, unpaired := adjudicationNeeds(ws, ia, ib)
 	if len(problems) > 0 {
 		// A stub derived from files that already violate a rule would carry the fault into
 		// the adjudicator's row; a check over such files would count coverage that means
@@ -245,7 +250,7 @@ func runAdjudicate(args []string, stdout, stderr *os.File) int {
 	receipt := adjudicateReceipt{
 		Schema: adjudicateSchema, Worksheet: *worksheet, WorksheetSHA256: wsSum,
 		LabelsA: *labelA, LabelsB: *labelB, LabelsASHA256: sumA, LabelsBSHA256: sumB,
-		Items: len(items), Unpaired: cap10(unpaired),
+		Side: ws.Side, Items: len(ws.Rows), ItemIDs: ws.distinctItemIDs(), Unpaired: cap10(unpaired),
 		Needs: len(needs), ByKind: map[string]int{},
 	}
 	// `Paired` counts items *both* files judged, which is the only denominator an
@@ -270,7 +275,7 @@ func runAdjudicate(args []string, stdout, stderr *os.File) int {
 		return adjudicateStub(needs, receipt, *out, nameA, nameB, stdout, stderr)
 	}
 	receipt.Mode = "check"
-	return adjudicateCheck(needs, byItem, receipt, *adjPath, stdout, stderr)
+	return adjudicateCheck(needs, byKey, ws.Side, receipt, *adjPath, stdout, stderr)
 }
 
 // adjudicateAnnotators enforces the precondition the whole round rests on: two files, two
@@ -333,25 +338,32 @@ func adjudicateAnnotators(la, lb []Label) (string, string, []Problem) {
 //     is the decision (E2 groups by `cited_elsewhere`, so which row it was is a reported
 //     number). When the verdicts differ the candidate is optional: the merge takes whatever
 //     the adjudication names, including nothing.
-func adjudicationNeeds(items []Item, ia, ib map[string]Label) ([]adjNeed, []string) {
+func adjudicationNeeds(ws *worksheet, ia, ib map[string]Label) ([]adjNeed, []string) {
 	var needs []adjNeed
 	var unpaired []string
-	for _, it := range items {
-		a, aok := ia[it.ItemID]
-		b, bok := ib[it.ItemID]
+	for _, r := range ws.Rows {
+		a, aok := ia[r.Key]
+		b, bok := ib[r.Key]
 		if !aok || !bok {
 			// One person's judgement is not a gold standard. It is also not a decision the
 			// adjudicator can make: a missing label has to be written by the person who
 			// owes it.
 			if aok || bok {
-				unpaired = append(unpaired, it.ItemID)
+				unpaired = append(unpaired, r.Key)
 			}
 			continue
 		}
 		n := adjNeed{
-			ItemID: it.ItemID,
-			A:      opinionOf(a),
-			B:      opinionOf(b),
+			Key: r.Key, ItemID: r.ItemID, CandidateIndex: r.CandidateIndex,
+			A: opinionOf(a),
+			B: opinionOf(b),
+		}
+		if r.Cand != nil {
+			// On the candidates side the row *is* the candidate, so which chunk it is is a
+			// fact of the worksheet, not something the two annotators can disagree about:
+			// `candidate_chunk_id` there is a restatement, and a differing restatement is a
+			// label rule fault (`labels --check`), not an adjudication case.
+			n.CandidateChunkID = r.Cand.ChunkID
 		}
 		sa, sb := labelQuoteStatus(a), labelQuoteStatus(b)
 		if a.Verdict != b.Verdict {
@@ -367,14 +379,16 @@ func adjudicationNeeds(items []Item, ia, ib map[string]Label) ([]adjNeed, []stri
 				n.DisagreesOn = append(n.DisagreesOn, adjKindQuoteStatus)
 			} else {
 				n.QuoteStatus = sa
-				ra, rb := candRefOf(a), candRefOf(b)
-				switch {
-				case ra != "" && rb != "" && ra != rb:
-					n.DisagreesOn = append(n.DisagreesOn, adjKindCandidate)
-				case ra != "":
-					n.CandidateChunkID = ra
-				default:
-					n.CandidateChunkID = rb
+				if r.Cand == nil {
+					ra, rb := candRefOf(a), candRefOf(b)
+					switch {
+					case ra != "" && rb != "" && ra != rb:
+						n.DisagreesOn = append(n.DisagreesOn, adjKindCandidate)
+					case ra != "":
+						n.CandidateChunkID = ra
+					default:
+						n.CandidateChunkID = rb
+					}
 				}
 			}
 		}
@@ -383,6 +397,41 @@ func adjudicationNeeds(items []Item, ia, ib map[string]Label) ([]adjNeed, []stri
 		}
 	}
 	return needs, unpaired
+}
+
+// indexLabelsByRow is `assemble`'s indexLabels keyed by the worksheet's own unit: on the
+// candidates side that is (item_id, candidate_index), and the candidate reference check is
+// the row-based one. Two chunks of the same claim are two rows, so a file that repeats
+// `item_id` is a *complete* file here, not a duplicate — which is exactly the misreading
+// this function exists to end (doc/304 E118 / §7 item 40).
+func indexLabelsByRow(ls []Label, problems *[]Problem, who string, byKey map[string]wsRow, side string) map[string]Label {
+	out := map[string]Label{}
+	for _, l := range ls {
+		key, err := labelKeyForSide(l, side)
+		if err != nil {
+			*problems = append(*problems, Problem{"label_without_candidate_index",
+				fmt.Sprintf("%s: %s", who, err)})
+			continue
+		}
+		r, known := byKey[key]
+		if !known {
+			*problems = append(*problems, Problem{"label_for_unknown_item",
+				fmt.Sprintf("%s: %s is not in the worksheet", who, key)})
+			continue
+		}
+		if bad := checkRowCandidateRef(r, l); bad != "" {
+			*problems = append(*problems, Problem{"label_candidate_unknown",
+				fmt.Sprintf("%s: %s: %s", who, key, bad)})
+			continue
+		}
+		if prev, dup := out[key]; dup {
+			*problems = append(*problems, Problem{"duplicate_label",
+				fmt.Sprintf("%s: %s labelled twice (%s then %s)", who, key, prev.Verdict, l.Verdict)})
+			continue
+		}
+		out[key] = l
+	}
+	return out
 }
 
 func opinionOf(l Label) adjOpinion {
@@ -402,12 +451,13 @@ func adjudicateStub(needs []adjNeed, receipt adjudicateReceipt, out, nameA, name
 	lines := make([]string, 0, len(needs))
 	for _, n := range needs {
 		row := adjStubRow{
-			ItemID: n.ItemID, DisagreesOn: n.DisagreesOn, A: n.A, B: n.B,
+			ItemID: n.ItemID, CandidateIndex: n.CandidateIndex,
+			DisagreesOn: n.DisagreesOn, A: n.A, B: n.B,
 			Verdict: n.Verdict, QuoteStatus: n.QuoteStatus, CandidateChunkID: n.CandidateChunkID,
 		}
 		raw, err := json.Marshal(row)
 		if err != nil {
-			fmt.Fprintf(stderr, "goldtool adjudicate: encode %s: %v\n", n.ItemID, err)
+			fmt.Fprintf(stderr, "goldtool adjudicate: encode %s: %v\n", n.Key, err)
 			return exitInvariant
 		}
 		lines = append(lines, string(raw))
@@ -474,7 +524,7 @@ func writeAdjudications(path string, lines []string, stderr *os.File) int {
 	return exitOK
 }
 
-func adjudicateCheck(needs []adjNeed, byItem map[string]Item, receipt adjudicateReceipt, adjPath string, stdout, stderr *os.File) int {
+func adjudicateCheck(needs []adjNeed, byKey map[string]wsRow, side string, receipt adjudicateReceipt, adjPath string, stdout, stderr *os.File) int {
 	if trimSpace(adjPath) == "" {
 		fmt.Fprintln(stderr, "goldtool adjudicate: --adjudication is required with --check")
 		return exitUsage
@@ -485,9 +535,9 @@ func adjudicateCheck(needs []adjNeed, byItem map[string]Item, receipt adjudicate
 		return exitUsage
 	}
 
-	needByID := make(map[string]adjNeed, len(needs))
+	needByKey := make(map[string]adjNeed, len(needs))
 	for _, n := range needs {
-		needByID[n.ItemID] = n
+		needByKey[n.Key] = n
 	}
 	var problems []Problem
 	var undecided []string
@@ -497,9 +547,17 @@ func adjudicateCheck(needs []adjNeed, byItem map[string]Item, receipt adjudicate
 
 	for i, r := range rows {
 		at := fmt.Sprintf("line %d", i+1)
-		id := trimSpace(r.ItemID)
-		if id == "" {
+		if trimSpace(r.ItemID) == "" {
 			problems = append(problems, Problem{"adjudication_without_item_id", at})
+			continue
+		}
+		// The row's identity is the worksheet's: on the candidates side an adjudication row
+		// without candidate_index cannot be placed, and defaulting to 0 would settle the
+		// first candidate's case under the second candidate's row.
+		id, err := labelKeyForSide(Label{ItemID: r.ItemID, CandidateIndex: r.CandidateIndex}, side)
+		if err != nil {
+			problems = append(problems, Problem{"adjudication_without_candidate_index",
+				fmt.Sprintf("%s: %s", at, err)})
 			continue
 		}
 		if prev, dup := seen[id]; dup {
@@ -508,13 +566,13 @@ func adjudicateCheck(needs []adjNeed, byItem map[string]Item, receipt adjudicate
 			continue
 		}
 		seen[id] = i + 1
-		n, needed := needByID[id]
+		n, needed := needByKey[id]
 		switch {
 		case !needed:
 			// Two different faults share this branch on purpose: an id nobody labelled is a
 			// typo, an id the two annotators agreed on is an overwrite. Both are refused, and
 			// the message says which one this is.
-			if _, known := byItem[id]; known {
+			if r, known := byKey[id]; known && r.Item != nil {
 				problems = append(problems, Problem{"adjudication_without_disagreement",
 					fmt.Sprintf("%s: %s: the two annotators agree on verdict and quote_status — an adjudication "+
 						"row here would overwrite a judgement nobody disputed, not settle one", at, id)})
@@ -572,7 +630,7 @@ func adjudicateCheck(needs []adjNeed, byItem map[string]Item, receipt adjudicate
 				fmt.Sprintf("%s: %s: the two files name candidate %q but the row says %q", at, id, n.CandidateChunkID, ref)})
 		}
 		if ref != "" {
-			if bad := candidateRefInItem(byItem[id], ref); bad != "" {
+			if bad := candidateRefInItemValue(byKey[id], ref); bad != "" {
 				problems = append(problems, Problem{"adjudication_candidate_unknown",
 					fmt.Sprintf("%s: %s: %s", at, id, bad)})
 			}
@@ -596,8 +654,8 @@ func adjudicateCheck(needs []adjNeed, byItem map[string]Item, receipt adjudicate
 
 	var missing []string
 	for _, n := range needs {
-		if _, ok := seen[n.ItemID]; !ok {
-			missing = append(missing, n.ItemID)
+		if _, ok := seen[n.Key]; !ok {
+			missing = append(missing, n.Key)
 		}
 	}
 	todo := len(undecided) + len(missing)

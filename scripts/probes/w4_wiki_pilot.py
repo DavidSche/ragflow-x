@@ -144,8 +144,18 @@ CORPUS_DIR = os.path.join(REPO, "test", "安全生产政策法规-docs")
 # is the single machine behind the `:18081` gate, and knowledge compilation issues a batch of
 # rewrite-type chat calls (the 2026-11-23 failure window logged 179 kills/queue-expiries on
 # `gpustack` chat, 2 on embeddings). AMD carries the batch; see §304 §7 item 32.
-CHAT_MODEL_NAME = "Qwen3.8-27B"
-CHAT_INSTANCE_NAME = "radeon-external-proxy-155"
+#
+# 2026-11-24 (doc/304 E125): AMD stopped carrying it either. Measured on the live engine, a
+# 131-character answer through `Qwen3.8-27B` took 40.1s, and three real prompts on the
+# `gpustack` route hit the proxy's absolute deadline at 120s apiece — a wiki rewrite needs
+# minutes at that rate, and every call is capped at 120s by `model_proxy.mjs`.
+# `Qwen/Qwen3.8-27B-FP8` on the ainet gateway (registered on the engine as
+# `OpenAI-API-Compatible/default`, ~54 tok/s per doc/environment §1.4) answers in ~1s, and it
+# is *external*, so it does not touch the single machine. That is the routing this pilot uses
+# from now on; `EMBEDDING_*` deliberately stays on `gpustack-local` (one small call per chunk,
+# and moving it would invalidate every vector already indexed).
+CHAT_MODEL_NAME = "Qwen/Qwen3.8-27B-FP8"
+CHAT_INSTANCE_NAME = "default"
 EMBEDDING_MODEL_NAME = "qwen3-embedding-0.6b"
 EMBEDDING_INSTANCE_NAME = "gpustack-local"
 CHUNK_TOKEN_SIZE = 512
@@ -965,7 +975,11 @@ def mode_apply(engine, rgx, args):
 
     print()
     print("NEXT: read A/B/C/D with the read-only gate — this tool cannot certify its own writes:")
-    print("  python scripts/probes/w4_artifact_landing.py --dataset %s" % upstream_id)
+    # Print the *ragflow-x* dataset id: the read-only gate resolves ids among the
+    # console datasets, and printing the upstream id here sent one reader to
+    # "--dataset 1f65... matches no dataset on this host" (doc/304 §4 E126).
+    print("  python scripts/probes/w4_artifact_landing.py --dataset %s  "
+          "# ragflow-x id, not the upstream one (=%s)" % (rgx_id, upstream_id))
     print("Generating the T11 target revision (D) and any treatment arm stay unauthorised here.")
     return 0, report
 

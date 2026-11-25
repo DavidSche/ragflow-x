@@ -21,13 +21,17 @@ import (
 // flip with a signature, and the annotator manual's next revision is exactly the
 // list of these reasons.
 type Adjudication struct {
-	ItemID      string   `json:"item_id"`
-	Verdict     string   `json:"verdict"`
-	QuoteStatus string   `json:"quote_status"`
-	Quote       string   `json:"quote,omitempty"`
-	EvidenceIDs []string `json:"evidence_ids,omitempty"`
-	Adjudicator string   `json:"adjudicator"`
-	Reason      string   `json:"reason"`
+	ItemID string `json:"item_id"`
+	// CandidateIndex is the second half of a candidates-side row's identity (doc/301
+	// §9.1.3 一). Nothing on the items side sets it, and `assemble` refuses a
+	// candidates-side file by name rather than half-reading it: gold is one row per claim.
+	CandidateIndex *int     `json:"candidate_index,omitempty"`
+	Verdict        string   `json:"verdict"`
+	QuoteStatus    string   `json:"quote_status"`
+	Quote          string   `json:"quote,omitempty"`
+	EvidenceIDs    []string `json:"evidence_ids,omitempty"`
+	Adjudicator    string   `json:"adjudicator"`
+	Reason         string   `json:"reason"`
 	// CandidateChunkID is the candidate row the adjudicated verdict rests on, when the
 	// disagreement was resolved by pointing at a frozen candidate. It wins over
 	// whatever the two annotators named: the adjudicator is the decision.
@@ -161,6 +165,20 @@ func runAssemble(args []string, stdout, stderr *os.File) int {
 		return exitUsage
 	}
 	var adj []Adjudication
+	// Gold v1 is one row per claim, so a label file keyed by (item_id, candidate_index) has
+	// nowhere to put its answers: two chunks of one claim would merge into one verdict, and
+	// the one the person actually judged could be either. Refused by name, because the
+	// symptom otherwise is a *narrower* gold file that still passes every check.
+	for name, ls := range map[string][]Label{"labels-a": la, "labels-b": lb} {
+		if candidateSideLabels(ls) {
+			fmt.Fprintf(stderr, "goldtool assemble: --%s is keyed by (item_id, candidate_index), the "+
+				"candidates side (doc/301 §9.1.3 二): gold v1 is one row per claim, so these "+
+				"judgements have nowhere to go — judge the claim on the items side, or read this "+
+				"file with `goldtool labels --check` / `kappa`, which key on the worksheet's own "+
+				"unit\n", name)
+			return exitInvariant
+		}
+	}
 	if strings.TrimSpace(*adjPath) != "" {
 		adj, err = readAdjudications(*adjPath)
 		if err != nil {
@@ -442,6 +460,24 @@ func boolCount(bs ...bool) int {
 	return n
 }
 
+// candidateSideLabels reports whether a label file repeats an item_id *while* naming
+// candidate_index — the signature of the candidates-side worksheet (doc/301 §9.1.3 一),
+// as opposed to a hand-built file that happens to fill candidate_index once. One row per
+// claim is what `assemble` needs; more than one row for the same claim is the other side.
+func candidateSideLabels(ls []Label) bool {
+	seen := map[string]bool{}
+	for _, l := range ls {
+		if l.CandidateIndex == nil {
+			continue
+		}
+		if seen[l.ItemID] {
+			return true
+		}
+		seen[l.ItemID] = true
+	}
+	return false
+}
+
 func indexLabels(ls []Label, problems *[]Problem, who string, pool map[string]Item) map[string]Label {
 	out := map[string]Label{}
 	for _, l := range ls {
@@ -670,6 +706,19 @@ func checkLabelCandidateRef(it Item, l Label) string {
 			*l.CandidateIndex, ref, idx)
 	}
 	return ""
+}
+
+// candidateRefInItemValue is `candidateRefInItem` for a worksheet row: on the candidate
+// side the pool is the row's own chunk, so the membership test is not skipped — it is
+// answered by the row.
+func candidateRefInItemValue(r wsRow, ref string) string {
+	if r.Item == nil {
+		if ref == r.Cand.ChunkID {
+			return ""
+		}
+		return fmt.Sprintf("candidate_chunk_id %q is not this row's chunk %q", ref, r.Cand.ChunkID)
+	}
+	return candidateRefInItem(*r.Item, ref)
 }
 
 // candidateRefInItem is the same membership test checkLabelCandidateRef performs, for

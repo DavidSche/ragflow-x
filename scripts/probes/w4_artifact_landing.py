@@ -22,7 +22,10 @@ marks itself green:
     C 可被读取   the *reader* side can see them: `report.locator_hints_enabled` is
                  effective, and the dataset-scoped ready rows are what the locator's
                  own query (`state = ready` by dataset) would return
-    D 落在目标修订上  a named revision's sections actually carry `location_hints`
+    D 落在目标修订上  a named revision's sections actually carry `location_hints`, and
+                 that revision is bound to the dataset this probe measured (`datasets_json`
+                 is the population the hint reader filters by, so a revision over another
+                 corpus can only ever read 0)
 
 A is the writer's own report; B re-reads the bytes through a second transport; C
 re-derives the reader's predicate; D is the only one that means "T11 can use it".
@@ -246,22 +249,96 @@ def verdict_c(setting_effective, b):
                    "the locator read would return the rows B just verified")
 
 
-def verdict_d(hinted, total, c):
+def revision_dataset_ids(detail):
+    """The console dataset ids a revision is bound to, plus why they could not be read.
+
+    `datasets_json` is the revision's own frozen copy of the bindings, and it is the
+    population `attachReportLocationHints` filters by: the reader keeps only datasets that
+    appear in `previews[index].sources`, i.e. datasets this revision actually retrieved
+    from. So a hint can only reach a section whose revision reads the dataset the
+    compilation wrote.
+
+    Returns `(ids, problem)`. A malformed value yields a *problem*, not an empty list:
+    "could not name the bindings" and "bound to nothing" are different facts, and only the
+    second one means no hint could ever land (doc/304 §4 E137).
+    """
+    if not isinstance(detail, dict):
+        return [], "the revision read returned no object"
+    revision = detail.get("revision")
+    if not isinstance(revision, dict):
+        return [], "the revision read carries no `revision` object"
+    raw = revision.get("datasets_json")
+    if raw in (None, "", "[]"):
+        return [], ""
+    bindings = raw
+    if isinstance(raw, str):
+        try:
+            bindings = json.loads(raw)
+        except ValueError:
+            return [], "revision.datasets_json does not parse"
+    if not isinstance(bindings, list):
+        return [], "revision.datasets_json is not a list"
+    ids = []
+    for binding in bindings:
+        if not isinstance(binding, dict):
+            return [], "revision.datasets_json holds a non-object entry"
+        dataset_id = str(binding.get("dataset_id") or "").strip()
+        if dataset_id and dataset_id not in ids:
+            ids.append(dataset_id)
+    return ids, ""
+
+
+def verdict_d_scope(bound, probed, problem=""):
+    """D's population check: does the named revision read the dataset the probe measured?
+
+    `--dataset A --report R` can only be evidence about D when A is one of R's bindings.
+    Without this gate the probe reads "0/5 sections carry hints" off a revision bound to a
+    different corpus and reports it as a treatment arm that failed to get a navigator —
+    which sends the operator off to regenerate the wrong report (doc/304 §4 E137).
+    """
+    if problem:
+        return verdict(NOT_YET, "revision_bindings_unreadable", problem)
+    if not bound:
+        return verdict(NOT_YET, "revision_has_no_dataset_bindings",
+                       "the revision names no dataset, so no hint could be scoped to one")
+    if probed not in bound:
+        return verdict(NOT_YET, "revision_not_bound_to_probed_dataset",
+                       "the revision is bound to %s; this run measured %s — the two "
+                       "populations do not intersect, and regenerating this revision keeps "
+                       "its bindings, so it cannot acquire a hint for the measured corpus"
+                       % (", ".join(bound), probed))
+    return verdict(ESTABLISHED, "revision_and_probe_name_the_same_dataset",
+                   "%s is one of the revision's %d binding(s)" % (probed, len(bound)))
+
+
+def verdict_d(hinted, total, c, scope=None):
     """D: did a hint actually reach a section of the named revision?
 
     Only this state means "the treatment arm has a navigator". It cannot be inferred from
     A/B/C, because hints are frozen at outline time — a revision generated before the
     artifacts landed will read 0 forever, and calling that "W-4 完成" would hand T11 an
     arm with no treatment.
+
+    `scope` is `verdict_d_scope`'s reading. It comes *before* the count, because "0 hints"
+    and "0 hints on a revision that never reads this corpus" are different facts: the first
+    is repaired by regenerating after W-4, the second is not (doc/304 §4 E137).
     """
     if total <= 0:
         return verdict(NOT_YET, "revision_has_no_sections",
                        "the named revision lists 0 sections: nothing could carry a hint")
+    if scope is not None and scope["state"] == CONTRADICTED:
+        return scope
     if hinted <= 0:
+        if scope is not None and scope["state"] != ESTABLISHED:
+            return verdict(scope["state"], scope["reason"], scope["detail"])
         return verdict(NOT_YET, "hints_absent",
                        "0/%d section(s) carry location_hints; hints are frozen in the "
                        "outline step, so a revision generated before the artifacts landed "
                        "stays empty forever — regenerate it after W-4, do not backfill" % total)
+    if scope is not None and scope["state"] != ESTABLISHED:
+        return verdict(CONTRADICTED, "hints_on_a_revision_that_does_not_read_this_dataset",
+                       "%d/%d section(s) carry hints while %s: hint provenance no longer "
+                       "matches the revision's bindings" % (hinted, total, scope["reason"]))
     if c["state"] != ESTABLISHED:
         return verdict(CONTRADICTED, "hints_without_a_readable_source",
                        "%d/%d section(s) carry hints while C is %s: the rows behind those "
@@ -299,11 +376,24 @@ def pick_dataset(admin, wanted):
                 (wanted, len(exact) or len(prefixed)))
 
 
+def paged(path, page, page_size):
+    """Add paging to a path without eating a filter it already carries.
+
+    The first version of this probe appended `?page=` unconditionally, so
+    `/artifacts?run_id=X` became `/artifacts?run_id=X?page=1&page_size=100` and the
+    engine saw a run id of `X?page=1`. That read 0 rows for a run whose 37 rows were
+    in the table, and the probe reported it as "the run claims more rows than the table
+    has" — a contradiction it had invented (doc/304 §4 E126).
+    """
+    sep = "&" if "?" in path else "?"
+    return "%s%spage=%d&page_size=%d" % (path, sep, page, page_size)
+
+
 def list_rows(admin, path):
     """Every page of a paged endpoint, or the first MAX_PAGES with a loud marker."""
     items, total, page = [], None, 1
     while page <= MAX_PAGES:
-        data = admin.ok("GET", "%s?page=%d&page_size=100" % (path, page))
+        data = admin.ok("GET", paged(path, page, 100))
         chunk = data.get("items") if isinstance(data, dict) else data
         chunk = chunk or []
         total = data.get("total") if isinstance(data, dict) else None
@@ -381,11 +471,21 @@ def run_probe(admin, args, stamp, outdir):
                     "pass --report <id> --revision <n> to read the arm that would carry the "
                     "hints; without it W-4 can be at most A+B+C")
     else:
+        # S5a — the population check, before the count. A hint is scoped by the
+        # revision's own bindings, so a revision over another corpus can only ever read
+        # 0 here, and reporting that as "hints_absent" would name the wrong repair.
+        detail = admin.ok("GET", "/api/v1/reports/%s/revisions/%d" % (
+            args.report, args.revision))
+        bound, problem = revision_dataset_ids(detail)
+        scope = verdict_d_scope(bound, dataset["id"], problem)
+        print(safe("  revision %s r%d binds [%s]; probed [%s]; scope=%s(%s)" % (
+            args.report, args.revision, ", ".join(bound) or "-", dataset["id"],
+            scope["state"], scope["reason"])))
         listing = admin.ok("GET", "/api/v1/reports/%s/revisions/%d/sections" % (
             args.report, args.revision))
         sections = (listing.get("sections") if isinstance(listing, dict) else listing) or []
         hinted = sum(1 for s in sections if s.get("location_hints"))
-        d = verdict_d(hinted, len(sections), readings["S4"])
+        d = verdict_d(hinted, len(sections), readings["S4"], scope)
         print(safe("  revision %s r%d  sections=%d  with hints=%d" % (
             args.report, args.revision, len(sections), hinted)))
     record("S5", d, d["detail"])
@@ -506,6 +606,30 @@ def selftest():
     check("hints with no readable source are a contradiction (stale navigation)",
           verdict_d(2, 5, verdict(NOT_YET, "no_ready_rows_to_read"))["state"] == CONTRADICTED)
 
+    # E137: D's population. "0 hints" is two facts, and only one of them is repaired by
+    # regenerating the revision. These six keep the probe from naming the wrong repair.
+    same = verdict_d_scope(["ds-1", "ds-2"], "ds-1")
+    check("a revision bound to the probed dataset passes the scope check",
+          same["state"] == ESTABLISHED)
+    other = verdict_d_scope(["ds-9"], "ds-1")
+    check("a revision bound to another dataset is not_yet, with the binding named",
+          other["state"] == NOT_YET and "ds-9" in other["detail"])
+    check("0 hints on a non-intersecting revision reports the scope, not 'hints_absent'",
+          verdict_d(0, 5, est_c, other)["reason"] == "revision_not_bound_to_probed_dataset")
+    check("unreadable bindings are not 'bound to nothing'",
+          verdict_d_scope([], "ds-1", "datasets_json does not parse")["reason"]
+          == "revision_bindings_unreadable")
+    check("a revision that names no dataset is its own not_yet",
+          verdict_d_scope([], "ds-1")["reason"] == "revision_has_no_dataset_bindings")
+    check("hints on a non-intersecting revision are a contradiction (provenance)",
+          verdict_d(2, 5, est_c, other)["state"] == CONTRADICTED)
+    check("bindings parse from the frozen datasets_json (role is not needed)",
+          revision_dataset_ids({"revision": {"datasets_json": json.dumps(
+              [{"dataset_id": "ds-1", "role": "primary"},
+               {"dataset_id": "ds-2", "role": "supporting"}])}})[0] == ["ds-1", "ds-2"])
+    check("a malformed datasets_json is a problem, not an empty binding list",
+          revision_dataset_ids({"revision": {"datasets_json": "{not json"}})[1] != "")
+
     # The headline rule: only four established states may print as 成立.
     def headline(states):
         if any(s == CONTRADICTED for s in states):
@@ -517,6 +641,15 @@ def selftest():
     check("all four established is exit 0", headline([ESTABLISHED] * 4) == 0)
     check("one contradiction outranks three established",
           headline([ESTABLISHED, ESTABLISHED, ESTABLISHED, CONTRADICTED]) == 1)
+
+    # E126: paging must not swallow the filter. Without these two, a filtered read can
+    # look like "the table lost the rows" and turn a pass into a contradiction.
+    check("paging an unfiltered path adds ?page=",
+          paged("/x", 2, 100) == "/x?page=2&page_size=100")
+    check("paging a path that already has a filter keeps it and adds &page=",
+          paged("/x?run_id=abc", 2, 100) == "/x?run_id=abc&page=2&page_size=100")
+    check("a filtered path carries exactly one '?' (a second one hides the filter)",
+          paged("/x?run_id=abc", 1, 1).count("?") == 1)
 
     failed = [name for name, ok in checks if not ok]
     print(safe("selftest: %d assertion(s), %d failed" % (len(checks), len(failed))))
@@ -539,7 +672,8 @@ STEPS_DOC = (
     ("S2", "A 已生成: a run reached confirmed and its detail reports hash-bound artifacts"),
     ("S3", "B 已持久化: ready rows exist and each row agrees with the JSON it carries"),
     ("S4", "C 可被读取: report.locator_hints_enabled is effective and B holds"),
-    ("S5", "D 落在目标修订上: the named revision's sections carry location_hints"),
+    ("S5", "D 落在目标修订上: the named revision's sections carry location_hints, and "
+           "the revision is bound to the dataset this probe measured"),
 )
 
 

@@ -559,6 +559,33 @@ class Separation(unittest.TestCase):
                       "S4 must ask the repair question, or a FAILED dataset is unrepairable "
                       "again and the only way back is deleting documents")
 
+    def test_the_batch_never_lands_on_the_single_machine(self):
+        """The Compiler's chat model must not resolve to `gpustack-local` (doc/304 E107).
+
+        E107 was an operator decision, and 2026-11-24 moved the batch off AMD as well
+        (E125). The invariant that stayed is the red line itself: a rewrite-type batch
+        may not be pointed at the one machine behind the `:18081` gate. Reading the two
+        constants as AST literals keeps this check off the network and out of the
+        writer (E97) while still failing if someone re-pins the batch there.
+        """
+        writer = os.path.join(HERE, "w4_wiki_pilot.py")
+        with io.open(writer, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read(), writer)
+        consts = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                target = node.targets[0]
+                if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant):
+                    consts[target.id] = node.value.value
+        self.assertEqual(consts.get("CHAT_INSTANCE_NAME") != "gpustack-local", True,
+                         "the Compiler batch must not be pinned to gpustack-local "
+                         "(doc/304 E107 / item 32)")
+        self.assertTrue(consts.get("CHAT_MODEL_NAME"),
+                        "CHAT_MODEL_NAME must name the model the batch uses")
+        self.assertNotEqual(consts.get("CHAT_MODEL_NAME"),
+                            consts.get("EMBEDDING_MODEL_NAME"),
+                            "one name for both roles hides which model answers")
+
 
 def main():
     suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
