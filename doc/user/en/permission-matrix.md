@@ -20,6 +20,11 @@ matrix at startup. Built-in roles do not use wildcard grants.
   "in catalog" does not mean "delegable".
 - Common actions: `read`, `manage`, `execute`, `append`, `delete:own`,
   `session:create`, and `test`.
+- `chat` owns `session:create` (doc/304 §4 E155): starting a thread is a
+  separate grant from `manage`, so a talk-only role no longer needs the
+  right to rename, reconfigure or delete assistants. Deployments that
+  granted `chat:manage` solely to enable conversations should switch to
+  `chat:session:create`.
 - Governance actions include `governance.read`, `governance.manage`,
   `governance.read_sensitive`, `tenant.resource.*`, `tenant.connection.*`,
   `tenant.audit.read`, and `tenant.usage.read`.

@@ -3,6 +3,7 @@ export type NavigationView =
   | "workspace-admin-view"
   | "operator-view"
   | "business-user-view"
+  | "chat-user-view"
   | "read-only-view"
   | "audit-view";
 
@@ -28,6 +29,7 @@ export const NAVIGATION_VIEW_LABELS = {
   "workspace-admin-view": "sidebar.view_workspace_admin",
   "operator-view": "sidebar.view_operator",
   "business-user-view": "sidebar.view_business_user",
+  "chat-user-view": "sidebar.view_chat_user",
   "read-only-view": "sidebar.view_read_only",
   "audit-view": "sidebar.view_audit",
 } as const satisfies Record<NavigationView, string>;
@@ -58,6 +60,9 @@ export const NAVIGATION_VIEW_DEFAULT_EXPANDED: Readonly<
   "operator-view": ["knowledge", "lifecycle"],
   // Business user: the assistant/interaction surface first; datasets on demand.
   "business-user-view": ["assistant-apps", "interaction"],
+  // Chat user (custom role granted only chat): the conversation surface *is*
+  // the workspace, so its two groups open and nothing else is on screen.
+  "chat-user-view": ["interaction", "assistant-apps"],
   // Read-only observer: all groups collapsed; open on demand.
   "read-only-view": [],
   // Auditor: audit + governance are the reading surface.
@@ -147,6 +152,14 @@ const BUSINESS_USER_GROUPS: NavigationGroupProfile[] = [
   group("interaction", "sidebar.group_interaction", INTERACTION_RESOURCES),
 ];
 
+// CHAT_USER_GROUPS is the sidebar a "may only talk" role gets (doc/304 §4
+// E155). It is deliberately not a slice of BUSINESS_USER_GROUPS: the point of
+// the role is that the knowledge/report surfaces are absent, not collapsed.
+const CHAT_USER_GROUPS: NavigationGroupProfile[] = [
+  group("interaction", "sidebar.group_interaction", ["conversation-center"]),
+  group("assistant-apps", "sidebar.group_assistant_apps", ["chats", "search-apps"]),
+];
+
 const READ_ONLY_GROUPS: NavigationGroupProfile[] = [
   group("assistant-apps", "sidebar.group_assistant_apps", ASSISTANT_APP_RESOURCES),
   group("interaction", "sidebar.group_interaction", INTERACTION_RESOURCES),
@@ -200,6 +213,10 @@ export const NAVIGATION_VIEW_PROFILES: Record<
     labelKey: NAVIGATION_VIEW_LABELS["business-user-view"],
     groups: BUSINESS_USER_GROUPS,
   },
+  "chat-user-view": {
+    labelKey: NAVIGATION_VIEW_LABELS["chat-user-view"],
+    groups: CHAT_USER_GROUPS,
+  },
   "read-only-view": {
     labelKey: NAVIGATION_VIEW_LABELS["read-only-view"],
     groups: READ_ONLY_GROUPS,
@@ -210,17 +227,25 @@ export const NAVIGATION_VIEW_PROFILES: Record<
   },
 };
 
+// matchesAllowedRule answers "does this permission list *effectively* allow
+// resource:action", which is not the same as "does it contain an allow row".
+// It used to be the latter, so a role with a broad allow and one targeted deny
+// was classified by the allow while the server refused the call — the sidebar
+// then offered a surface the backend rejects. Deny is checked first, the same
+// order `service.evaluate` uses (doc/242).
 const matchesAllowedRule = (
   permissions: readonly NavigationPermissionRule[],
   resource: string,
   action: string,
-): boolean =>
-  permissions.some(
-    (permission) =>
-      permission.effect !== "deny" &&
-      (permission.resource === "*" || permission.resource === resource) &&
-      (permission.action === "*" || permission.action === action),
-  );
+): boolean => {
+  const covers = (permission: NavigationPermissionRule) =>
+    (permission.resource === "*" || permission.resource === resource) &&
+    (permission.action === "*" || permission.action === action);
+  if (permissions.some((permission) => permission.effect === "deny" && covers(permission))) {
+    return false;
+  }
+  return permissions.some((permission) => permission.effect !== "deny" && covers(permission));
+};
 
 export function resolveNavigationView(
   role: string | undefined | null,
@@ -245,7 +270,21 @@ export function resolveNavigationView(
   ) {
     return "operator-view";
   }
+  // Last resort before read-only: a custom role whose only working grant is
+  // "talk" resolves to the chat view instead of being labelled read-only and
+  // landing on an empty dashboard (doc/304 §4 E155). Built-in roles never
+  // reach here — they are mapped by id above.
+  if (matchesAllowedRule(permissions, "chat", "execute")) return "chat-user-view";
   return "read-only-view";
+}
+
+// resolveHomePath answers "where does this view belong when it opens the app
+// root?". Only the chat view has an answer today: handing it the dashboard
+// means a first screen that is empty by construction (it holds no dashboard
+// grant), so the role looks broken before the user has said a word.
+export function resolveHomePath(view: NavigationView): string | null {
+  if (view === "chat-user-view") return "/conversation-center";
+  return null;
 }
 
 export function resolveNavigationGroups(

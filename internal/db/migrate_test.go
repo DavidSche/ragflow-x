@@ -258,6 +258,10 @@ func TestMigrationV88BusinessUserRole(t *testing.T) {
 		// (row-level owner check in the service); the template catalog is how a
 		// consumer picks a structure before starting a run.
 		"read|report", "execute|report", "delete:own|report", "read|report-template",
+		// doc/304 §4 E155: starting a thread used to borrow `chat:manage`, so a
+		// consumer could only converse by also being able to rename and delete
+		// assistants. It is now its own action, exactly as `agent` already was.
+		"session:create|chat",
 	}
 	if len(permissions) != len(expected) {
 		t.Fatalf("expected %d business user permissions, got %d: %+v", len(expected), len(permissions), permissions)
@@ -269,7 +273,7 @@ func TestMigrationV88BusinessUserRole(t *testing.T) {
 	}
 	for _, denied := range []string{
 		"manage|agent", "manage|chat", "manage|dataset", "manage|document",
-		"manage|prompt-policy", "manage|role", "manage|user", "session:create|chat",
+		"manage|prompt-policy", "manage|role", "manage|user",
 	} {
 		if grants[denied] {
 			t.Fatalf("business user unexpectedly has %q", denied)

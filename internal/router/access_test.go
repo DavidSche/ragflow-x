@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ragflow-x/ragflow-x/internal/db"
+	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
@@ -799,5 +800,99 @@ func TestEvalSetExecutePermissionsMatchRevalidationContract(t *testing.T) {
 		if len(grants[role]) != 0 {
 			t.Fatalf("%s must not receive eval-set permissions, got %v", role, grants[role])
 		}
+	}
+}
+
+// TestChatSessionCreateIsItsOwnActionNotManage guards doc/304 §4 E155. Before
+// the split, opening a chat thread required `manage` on chat, so "a role that
+// may only talk" was not expressible: it either could not open a thread, or it
+// could also rename and delete everybody's assistants. The assertions below are
+// the three shapes that failure can come back in: the route action, the
+// service-layer guard (which used to repeat `manage` by hand), and the matrix.
+func TestChatSessionCreateIsItsOwnActionNotManage(t *testing.T) {
+	var rule *middleware.Rule
+	for _, candidate := range accessRules(nil) {
+		candidate := candidate
+		if candidate.Method == "POST" && candidate.Path == "/api/v1/chats/:id/sessions" {
+			rule = &candidate
+		}
+	}
+	if rule == nil {
+		t.Fatal("POST /api/v1/chats/:id/sessions has no access rule")
+	}
+	if rule.Resource != "chat" || rule.Action != "session:create" {
+		t.Fatalf("chat session create requires %s@%s, want session:create@chat", rule.Action, rule.Resource)
+	}
+	// The rest of the assistant lifecycle must stay on `manage`; otherwise
+	// "may not edit assistants" is unenforced at the route layer.
+	for _, path := range []string{"/api/v1/chats", "/api/v1/chats/:id"} {
+		for _, candidate := range accessRules(nil) {
+			if candidate.Path != path {
+				continue
+			}
+			if candidate.Method == "GET" {
+				continue
+			}
+			if candidate.Action != "manage" {
+				t.Fatalf("%s %s requires %s, want manage (doc/304 E155)", candidate.Method, path, candidate.Action)
+			}
+		}
+	}
+
+	definition := ResourceTypeRegistry()["chat"]
+	found := false
+	for _, action := range definition.AllowedActions {
+		if action == "session:create" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("chat AllowedActions = %v, want it to declare session:create", definition.AllowedActions)
+	}
+
+	grants := map[string]map[string]bool{}
+	for _, grant := range db.BuiltinPermissionMatrix() {
+		if grant.Resource != "chat" {
+			continue
+		}
+		if grants[grant.Role] == nil {
+			grants[grant.Role] = map[string]bool{}
+		}
+		grants[grant.Role][grant.Action] = true
+	}
+	holders := []string{}
+	for role, actions := range grants {
+		if actions["session:create"] {
+			holders = append(holders, role)
+		}
+	}
+	expected := map[string]bool{
+		model.RolePlatformAdmin: true,
+		model.RoleTenantAdmin:   true,
+		model.RoleOperator:      true,
+		model.RoleBusinessUser:  true,
+		model.RoleTeamAdmin:     true,
+	}
+	if len(holders) != len(expected) {
+		t.Fatalf("chat session:create holders = %v, want exactly %d roles", holders, len(expected))
+	}
+	for _, role := range holders {
+		if !expected[role] {
+			t.Fatalf("%s unexpectedly holds chat session:create", role)
+		}
+	}
+	if grants[model.RoleViewer]["session:create"] {
+		t.Fatal("viewer must never hold chat session:create (doc/245)")
+	}
+	// The two resources must spell the same action; a second spelling is how
+	// this drift started (agent had session:create, chat borrowed manage).
+	agentRule := []middleware.Rule{}
+	for _, candidate := range accessRules(nil) {
+		if candidate.Method == "POST" && candidate.Path == "/api/v1/agents/:id/sessions" {
+			agentRule = append(agentRule, candidate)
+		}
+	}
+	if len(agentRule) != 1 || agentRule[0].Action != "session:create" {
+		t.Fatalf("agent session create rule = %v, want session:create", agentRule)
 	}
 }

@@ -47,15 +47,20 @@ let assistantDirectoryTargets = [
   { id: "agent-1", kind: "agent", name: "Approval Workflow" },
 ];
 
-// Permission checks resolve asynchronously; `pendingAccess` lets a test freeze
-// the checks in their "unknown" state (canAccess undefined, isPending true).
-const accessState = vi.hoisted(() => ({ pending: false }));
+// Permission checks resolve asynchronously; `pending` lets a test freeze the
+// checks in their "unknown" state (canAccess undefined, isPending true), and
+// `denied` lets one test withhold a single resource:action pair.
+const accessState = vi.hoisted(() => ({
+  pending: false,
+  denied: new Set<string>(),
+}));
 
 vi.mock("ra-core", () => ({
-  useCanAccess: () =>
-    accessState.pending
-      ? { canAccess: undefined, isPending: true }
-      : { canAccess: true, isPending: false },
+  useCanAccess: (params?: { resource?: string; action?: string }) => {
+    if (accessState.pending) return { canAccess: undefined, isPending: true };
+    const key = `${params?.resource ?? ""}:${params?.action ?? ""}`;
+    return { canAccess: !accessState.denied.has(key), isPending: false };
+  },
   useGetIdentity: () => ({ data: identity, isLoading: false }),
   useNotify: () => notify,
   useTranslate: () => translate,
@@ -215,6 +220,46 @@ describe("ConversationCenter unified assistant palette", () => {
 
     await waitFor(() => expect(adapter.getTarget).toHaveBeenCalledWith("agent-1"));
     await waitFor(() => expect(screen.getAllByText("Approval Workflow").length).toBeGreaterThan(1));
+  });
+});
+
+describe("ConversationCenter chat session creation", () => {
+  // doc/304 §4 E155: a role may hold chat session:create without manage. The
+  // screen must read the same action the route does; if it still asked for
+  // manage it would refuse the one thing such a role was granted.
+  it("warns instead of calling the API when chat session creation is denied", async () => {
+    notify.mockClear();
+    adapter.createSession.mockClear();
+    adapter.start.mockClear();
+    adapter.getTarget.mockResolvedValueOnce(target);
+    adapter.searchTargets.mockResolvedValueOnce({ items: [target], total: 1 });
+    accessState.denied.add("chats:session:create");
+
+    const { container } = render(
+      <MemoryRouter initialEntries={["/conversation-center?kind=chat"]}>
+        <Routes>
+          <Route path="/conversation-center" element={<ConversationCenter />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    try {
+      const input = container.querySelector("textarea")!;
+      fireEvent.change(input, { target: { value: "帮我总结 @" } });
+      await waitFor(() =>
+        expect(screen.getByRole("option", { name: /Contract Assistant/ })).toBeInTheDocument(),
+      );
+      fireEvent.click(screen.getByRole("option", { name: /Contract Assistant/ }));
+
+      await waitFor(() =>
+        expect(notify).toHaveBeenCalledWith("conversationCenter.chat_new_denied", {
+          type: "warning",
+        }),
+      );
+      expect(adapter.createSession).not.toHaveBeenCalled();
+      expect(adapter.start).not.toHaveBeenCalled();
+    } finally {
+      accessState.denied.delete("chats:session:create");
+    }
   });
 });
 

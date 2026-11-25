@@ -449,6 +449,7 @@ const enMessages = {
     view_workspace_admin: "Workspace admin view",
     view_operator: "Content operator view",
     view_business_user: "Business user view",
+    view_chat_user: "Chat user view",
     view_read_only: "Read-only view",
     view_audit: "Audit view",
     group_workspace: "Workspace & Access",
@@ -876,6 +877,9 @@ const enMessages = {
     agent_new_denied:
       "You do not have permission to create Agent sessions. Contact your administrator.",
     agent_new_failed: "Failed to create the Agent session. Please try again.",
+    chat_new_denied:
+      "You do not have permission to start new conversations in this assistant. Contact your administrator.",
+    chat_new_failed: "Failed to start the conversation. Please try again.",
     agent_type_denied:
       "Data pipelines and compiler operators are background task types and cannot be used in Conversation Center.",
     attach: "Attachments",

@@ -76,7 +76,7 @@ RAGFlow-X 是企业私有环境的 AI/RAG 控制面。产品语义使用 **工�
 | assistant | R M E | R M E | R E | R E | R | R E |
 | knowledge-ops | R M | R M | R M | - | - | - |
 | knowledge-profile | R M | R M | R M | - | - | R M |
-| chat | R M E | R M E | R E | R E | R | R E |
+| chat | R M E S | R M E S | R E S | R E S | R | R E S |
 | search-app | R M E | R M E | R E | R E | R | R E |
 | query-template | R M | R M | - | - | - | - |
 | memory | R M E | R M E | R M E | R E | R | R E |
@@ -109,6 +109,8 @@ RAGFlow-X 是企业私有环境的 AI/RAG 控制面。产品语义使用 **工�
 | alert | R M | R M | R | - | - | - |
 | approval | R M E | R M E | R E | - | - | - |
 | approval-policy | R M | R M | - | - | - | - |
+
+- `chat` 的 `S=session:create` 自 `doc/304 §4 E155` 起替代此前借用的 `manage`：在助手里**发起新对话**与**改/删助手**本来就是两件事，后者还含重命名、改配置与删除，而删除会话按工作区生效。拆开之后「只对话」的角色可以只持有 `chat` 的 `read`+`execute`+`session:create`，不再顺带获得助手的编辑权；既有部署若曾为「只能对话」的成员授予 `chat:manage`，应改为 `chat:session:create`。
 
 > `memory` 的操作为 `R M E`：`manage` 仅用于记忆配置增删改，消息读取/检索/写入分别由 `read`/`execute` 覆盖，与 `agent` 一样不含 `session:create`。
 

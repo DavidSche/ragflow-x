@@ -32,7 +32,19 @@ import {
   Legend,
 } from "recharts";
 import { api } from "../lib/api";
-import { LinkBase, useCanAccess, useNotify, useTranslate } from "ra-core";
+import {
+  resolveHomePath,
+  resolveNavigationView,
+} from "../lib/navigationRoles";
+import {
+  LinkBase,
+  useCanAccess,
+  useGetIdentity,
+  useNotify,
+  usePermissions,
+  useTranslate,
+} from "ra-core";
+import { Navigate } from "react-router-dom";
 
 interface Summary {
   tenants: number;
@@ -111,7 +123,31 @@ function exportCsv(rows: Record<string, unknown>[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
+// useChatOnlyHomePath returns the app-root destination for a view that has no
+// dashboard of its own, or null. Kept as its own hook so the redirect can be a
+// separate component: Dashboard calls a dozen hooks, and an early `return`
+// among them would break the rules of hooks on the first render after the
+// identity resolves (doc/304 §4 E155).
+function useChatOnlyHomePath(): string | null {
+  const { data: identity } = useGetIdentity();
+  const { data: permissionsData } = usePermissions();
+  const role = identity && "role" in identity ? String(identity.role ?? "") : "";
+  const permissions =
+    permissionsData && "permissions" in permissionsData
+      ? Array.isArray(permissionsData.permissions)
+        ? permissionsData.permissions
+        : []
+      : [];
+  return resolveHomePath(resolveNavigationView(role, permissions));
+}
+
 export const Dashboard = () => {
+  const homePath = useChatOnlyHomePath();
+  if (homePath) return <Navigate replace to={homePath} />;
+  return <DashboardContent />;
+};
+
+const DashboardContent = () => {
   const notify = useNotify();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [health, setHealth] = useState<Record<string, string> | null>(null);

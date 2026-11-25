@@ -166,7 +166,12 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "PUT", Path: "/api/v1/chats/:id", Action: "manage", Resource: "chat"},
 		{Method: "DELETE", Path: "/api/v1/chats/:id", Action: "manage", Resource: "chat"},
 		{Method: "GET", Path: "/api/v1/chats/:id/sessions", Action: "read", Resource: "chat"},
-		{Method: "POST", Path: "/api/v1/chats/:id/sessions", Action: "manage", Resource: "chat"},
+		// Starting a conversation is not administering the assistant. This used to
+		// borrow `manage` (create/update/delete the chat app itself), which made a
+		// "may only talk" role either under-privileged (no way to open a thread)
+		// or over-privileged (able to edit and delete other people's assistants) —
+		// doc/304 §4 E155.
+		{Method: "POST", Path: "/api/v1/chats/:id/sessions", Action: "session:create", Resource: "chat"},
 		{Method: "GET", Path: "/api/v1/chats/:id/sessions/:sessionId", Action: "read", Resource: "chat"},
 		{Method: "GET", Path: "/api/v1/chats/:id/sessions/:sessionId/messages", Action: "read", Resource: "chat"},
 		{Method: "PATCH", Path: "/api/v1/chats/:id/sessions/:sessionId", Action: "manage", Resource: "chat"},

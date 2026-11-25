@@ -61,6 +61,11 @@ export function AppSidebar() {
     if (openMobile) setOpenMobile(false);
   };
 
+  // The dashboard item is the sidebar's only link to "/". For the chat view
+  // that link is a detour: "/" redirects to the conversation center, so the
+  // item would read "仪表板" and land somewhere else (doc/304 §4 E155).
+  const showDashboard = hasDashboard && view !== "chat-user-view";
+
   const [userExpanded, setUserExpanded] = useState<Record<string, boolean>>({});
   // Collapse defaults are seeded once the role/identity resolves; the guard is
   // a render-phase ref so a later identity refresh or manual fold never
@@ -106,7 +111,7 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {hasDashboard ? <DashboardItem onClick={handleClick} /> : null}
+        {showDashboard ? <DashboardItem onClick={handleClick} /> : null}
         {groups.map((group) => {
           const visibleResources = group.resources;
           const isExpanded = expanded[group.key] ?? true;

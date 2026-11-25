@@ -3758,6 +3758,23 @@ var migrations = []Migration{
 			return tx.AutoMigrate(&model.GatewayIdempotency{})
 		},
 	},
+	{
+		Version: 191,
+		Name:    "chat_session_create_action",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/304 §4 E155: `POST /api/v1/chats/:id/sessions` stops borrowing
+			// `chat:manage` and asks for `chat:session:create`. Data-only and
+			// idempotent: reconciling the built-in roles re-reads the canonical
+			// matrix, so an existing store gains the grant without a manual step.
+			//
+			// This is a widening for the five built-in roles that may converse and
+			// a deliberate no-op for `viewer`, which keeps `read` only — a
+			// read-only role must not silently acquire the ability to write a new
+			// thread. Role rows written by tenants are untouched: the built-in
+			// matrix is not a default for custom roles.
+			return reconcileBuiltinPermissions(tx)
+		},
+	},
 }
 
 // backfillKnowledgeOpsAbstainReason projects `answerability_json.abstain_reason`
@@ -4823,6 +4840,10 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RolePlatformAdmin, "read", "chat"},
 		{model.RolePlatformAdmin, "manage", "chat"},
 		{model.RolePlatformAdmin, "execute", "chat"},
+		// Starting a chat thread is its own action (doc/304 §4 E155): it used to
+		// require `manage`, so "may talk but must not edit assistants" was not
+		// expressible in the matrix.
+		{model.RolePlatformAdmin, "session:create", "chat"},
 		{model.RolePlatformAdmin, "read", "search-app"},
 		{model.RolePlatformAdmin, "manage", "search-app"},
 		{model.RolePlatformAdmin, "execute", "search-app"},
@@ -4947,6 +4968,7 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTenantAdmin, "manage", "knowledge-ops"},
 		{model.RoleTenantAdmin, "read", "chat"},
 		{model.RoleTenantAdmin, "manage", "chat"},
+		{model.RoleTenantAdmin, "session:create", "chat"},
 		{model.RoleTenantAdmin, "execute", "search-app"},
 		{model.RoleTenantAdmin, "read", "search-app"},
 		{model.RoleTenantAdmin, "manage", "search-app"},
@@ -5019,6 +5041,7 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleOperator, "execute", "task"},
 		{model.RoleOperator, "manage", "task"},
 		{model.RoleOperator, "execute", "chat"},
+		{model.RoleOperator, "session:create", "chat"},
 		{model.RoleOperator, "read", "chat"},
 		{model.RoleOperator, "execute", "search-app"},
 		{model.RoleOperator, "read", "assistant"},
@@ -5063,6 +5086,7 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleBusinessUser, "execute", "assistant"},
 		{model.RoleBusinessUser, "read", "chat"},
 		{model.RoleBusinessUser, "execute", "chat"},
+		{model.RoleBusinessUser, "session:create", "chat"},
 		{model.RoleBusinessUser, "read", "search-app"},
 		{model.RoleBusinessUser, "execute", "search-app"},
 		{model.RoleBusinessUser, "read", "logical-document"},
@@ -5181,6 +5205,7 @@ func BuiltinPermissionMatrix() []PermissionGrant {
 		{model.RoleTeamAdmin, "execute", "assistant"},
 		{model.RoleTeamAdmin, "read", "chat"},
 		{model.RoleTeamAdmin, "execute", "chat"},
+		{model.RoleTeamAdmin, "session:create", "chat"},
 		{model.RoleTeamAdmin, "read", "search-app"},
 		{model.RoleTeamAdmin, "execute", "search-app"},
 		{model.RoleTeamAdmin, "read", "agent"},

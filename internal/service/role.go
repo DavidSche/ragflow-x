@@ -70,6 +70,9 @@ func (s *Service) CreateRole(ctx context.Context, actorID, actorRole string, req
 	if err := s.Authorize(ctx, actorID, "manage", "role"); err != nil {
 		return nil, err
 	}
+	if err := s.validateRoleParent(ctx, "", req.ParentID); err != nil {
+		return nil, err
+	}
 	r := &model.Role{
 		ID: id.New(), Name: name, Scope: req.Scope,
 		Description: req.Description, ParentID: req.ParentID,
@@ -158,15 +161,8 @@ func (s *Service) UpdateRole(ctx context.Context, actorID, actorRole, roleID str
 		r.Description = req.Description
 	}
 	if req.ParentID != "" {
-		if req.ParentID == roleID {
-			return nil, httperr.BadRequest(40085, "role cannot be its own parent")
-		}
-		parent, perr := s.Store.GetRole(ctx, req.ParentID)
-		if perr != nil {
-			return nil, perr
-		}
-		if parent == nil {
-			return nil, httperr.BadRequest(40086, "parent role not found")
+		if err := s.validateRoleParent(ctx, roleID, req.ParentID); err != nil {
+			return nil, err
 		}
 		r.ParentID = req.ParentID
 	}
@@ -174,6 +170,47 @@ func (s *Service) UpdateRole(ctx context.Context, actorID, actorRole, roleID str
 		return nil, err
 	}
 	return r, nil
+}
+
+// validateRoleParent refuses a parent that does not exist or that would make
+// the role its own ancestor. Until doc/304 §4 E155 `CreateRole` wrote
+// `req.ParentID` straight into the row without a lookup, so a typo produced a
+// role that *advertised* a parent while `expandRoles` skipped the missing row
+// and inherited nothing — the same shape as "read 0 ≠ it is empty" (E132).
+// A deeper ancestor that no longer exists only ends the walk: that hole is the
+// pre-existing defect, and refusing to edit around it would make it permanent.
+func (s *Service) validateRoleParent(ctx context.Context, roleID, parentID string) error {
+	if parentID == "" {
+		return nil
+	}
+	if roleID != "" && parentID == roleID {
+		return httperr.BadRequest(40085, "role cannot be its own parent")
+	}
+	seen := map[string]bool{parentID: true}
+	cursor := parentID
+	for {
+		parent, err := s.Store.GetRole(ctx, cursor)
+		if err != nil {
+			return err
+		}
+		if parent == nil {
+			if cursor == parentID {
+				return httperr.BadRequest(40086, "parent role not found")
+			}
+			return nil
+		}
+		if parent.ParentID == "" {
+			return nil
+		}
+		if roleID != "" && parent.ParentID == roleID {
+			return httperr.BadRequest(httperr.CodeRoleParentCycle, "role parent would create an inheritance cycle")
+		}
+		if seen[parent.ParentID] {
+			return httperr.BadRequest(httperr.CodeRoleParentCycle, "role parent would create an inheritance cycle")
+		}
+		seen[parent.ParentID] = true
+		cursor = parent.ParentID
+	}
 }
 
 // GetRolePermissions returns a role's policy rules.

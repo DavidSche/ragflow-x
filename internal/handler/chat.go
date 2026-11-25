@@ -317,7 +317,7 @@ func (h *Handler) CreateChatSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID := c.GetString(middleware.ContextTenantID)
 	userID := c.GetString(middleware.ContextUserID)
-	if err := h.Service.Authorize(ctx, userID, "manage", "chat"); err != nil {
+	if err := h.Service.Authorize(ctx, userID, "session:create", "chat"); err != nil {
 		response.Err(c, err)
 		return
 	}

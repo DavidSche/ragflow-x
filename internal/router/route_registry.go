@@ -43,7 +43,7 @@ func ResourceTypeRegistry() map[string]ResourceTypeDefinition {
 		"audit-export":          {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},
 		"audit-anchor":          {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},
 		"branding":              {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true},
-		"chat":                  {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage", "execute"), SupportsGovernanceRead: true, SupportsCrossTenantWrite: true, RequiresApproval: true, RequiresActingContext: true},
+		"chat":                  {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage", "execute", "session:create"), SupportsGovernanceRead: true, SupportsCrossTenantWrite: true, RequiresApproval: true, RequiresActingContext: true},
 		"dashboard":             {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},
 		"dataset":               {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read", "manage"), SupportsGovernanceRead: true, SupportsCrossTenantWrite: true, RequiresApproval: true, RequiresActingContext: true},
 		"dataset-export":        {ResourceScope: ResourceScopeWorkspace, AllowedActions: resourceActions("read"), SupportsGovernanceRead: true},

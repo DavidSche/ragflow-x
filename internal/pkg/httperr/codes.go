@@ -66,6 +66,14 @@ const (
 	// it must not borrow a 409 without a code, because the client has to be able to
 	// tell "already rotated" from "revoked" without parsing English.
 	CodeAPIKeyRotationConflict = 41150 // key is revoked or already rotated
+
+	// Role inheritance (41160-41169). A cycle is a request that is
+	// well-formed but cannot be honoured: every row exists, and the result
+	// would still be a role that inherits from itself. It cannot borrow 40085
+	// ("role cannot be its own parent") because a three-role loop has no
+	// self-parent, and it cannot borrow 40086 ("parent role not found") because
+	// the parent is right there.
+	CodeRoleParentCycle = 41160 // chosen parent is (or becomes) a descendant of the role
 )
 
 // Declaration documents one code: what it means and who may emit it.
@@ -100,4 +108,5 @@ var Declared = []Declaration{
 
 	{CodeUpstreamRejected, "upstream_rejected", "引擎以 HTTP 200 + 非零 envelope code 拒绝业务请求"},
 	{CodeAPIKeyRotationConflict, "api_key_rotation_conflict", "API Key 已吊销或已轮换，不能再次轮换"},
+	{CodeRoleParentCycle, "role_parent_cycle", "父角色选择会把角色自己变成祖先（继承成环）"},
 }

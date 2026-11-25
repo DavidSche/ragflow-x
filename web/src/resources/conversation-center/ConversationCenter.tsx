@@ -152,6 +152,10 @@ export function ConversationCenter({
     resource: "agents",
     action: "session:create",
   });
+  const chatSessionCreateResult = useCanAccess({
+    resource: "chats",
+    action: "session:create",
+  });
   const reportAccessResult = useCanAccess({
     resource: "report",
     action: "execute",
@@ -176,6 +180,11 @@ export function ConversationCenter({
     agentAccessResult?.isPending === true ||
     reportAccessResult?.isPending === true;
   const agentSessionCreate = agentSessionCreateResult?.canAccess === true;
+  // doc/304 §4 E155: opening a chat thread is `session:create` on chat, no
+  // longer `manage`. Reading it as `manage` here would tell every "may only
+  // talk" role that it cannot start a conversation, which is the one thing it
+  // was granted.
+  const chatSessionCreate = chatSessionCreateResult?.canAccess === true;
   const contextSourceAccess = contextSourceAccessResult?.canAccess === true;
   const [searchParams, setSearchParams] = useSearchParams();
   const initialUrlKind = searchParams.get("kind");
@@ -1077,6 +1086,13 @@ export function ConversationCenter({
           if (liveTarget.kind === "agent" && !agentSessionCreate) {
             requestState.cancelPending();
             notify(t("conversationCenter.agent_new_denied"), {
+              type: "warning",
+            });
+            return;
+          }
+          if (liveTarget.kind === "chat" && !chatSessionCreate) {
+            requestState.cancelPending();
+            notify(t("conversationCenter.chat_new_denied"), {
               type: "warning",
             });
             return;

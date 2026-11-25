@@ -5,6 +5,7 @@ import {
   NAVIGATION_VIEW_LABELS,
   NAVIGATION_VIEW_PROFILES,
   resolveNavigationGroups,
+  resolveHomePath,
   resolveNavigationView,
 } from "./navigationRoles";
 import { NAVIGATION_PERMISSION_ALIASES } from "./navigationPermissions";
@@ -18,6 +19,7 @@ describe("navigation views", () => {
       "workspace-admin-view",
       "operator-view",
       "business-user-view",
+      "chat-user-view",
       "read-only-view",
       "audit-view",
     ]);
@@ -135,6 +137,46 @@ describe("navigation views", () => {
     expect(groups.map((group) => group.key)).toEqual([
       "knowledge", "assistant-apps", "interaction",
     ]);
+  });
+
+  // doc/304 §4 E155: the role "may only talk" must be expressible, and the
+  // sidebar must not call it read-only. A custom role granted only chat
+  // resolves to its own view; a custom role that can only *read* chat stays
+  // read-only, because opening a thread is an execute/session:create act.
+  it("derives the chat view from the ability to talk, and only from that", () => {
+    expect(resolveNavigationView("custom", [
+      { resource: "user", action: "read", effect: "allow" },
+      { resource: "chat", action: "read", effect: "allow" },
+      { resource: "chat", action: "execute", effect: "allow" },
+      { resource: "chat", action: "session:create", effect: "allow" },
+    ])).toBe("chat-user-view");
+    expect(resolveNavigationView("custom", [
+      { resource: "chat", action: "read", effect: "allow" },
+    ])).toBe("read-only-view");
+    // A deny on execute outranks the allow, so the role is not a talker.
+    expect(resolveNavigationView("custom", [
+      { resource: "chat", action: "execute", effect: "allow" },
+      { resource: "chat", action: "execute", effect: "deny" },
+    ])).toBe("read-only-view");
+  });
+
+  it("scopes the chat view to the conversation surface", () => {
+    const resources = NAVIGATION_VIEW_PROFILES["chat-user-view"].groups
+      .flatMap((group) => group.resources);
+
+    expect(resources).toEqual([
+      "conversation-center", "chats", "search-apps",
+    ]);
+    expect(resources).not.toContain("datasets");
+    expect(resources).not.toContain("agents");
+    expect(resources).not.toContain("memories");
+    expect(resources).not.toContain("dashboard");
+  });
+
+  it("lands the chat view on the conversation center instead of an empty dashboard", () => {
+    expect(resolveHomePath("chat-user-view")).toBe("/conversation-center");
+    expect(resolveHomePath("read-only-view")).toBeNull();
+    expect(resolveHomePath("business-user-view")).toBeNull();
   });
 
   it("keeps navigation aliases mapped to backend permissions", () => {
