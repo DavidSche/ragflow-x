@@ -212,7 +212,12 @@ expect_gate "--only X --skip X: empty selection, exit 2" 2 "selected 0 checks ou
 # 只排除了 `b`：运维以为自己排除了两个，实际排除一个。这正是 E98 逐条拒绝的那种安静谎话，
 # 只是换成了"重复的旗子"这一种写法。下面两条在旧解析下一个会 PASS 1/1、一个会 PASS 1/1。
 expect_gate "--skip twice accumulates: both excluded, 0 checks, exit 2" 2 "selected 0 checks out of"   -- --tier static --only s16.probes-selfcheck,s19.docs-ledger-snapshot --skip s19.docs-ledger-snapshot --skip s16.probes-selfcheck
-expect_gate "--only twice accumulates: 2 selected, 2 run" 0 "required 2/2 passed"   -- --tier static --only s16.probes-selfcheck --only s19.docs-ledger-snapshot
+# The second id here is `s03.go-vet`, not `s19`: with `doc/` present s19 also compares the
+# snapshot against the documents, so its verdict depends on *which tree* runs the case — that
+# is the same trap the comment above records, met again one day later by clean-clone.sh, which
+# copied a newer `doc/` next to an older committed snapshot and turned s12 red inside a clean
+# clone. Only rows whose answer cannot depend on the tree belong here.
+expect_gate "--only twice accumulates: 2 selected, 2 run" 0 "required 2/2 passed"   -- --tier static --only s16.probes-selfcheck --only s03.go-vet
 # The two ids below are chosen for what they *do not* need: `s19` reads a snapshot that is
 # in the checkout, and `s16` reads the probes, so both answer the same way in a tree with
 # `doc/` and in a clean clone — which is where CI runs this suite (`.gitignore:91`).

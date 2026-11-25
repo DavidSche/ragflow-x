@@ -67,11 +67,11 @@ quality_rows() { # file
   }' "$1"
 }
 
-# ── selftest: three mutations, each of which must be refused ─────────────────
+# ── selftest: four mutations, each of which must be refused ──────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
-  say "selftest: can this check refuse? (two mutations of the function, one of the document)"
+  say "selftest: can this check refuse? (three mutations of the function, one of the document)"
 
   # ① a paraphrase on the function side: the number is still 0, the sentence is not
   # §9.4's any more. This is the failure mode the whole second check exists for.
@@ -104,6 +104,20 @@ if [ "${1:-}" = "--selftest" ]; then
     exit 1
   fi
   say "ok      a row removed from the document -> refused"
+
+  # ④ the *old* row 4 comes back on the function side. Until 2026-11-24 (301 第二十次修订,
+  # 304 §7 item 22) both sides carried the same unimplementable sentence — 「`conflict_ref`
+  # （候选）出现在 `rgx_report_citation` 的次数 = 0」, a column that table never had — and
+  # the pair was green *because* both were wrong the same way. Restoring it here must be
+  # refused, or the gate would again be certifying a sentence nothing can evaluate.
+  sed -e 's/`rgx_report_citation` 的列能否命名冲突候选（按列名形状），每条引用能否解析到证据快照/`conflict_ref`（候选）出现在 `rgx_report_citation` 的次数/'       -e 's/0 列可命名候选；悬空快照为 0/0/' "$SRC_FILE" > "$tmp/oldrow4.go"
+  out="$(QUALITY_SKIP_GO=1 QUALITY_SELFCHECK_FILE="$tmp/oldrow4.go" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'not in 301 §9.4 verbatim'; then
+    say "SELFTEST FAIL: the unimplementable row 4 came back and was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      the pre-revision row 4 (a column that does not exist) -> refused"
 
   say "SELFTEST OK"
   exit 0

@@ -27,13 +27,23 @@
 #           agree with the largest E row present. Hard-coding the number would make this
 #           check lie the moment the next row lands;
 #   ⑥ 304 §4 — the same tail, starting at E41 (it is 301 §14.E's continuation), same derived footer;
-#   ⑦ 305 — `## 2.x` sections strictly ascending, no duplicates.
+#   ⑦ 305 — `## 2.x` sections strictly ascending, no duplicates;
+#   ⑨ 305 §5 — every changelog row is a *row* (exactly 4 cells, a real date, a `v0.x`)
+#           and the versions strictly descend. This exists because two of them stopped
+#           being rows: a repair inserted a version *inside* another version's line, so
+#           `v0.37 | ... | 2026-11-24 |` sat on its own with no leading `| date |` and the
+#           document read fine in a terminal. A row no regex matches is a row the check
+#           never sees — which is why ③ now also refuses the *shape* it cannot parse.
+#   ⑧ 304 §7/§5.3 — every `E<n>` they cite (n ≥ 41) is a row of 304 §4. A closure note that
+#           points at a drift row nobody wrote is worse than no note: it reads as "this was
+#           handled" and sends the reader looking for a record that does not exist. E1–E40 are
+#           skipped on purpose — they live in 301 §14.E, which is frozen and not read here.
 #
 # What this does NOT check, said out loud: whether a 证据 cell's *content* still proves the
 # claim it sits beside. That is a review, and it is exactly what §7 items 2/3 ask a person
 # to do; the gate only guarantees the cell is not empty and the vocabulary did not drift.
 #
-# ⑧ `--write-snapshot` freezes exactly these facts into `scripts/release-gate/docs-ledger.json`
+# ⑩ `--write-snapshot` freezes exactly these facts into `scripts/release-gate/docs-ledger.json`
 # (304 §7 item 26, route ① 2026-11-23). The snapshot is what `s19.docs-ledger-snapshot` reads
 # in a tree without `doc/`, so CI judges the ledger instead of recording N/A for it. It is
 # written *only* when every check above passes: a broken document is never frozen into an
@@ -85,9 +95,9 @@ pick_python() {
 # `PYTHON: unbound variable` and reported the crash as a failure of the document.
 PYTHON="$(pick_python)" || { say "docs-ledger: FAIL — no python on PATH, so the ledger is unreadable (unreadable is not 'consistent')"; exit 1; }
 
-# ── selftest: four mutations, each of which must be refused ─────────────────
+# ── selftest: twelve mutations, each of which must be refused ──────────────
 if [ "${1:-}" = "--selftest" ]; then
-  say "selftest: can this check refuse? (an invented status word, a dropped §7 row, a footer that disagrees with its own table, a changelog out of order, a fourth disposition word, a hole in §4's drift log)"
+  say "selftest: can this check refuse? (an invented status word, a dropped §7 row, a footer that disagrees with its own table, a changelog out of order, a fourth disposition word, a hole in §4's drift log, a §7 note that cites a drift row nobody wrote, a changelog row that lost its date cell in each of the two documents, a governed row out of order, a governed row renumbered onto a taken number, and a §5 that lost its governor date)"
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
 
@@ -162,8 +172,58 @@ PY
   expect_refusal "304 §4 的 E 号不连续" \
     LEDGER_304="$tmp/drift-hole"
 
+  # ⑦ a §7 row that claims closure against a drift row that does not exist. Every other
+  # numbered thing here is checked for holes; the *citations* were not, so "已闭环（E999）"
+  # would read as a handled item forever. This is the failure mode §7 item 22 was in when
+  # the gate was still certifying a sentence nothing could evaluate (E128).
+  # The anchor carries the bold markup of the *closure sentence*, not the bare reference:
+  # the same number also appears in item 22's status cell (a trigger that has been
+  # replaced by its closure), and an anchor that matches twice cannot build this mutation.
+  mutate "e-ref" "$D304" "**——已闭环（E128，2026-11-24）**" "**——已闭环（E199，2026-11-24）**"
+  expect_refusal "引用了 §4 里不存在的 E 号：E199"     LEDGER_304="$tmp/e-ref"
+
+  # ⑧ a 305 changelog row that lost its `| date |` head — the exact defect this check was
+  # written for, twice in one round: a repair inserted a version *inside* another version's
+  # line, and both documents still read fine in a terminal. 305 had no row-shape check at all.
+  mutate "305-row-shape" "$D305" "| 2026-11-24 | v0.38 |" "| v0.38 |"
+  expect_refusal "305 §5 有 1 行不是"     LEDGER_305="$tmp/305-row-shape"
+
+  # ⑨ the same defect in 304 §6, where it had also already happened (a `| v1.19 | …` row with
+  # no date cell, found by this assertion on its first run). ③ used to skip unparseable rows
+  # silently, so the count of "versions" was a count of *the rows that happened to parse*.
+  mutate "304-row-shape" "$D304" "| 2026-11-21 | v1.19 |" "| v1.19 |"
+  expect_refusal "304 §6 有 1 行长得像变更记录但不是"     LEDGER_304="$tmp/304-row-shape"
+
+  # ⑩ the governor rule's own failure: two rows *after* the start date swapped, so the newest
+  # write no longer sits at the top. §7 item 41 decided the history keeps its order; this is
+  # the one property the decision makes checkable, and it must fail when the order goes.
+  mutate "305-governed-order" "$D305" "| 2026-11-24 | v0.40 |" "| 2026-11-24 | v0.01 |"
+  expect_refusal "305 §5 在治理起点 2026-11-24 之后有"     LEDGER_305="$tmp/305-governed-order"
+
+  # ⑪ the same rule for uniqueness: renumber a governed row onto a number already used after
+  # the start date. Two entries then share a name *and* both are new, which is exactly what
+  # the decision forbids going forward (the eight historical clashes stay as history).
+  mutate "305-governed-dup" "$D305" "| 2026-11-24 | v0.39 |" "| 2026-11-24 | v0.40 |"
+  expect_refusal "305 §5 在治理起点 2026-11-24 之后出现重号"     LEDGER_305="$tmp/305-governed-dup"
+
+  # ⑫ and the boundary itself: drop the policy line. Without a start date the rule has no
+  # population, and the honest answer is "cannot judge", not "the file looks fine".
+  mutate "305-governor-missing" "$D305" "> **治理起点 = 2026-11-24**" "> **起点 = 2026-11-24**"
+  expect_refusal "305 §5 缺治理说明行"     LEDGER_305="$tmp/305-governor-missing"
+
+  # ⑬ a cell that swallowed a `|` and split its row into an extra column. This is not
+  # hypothetical: it happened twice in one round on the E151 row (once writing a cell id
+  # like `route|mode|tier|thermal` into prose). Every renderer then shows one row shifted
+  # by a column and the numbers land under the wrong heading — a table that still looks
+  # like a table. The anchor is E41's frozen 处置 cell, which will not move.
+  # The anchor inserts **two** pipes on purpose: one only reaches header+1, which is a
+  # historical shape here; two is the shape a swallowed cell takes.
+  mutate "drift-row-width" "$D304" "\`report_assurance_audit_test.go\` 3 例" "\`report_assurance_audit_test.go\`|| 3 例"
+  expect_refusal "304 §4 的行比表头宽"     LEDGER_304="$tmp/drift-row-width"
+
   say "SELFTEST OK"
   exit 0
+
 fi
 
 # The develop/ tree is gitignored (.gitignore:91), so a clean checkout — CI, or a fresh
@@ -199,7 +259,7 @@ if [ ! -f "$D304" ] || [ ! -f "$D301" ] || [ ! -f "$D305" ]; then
   exit 1
 fi
 
-say "docs ledger (doc/304 §7 items 2 and 3) — §2 / §3 / §6 / §7, 301 §14.J, 305 §2 — hermetic"
+say "docs ledger (doc/304 §7 items 2 and 3) — §2 / §3 / §6 / §7, 301 §14.J, §4↔§7 引用, 305 §2 — hermetic"
 "$PYTHON" - "$D304" "$D301" "$D305" "$MODE" "$SNAP" <<'PY'
 import hashlib, io, json, os, re, sys
 
@@ -221,6 +281,13 @@ def load(path):
     return io.open(path, encoding='utf-8').read().split('\n')
 
 CELL = 1  # placeholder for the escaped-pipe substitution below
+
+def ncols(row):
+    # Cells in a `| a | b |` row: the two outer pipes are the table's, not a cell's. The
+    # `split`-based count runs two high, and a message that says "7 cols" about a 5-column
+    # table is the same defect it reports one layer down.
+    return len(cells(row)) - 2
+
 
 def cells(row):
     # `\|` inside a CJK cell must not split the row (the E82/E83 row's `--exp E1\|E2`).
@@ -377,6 +444,15 @@ if i6 is None or i7 is None:
     bad("304 §6 找不到（变更记录）")
 else:
     vers = []
+    # A row is a line that starts with `|`. If it does not parse as `| date | vX.Y | ...`,
+    # the old loop simply skipped it and counted the rest as "the changelog" — the same
+    # blind spot ⑨ was written for, one document over. Name them instead of counting past.
+    stray = [l for l in lines[i6:i7]
+             if l.startswith('|') and not re.match(r'^\| (---|日期|编号)', l)
+             and not re.match(r'^\| \d{4}-\d{2}-\d{2} \| v\d+\.\d+ \|', l)]
+    if stray:
+        bad("304 §6 有 %d 行长得像变更记录但不是 `| 日期 | vX.Y | …` 的形状（例如 %r）" %
+            (len(stray), stray[0][:60]))
     for l in lines[i6:i7]:
         m = re.match(r'^\| \d{4}-\d{2}-\d{2} \| v(\d+)\.(\d+) \|', l)
         if m:
@@ -418,6 +494,41 @@ def check_e_tail(name, lines, a, b, first):
     nums = [n for _, n in rows]
     gaps = [(x, y) for x, y in zip(nums, nums[1:]) if y != x + 1]
     head = nums[-1]
+    # Row width. A `|` inside a cell does not make a cell unreadable — it makes the *row*
+    # unreadable: one row shifts by a column and its numbers land under the neighbouring
+    # headings. That cost two redraftings in one round (E151), so it is checked rather than
+    # remembered. The rule is deliberately about the *upper* end only: this tail's rows are
+    # historically 3/4/5/6 cells wide (the 边界 and 状态 columns arrived at different times)
+    # and shape governance does not re-typeset history (305 §5's rule, E136). What must never
+    # happen is a row two or more cells wider than its header — that is a swallowed pipe, not
+    # a historical shape. A reading that demanded one width flagged 83 frozen E-rows instead.
+    hdr = None
+    for k, l in enumerate(lines[a:b], start=a):
+        if re.match(r'^\|[ :\-|]+\|\s*$', l) and k > a:
+            hdr = lines[k - 1]
+            break
+    widths = {}
+    for idx, l in enumerate(lines[a:b], start=a):
+        if re.match(r'^\| E\d+ \|', l):
+            # `cells()` already treats `\|` as a literal, not a boundary. Counting raw
+            # pipe characters flagged E86, whose cell has carried `\|` escapes since it was
+            # written — a reading that counted the wrong population, one document over.
+            widths[idx + 1] = ncols(l)
+    if hdr is None:
+        bad("%s 找不到 `| 编号 |` 表头，行宽无从比较" % name)
+    else:
+        want = ncols(hdr)
+        too_wide = [(k, w) for k, w in widths.items() if w > want + 1]
+        wider = [(k, w) for k, w in widths.items() if w == want + 1]
+        if too_wide:
+            bad("%s 的行比表头宽出两格及以上：表头 %d 格，行 %s（格子里混进了 `|`）" %
+                (name, want, ', '.join('%d:%d 格' % (k, w) for k, w in too_wide[:5])))
+        else:
+            spread = {}
+            for w in widths.values():
+                spread[w] = spread.get(w, 0) + 1
+            ok("%s 的 %d 行行宽可读（表头 %d 格；分布 %s，没有宽出两格的行）" %
+               (name, len(rows), want, ' / '.join('%d 格 %d 行' % (w, spread[w]) for w in sorted(spread))))
     snap['e_tail'][name] = {'first': nums[0], 'last': head, 'next': head + 1, 'rows': len(nums)}
     m = re.search(r'E41–\*\*E(\d+)\*\* 已用，下一条从 \*\*E(\d+)\*\* 起',
                   '\n'.join(lines[a:b]))
@@ -470,6 +581,114 @@ else:
     ok("305 的 %d 个 `## 2.x` 小节编号递增且不重复（2.%d … 2.%d）" %
        (len(secs), secs[0], secs[-1]))
 
+# ── ⑧ 304 §7 / §5.3 的 E 号引用 ─────────────────────────────────────────────
+# §2's 证据 column and §5.3 are where "命令 + 结果" lives, and a result often ends in
+# «已闭环（E119）». Nothing checked that pointer. The failure is quiet and expensive: the
+# item reads as handled, and the reader who follows the citation finds no record — which is
+# exactly the state §7 item 22 was in while s14 was certifying a sentence that counted a
+# column which does not exist (E128). E1–E40 are skipped: they are 301 §14.E, frozen and
+# deliberately not read here.
+if m_start is not None and m_end > m_start:
+    e_rows = set(int(m.group(1)) for m in
+                 (re.match(r'^\| E(\d+) \|', l) for l in lines304[m_start:m_end]) if m)
+    s53 = next((k for k, l in enumerate(lines304) if l.startswith('### 5.3')), None)
+    s53_end = None
+    if s53 is not None:
+        s53_end = next((k for k, l in enumerate(lines304[s53 + 1:], start=s53 + 1)
+                        if re.match(r'^#{2,3} ', l)), len(lines304))
+    scope = list(lines304[i7:]) if i7 is not None else []
+    if s53 is not None and s53_end is not None:
+        scope += lines304[s53:s53_end]
+    cited = sorted(set(int(n) for n in re.findall(r'E(\d+)', chr(10).join(scope))))
+    # A citation must be resolvable *or* explicitly out of range: `E1–E40` is the frozen
+    # 301 table, anything above it has to be a row here.
+    dangling = [n for n in cited if n > 40 and n not in e_rows]
+    if not cited:
+        bad("304 §7/§5.3 里读不到任何 `E<n>` 引用（读者与文档都变了形状？）")
+    elif dangling:
+        bad("304 §7/§5.3 引用了 §4 里不存在的 E 号：%s（§4 是 E41..E%d）" %
+            ('、'.join('E%d' % n for n in dangling), max(e_rows) if e_rows else 40))
+    else:
+        ok("304 §7/§5.3 引用的 %d 个 E 号（E%d..E%d）都能在 §4 的 %d 行里找到" %
+           (len([n for n in cited if n > 40]), min([n for n in cited if n > 40]),
+            max(cited), len(e_rows)))
+
+# ── ⑨ 305 §5 变更记录 ───────────────────────────────────────────────────────
+# 305's own changelog has no checker until now: 304 §6 is checked (③) and 305 §2's
+# headings are checked (⑦), so a row shape that died in 305 was invisible. Two rows did
+# die that way (v0.36, v0.37): a repair inserted a version *inside* another version's line,
+# which keeps the file readable and turns two changelog entries into prose. A changelog
+# whose rows are not rows is a history nobody can count.
+i5 = next((k for k, l in enumerate(lines305) if l.startswith('## 5.')), None)
+i5_end = next((k for k, l in enumerate(lines305[i5 + 1:], start=i5 + 1)
+               if re.match(r'^## ', l)), len(lines305)) if i5 is not None else None
+if i5 is None:
+    bad("305 找不到 §5（变更记录）")
+else:
+    rows = [l for l in lines305[i5:i5_end]
+            if l.startswith('|') and not re.match(r'^\| (---|日期)', l)]
+    shaped, v305 = [], []
+    for l in rows:
+        # 305's rows carry 3 or 4 cells by design (the last one is sometimes a date, sometimes
+        # `—`). What must hold is the *head* — a date and a `v0.x` — and a closing pipe: those
+        # two are exactly what the two broken rows lost, while the file still read fine.
+        # Trailing space after the closing pipe is harmless (five 2026-11-21 rows have it);
+        # a missing leading `| date |` is what actually happened, twice.
+        m = re.match(r'^\| (\d{4}-\d{2}-\d{2}) \| v0\.(\d+) \| .+ \| *$', l)
+        if m:
+            shaped.append(l)
+            v305.append(int(m.group(2)))
+    malformed = [l for l in rows if l not in shaped]
+    body = rows
+    if len(v305) < 5:
+        bad("305 §5 只读到 %d 个合规的版本行（一共 %d 行），变更记录不像一份历史" %
+            (len(v305), len(body)))
+    elif malformed:
+        bad("305 §5 有 %d 行不是 `| 日期 | v0.x | … |` 的形状（例如 %r）" %
+            (len(malformed), malformed[0][:60]))
+    else:
+        ok("305 §5 的 %d 个版本行都是 `| 日期 | v0.x | … |` 的形状" % len(v305))
+    # Order and uniqueness: 304 §7 item 41 was decided in E136, and the decision is *not*
+    # "re-sort the file". 305 §5 keeps its historical numbering (four numbers are reused:
+    # v0.7–v0.10 and v0.30–v0.33 are two different writes each), and the section says so in a
+    # policy block whose first line carries the date the rule takes effect. So the rule this
+    # check can hold is the going-forward one: rows dated on/after that governor date must be
+    # unique and strictly decreasing. Re-sorting is a shape; renumbering is a decision about
+    # history, and it stays a human's. The start date is *read from the document* — a constant
+    # here would be a second copy of a fact that lives in 305 §5, and the day someone moves the
+    # boundary the constant would quietly keep checking the wrong population.
+    # The anchor is the policy *line*, not the phrase: §5 also explains the rule in prose
+    # ("写进文档那一行 `治理起点 = …`"), so a bare phrase match would read the explanation
+    # instead of the decision — and a document that lost its policy line would still parse.
+    m_gov = re.search(r'\*\*治理起点 = (\d{4}-\d{2}-\d{2})\*\*', "".join(lines305[i5:i5_end]))
+    if not m_gov:
+        bad("305 §5 缺治理说明行（`> **治理起点 = YYYY-MM-DD**`）：没有起点，"
+            "「起点之后号码唯一且递减」就无法判，乱序与重号只能又变回一句 note（304 §4 E136）")
+    else:
+        gov = m_gov.group(1)
+        governed = [(d, v) for d, v in
+                    [(m.group(1), int(m.group(2))) for m in
+                     (re.match(r'^\| (\d{4}-\d{2}-\d{2}) \| v0\.(\d+) \| .+ \| *$', l) for l in shaped)]]
+        after = [(d, v) for d, v in governed if d >= gov]
+        dup_after = sorted({v for _, v in after if [w for _, w in after].count(v) > 1})
+        unordered_after = sum(1 for a, b in zip([v for _, v in after], [v for _, v in after][1:]) if b > a)
+        dup305 = sorted({v for _, v in governed if [w for _, w in governed].count(v) > 1})
+        unordered305 = sum(1 for a, b in zip([v for _, v in governed], [v for _, v in governed][1:]) if b > a)
+        if len(after) < 2:
+            bad("305 §5 在治理起点 %s 之后只读到 %d 条记录：规则没有可判的population（304 §4 E136）"
+                % (gov, len(after)))
+        elif dup_after:
+            bad("305 §5 在治理起点 %s 之后出现重号：%s（新记录必须号码唯一；旧重号留在原处是决定本身）"
+                % (gov, '、'.join('v0.%d' % v for v in dup_after)))
+        elif unordered_after:
+            bad("305 §5 在治理起点 %s 之后有 %d 处逆序：新记录按写入顺序、最新在上"
+                % (gov, unordered_after))
+        else:
+            ok("305 §5 治理起点 %s 之后的 %d 条记录号码唯一且严格递减（%s …），"
+               "之前的历史（%d 处逆序、重号 %s）按决定保留、不再新增"
+               % (gov, len(after), 'v0.%d' % after[0][1], unordered305,
+                  '、'.join('v0.%d' % v for v in dup305) or '无'))
+
 if mode == 'snapshot':
     if fails:
         print("")
@@ -512,5 +731,9 @@ print("")
 if fails:
     print("docs-ledger: FAIL (%d ok, %d problem(s))" % (oks, len(fails)))
     sys.exit(1)
-print("docs-ledger: PASS (%d checks; the rituals are shapes here, the review is still a person)" % oks)
+# `oks` counts *ok lines*, not checks — a check may grade two populations (⑨ does: row shape,
+# then the governor rule). Saying "11 checks" and printing a number that happened to equal it
+# was a coincidence that stopped being true the moment ⑨ grew a second branch.
+print("docs-ledger: PASS (%d ok line(s), every check green; the rituals are shapes here, "
+      "the review is still a person)" % oks)
 PY

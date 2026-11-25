@@ -1,0 +1,24 @@
+# Exemptions for `scripts/release-gate/openapi-breaking.sh` (s26.openapi-breaking).
+#
+# One finding per line:   RULE METHOD PATH  reason
+#
+#   RULE    R1..R7 — see the table in doc/305 §2.42 and the header of the script.
+#   METHOD  upper-case HTTP method; `-` for a schema-level finding (R6/R7), whose PATH is
+#           `components.schemas`.
+#   PATH    the baseline path as documented (`/api/v1/...`, with `{id}` placeholders).
+#   reason  at least 12 characters, in a sentence a reader six months from now can act on:
+#           why this loss is acceptable, for whom, and until when. The check refuses a
+#           shorter one — an exemption without a reason is a mute switch, not a decision.
+#
+# Two rules make this file honest rather than convenient:
+#   * a line that matches no finding is refused (an exemption that exempts nothing is a
+#     promise nobody keeps, doc/304 §4 E135);
+#   * the finding is still printed, prefixed `exempt`, with the reason — the gate shows
+#     what it let through instead of forgetting it.
+#
+# Empty today: the first tag that ships `internal/docs/swagger.json` turns s26 from a
+# "nothing released yet" reading into a real comparison, and this is where the first
+# intentional removal gets written down.
+
+# Example (kept commented so the file itself stays a valid empty exemption list):
+# R2 DELETE /api/v1/legacy-widgets  removed after the v0.6 deprecation window; no client in the fleet calls it

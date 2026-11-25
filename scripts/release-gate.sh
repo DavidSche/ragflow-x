@@ -22,7 +22,7 @@
 # Tiers
 # -----
 #   static  code-level contracts: secret scan, formatting of touched files,
-#           vet/build, RBAC route contracts,
+#           vet/build, the shared-builder guard, RBAC route contracts,
 #           append-only migrations, the whole
 #           backend test suite, frontend typecheck + unit tests, changelog and
 #           release notes for the version. Runs anywhere (CI included).
@@ -62,7 +62,8 @@
 #   scripts/release-gate.sh --tier static                   # pre-commit-ish loop
 #   scripts/release-gate.sh --tier live --profile smoke     # fast live rehearsal
 #   scripts/release-gate.sh --tier static --ci              # CI mode (no live)
-#   scripts/release-gate.sh --list                          # show every check
+#   scripts/release-gate.sh --list                          # show every check (person; marks doc rows)
+#   scripts/release-gate.sh --list=tsv                      # same declarations, machine: tier/id/command/doc
 #
 # Live tier environment (never committed — this script holds no host or secret):
 #   RGX_BASE                 platform base URL of the deployment under test
@@ -96,6 +97,7 @@ OUT=""
 ONLY=""
 SKIP=""
 LIST=0
+LIST_FMT=""
 ABORTED=0
 
 usage() {
@@ -123,6 +125,7 @@ while [ $# -gt 0 ]; do
     --skip=*) SKIP="${SKIP:+$SKIP,}${1#*=}"; shift ;;
     --ci) CI=1; shift ;;
     --list) LIST=1; shift ;;
+    --list=tsv) LIST=1; LIST_FMT=tsv; shift ;;
     -h|--help) usage 0 ;;
     *) echo "release-gate: unknown argument: $1" >&2; usage 2 ;;
   esac
@@ -209,6 +212,76 @@ known_ids() {
 split_ids() {
   printf '%s' "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d'
 }
+# list_decls prints the declarations as `<id> (<tier>) <command>`, one per line, grouped by
+# tier. It is the *same* declarations the tiers run — see the --list branch below.
+list_decls() {
+  # `--list` prints what the tiers run, read out of the declarations themselves, so a row
+  # cannot go missing from it (E120). Two formats: the default one is for a person (tier
+  # headers, description, and `doc` for the rows that read the engineering docs), and
+  # `--list=tsv` for a script: tier<TAB>id<TAB>command<TAB>doc=0|1. The command matters
+  # there because a reader that wants "the rows that read doc/" needs to see which script
+  # a row calls; the marker matters because a grep for `doc/` cannot tell a reader from
+  # `clean-clone.sh`, which creates a worktree (doc/304 §4 E121).
+  local bs tier
+  bs=$(printf '\134')
+  if [ "${LIST_FMT:-}" = "tsv" ]; then
+    BS="$bs" awk '
+      {
+        cont = (substr($0, length($0)) == ENVIRON["BS"])
+        buf = buf (cont ? substr($0, 1, length($0) - 1) : $0) " "
+        if (cont) next
+        # A comment can quote the call shape (`run_check "id" ...`) to explain it; the
+        # declaration is the only thing that starts the line with the function name.
+        if (buf ~ /^[[:space:]]*#/) { buf = ""; next }
+        n = split(buf, f, "\"")
+        if (n >= 7 && f[1] ~ /run_(check|suite)[[:space:]]+$/ && f[2] !~ /\$/) {
+          isdoc = 0
+          if (f[7] ~ /^[[:space:]]*doc([[:space:]]|$)/) { isdoc = 1; sub(/^[[:space:]]*doc[[:space:]]+/, "", f[7]) }
+          cmd = f[7]
+          for (i = 8; i <= n; i++) cmd = cmd "\"" f[i]
+          gsub(/[[:space:]]+/, " ", cmd)
+          sub(/^ /, "", cmd); sub(/ $/, "", cmd)
+          printf "%s\t%s\t%s\t%d\n", f[4], f[2], cmd, isdoc
+        }
+        buf = ""
+      }
+    ' "$SELF"
+    return 0
+  fi
+  for tier in static build live; do
+    case "$tier" in
+      static) echo "static tier (always required)" ;;
+      build)  echo "build tier (required when selected)" ;;
+      live)   echo "live tier (required for a releasable run)" ;;
+    esac
+    BS="$bs" awk -v want="$tier" '
+      # A declaration may be wrapped with a trailing backslash; the backslash is dropped
+      # from the joined line so the printed command is the command, not a backslash.
+      {
+        cont = (substr($0, length($0)) == ENVIRON["BS"])
+        buf = buf (cont ? substr($0, 1, length($0) - 1) : $0) " "
+        if (cont) next
+        # A comment can quote the call shape (`run_check "id" ...`) to explain it; the
+        # declaration is the only thing that starts the line with the function name.
+        if (buf ~ /^[[:space:]]*#/) { buf = ""; next }
+        n = split(buf, f, "\"")
+        if (n >= 7 && f[1] ~ /run_(check|suite)[[:space:]]+$/ && f[4] == want) {
+          # The description, not the command: a wrapped `bash -c ...` has quotes inside
+          # its command, so the command field is a fragment for exactly the rows whose
+          # command someone would most want to see. The description is one sentence.
+          desc = f[6]
+          gsub(/[[:space:]]+/, " ", desc)
+          sub(/^ /, "", desc); sub(/ $/, "", desc)
+          tag = f[4]
+          if (f[7] ~ /^[[:space:]]*doc([[:space:]]|$)/) tag = tag ", doc"
+          if (f[2] !~ /\$/) printf "  %-26s %-26s %s\n", f[2], "(" tag ")", desc
+        }
+        buf = ""
+      }
+    ' "$SELF"
+  done
+}
+
 KNOWN_IDS="$(known_ids)"
 
 if [ -n "$ONLY" ]; then
@@ -270,6 +343,14 @@ fi
 run_check() {
   local id="$1" t="$2" req="$3" desc="$4"
   shift 4
+  # A row that reads doc/ says so, as the fifth argument: `run_check "id" "tier" 1 "desc" doc cmd...`.
+  # doc/ is gitignored by policy, so such a row answers exit 3 in a checkout and its whole point
+  # is that it *ran* somewhere; `--list=tsv` publishes this marker as a fourth column and
+  # `doc-present.sh` derives its selection from it (doc/304 §4 E121). The alternative —
+  # grep the command for `doc/` — cannot tell a reader from `clean-clone.sh`, which creates a
+  # worktree (and therefore cannot be selected by a row that runs inside one).
+  local reads_doc=0
+  if [ "${1:-}" = "doc" ]; then reads_doc=1; shift; fi
   local status note="" log="" t0=$SECONDS rc=0
   if should_run "$id"; then
     log="$OUT/checks/$id.log"
@@ -286,7 +367,14 @@ run_check() {
       # could push a tag must not be able to lose a check by losing its input.
       if [ "$rc" = "3" ] && [ "$CI" = "1" ]; then
         status="N/A"
-        note="$desc — not applicable in this tree (the check needs a document that is not in the checkout; see the log for which one)"
+        # The marker has a second use here: an N/A on a doc-reading row should say *why*
+        # (doc/ is gitignored by policy) and name the row that proves it runs where doc/
+        # exists, or a reader reads "N/A" as "this check does not matter".
+        if [ "$reads_doc" = "1" ]; then
+          note="$desc — N/A: this row reads doc/ and the checkout does not carry it (gitignored by policy); s24.doc-present is the row that proves it runs where doc/ exists"
+        else
+          note="$desc — not applicable in this tree (the check needs a document that is not in the checkout; see the log for which one)"
+        fi
       else
         status="FAIL"
         note="$desc"
@@ -352,39 +440,16 @@ if [ -z "$BASE" ]; then
 fi
 
 if [ "$LIST" = "1" ]; then
-  cat <<'EOF'
-static tier (always required)
-  s01.secret-scan            scripts/secret-scan.sh --all
-  s02.gofmt-touched          gofmt on *.go touched since --base
-  s03.go-vet                go vet ./cmd/... ./internal/...
-  s04.go-build              go build ./cmd/... ./internal/...
-  s05.route-contracts       RBAC route registry + role lattice + permission matrix
-  s06.migrations-append-only  no destructive DDL added since --base
-  s07.go-test-all           go test ./cmd/... ./internal/... -count=1
-  s08.fe-typecheck          cd web && npx tsc -b
-  s09.fe-test               cd web && npx vitest run --maxWorkers=2
-  s12.gate-selftest         scripts/release-gate/selftest.sh (the hook refuses what it should)
-  s13.assurance-gold        scripts/release-gate/assurance.sh (doc/301 G-A1..A8: 12 rows with n + CP, 44117-44123 in 5 places)
-  s14.assurance-quality     scripts/release-gate/assurance-quality.sh (doc/301 §9.4: 5 self-checks, each able to fail, sentences verbatim in 301)
-  s15.kc2-prereg            scripts/release-gate/kc2-prereg.sh (doc/301 §5.7: KC-2 thresholds frozen, bidirectional check, quotes verbatim in 301)
-  s16.probes-selfcheck      scripts/release-gate/probes.sh (doc/304 §7 item 12: T02/T16 probes tracked, no credential stored, --offline contract)
-  s17.adjudicate            scripts/release-gate/adjudicate.sh (doc/304 §7 item 25: the adjudication skeleton is derived, the manual documents it, 13 tests named)
-  s18.docs-ledger           scripts/release-gate/docs-ledger.sh (doc/304 §7 items 2 and 3: §2/§3/§6/§7 shapes, 301 §14.J tail + derived footer, 305 §2 order)
-  s19.docs-ledger-snapshot  scripts/release-gate/docs-ledger-snapshot.sh (doc/304 §7 item 26: the tracked ledger snapshot, sha256 freshness, selftest refuses 6 mutations)
-  s21.blind-packet          scripts/release-gate/blind-packet.sh (doc/304 §4 E112 / §7 item 36: the annotator reads a packet with no prior_*/gold_*, 11 named tests, 4 selftest mutations)
-  s10.changelog             CHANGELOG.md carries the --version section
-  s11.release-notes         .github/release-notes/<version>.md (optional, reported)
-build tier (required when selected)
-  b01.fe-build              cd web && npm run build
-  b02.packaging-drill       scripts/release-drill.sh <version-or-drill>
-  b03.build-fingerprint     record the index-*.js of web/dist
-  b04.webfs-not-committed   internal/webfs/dist/ stays gitignored
-live tier (required for a releasable run)
-  l00.deploy                RGX_GATE_DEPLOY_CMD (optional, reported)
-  l01.readyz                GET /api/v1/readyz -> ready
-  l02.served-fingerprint    served index-*.js == web/dist index-*.js
-  + suites from scripts/release-gate/suites.tsv
-EOF
+  # Every row below is read out of the `run_check`/`run_suite` declarations themselves, so a
+  # check that is added, renamed or dropped appears here by construction. The heredoc this
+  # replaced was a second hand-written list, and it went stale the first time a check was
+  # added after it (s23) — the only thing that noticed was selftest.sh's "skip the whole
+  # static tier" case, which reads this output (doc/304 §4 E120).
+  list_decls
+  # The suites line is prose, not a declaration: it is printed for the person reading the
+  # default list, and left out of the machine format (a consumer that splits on tabs would
+  # otherwise get a one-field line and have to special-case it).
+  [ "${LIST_FMT:-}" = "tsv" ] || echo "  + suites from scripts/release-gate/suites.tsv"
   exit 0
 fi
 
@@ -438,6 +503,14 @@ if tier_selected static; then
   run_check "s03.go-vet" "static" 1 "go vet (product packages)" go vet ./cmd/... ./internal/...
   run_check "s04.go-build" "static" 1 "go build (product packages)" go build ./cmd/... ./internal/...
 
+  # s07 runs the PostgreSQL contract tests, which catch this shape against a real
+  # database — but only when RGX_TEST_POSTGRES_DSN is set, and only after the code
+  # compiles. This is the same rule as a static check: the knowledge-ops 500 was a
+  # paging read that inherited its count's GROUP BY, which SQLite accepts and
+  # PostgreSQL rejects (42803). See cmd/gormguard.
+  run_check "s20.gorm-builders" "static" 1 "no count/read builder shared with Group/Select/Distinct/Having/Unscoped" \
+    go run ./cmd/gormguard ./internal
+
   # The invariants that were historically broken by *forgetting a line*, not by
   # writing bad code: a protected route with no RBAC rule, a new permission the
   # matrix never granted, a viewer that grew a write action.
@@ -474,15 +547,15 @@ if tier_selected static; then
   # s07 cannot see is (a) whether the G-A1 table prints its `n` and Clopper-Pearson bound
   # in a human-readable log, and (b) whether 44117-44123 is registered in all five places,
   # one of which is documentation. Both live here.
-  run_check "s13.assurance-gold" "static" 1 "assurance gate G-A1..A8 (12 rows with n/CP, error-code closed set)"     bash scripts/release-gate/assurance.sh
+  run_check "s13.assurance-gold" "static" 1 "assurance gate G-A1..A8 (12 rows with n/CP, error-code closed set)" doc bash scripts/release-gate/assurance.sh
 
   # doc/301 §9.4 says its five self-checks run 「在 CI 里，不靠人」. s07 already runs their Go
   # tests; what s07 cannot see is whether the table reaches a log with `n` on every row,
   # whether each of the five has an observed failing direction, and whether the five
   # sentences are still §9.4's sentences rather than a paraphrase that asks for less.
-  run_check "s14.assurance-quality" "static" 1 "doc/301 §9.4 self-checks (5 rows, fail+unverified probes, sentences verbatim)"     bash scripts/release-gate/assurance-quality.sh
+  run_check "s14.assurance-quality" "static" 1 "doc/301 §9.4 self-checks (5 rows, fail+unverified probes, sentences verbatim)" doc bash scripts/release-gate/assurance-quality.sh
 
-  run_check "s15.kc2-prereg" "static" 1 "doc/301 §5.7 KC-2 pre-registration (3 thresholds frozen, bidirectional check, quotes verbatim)"     bash scripts/release-gate/kc2-prereg.sh
+  run_check "s15.kc2-prereg" "static" 1 "doc/301 §5.7 KC-2 pre-registration (3 thresholds frozen, bidirectional check, quotes verbatim)" doc bash scripts/release-gate/kc2-prereg.sh
 
   # doc/304 §7 item 12: the two probes that produced T02's pool and T16's drill were in
   # `localenv/`, which .gitignore excludes — reproducible evidence, un-runnable instrument.
@@ -494,21 +567,21 @@ if tier_selected static; then
   # manual said so in as many words (`--adjudication` 是这块里唯一必须人手写的文件). The tool
   # derives it now; this row holds the two halves a `go test` cannot: that the 13 named tests are
   # still there, and that the page people actually read documents the step it used to skip.
-  run_check "s17.adjudicate" "static" 1 "adjudication skeleton derived from the label files (doc/304 §7 item 25)"     bash scripts/release-gate/adjudicate.sh
+  run_check "s17.adjudicate" "static" 1 "adjudication skeleton derived from the label files (doc/304 §7 item 25)" doc bash scripts/release-gate/adjudicate.sh
 
   # doc/304 §7 items 2 and 3 are two *rituals* — «top up the evidence column at every
   # milestone», «check §4 once per review» — with no reader. This is the reader. It checks
   # shapes only (a cell is not empty, a status word is one of five, a number runs 1..N, a
   # version descends), never whether the evidence still supports the sentence beside it:
   # that is the review, and a gate that claimed it would be the exact lie §7 item 3 warns of.
-  run_check "s18.docs-ledger" "static" 1 "tracking doc + plan appendix shapes (doc/304 §7 items 2/3, selftest refuses 6 mutations)"     bash scripts/release-gate/docs-ledger.sh
+  run_check "s18.docs-ledger" "static" 1 "tracking doc + plan appendix shapes (doc/304 §7 items 2/3, selftest refuses 12 mutations incl. a dangling E citation, a changelog row that lost its date cell in each document, and a governed 305 §5 row out of order or renumbered onto a taken number)" doc bash scripts/release-gate/docs-ledger.sh
 
   # s18 reads the documents themselves, so a clean checkout (no `doc/`, .gitignore:91) can only
   # answer "N/A". 304 §7 item 26 chose route ① on 2026-11-23: freeze the ledger facts into a
   # tracked snapshot and judge *that* in CI, with a sha256 freshness check against the
   # documents wherever they exist. Without this line, "CI is green" would keep meaning "the
   # ledger was not there to check", which is the gap item 26 named.
-  run_check "s19.docs-ledger-snapshot" "static" 1 "tracked ledger snapshot: schema/closed sets/order + sha256 freshness (doc/304 §7 item 26)"     bash scripts/release-gate/docs-ledger-snapshot.sh
+  run_check "s19.docs-ledger-snapshot" "static" 1 "tracked ledger snapshot: schema/closed sets/order + sha256 freshness (doc/304 §7 item 26)" doc bash scripts/release-gate/docs-ledger-snapshot.sh
 
   # doc/304 §4 E112 named its own gap: the packet rule was held by `go test` alone, and the
   # gate's only goldtool row (`s17.adjudicate`) runs `-run TestAdjudicate`, so eleven blind
@@ -516,16 +589,77 @@ if tier_selected static; then
   # tests, the two flags on `--help`, the two refusals in the code, and the manual sentence
   # that says what to read instead of what to ignore — and its selftest proves each of the
   # four can fail, including "the packet silently stops stripping".
-  run_check "s21.blind-packet" "static" 1 "annotation packet: no prior_*/gold_* key, the stub verifies it before writing (doc/304 §4 E112, §7 item 36)"     bash scripts/release-gate/blind-packet.sh
+  run_check "s21.blind-packet" "static" 1 "annotation packet: no prior_*/gold_* key, the stub verifies it before writing (doc/304 §4 E112, §7 item 36)" doc bash scripts/release-gate/blind-packet.sh
+
+  # doc/301 §9.1.3 一 says E2's unit is the candidate *row*; the manual has told the annotator
+  # to align on (item_id, candidate_index) since v1.2, and until v1.14 the tools keyed on
+  # item_id alone — 36 rows read as 30 claims, every gate green (doc/304 §7 item 40). The fix
+  # is a Go test set, which is the same gap E112 named: tests can be deleted one at a time and
+  # the suite still says ok. So this row holds the named tests (regex derived from the list),
+  # the two manual sections a person copies from, and `assemble`'s refusal by name — and, when
+  # the real worksheet is on disk, re-derives 36/30 from the file instead of the document.
+  run_check "s23.candidate-key" "static" 1 "candidate row = (item_id, candidate_index): stub writes it, check/kappa refuse to guess it, assemble refuses that side (doc/304 §7 item 40)" doc bash scripts/release-gate/candidate-key.sh
+
+  # doc/310 §12.2 — 生成物新鲜度
+  #
+  # §12.2 asks CI to regenerate the OpenAPI artifacts and diff. That claim had exactly one
+  # implementer (`make swagger-check`) and **no reader**: nothing in this script ran it, so the
+  # three files in `internal/docs/` were only ever read by a blank import, which any bytes
+  # satisfy. The same shape as E120 (`--list` was a second hand-written list) and E130 ("已闭环
+  # （E119）" had no reader): the check existed, the ritual existed, the join did not. §20 A25
+  # states the other half ("不修改工作区，能发现缺失/多余/不一致") and is now the row's own
+  # `--selftest`, five mutations including the two directions of drift (committed lost an
+  # operation / generation carries one the committed file lacks) and a missing artifact.
+  #
+  # The flags and the pinned version moved into that script, and the Makefile targets call it;
+  # two copies of a generator invocation is how the artifacts and the recipe drift apart.
+  run_check "s25.openapi-freshness" "static" 1 "the indexed OpenAPI artifacts == a fresh generation, three files, worktree untouched (doc/310 §12.2, §20 A25)" bash scripts/release-gate/openapi.sh
+
+  # doc/310 Phase 3 lists 「检查 API 破坏性变更」 and §20 A21 records it as「具备后续差异检查基础」.
+  # The basis arrived with E138/E140 — the spec is generated, committed and freshness-checked —
+  # so two comparable documents exist for the first time: the one this commit would ship (the
+  # index) and the one a release already shipped (the newest tag carrying the file). A21 stays
+  # a hope until something reads both and refuses the losses; that is this row.
+  #
+  # Seven rules, each a loss a client feels (removed path / operation / operationId / response
+  # code, newly required parameter, narrowed enum, changed schema type). Adding a path, an
+  # optional parameter, a response code or an enum value is *not* breaking — a gate that reds
+  # on a healthy release gets switched off, and then it protects nothing.
+  run_check "s26.openapi-breaking" "static" 1 "API compatibility: the indexed spec against the newest released spec, seven rules + written exemptions (doc/310 Phase 3, §20 A21)" bash scripts/release-gate/openapi-breaking.sh
+
+  # doc/301 §5.10 GW-2 (T14) has shipped a harness since E92 — `--selftest` with 28 assertions that
+  # prove the numbers can go red — and **no reader**: nothing in this script ran it, so the only
+  # thing standing between a narrowed assertion and a green perf report was habit. That is the same
+  # shape as E120 (`--list` was a second hand-written list) and E130 (a "closed" row nothing read).
+  #
+  # E151 adds the reading T14 needed and this row is its reader: a cell short of samples now says
+  # *why* (`blocked_by` = skipped_live / sample_plan / upstream_quota) instead of printing one
+  # sentence for three different facts. The run that produced the six unmeasured c2/c4 cells was
+  # quota-blocked, and the report could not say so — `samples 5 < 20` reads like our own plan.
+  # The assertion that matters here is the negative one: those two shortfalls must not print the
+  # same string, because the day they do, "upstream would not let us measure" is sold as "we chose
+  # not to measure" (doc/304 §4 E146's three kinds of empty, applied to a latency table).
+  run_check "s27.perf-selftest" "static" 1 "perf baseline harness still refuses to pass an unmeasured cell, and names which kind of unmeasured it is (doc/301 GW-2, doc/304 §4 E151)" "$PYTHON" scripts/gateway-perf-baseline.py --selftest
+
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
+
+  # doc/304 §7 item 38: "it also passes in a fresh clone" had no entry point — three stumbles
+  # in one round, two of them about the method rather than the code. This row runs the entry
+  # point that now exists: a worktree of HEAD, one cheap row inside it, `--ci` so the doc
+  # half is N/A (which is what release.yml preflight sees). That is deliberately a *shape*
+  # claim — the tool still works — not "this tree is clean": the commit claim belongs to
+  # release.yml preflight (fresh checkout, every tag) and to `clean-clone.sh --selftest`
+  # (three mutations, including deleting the copied doc/ so a silent N/A turns red).
+  run_check "s22.clean-clone" "static" 1 "clean-clone.sh still builds a worktree and runs a row in it (doc/304 §7 item 38)"     bash scripts/release-gate/clean-clone.sh --ci -- --only s19.docs-ledger-snapshot
 
   if [ -n "$VERSION" ]; then
     run_check "s10.changelog" "static" 1 "CHANGELOG.md carries the $VERSION section" \
       bash -c 'git show HEAD:CHANGELOG.md | grep -qF "## [$1]" || { echo "CHANGELOG.md has no \"## [$1]\" section"; exit 1; }; echo ok' _ "${VERSION#v}"
     run_check "s11.release-notes" "static" 0 "curated release notes for $VERSION (optional)" \
       bash -c '[ -f "$1" ] && { echo "notes: $1"; exit 0; }; echo "no $1: the workflow renders notes from git history"; exit 0' _ ".github/release-notes/$VERSION.md"
+
   fi
 fi
 
@@ -554,7 +688,17 @@ if tier_selected build; then
       if [ "$n" != "0" ]; then echo "internal/webfs/dist has $n tracked file(s)"; exit 1; fi
       echo "internal/webfs/dist: untracked (gitignored)"
     '
+
+  # The other half of "it also passes in a clean clone" (doc/304 §7 item 39): a checkout that
+  # carries doc/ and nothing untracked, where the doc rows must print PASS. It is in the build
+  # tier, not static, because of what the item itself says about the trigger — it answers a
+  # question that is asked before a release, and it costs ~2.5 minutes (a worktree, an 850KB
+  # doc copy, and s13 recompiling cold in it). A loop that runs before every commit should not
+  # pay that; `--tier all` does, and that is what a release run is.
+  run_check "s24.doc-present" "build" 1 "the doc rows really run in a checkout that carries doc/ and nothing untracked (doc/304 §7 item 39, needs the docs)" \
+    bash scripts/release-gate/doc-present.sh
 fi
+
 
 # ── live tier ────────────────────────────────────────────────────────────
 if tier_selected live; then

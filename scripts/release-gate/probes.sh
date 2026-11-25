@@ -76,7 +76,7 @@ say()  { printf '%s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 good() { printf 'ok    %s\n' "$*"; }
 
-# ── selftest: thirteen mutations, each of which must be refused ──────────────────
+# ── selftest: fifteen mutations, each of which must be refused ───────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
@@ -269,6 +269,35 @@ def _post_that_should_not_exist(client, path):
     say "SELFTEST FAIL: the WS_PASS exemption mutation could not be built (the line moved)"
     exit 1
   fi
+
+  # ⑭ the relaxation E133 measured, widened into the check it replaced. Dropping the
+  # "nothing overtook it" filter turns every failure in the log into a contradiction with
+  # `fail_count=0`, which is exactly what the probe printed on 2026-11-24 for a dataset
+  # whose two documents had both succeeded since: four named failures, all of them ours,
+  # reported as someone else's inconsistency. The case that must go red is the overturned
+  # pair — not "some case failed".
+  sed 's/^                      if id(log) not in overtaken\]$/                      ]/'     "$EVID" > "$tmp/w4_compiler_evidence.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'a later success overtook are historical'; then
+    say "SELFTEST FAIL: a probe that reads every logged failure as a live contradiction was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      every logged failure read as a live contradiction -> refused"
+  cp "$EVID" "$tmp/w4_compiler_evidence.py"
+
+  # ⑮ and the other direction, the one that reads as mercy: call *every* failure historical.
+  # Then nothing can ever contradict the summary, and the reading is a wall of tolerance —
+  # a dataset that is FAILED right now with `fail_count=0` stops being an inconsistency.
+  sed 's/^        return int(chunks or 0) > 0$/        return True/'     "$EVID" > "$tmp/w4_compiler_evidence.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'a failure nothing overtook still contradicts'; then
+    say "SELFTEST FAIL: a probe that treats every failure as overtaken was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      every failure treated as overtaken -> refused"
+  cp "$EVID" "$tmp/w4_compiler_evidence.py"
 
   say "SELFTEST OK"
   exit 0

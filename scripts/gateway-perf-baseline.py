@@ -52,6 +52,12 @@ AMD 池实测配额是 20 次/分（`maximum 20 requests per minute for this One
 一条没有分母的结论只能是 `unverified`——这是 301 §4.2「行必须能失败」的同一条
 纪律。
 
+**样本不足有三种来源，报告不能把它们印成同一句话**（doc/304 §4 E146 的同一条）：
+`skipped_live`（我们主动跳过的真机格）/ `sample_plan`（我们自己只发了 n 个）/
+`upstream_quota`（发完了但被上游 429 挡回，n 个落地 + m 个被拒）。第三种的
+读数是「上游不让测」，写成前一种就是把配额事实卖成自选事实。`blocked_by`
+字段和 `unverified_by_reason` 计数就是为此存在的。
+
 ## 用法
 
 自测（离线、不需要服务端）：
@@ -171,7 +177,7 @@ def quantile_nearest_rank(values, q):
     return ordered[min(rank, n) - 1]
 
 
-def summarize(durations_ms, errors, q=None, measurement="latency"):
+def summarize(durations_ms, errors, q=None, measurement="latency", quota_429=0, retries=0):
     """把一格的原始观测压成结论。
 
     `errors` 是失败请求数，`len(durations_ms)` 是本格**实际发出**的请求数；
@@ -180,6 +186,12 @@ def summarize(durations_ms, errors, q=None, measurement="latency"):
     `measurement="replay"` 的格（`Idempotency-Key` 命中回放）只给数字、**永不**
     给 `pass`：那 30ms 是账本回放，不是模型时延，拿它跟 2s 的阈值比出来的绿是
     自己造的（E92）。
+
+    `quota_429` 是这一格收到的 429 次数（含被重试掉的）。它不改判定，只改
+    **样本为什么不足**这句话：`samples 5 < 20` 与 `samples 5 < 20，另有 15 次被
+    上游 429 挡回` 是两条不同的读数，前者是「我们自己只发了 5 个」，后者是
+    「上游不让我们发完」。把这两件事印成同一句话，等于把「没测到」卖成「测了、
+    只是少」——doc/304 §4 E146 的同一个坑（三种「空」互不相同）。
     """
     total = len(durations_ms)
     if total == 0:
@@ -192,8 +204,11 @@ def summarize(durations_ms, errors, q=None, measurement="latency"):
             "p99_ms": None,
             "max_ms": None,
             "verdict": "unverified",
-            "reason": "no requests issued",
+            "reason": "no requests issued"
+            + (" (%d rejected with 429)" % quota_429 if quota_429 else ""),
             "measurement": measurement,
+            "quota_429": quota_429,
+            "blocked_by": "upstream_quota" if quota_429 else "no_requests",
         }
     summary = {
         "samples": total,
@@ -204,6 +219,7 @@ def summarize(durations_ms, errors, q=None, measurement="latency"):
         "p99_ms": round(quantile_nearest_rank(durations_ms, 0.99), 3),
         "max_ms": round(max(durations_ms), 3),
         "measurement": measurement,
+        "quota_429": quota_429,
     }
     if measurement == "replay":
         # 数字留着（它说明幂等命中确实没走上游），但判定不在这里。
@@ -215,11 +231,25 @@ def summarize(durations_ms, errors, q=None, measurement="latency"):
     # 都一样没有信息量。
     if total < MIN_SAMPLES:
         summary["verdict"] = "unverified"
-        summary["reason"] = "samples %d < %d" % (total, MIN_SAMPLES)
+        if quota_429:
+            summary["reason"] = (
+                "samples %d < %d, %d request(s) rejected with 429 (upstream quota)"
+                % (total, MIN_SAMPLES, quota_429)
+            )
+            summary["blocked_by"] = "upstream_quota"
+        else:
+            summary["reason"] = "samples %d < %d" % (total, MIN_SAMPLES)
+            summary["blocked_by"] = "sample_plan"
         return summary
+    if quota_429:
+        # 样本够了，但这格的日程被配额拉长过：判定仍按实测分位走，只是把
+        # 「这些数字是在被限流的环境里测到的」写在读数旁边，免得下一次有人拿它
+        # 当无限额度的基线（节流已经放慢到不等同于真实负载）。
+        summary["paced_by_quota"] = True
     if limit is None:
         summary["verdict"] = "unverified"
         summary["reason"] = "no p95 limit declared for this cell"
+        summary["blocked_by"] = "no_limit"
         return summary
     if summary["p95_ms"] > limit:
         summary["verdict"] = "fail"
@@ -234,7 +264,44 @@ def summarize(durations_ms, errors, q=None, measurement="latency"):
         return summary
     summary["verdict"] = "pass"
     summary["reason"] = "p95 %.0fms ≤ %.0fms" % (summary["p95_ms"], limit)
+    if quota_429:
+        summary["reason"] += ", paced by %d x 429" % quota_429
     return summary
+
+
+def cell_id_for_table(cell_id):
+    """Make a cell id safe inside a markdown table cell.
+
+    Cell ids are `route|mode|tier|thermal`; the pipes are the primary key, not column
+    separators. Printed verbatim they add four columns to every row and the table stops
+    being a table — a reading nobody can read is the E120/E130 failure shape, one layer
+    down (the report exists, its rows do not parse). The JSON keeps the real id.
+    """
+    return str(cell_id).replace("|", "·")
+
+
+def unverified_reasons(results):
+    """把 ``unverified`` 的格按**原因**分族计数。
+
+    为什么要分族：T14 的 24 格里曾经有 12 格是 ``unverified``，但它们不是同一件事——
+    10 格是「我们没测」（`--skip-live`），2 格是「回放不是模型时延」，后来的 c2/c4
+    六格是「上游 429 让我们发不完」。把三者印成一个数，谁也无法分辨「该干活了」
+    和「该申请配额（或换环境）了」。
+    """
+    counts = {}
+    for cell in results:
+        if cell.get("skipped"):
+            key = "skipped_live"
+        else:
+            summary = cell.get("summary") or {}
+            if summary.get("verdict") != "unverified":
+                continue
+            if summary.get("measurement") == "replay":
+                key = "replay"
+            else:
+                key = summary.get("blocked_by") or "unclassified"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def gateway_overhead_share(total_p50, floor_p50):
@@ -345,14 +412,16 @@ def http_call(url, method, body, headers, timeout):
 def run_cell(cell, route, base, headers, iterations, timeout, pacer=None, max_retries=0):
     """跑一格：`iterations` 个请求，按并发档并发发出。
 
-    返回 `(durations_ms, errors, records)`。`records` 是每个请求一行
+    返回 `(durations_ms, errors, records, quota_429)`。`records` 是每个请求一行
     `{ts, ms, status, attempts}`：没有它，"这次跑得慢" 和 "这次被 429 挡了三次"
-    在汇总里长得一样。
+    在汇总里长得一样。`quota_429` 是本格收到的 429 总数（被重试掉的那几次加上
+    最后落地的失败），它让 `summarize` 能说出样本为什么不足。
 
     节流只对**真的要走上游**的格生效（见文件头）：回放请求不出进程。
     """
     durations, records = [], []
     errors = 0
+    quota_seen = [0]
     lock = threading.Lock()
     per_request_headers = dict(headers)
     if route.get("needs_api_key"):
@@ -392,11 +461,16 @@ def run_cell(cell, route, base, headers, iterations, timeout, pacer=None, max_re
             # 429 = 上游配额挡回。按上游给的 Retry-After 退避再试；重试**不**产生
             # 新样本，否则"被挡 5 次"会被算成"测了 5 次"。
             if status == 429 and attempts <= max_retries:
+                with lock:
+                    quota_seen[0] += 1
                 delay = retry_after_seconds(resp_headers)
                 if delay is None:
                     delay = min(30.0, 1.5 * attempts)
                 time.sleep(delay)
                 continue
+            if status == 429:
+                with lock:
+                    quota_seen[0] += 1
             break
         with lock:
             durations.append(elapsed)
@@ -425,7 +499,7 @@ def run_cell(cell, route, base, headers, iterations, timeout, pacer=None, max_re
             threads = []
     for started in threads:
         started.join()
-    return durations, errors, records
+    return durations, errors, records, quota_seen[0]
 
 
 def routes_for(base):
@@ -521,14 +595,14 @@ def render_markdown(report):
             "",
             "## %s" % title,
             "",
-            "| 格 | 请求 | 错误 | 错误率 | P50 | P95 | P99 | max | 被挡/重试 | 判定 | 依据 |",
+            "| 格 | 请求 | 错误 | 错误率 | P50 | P95 | P99 | max | 429 / 重试 | 判定 | 依据 |",
             "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for cell in cells:
             if cell["skipped"]:
                 lines.append(
                     "| %s | — | — | — | — | — | — | — | — | **unverified** | 跳过：%s |"
-                    % (cell["id"], cell["skip_reason"])
+                    % (cell_id_for_table(cell["id"]), cell["skip_reason"])
                 )
                 continue
             summary = cell["summary"]
@@ -539,10 +613,11 @@ def render_markdown(report):
                 return "—" if value is None else "%.0f" % value
 
             retries = cell.get("retries", 0)
+            quota = cell.get("quota_429", summary.get("quota_429", 0))
             lines.append(
                 "| %s | %d | %d | %s | %s | %s | %s | %s | %s | **%s** | %s |"
                 % (
-                    cell["id"],
+                    cell_id_for_table(cell["id"]),
                     summary["samples"],
                     summary["errors"],
                     rate,
@@ -550,7 +625,7 @@ def render_markdown(report):
                     ms("p95_ms"),
                     ms("p99_ms"),
                     ms("max_ms"),
-                    "—" if not retries else "%d" % retries,
+                    "—" if not (quota or retries) else "%d / %d" % (quota, retries),
                     summary["verdict"],
                     summary["reason"],
                 )
@@ -564,9 +639,11 @@ def render_markdown(report):
     lines += table(
         live,
         "真实请求（照这项阈值判定）",
-        "> `unverified` 不是通过：样本不足、阈值未声明、或该格需要上游模型 tokens"
-        "（`--skip-live`）都落在这里。一份全是 `unverified` 的报告说明这次没有测，"
-        "不说明网关很快。",
+        "> `unverified` 不是通过；但 `unverified` 也不是一个东西。原因分布印在本表下方，"
+        "三种主要来源是：我们主动跳过的真机格（`--skip-live`）、我们自己发的样本不够"
+        "（`sample_plan`）、以及发完了但被上游 429 挡回（`upstream_quota`）。第三种读的是"
+        "**配额**，不是网关也不是模型——把三者印成一个数，就是把「该申请配额」卖成"
+        "「该重测」。一份全是 `unverified` 的报告说明这次没有测，不说明网关很快。",
     )
     lines += table(
         replay,
@@ -586,6 +663,23 @@ def render_markdown(report):
             len(replay),
         ),
     ]
+    reasons = report.get("unverified_by_reason") or {}
+    if reasons:
+        labels = {
+            "skipped_live": "主动跳过真机格（--skip-live）",
+            "sample_plan": "我们自己发的样本不足（计划问题）",
+            "upstream_quota": "上游 429 配额挡回（读数是配额，不是时延）",
+            "no_limit": "该格没有声明 p95 阈值",
+            "no_requests": "一个请求也没发出去",
+            "replay": "幂等回放（不走上游）",
+        }
+        lines += [
+            "",
+            "unverified 的原因分布（三条互不代替：没跳 / 没发够 / 发不完）："
+            + "；".join(
+                "%s=%d" % (labels.get(key, key), reasons[key]) for key in sorted(reasons)
+            ),
+        ]
     overhead = report.get("overhead")
     if overhead:
         lines += [
@@ -638,7 +732,7 @@ def run(args):
             results.append(cell)
             verdicts["unverified"] = verdicts.get("unverified", 0) + 1
             continue
-        durations, errors, records = run_cell(
+        durations, errors, records, quota_429 = run_cell(
             cell,
             route,
             base,
@@ -649,12 +743,15 @@ def run(args):
             max_retries=args.max_retries,
         )
         cell["requests"] = records
+        cell["quota_429"] = quota_429
         cell["retries"] = sum(max(0, record["attempts"] - 1) for record in records)
         summary = summarize(
             durations,
             errors,
             q={"p95_limit_ms": cell["p95_limit_ms"]},
             measurement=cell.get("measurement", "latency"),
+            quota_429=quota_429,
+            retries=cell["retries"],
         )
         cell["summary"] = summary
         verdicts[summary["verdict"]] = verdicts.get(summary["verdict"], 0) + 1
@@ -700,6 +797,7 @@ def run(args):
         },
         "cells": results,
         "verdict_counts": verdicts,
+        "unverified_by_reason": unverified_reasons(results),
         "overhead": overhead,
     }
 
@@ -866,7 +964,7 @@ def selftest():
     globals()["http_call"] = stub_429_then_200
     try:
         counting = CountingPacer(100000)  # 间隔 0.6ms，只数次数不等时间
-        _, retry_errors, retry_records = run_cell(
+        _, retry_errors, retry_records, retry_quota = run_cell(
             cell, live_route, "http://stub", {}, 1, 5.0, pacer=counting, max_retries=2
         )
     finally:
@@ -881,6 +979,126 @@ def selftest():
         "retry-reports-final-status",
         retry_records[0]["status"] == 200 and retry_errors == 0,
         (retry_records[0]["status"], retry_errors),
+    )
+    # 被重试掉的那次 429 也要计数：它不产生样本，但它解释了这一格的日程。
+    check("retried-429-is-counted", retry_quota == 1, retry_quota)
+
+    # ── E151：样本不足的三种来源必须分开印 ───────────────────────────────
+    # 同一批 5 个落地样本，一份说「我们只发了 5 个」，一份说「发了 20 个、15 个被
+    # 上游 429 挡回」。判定同样 unverified，读数完全不同（E146 的「三种空」）。
+    planned_short = summarize([1.0] * 5, 0, q={"p95_limit_ms": 100})
+    quota_short = summarize([1.0] * 5, 0, q={"p95_limit_ms": 100}, quota_429=15)
+    check(
+        "planned-short-names-the-plan",
+        planned_short["blocked_by"] == "sample_plan",
+        planned_short.get("blocked_by"),
+    )
+    check(
+        "quota-short-names-the-quota",
+        quota_short["blocked_by"] == "upstream_quota",
+        quota_short.get("blocked_by"),
+    )
+    check(
+        "quota-short-prints-the-429s",
+        "429" in quota_short["reason"] and "15" in quota_short["reason"],
+        quota_short["reason"],
+    )
+    # 这条是上面那条的反面：只靠 verdict 区分不了，必须靠句子。
+    check(
+        "two-shorthfalls-are-not-the-same-string",
+        planned_short["reason"] != quota_short["reason"],
+        (planned_short["reason"], quota_short["reason"]),
+    )
+    check(
+        "quota-does-not-change-the-verdict",
+        quota_short["verdict"] == "unverified" and planned_short["verdict"] == "unverified",
+        (quota_short["verdict"], planned_short["verdict"]),
+    )
+    # 样本够、但日程被配额拉长过：判定仍按实测分位，读数旁注明节流事实。
+    paced = summarize([1.0] * MIN_SAMPLES, 0, q={"p95_limit_ms": 100}, quota_429=4)
+    check(
+        "pass-under-quota-is-named-pacing",
+        paced["verdict"] == "pass" and paced.get("paced_by_quota") is True and "429" in paced["reason"],
+        (paced["verdict"], paced.get("paced_by_quota"), paced["reason"]),
+    )
+
+    # 报告里的分族计数：三个不同原因必须落成三个不同的键，而不是一个 unverified 数。
+    family = unverified_reasons(
+        [
+            {"skipped": True, "summary": None},
+            {"skipped": False, "summary": summarize([1.0] * 5, 0, q={"p95_limit_ms": 100})},
+            {
+                "skipped": False,
+                "summary": summarize([1.0] * 5, 0, q={"p95_limit_ms": 100}, quota_429=15),
+            },
+            {
+                "skipped": False,
+                "summary": summarize(
+                    [1.0] * MIN_SAMPLES, 0, q={"p95_limit_ms": 100}, measurement="replay"
+                ),
+            },
+            {"skipped": False, "summary": summarize([1.0] * MIN_SAMPLES, 0, q={"p95_limit_ms": 100})},
+        ]
+    )
+    check(
+        "unverified-families-are-separate",
+        family == {"skipped_live": 1, "sample_plan": 1, "upstream_quota": 1, "replay": 1},
+        family,
+    )
+
+    # 报告本身也要有读者：一行不能因为 id 里有 `|` 就把表拆成十八列。
+    rendered_cells = [
+        {
+            "id": "gateway-chat|stream|c2|cold",
+            "route": "gateway-chat",
+            "mode": "stream",
+            "concurrency": 2,
+            "thermal": "cold",
+            "measurement": "latency",
+            "skipped": False,
+            "quota_429": 15,
+            "retries": 15,
+            "summary": summarize([1.0] * 5, 0, q={"p95_limit_ms": 4000}, quota_429=15),
+        },
+        {
+            "id": "gateway-chat|stream|c4|cold",
+            "route": "gateway-chat",
+            "mode": "stream",
+            "concurrency": 4,
+            "thermal": "cold",
+            "measurement": "latency",
+            "skipped": True,
+            "skip_reason": "RGX_API_KEY unset",
+        },
+    ]
+    rendered = render_markdown(
+        {
+            "generated_at": "2026-01-01T00:00:00+0800",
+            "base": "http://stub",
+            "tiers": [2, 4],
+            "iterations": 5,
+            "routes": ["gateway-chat"],
+            "rpm": 16,
+            "max_retries": 3,
+            "retries_total": 15,
+            "cells": rendered_cells,
+            "verdict_counts": {"unverified": 2},
+            "unverified_by_reason": unverified_reasons(rendered_cells),
+            "overhead": None,
+        }
+    )
+    table_rows = [line for line in rendered.splitlines() if line.startswith("| ")]
+    widths = {line.count("|") for line in table_rows}
+    check("rendered-table-has-one-width", len(widths) == 1, widths)
+    check(
+        "rendered-quota-is-named-in-the-table",
+        "429" in rendered and "upstream quota" in rendered,
+        "quota sentence missing",
+    )
+    check(
+        "rendered-family-line-names-the-quota",
+        "上游 429 配额挡回" in rendered,
+        "family line missing",
     )
 
     # 回放格不节流：它不出进程，给它排队只会把跑批时间拉长。

@@ -14,7 +14,14 @@
 #     leaves the suite green, which is how a rule becomes a habit again;
 #   ② the surface: `goldtool --help` shows `--blind-out` and `--packet`. A flag only the author
 #     knows about is not a flag; the tool's usage string is the page a tired operator reads;
-#   ③ the manual: it documents both flags and no longer asks the reader to pretend.
+#   ③ the manual: it documents both flags and no longer asks the reader to pretend;
+#   ④ the older half (doc/304 §7 item 37): a worksheet drawn *before* v1.12 gets a packet from
+#     the new `goldtool packet`, and the stub accepts it — otherwise the rule covers every draw
+#     made after the flag and nothing that T02's 120 annotations actually come from;
+#   ⑤ the runbook's file names (doc/304 §4 E122): §5 on, every `--packet tmp/gold/…` input must
+#     exist where `tmp/gold/` does. v1.13 derived `packet-*.jsonl` while §5.1/§6 still said
+#     `worksheet-*.packet.jsonl`; the text agreed with itself, so only the filesystem could
+#     tell — and the person who found out was the one who copied the command.
 #
 # Why the end-to-end run is not here: building a pool in shell would be a third copy of the
 # item schema, and a fixture no test validates is worse than no fixture. The chain
@@ -42,8 +49,10 @@ say()  { printf '%s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 good() { printf 'ok    %s\n' "$*"; }
 
-# The eleven tests that make up the packet contract. Named one by one because "the suite
-# passed" is not the same claim as "these eleven still exist".
+# The tests that make up the packet contract. Named one by one because "the suite passed" is
+# not the same claim as "these still exist". The last five are the writer for worksheets that
+# predate the flag (doc/304 §7 item 37): without them the rule covers only draws made after
+# v1.12, which is exactly the gap item 37 was opened for.
 REQUIRED_TESTS=(
   TestThePacketCarriesNoPriorAndNoGold
   TestThePacketRemovesOnlyThoseKeys
@@ -56,6 +65,11 @@ REQUIRED_TESTS=(
   TestStubRefusesAPacketThatLeakedThePrior
   TestStubRefusesAPacketThatIsNotTheSameRows
   TestThePacketKeepsTheFrameWhenItDropsTheScopeLabel
+  TestPacketIsDerivedFromAnOlderWorksheet
+  TestThePacketCommandFeedsTheReaderThatChecksIt
+  TestThePacketCommandRefusesToOverwriteItsWorksheet
+  TestALabelledFileCannotBecomeAPacket
+  TestThePacketCommandSaysWhenItStrippedNothing
 )
 
 # Git Bash's /tmp is not a real filesystem root: `go` reads a path like /tmp/x as a
@@ -63,7 +77,7 @@ REQUIRED_TESTS=(
 winpath() { (cd "$1" && pwd -W) 2>/dev/null || printf '%s' "$1"; }
 
 # The pattern is derived from the list, not written twice: `-run 'Blind|Packet'` looked right
-# and silently skipped two of the eleven (`TestALabelledRowIsRefusedNotStripped`,
+# and silently skipped two of them (`TestALabelledRowIsRefusedNotStripped`,
 # `TestTheCandidateSideStripsTheSameKeys` — neither name contains "blind" or "packet").
 run_pattern() {
   local IFS='|'
@@ -77,11 +91,11 @@ run_tests() {  # writes `--- PASS:` lines to stdout, returns go test's status
   go test ./cmd/goldtool/ -run "$GO_TEST_RUN_PATTERN" -count=1 -v "${overlay_args[@]}" 2>&1
 }
 
-# ── selftest: four mutations, each of which must be refused ────────────────
+# ── selftest: five mutations, each of which must be refused ────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
-  say "selftest: can this check refuse? (a manual that lost the flag, the sentence this round removed put back, a test that vanished, a strip that stopped stripping)"
+  say "selftest: can this check refuse? (a manual that lost the flag, the sentence this round removed put back, a test that vanished, a strip that stopped stripping, a subcommand that left the usage page, a runbook that points at a file nobody has)"
 
   # ① the manual loses `--packet`. It still documents `--blind-out`, still describes the
   # packet, and reads as if nothing were missing — the exact way a released manual ages.
@@ -153,6 +167,50 @@ if [ "${1:-}" = "--selftest" ]; then
   fi
   say "ok      a packet that no longer strips prior_*/gold_* -> refused"
 
+  # ⑤ the older-worksheet route disappears from the usage page. Nothing else changes: the
+  # command still exists, still works, and the operator with `tmp/gold/worksheet-primary-v1.jsonl`
+  # in hand has no way to learn that. This is the mutation for doc/304 §7 item 37's *second*
+  # half — the first was `sample --blind-out` existing at all.
+  cp cmd/goldtool/main.go "$tmp/main.go"
+  grep -v 'goldtool packet   --worksheet' "$tmp/main.go" > "$tmp/main-nopacket.go"
+  if cmp -s cmd/goldtool/main.go "$tmp/main-nopacket.go"; then
+    say "SELFTEST FAIL: mutation (5) did not change cmd/goldtool/main.go (the usage line moved)"
+    exit 1
+  fi
+  printf '{"Replace":{"%s":"%s"}}
+'     "$(winpath cmd/goldtool)/main.go" "$(winpath "$tmp")/main-nopacket.go" > "$tmp/overlay-usage.json"
+  out="$(BP_TEST_OVERLAY="$tmp/overlay-usage.json" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'does not show .goldtool packet'; then
+    say "SELFTEST FAIL: the older-worksheet route left the usage page unnoticed"
+    say "$out"
+    exit 1
+  fi
+  say "ok      \`goldtool packet\` gone from --help -> refused"
+
+  # ⑥ the runbook names a packet that is not on disk — the state this row was written in
+  # (v1.13 derived `packet-primary-v1.jsonl` while §5.1/§6 still said
+  # `worksheet-primary-v1.packet.jsonl`). Everything else is untouched and the text stays
+  # internally consistent, so only a check that resolves the path against the filesystem can
+  # see it. Needs `tmp/gold/` to exist: with no files there the check has no disk to read and
+  # says so, exactly as the sample-side half above.
+  if [ -d tmp/gold ]; then
+    sed 's#--packet tmp/gold/packet-primary-v1.jsonl#--packet tmp/gold/worksheet-primary-v1.packet.jsonl#g' \
+      "$MANUAL" > "$tmp/manual-stalepath.md"
+    if cmp -s "$MANUAL" "$tmp/manual-stalepath.md"; then
+      say "SELFTEST FAIL: mutation (6) did not change $MANUAL (the --packet path moved)"
+      exit 1
+    fi
+    out="$(BP_MANUAL="$tmp/manual-stalepath.md" bash "$0" 2>&1)"; rc=$?
+    if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'no such file exists on this tree'; then
+      say "SELFTEST FAIL: a runbook that points at a packet nobody has was accepted"
+      say "$out"
+      exit 1
+    fi
+    say "ok      a \`--packet\` path with no file behind it -> refused"
+  else
+    say "      (mutation ⑥ not applied: tmp/gold/ is not in this tree, so no \`--packet\` path can resolve here)"
+  fi
+
   say "SELFTEST OK"
   exit 0
 fi
@@ -183,7 +241,12 @@ fi
 # ── ② the flags are on the page, not only in the code ─────────────────────
 tmpbin="$(mktemp -d)"
 trap 'rm -rf "$tmpbin"' EXIT
-if go build -o "$tmpbin/goldtool" ./cmd/goldtool 2>/dev/null; then
+# The build honours the same overlay the test run does: `--selftest` mutates a tracked file
+# without touching it, and a check whose *binary* came from the real tree would answer for a
+# source it never read (mutation ⑤ left the usage page and the check still said ok).
+build_args=()
+[ -n "$OVERLAY" ] && build_args=("-overlay=$OVERLAY")
+if go build -o "$tmpbin/goldtool" "${build_args[@]}" ./cmd/goldtool 2>/dev/null; then
   help="$("$tmpbin/goldtool" --help 2>&1)"
   for flag in --blind-out --packet; do
     if printf '%s' "$help" | grep -qF -- "$flag"; then
@@ -192,6 +255,13 @@ if go build -o "$tmpbin/goldtool" ./cmd/goldtool 2>/dev/null; then
       bad "--help does not show $flag"
     fi
   done
+  # The subcommand for worksheets drawn before the flag is part of the surface too: an
+  # operator with `tmp/gold/worksheet-primary-v1.jsonl` in hand reads this page first.
+  if printf '%s' "$help" | grep -qF -- 'goldtool packet'; then
+    good "--help shows \`goldtool packet\` (the older worksheets have a documented route)"
+  else
+    bad "--help does not show \`goldtool packet\`: the only worksheet nobody can blind is the one someone has already drawn"
+  fi
   # A packet that is not the same rows must stay a usage-level refusal, not a crash: the
   # reader is the half that has to look at what is actually on disk.
   usage="$("$tmpbin/goldtool" labels --stub 2>&1)"; rc=$?
@@ -205,7 +275,44 @@ else
   bad "cmd/goldtool does not build"
 fi
 
-# ── ③ the code still refuses the two ways a packet can be wrong ────────────
+# ── ③b the older half: a worksheet that predates the flag still gets a packet ──
+# doc/304 §7 item 37 is about two files that were drawn before `--blind-out` existed. They are
+# in tmp/ (gitignored), so this half runs only where they are: a clean checkout gets the code
+# claim from the five named tests, not a silent green. The assertion is the chain the operator
+# runs — derive, then read it in with the stub that checks blindness — so a packet the reader
+# rejects counts as no packet at all.
+for side in primary cand-all; do
+  ws="tmp/gold/worksheet-$side-v1.jsonl"
+  if [ ! -f "$ws" ]; then
+    say "      ($ws not in this tree: the older-worksheet chain was not exercised here)"
+    continue
+  fi
+  pk="$tmpbin/packet-$side.jsonl"
+  lb="$tmpbin/labels-$side.jsonl"
+  if ! "$tmpbin/goldtool" packet --worksheet "$ws" --out "$pk" --quiet 2>"$tmpbin/pkt-$side.err"; then
+    bad "goldtool packet refused $ws: $(head -2 "$tmpbin/pkt-$side.err" | tr '
+' ' ')"
+    continue
+  fi
+  if grep -qoE '"(prior|gold)_[A-Za-z0-9_]*":' "$pk"; then
+    bad "$(basename "$pk") still carries a prior_*/gold_* key: the file an annotator would read is not blind"
+    continue
+  fi
+  if ! "$tmpbin/goldtool" labels --stub --worksheet "$ws" --annotator probe --out "$lb"       --packet "$pk" >"$tmpbin/stub-$side.out" 2>"$tmpbin/stub-$side.err"; then
+    # The candidate side repeats `item_id` by construction (one claim, two frozen candidates).
+    # Until E119 the label chain keyed on `item_id` alone, so the stub refused its own 36-row
+    # worksheet; the chain now keys on `(item_id, candidate_index)`, so that refusal is gone —
+    # and a refusal here is a real failure (doc/304 §7 item 40). The numbered note that used
+    # to sit here was right while item 40 was open and would have been a branch that can
+    # never fire once it closed, i.e. a green light nobody tests.
+    bad "labels --stub --packet refused the packet derived from $ws: $(head -3 "$tmpbin/stub-$side.err" | tr '
+' ' ')"
+    continue
+  fi
+  good "$side: the worksheet drawn before v1.12 yields a packet the stub accepts (item 37's file, not a reshoot)"
+done
+
+# ── ④ the code still refuses the two ways a packet can be wrong ────────────
 # The strings are the user-visible sentences, so they are also the contract: each names what
 # was found (a leaked key with its line number, a row set that differs) rather than "invalid".
 if [ -f "$SRC" ]; then
@@ -220,7 +327,7 @@ else
   bad "$SRC is missing: the packet rules have no home"
 fi
 
-# ── ④ the manual documents the loop it asks people to run ────────────────
+# ── ⑤ the manual documents the loop it asks people to run ────────────────
 if [ ! -f "$MANUAL" ]; then
   # doc/ is gitignored (.gitignore:91): a clean checkout — CI, or a fresh clone — does not
   # carry it at all. The comparison then did not happen, and that is a different sentence
@@ -230,7 +337,7 @@ if [ ! -f "$MANUAL" ]; then
   say "N/A   $MANUAL (doc/operations/gold-labeling-manual.md) is not in this tree: doc/ is gitignored by policy (.gitignore:91),"
   say "      so this comparison did not run in this checkout — the code-side checks above did."
 else
-  for shape in 'sample --blind-out' 'labels --stub --packet'; do
+  for shape in 'sample --blind-out' 'labels --stub --packet' 'goldtool packet'; do
     if grep -qF -- "$shape" "$MANUAL"; then
       good "the manual documents \`$shape\`"
     else
@@ -251,6 +358,30 @@ else
   else
     bad "§4 rule 3 names neither the packet nor the old sentence: it was rewritten into something this check cannot read"
   fi
+  # §5/§6 name the files the annotator has to have in hand. v1.13 *derived* the two packets
+  # (`packet-primary-v1.jsonl`, `packet-cand-all-v1.jsonl`) while the runbook still said
+  # `worksheet-primary-v1.packet.jsonl` — the name a fresh `--blind-out` would write, which on
+  # this tree is nothing. The document was internally consistent (0a wrote that name, step 1
+  # read it), so no amount of grepping the text could see it: the witness is the filesystem.
+  # Inputs must exist; `--blind-out` is an output of a draw, so it is not checked (doc/304 §4
+  # E122).
+  pkts="$(sed -n '/^## 5\./,$p' "$MANUAL" | grep -oE -- '--packet +tmp/gold/[^ )\\]+' \
+          | awk '{print $2}' | sed 's/[`"]*$//' | sort -u)"
+  npkts="$(printf '%s\n' "$pkts" | grep -c . || true)"
+  if [ "$npkts" -lt 2 ]; then
+    bad "the manual shows $npkts \`--packet tmp/gold/…\` input(s) from §5 on: the runbook's file names were lost, so this check has nothing to read (want ≥2: the primary and the candidate side)"
+  elif [ ! -d tmp/gold ]; then
+    say "      (tmp/gold/ is not in this tree: the manual's \`--packet\` paths were not resolved against disk — a clean"
+    say "       checkout has no annotation files at all; this half runs on the workstation that carries them)"
+  else
+    for p in $pkts; do
+      if [ -f "$p" ]; then
+        good "the manual's input \`$p\` exists (rule 3 tells people to read it; a path that is not there is not a packet)"
+      else
+        bad "the manual tells the annotator to read \`$p\`, and no such file exists on this tree: copying the runbook stops at the first command (the v1.13 packets are \`packet-<side>-v1.jsonl\`)"
+      fi
+    done
+  fi
 fi
 
 say ""
@@ -264,5 +395,5 @@ if [ "${na:-0}" = "1" ]; then
   say "  Exit 3: 「prompt 里有一个文件没人能打开」 is not 「标注入读了正确的文件」."
   exit 3
 fi
-say "blind-packet: PASS (the packet carries no prior_*/gold_* key, the stub verifies it before writing a skeleton, the manual tells people to read it; T02's remaining blocker is still a human)"
+say "blind-packet: PASS (the packet carries no prior_*/gold_* key, the stub verifies it before writing a skeleton, the manual tells people to read it, and a worksheet drawn before the flag still gets one; T02's remaining blocker is still a human)"
 exit 0

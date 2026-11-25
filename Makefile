@@ -4,8 +4,9 @@
 .PHONY: help build build-server build-web dev dev-web tidy check \
         start start-local stop status restart \
         test test-v test-p0 test-contract test-race test-coverage test-frontend-coverage test-frontend-coverage-report \
-        test-d1-freeze test-integration test-pg-contract test-pg-release-rollback test-operational-contracts test-warning-contracts test-e2e test-quality-report test-changed-coverage test-coverage-trend test-query-plan-trend test-flake-report test-governance-report check-nightly check-release lint vet typecheck clean \
-        release-gate gate-static gate-live gate-dry-run \
+        test-d1-freeze test-integration test-pg-contract test-pg-release-rollback test-operational-contracts test-warning-contracts test-e2e test-quality-report test-changed-coverage test-coverage-trend test-query-plan-trend test-flake-report test-governance-report check-nightly check-release lint vet check-gorm-builders typecheck clean \
+        release-gate gate-static gate-live gate-dry-run clean-clone clean-clone-selftest \
+        doc-present doc-present-selftest \
         docker-build docker-up docker-down docker-log docker-ps docker-config
 
 # ─── Platform detection ───────────────────────────────────────────────
@@ -200,6 +201,21 @@ gate-live: ## Verify a running deployment (needs RGX_BASE + RGX_USER/RGX_PASSWOR
 gate-dry-run: ## Run every tier on the current tree (never releasable)
 	bash $(SCRIPTS)/release-gate.sh --tier all --label "dry run, not a release"
 
+# "It also passes in a fresh clone" used to be done by hand: worktree, copy doc/, remember
+# which directory name a test wanted. doc/ is gitignored, so CI can only ever see the half
+# without it; this is the half with it (doc/304 §7 item 38).
+clean-clone: ## Run the static gate in a fresh worktree (frontend rows skipped: no node_modules)
+	bash $(SCRIPTS)/release-gate/clean-clone.sh
+
+clean-clone-selftest: ## Prove clean-clone.sh reads the worktree it built, not your dirty tree
+	bash $(SCRIPTS)/release-gate/clean-clone.sh --selftest
+
+doc-present: ## Prove the doc rows really run in a checkout that carries doc/ (item 39, ~2.5 min)
+	bash $(SCRIPTS)/release-gate/doc-present.sh
+
+doc-present-selftest: ## Prove that row can be red (doc/ removed from the worktree; a `doc` marker dropped)
+	bash $(SCRIPTS)/release-gate/doc-present.sh --selftest
+
 deploy-drill: ## Run deployment readiness drill and write reports
 	go run ./cmd/deploy-drill --config config/config.yaml --base-url http://localhost:9191 --output doc/deployment/drill
 
@@ -216,12 +232,19 @@ lint: ## Run golangci-lint
 vet: ## Run go vet
 	go vet ./...
 
+# A count and a read that share one GORM builder must not carry Group/Select/Distinct/
+# Having/Unscoped: the read inherits the count's clause and PostgreSQL rejects or
+# mis-reads it (the 2026-11 knowledge-ops 500). Sibling of the PG contract tests, but
+# static, so it fails before the code reaches a database.
+check-gorm-builders: ## Flag count/read builders shared with a grouping or projection clause
+	go run ./cmd/gormguard ./internal
+
 # ─── Typecheck ───────────────────────────────────────────────────────
 typecheck: ## Typecheck frontend
 	cd web && npm run typecheck
 
 # ─── Check (all-in-one) ─────────────────────────────────────────────
-check: vet build test typecheck test-operational-contracts ## Run vet + build + test + typecheck + operational contracts
+check: vet check-gorm-builders build test typecheck test-operational-contracts ## Run vet + gorm builder guard + build + test + typecheck + operational contracts
 
 # ─── Dependency management ───────────────────────────────────────────
 tidy: ## Run go mod tidy
@@ -249,3 +272,16 @@ docker-ps: ## Show stack status
 
 docker-config: ## Validate the compose file
 	docker compose -f docker/docker-compose.yml config
+
+# OpenAPI / Swagger
+# The generator version, the flags and the file set live in ONE place now:
+# scripts/release-gate/openapi.sh. That script is also the release-gate row
+# (s25.openapi-freshness, doc/310 §12.2), so `make swagger-check` and the gate
+# cannot disagree about what "fresh" means — two copies of a generator
+# invocation is exactly how artifacts and the recipe drift apart.
+
+swagger:
+	bash scripts/release-gate/openapi.sh gen internal/docs
+
+swagger-check:
+	bash scripts/release-gate/openapi.sh check
