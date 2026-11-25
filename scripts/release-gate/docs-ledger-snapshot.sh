@@ -93,9 +93,9 @@ PY
   expect_refusal "状态 基本完成 不在 §0 的闭集" LEDGER_SNAPSHOT="$tmp/bad-status"
 
   # ② a task dropped. The count and the id set are two independent witnesses: a row that
-  # disappears from a frozen artifact must not read as "26 tasks, all fine".
+  # disappears from a frozen artifact must not read as "28 tasks, all fine".
   jmut "drop-task" "d['ledger']['tasks'] = [t for t in d['ledger']['tasks'] if t['id'] != 'T04b']"
-  expect_refusal "任务 id 集不是 T01–T25 + T04b" LEDGER_SNAPSHOT="$tmp/drop-task"
+  expect_refusal "任务 id 集不是 T01–T25 + T04b + T27 + T28" LEDGER_SNAPSHOT="$tmp/drop-task"
 
   # ③ the schema id bumped without a reader. A snapshot whose version nobody recognises must
   # not be read as "same shape, different number" — that is how a format silently forks.
@@ -144,7 +144,7 @@ def bad(msg):
     print("FAIL  " + msg)
 
 STATUS_OK = ('未开始', '进行中', '已完成', '受阻', '已取消')
-WANT_IDS = sorted(['T%02d' % n for n in range(1, 26)] + ['T04b'])
+WANT_IDS = sorted(['T%02d' % n for n in range(1, 26)] + ['T04b', 'T27', 'T28'])
 SCHEMA = 'rgx.docs-ledger/1'
 
 if not os.path.exists(snap_path):
@@ -192,29 +192,29 @@ else:
 led = snap.get('ledger') or {}
 tasks = led.get('tasks') or []
 ids = [t.get('id') for t in tasks]
-if len(tasks) != 26 or sorted(ids) != WANT_IDS:
-    bad("任务 id 集不是 T01–T25 + T04b（26 行，各一次）：读到 %d 行，缺 %s，多 %s" %
+if len(tasks) != 28 or sorted(ids) != WANT_IDS:
+    bad("任务 id 集不是 T01–T25 + T04b + T27 + T28（28 行，各一次）：读到 %d 行，缺 %s，多 %s" %
         (len(tasks), [t for t in WANT_IDS if t not in ids] or '无',
          [t for t in ids if t not in WANT_IDS] or '无'))
 else:
-    ok("任务 id 恰为 T01–T25 + T04b（26 行，各一次）")
+    ok("任务 id 恰为 T01–T25 + T04b + T27 + T28（28 行，各一次）")
 
 bad_status = [(t.get('id'), t.get('status')) for t in tasks if t.get('status') not in STATUS_OK]
 if bad_status:
     for tid, word in bad_status:
         bad("%s 的状态 %s 不在 §0 的闭集 %s 里" % (tid, word, ' / '.join(STATUS_OK)))
-elif len(tasks) == 26:
+elif len(tasks) == 28:
     counts = {}
     for t in tasks:
         counts[t['status']] = counts.get(t['status'], 0) + 1
-    ok("26 行的状态全在 §0 闭集内（%s）" %
+    ok("28 行的状态全在 §0 闭集内（%s）" %
        ' / '.join('%s %d' % (w, counts[w]) for w in STATUS_OK if w in counts))
 
 no_evidence = [t.get('id') for t in tasks if not t.get('evidence')]
 if no_evidence:
     bad("这些行的证据格在被冻结时就是空的：%s（§7 第 2 条要的是命令 + 输出摘要）" % no_evidence)
-elif len(tasks) == 26:
-    ok("26 行都有非空证据格（冻结时才写入，空行不会被冻成「已核」）")
+elif len(tasks) == 28:
+    ok("28 行都有非空证据格（冻结时才写入，空行不会被冻成「已核」）")
 
 devs = led.get('deviations') or []
 want_devs = ['D-%02d' % n for n in range(1, len(devs) + 1)]

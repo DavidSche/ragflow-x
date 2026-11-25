@@ -81,14 +81,14 @@ const minCompressBytes = 1024
 // served here are the ones Vite emitted, and a media file is already compressed.
 // Re-encoding it makes the payload larger and bills CPU per request.
 var compressibleTypes = map[string]bool{
-	"text/html":              true,
-	"text/css":               true,
-	"text/plain":             true,
-	"text/javascript":        true,
-	"application/javascript": true,
-	"application/json":       true,
+	"text/html":                 true,
+	"text/css":                  true,
+	"text/plain":                true,
+	"text/javascript":           true,
+	"application/javascript":    true,
+	"application/json":          true,
 	"application/manifest+json": true,
-	"image/svg+xml":          true,
+	"image/svg+xml":             true,
 }
 
 func compressibleType(contentType string) bool {

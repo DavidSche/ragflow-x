@@ -86,8 +86,8 @@ func testFS() fstest.MapFS {
 	big := strings.Repeat("<p>row</p>", 512) // ~5 KB
 	js := strings.Repeat("console.log(1);", 512)
 	return fstest.MapFS{
-		"index.html": &fstest.MapFile{Data: []byte("<!doctype html><html><body>" + big + "</body></html>")},
-		"assets/app.js": &fstest.MapFile{Data: []byte(js)},
+		"index.html":      &fstest.MapFile{Data: []byte("<!doctype html><html><body>" + big + "</body></html>")},
+		"assets/app.js":   &fstest.MapFile{Data: []byte(js)},
 		"assets/logo.png": &fstest.MapFile{Data: bytes.Repeat([]byte{0x89, 'P', 'N', 'G'}, 2048)},
 		"assets/tiny.css": &fstest.MapFile{Data: []byte("a{color:red}")},
 	}
