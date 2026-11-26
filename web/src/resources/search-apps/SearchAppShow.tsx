@@ -15,6 +15,7 @@ import {
 import { api, ApiError } from "../../lib/api";
 import { Show } from "@/components/admin";
 import { datasetOptions } from "../chats/chat-types";
+import { workspaceDatasetIdsForDocuments } from "./dataset-options";
 import type { DatasetLike } from "../chats/chat-types";
 import { ConversationShell } from "../workbench/ConversationShell";
 import { downloadConversation } from "../workbench/conversation-export";
@@ -187,6 +188,12 @@ export const SearchAppShow = () => {
   const abortRef = useRef<AbortController | null>(null);
   const { data: datasets } = useGetList("datasets", { pagination: { page: 1, perPage: 200 } });
   const { values: datasetValues, mapId } = datasetOptions(datasets as DatasetLike[] | undefined);
+  // Identity-stable dependency for the document lookup below: the dataset list
+  // arrives after the config, and a raw array dependency would re-run the effect
+  // on every render.
+  const datasetValuesKey = datasetValues
+    .map((d: DatasetLike) => `${d.id}:${d.ragflow_dataset_id ?? ""}`)
+    .join("|");
   const [modelOptions, setModelOptions] = useState<ModelOptionsData | null>(null);
   const [documentOptions, setDocumentOptions] = useState<DocumentOption[]>([]);
   const [documentOptionsLoading, setDocumentOptionsLoading] = useState(false);
@@ -249,7 +256,11 @@ export const SearchAppShow = () => {
   }, [id]);
 
   useEffect(() => {
-    const datasetIds = cfg.kb_ids;
+    // `kb_ids` are engine dataset ids (that is what RAGFlow stores); our
+    // `/datasets/:id/documents` resolves a workspace link id, so asking with the
+    // engine id answered 404 "dataset not found" on every open of this page
+    // (doc/304 §4 E169). Translate first; ids with no link are skipped.
+    const datasetIds = workspaceDatasetIdsForDocuments(cfg.kb_ids, datasetValues);
     if (datasetIds.length === 0) {
       setDocumentOptions([]);
       setDocumentOptionsLoading(false);
@@ -278,7 +289,10 @@ export const SearchAppShow = () => {
     return () => {
       cancelled = true;
     };
-  }, [cfg.kb_ids]);
+    // `datasetValuesKey` is a dependency: the config often loads before the
+    // dataset list, and without the re-run the document dropdown would stay
+    // empty until the user touched a binding.
+  }, [cfg.kb_ids, datasetValuesKey]);
 
   const save = async () => {
     if (!id) return;

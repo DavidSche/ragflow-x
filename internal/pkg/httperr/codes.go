@@ -59,6 +59,13 @@ const (
 
 	// Upstream business rejection (41140-41149).
 	CodeUpstreamRejected = 41140 // engine answered 200 with a non-zero envelope code
+	// A duplicate Search App name is the one upstream rejection an operator can
+	// fix without knowing the engine: rename it. It gets its own code because the
+	// engine reports it as HTTP 200 + code 102 ("Duplicated search name."), which
+	// used to be flattened into 50261 "configure search app failed" — a sentence
+	// that sends the reader to the network instead of to the name field
+	// (doc/304 §4 E169).
+	CodeSearchAppNameTaken = 41141 // engine refuses a Search App rename onto a taken name
 
 	// Credential lifecycle (41150-41159). Rotation is a request that is
 	// well-formed but cannot be honoured, which is exactly this block's contract;
@@ -107,6 +114,7 @@ var Declared = []Declaration{
 	{CodeApprovalAdjacentApproverConflict, "approval_adjacent_approver_conflict", "相邻审批步骤由同一人审批"},
 
 	{CodeUpstreamRejected, "upstream_rejected", "引擎以 HTTP 200 + 非零 envelope code 拒绝业务请求"},
+	{CodeSearchAppNameTaken, "search_app_name_taken", "已存在同名搜索应用，引擎不允许重名"},
 	{CodeAPIKeyRotationConflict, "api_key_rotation_conflict", "API Key 已吊销或已轮换，不能再次轮换"},
 	{CodeRoleParentCycle, "role_parent_cycle", "父角色选择会把角色自己变成祖先（继承成环）"},
 }

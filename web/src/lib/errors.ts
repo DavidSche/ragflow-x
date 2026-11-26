@@ -100,6 +100,11 @@ const ERROR_MESSAGES: Record<number, string> = {
   41122: "没有可更新的字段",
   41130: "相邻审批步骤不能由同一人审批",
   41140: "引擎拒绝了这个请求",
+  // A duplicate Search App name is fixable by the operator (rename it), so the
+  // sentence points at the name field. RAGFlow reports it as HTTP 200 + code 102
+  // on `PUT /searches/<id>` only — `POST` accepts the duplicate
+  // (doc/304 §4 E169).
+  41141: "已存在同名搜索应用（RAGFlow 不允许重名），请换一个名称后重试",
   41150: "该 API Key 已吊销或已轮换，不能再轮换",
   41160: "父角色选择会造成角色继承成环，请换一个父角色",
 

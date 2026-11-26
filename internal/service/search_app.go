@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
@@ -176,6 +179,66 @@ func (s *Service) GetSearchAppConfigForScope(ctx context.Context, scope TenantSc
 	return live, nil
 }
 
+// ragflowErrorMessage returns the engine's own sentence for a provider error so
+// an operator reads the cause instead of only our code number.
+func ragflowErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	var ragErr *ragflow.Error
+	if errors.As(err, &ragErr) && strings.TrimSpace(ragErr.Message) != "" {
+		return truncateRunes(strings.TrimSpace(ragErr.Message), 200)
+	}
+	return truncateRunes(strings.TrimSpace(err.Error()), 200)
+}
+
+func truncateRunes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
+// isSearchAppNameRejection reports RAGFlow's duplicate-name rejection, which
+// arrives as **HTTP 200 + {"code":102,"message":"Duplicated search name."}**.
+//
+// The asymmetry is the trap: `POST /searches` accepts two apps with one name,
+// `PUT /searches/<id>` refuses the second one. A wizard that prefills the
+// template's name therefore succeeds once and fails for every later
+// instantiation of the same template — with a generic 502 unless this shape is
+// recognised (doc/304 §4 E169).
+func isSearchAppNameRejection(err error) bool {
+	var ragErr *ragflow.Error
+	if !errors.As(err, &ragErr) {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(ragErr.Message))
+	return strings.Contains(msg, "duplicated search name") ||
+		strings.Contains(msg, "duplicate search name")
+}
+
+// searchAppWriteError converts an upstream write failure into an answer the
+// operator can act on. Every branch keeps the engine's sentence: a code number
+// alone told the 2026-11-26 drill "configure search app failed" while the
+// engine had said exactly what was wrong (doc/304 §4 E169).
+func searchAppWriteError(err error, code int, action, name string) error {
+	if isSearchAppNameRejection(err) {
+		msg := "已存在同名搜索应用，无法再次使用这个名字：RAGFlow 不允许两个搜索应用重名。请换一个名称后重试"
+		if strings.TrimSpace(name) != "" {
+			msg += "（已存在的是「" + strings.TrimSpace(name) + "」，可先在搜索应用列表里改名或删除）"
+		}
+		return httperr.New(http.StatusConflict, httperr.CodeSearchAppNameTaken, msg)
+	}
+	if upstream := ragflowErrorMessage(err); upstream != "" {
+		return httperr.New(502, code, "ragflow "+action+" failed: "+upstream)
+	}
+	return httperr.New(502, code, "ragflow "+action+" failed")
+}
+
 // CreateSearchApp creates a Search App in RAGFlow with the given config and
 // records its ownership in the shadow table.
 func (s *Service) CreateSearchApp(ctx context.Context, tenantID, name string, cfg *ragflow.SearchConfig) (*model.SearchAppShadow, error) {
@@ -197,16 +260,36 @@ func (s *Service) CreateSearchApp(ctx context.Context, tenantID, name string, cf
 	}
 	id, err := s.RAGFlow.CreateSearchApp(ctx, ragflow.CreateSearchAppRequest{Name: name})
 	if err != nil {
-		return nil, httperr.New(502, 50260, "ragflow create search app failed")
+		return nil, searchAppWriteError(err, 50260, "create search app", name)
+	}
+	// The engine makes the name unique itself: `POST /searches` accepts a name
+	// another app already carries and stores it suffixed ("客服 FAQ(1)"). `PUT
+	// /searches/<id>` is the asymmetric half — it compares the name it is handed
+	// against every *other* app, so re-sending the name we asked for is a
+	// guaranteed `code 102` for a suffixed app. Read back what the engine
+	// actually called it and configure under that name (doc/304 §4 E169: this is
+	// why instantiating the same template twice failed the second time).
+	actualName := name
+	if created, err := s.RAGFlow.GetSearchApp(ctx, id); err == nil && created != nil && strings.TrimSpace(created.Name) != "" {
+		actualName = created.Name
 	}
 	if cfg != nil && !searchConfigEmpty(cfg) {
-		if _, err := s.RAGFlow.UpdateSearchApp(ctx, id, ragflow.UpdateSearchAppRequest{Name: name, SearchConfig: cfg}); err != nil {
-			return nil, httperr.New(502, 50261, "ragflow configure search app failed")
+		if _, err := s.RAGFlow.UpdateSearchApp(ctx, id, ragflow.UpdateSearchAppRequest{Name: actualName, SearchConfig: cfg}); err != nil {
+			// Compensating delete: the POST above already created the app, and a
+			// failed configure must not leave one behind — no shadow row and no
+			// upstream_refs would point at it, so neither the UI nor the orphan
+			// reconcile task could ever find it again (doc/304 §4 E169: two
+			// drill attempts stranded apps in the engine).
+			if delErr := s.RAGFlow.DeleteSearchApp(ctx, id); delErr != nil {
+				logger.Warn("search app left upstream after failed configure",
+					"search_app_id", id, "error", delErr)
+			}
+			return nil, searchAppWriteError(err, 50261, "configure search app", actualName)
 		}
 	}
 	now := time.Now().UTC()
 	sa := &model.SearchAppShadow{
-		ID: id, TenantID: tenantID, Name: name, Status: "active",
+		ID: id, TenantID: tenantID, Name: actualName, Status: "active",
 		DatasetIDs: strings.Join(kbIDs, ","), CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.Store.UpsertSearchAppShadow(ctx, sa); err != nil {
@@ -242,7 +325,7 @@ func (s *Service) UpdateSearchApp(ctx context.Context, tenantID, searchAppID, na
 		req.SearchConfig = cfg
 	}
 	if _, err := s.RAGFlow.UpdateSearchApp(ctx, searchAppID, req); err != nil {
-		return nil, httperr.New(502, 50262, "ragflow update search app failed")
+		return nil, searchAppWriteError(err, 50262, "update search app", name)
 	}
 	if name != "" {
 		sa.Name = name

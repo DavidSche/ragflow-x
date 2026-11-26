@@ -5,10 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/ragflow-x/ragflow-x/internal/pkg/id"
+)
+
+// The engine's duplicate-name rejection, kept in one place so the mock and the
+// service-layer mapping cannot drift apart.
+const (
+	searchAppNameDuplicatedCode    = 102
+	searchAppNameDuplicatedMessage = "Duplicated search name."
 )
 
 type mockSearchApp struct {
@@ -97,19 +105,61 @@ func (m *Mock) GetSearchApp(ctx context.Context, searchAppID string) (*SearchApp
 }
 
 // CreateSearchApp creates a mock Search App and returns its id.
+//
+// RAGFlow de-duplicates the name **itself** on create: `POST /searches` with a
+// name another app already carries answers 200 and stores `name(1)`, `name(2)`, …
+// (measured on v1.0.0: two POSTs of `E169-PROBE-NAME` → `E169-PROBE-NAME` and
+// `E169-PROBE-NAME(1)`). The mock used to store the bare name, which hid the
+// asymmetry that broke instantiation: the configure step re-sent the *requested*
+// name and the engine answered `code 102 Duplicated search name.` (doc/304 §4
+// E169).
 func (m *Mock) CreateSearchApp(ctx context.Context, req CreateSearchAppRequest) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := time.Now().Unix()
 	sa := &mockSearchApp{
-		id: id.New(), name: req.Name, description: req.Description,
+		id: id.New(), name: m.uniqueSearchAppNameLocked(req.Name), description: req.Description,
 		searchConfig: defaultMockSearchConfig(), createTime: now, updateTime: now,
 	}
 	m.searchApps[sa.id] = sa
 	return sa.id, nil
 }
 
+// uniqueSearchAppNameLocked mirrors the engine's create-time de-duplication:
+// `base`, then `base(1)`, `base(2)`, … Already suffixed input is left alone after
+// the first free slot is found.
+func (m *Mock) uniqueSearchAppNameLocked(base string) string {
+	taken := func(name string) bool {
+		for _, sa := range m.searchApps {
+			if strings.EqualFold(sa.name, name) {
+				return true
+			}
+		}
+		return false
+	}
+	if !taken(base) {
+		return base
+	}
+	for n := 1; ; n++ {
+		candidate := fmt.Sprintf("%s(%d)", base, n)
+		if !taken(candidate) {
+			return candidate
+		}
+	}
+}
+
 // UpdateSearchApp updates a mock Search App's name and search_config.
+//
+// Name uniqueness is enforced here exactly the way RAGFlow v1.0.0 enforces it
+// on `PUT /searches/<id>`: a rename onto a name another app already carries is
+// refused with **HTTP 200 + {"code":102,"message":"Duplicated search name."}**
+// — a business rejection inside a success status. `POST /searches` does NOT
+// check the name (two apps may share one), which is what makes the collision
+// show up only at the configure step.
+//
+// The mock used to accept every rename, so no test in the repo could observe
+// that a second instantiation of the same template fails upstream (doc/304 §4
+// E169: the fake was more forgiving than the engine).
 func (m *Mock) UpdateSearchApp(ctx context.Context, searchAppID string, req UpdateSearchAppRequest) (*SearchApp, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -118,6 +168,14 @@ func (m *Mock) UpdateSearchApp(ctx context.Context, searchAppID string, req Upda
 		return nil, fmt.Errorf("search app not found: %s", searchAppID)
 	}
 	if req.Name != "" {
+		for otherID, other := range m.searchApps {
+			if otherID != searchAppID && strings.EqualFold(other.name, req.Name) {
+				return nil, &Error{
+					HTTPStatus: http.StatusOK, Code: searchAppNameDuplicatedCode,
+					Message: searchAppNameDuplicatedMessage, Type: ErrorTypeBusiness,
+				}
+			}
+		}
 		sa.name = req.Name
 	}
 	if req.SearchConfig != nil {

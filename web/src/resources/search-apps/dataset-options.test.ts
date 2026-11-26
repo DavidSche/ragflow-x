@@ -14,7 +14,9 @@ vi.mock("../../lib/api", () => ({
   },
 }));
 
-const { useSearchAppDatasetOptions } = await import("./dataset-options");
+const { useSearchAppDatasetOptions, workspaceDatasetIdsForDocuments } = await import(
+  "./dataset-options"
+);
 
 const linked = {
   link_id: "link-a1",
@@ -78,5 +80,42 @@ describe("useSearchAppDatasetOptions", () => {
       expect(result.current.options).toBeNull();
       expect(result.current.error).toBeInstanceOf(Error);
     });
+  });
+});
+
+// 引擎 id → 工作区 link id 的翻译：`GET /datasets/:id/documents` 只认 link id，
+// 直接拿 RAGFlow 配置里的 kb_ids 去问会 404 dataset not found
+// （doc/304 §4 E169：4.151 演练里每次打开搜索应用详情刷三条 404）。
+describe("workspaceDatasetIdsForDocuments", () => {
+  const rows = [
+    { id: "link-a1", name: "安全生产台账", ragflow_dataset_id: "rf-a1" },
+    { id: "link-b2", name: "客服 FAQ", ragflow_dataset_id: "rf-b2" },
+  ];
+
+  it("引擎 id 翻译成 link id", () => {
+    expect(workspaceDatasetIdsForDocuments(["rf-a1", "rf-b2"], rows)).toEqual([
+      "link-a1",
+      "link-b2",
+    ]);
+  });
+
+  it("已经是 link id 的输入原样保留（幂等）", () => {
+    expect(workspaceDatasetIdsForDocuments(["link-a1"], rows)).toEqual(["link-a1"]);
+  });
+
+  it("没有 link 的引擎 id 被丢弃：发出去只会是 404", () => {
+    expect(workspaceDatasetIdsForDocuments(["rf-missing", "rf-a1"], rows)).toEqual([
+      "link-a1",
+    ]);
+  });
+
+  it("数据集列表还没加载时返回空数组，不发请求", () => {
+    expect(workspaceDatasetIdsForDocuments(["rf-a1"], undefined)).toEqual([]);
+  });
+
+  it("顺序保持并去重（同一 link 被两个 id 指到）", () => {
+    expect(
+      workspaceDatasetIdsForDocuments(["rf-b2", "link-b2", "rf-a1"], rows),
+    ).toEqual(["link-b2", "link-a1"]);
   });
 });

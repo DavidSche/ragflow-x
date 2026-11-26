@@ -137,8 +137,15 @@ export function datasetIdLabel(
   return ids.map((id) => byEngineId.get(id) ?? id).join(", ");
 }
 
+/**
+ * Stable empty list. `datasets ?? []` would return a **new array per render**, and
+ * any `useEffect` that takes `values` as a dependency then re-runs forever
+ * (2026-11-26: that loop OOMed the SearchAppShow test worker).
+ */
+const NO_DATASETS: DatasetLike[] = [];
+
 export function datasetOptions(datasets: DatasetLike[] | undefined) {
-  return { values: datasets ?? [], mapId: (d: DatasetLike) => d.ragflow_dataset_id || d.id };
+  return { values: datasets ?? NO_DATASETS, mapId: (d: DatasetLike) => d.ragflow_dataset_id || d.id };
 }
 
 /**

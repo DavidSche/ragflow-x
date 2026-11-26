@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../../lib/api";
+import type { DatasetLike } from "../chats/chat-types";
 
 /**
  * 搜索应用「可绑定数据集」选项（P1 向导数据面契约，doc/develop/252 §2）。
@@ -19,6 +20,38 @@ export interface SearchAppDatasetOption {
   document_count?: number;
   sensitivity?: string;
   source: "linked" | "engine";
+}
+
+/**
+ * 把引擎侧的 `kb_ids` 翻译成**工作区 dataset link id**，才能问
+ * `GET /datasets/:id/documents`。
+ *
+ * RAGFlow 的 search app 配置里存的是引擎 dataset id；我们的 `/datasets/:id/...`
+ * 按 `rgx_dataset_link.id`（工作区别名）解析（后端 `GetDatasetLink(tenantID, id)`）。
+ * 直接拿引擎 id 去问会 404 `dataset not found` —— 2026-11-26 的 4.151 演练里，
+ * 每次打开搜索应用详情都会刷三条 404，文档下拉永远是空的（doc/304 §4 E169 次因）。
+ *
+ * 解析不到 link 的引擎 id 会被丢弃：没有工作区身份就列不出文档，
+ * 发一个注定 404 的请求只会把控制台弄脏。顺序保持、结果去重。
+ */
+export function workspaceDatasetIdsForDocuments(
+  kbIds: string[],
+  datasets: DatasetLike[] | undefined,
+): string[] {
+  const rows = datasets ?? [];
+  const byEngine = new Map<string, string>();
+  const byLink = new Set<string>();
+  for (const d of rows) {
+    if (d.id) byLink.add(d.id);
+    if (d.ragflow_dataset_id && d.id) byEngine.set(d.ragflow_dataset_id, d.id);
+  }
+  const out: string[] = [];
+  for (const raw of kbIds ?? []) {
+    const id = byLink.has(raw) ? raw : byEngine.get(raw) ?? "";
+    if (!id || out.includes(id)) continue;
+    out.push(id);
+  }
+  return out;
 }
 
 export interface SearchAppDatasetOptionsState {
