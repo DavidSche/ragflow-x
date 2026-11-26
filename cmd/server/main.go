@@ -7,13 +7,10 @@ package main
 // @host localhost:8080
 // @BasePath /
 // @schemes http https
-// @securityDefinitions.bearerauth BearerAuth
-// @description JWT bearer token for protected control-plane APIs
-// @bearerformat JWT
-// @securityDefinitions.apikey ApiKeyAuth
+// @securityDefinitions.apikey BearerAuth
 // @in header
-// @name X-API-Key
-// @description API key for gateway APIs
+// @name Authorization
+// @description `Authorization: Bearer <credential>` — the JWT from /api/v1/auth/login for the control plane, or a tenant API key for the gateway (`/v1/...`, same header; internal/handler/gateway.go strips the prefix).
 
 import (
 	"context"

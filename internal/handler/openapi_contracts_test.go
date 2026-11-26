@@ -57,12 +57,17 @@ func TestEnvelopeMetaMirrorsResponseBody(t *testing.T) {
 // TestPublishedEnvelopesCarryATypedData reads the generated spec and refuses two shapes
 // that both used to be green:
 //
-//   - an envelope whose `data` is `{}` (the annotation named the endpoint type in prose but
-//     not in the schema), and
+//   - an envelope whose `data` names no type at all (`{}` — the shared `docs.Envelope`),
+//     and
 //   - a `docs.Envelope` that swag mutated into `allOf: [{$ref: data}]`, which points at a
 //     component named after the field and is shared by every endpoint that used the
 //     `Envelope{data=X}` form (doc/310 §22.2 P-310-12). One endpoint's payload then appears
 //     to be every endpoint's payload.
+//
+// A scalar payload (`data: {"type": "string"}`) is *typed*, not empty: `POST
+// /model-providers/{id}/instances/{instanceId}/models/{modelId}/test` answers with the
+// model's reply, and the service returns exactly `string` (internal/service/model.go).
+// Wrapping that in a struct would be a contract the handler does not honour.
 func TestPublishedEnvelopesCarryATypedData(t *testing.T) {
 	var spec struct {
 		Components struct {
@@ -111,7 +116,11 @@ func TestPublishedEnvelopesCarryATypedData(t *testing.T) {
 		_, isRef := shape["$ref"]
 		_, isItems := shape["items"]
 		typ, _ := shape["type"].(string)
-		if !isRef && !isItems && typ != "object" && typ != "array" {
+		// A `$ref`, an object/array, or an explicit scalar type. `{}` — the shape the shared
+		// envelope had — names nothing and is what this test exists to refuse.
+		typed := isRef || isItems || typ == "object" || typ == "array" ||
+			typ == "string" || typ == "integer" || typ == "number" || typ == "boolean"
+		if !typed {
 			t.Errorf("%s.data is %s — an envelope must name its payload type, not leave it empty",
 				name, string(raw))
 		}

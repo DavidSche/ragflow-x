@@ -221,7 +221,7 @@ def render_md(spec, ops, mat, source_name):
         w("")
     w("## 约定")
     w("")
-    w("- Base URL：任一部署实例，例如测试环境 `http://192.168.4.151:19193`；所有业务路径都以 `/api/v1` 开头。")
+    w("- Base URL：任一部署实例，形如 `https://<your-host>`（本机开发常见 `http://localhost:19193`）；所有业务路径都以 `/api/v1` 开头。")
     w("- 鉴权：`Authorization: Bearer <JWT>`。JWT 由 `POST /api/v1/auth/login` 换取"
       "（body：`{\"username\": \"…\", \"password\": \"…\"}`，响应 `data.token`）。")
     w("- 响应信封：`{\"code\": 0, \"message\": \"ok\", \"data\": {…}, \"trace_id\": \"…\"}`；"
@@ -339,7 +339,7 @@ def render_html(spec, ops, mat, source_name):
           "<code>@Param … body</code> / <code>@Success</code> 再重新生成。</div>")
 
     w("<h2>约定</h2><ul>")
-    w("<li>Base URL：任一部署实例，例如测试环境 <code>http://192.168.4.151:19193</code>；业务路径都以 <code>/api/v1</code> 开头。</li>")
+    w("<li>Base URL：任一部署实例，形如 <code>https://&lt;your-host&gt;</code>（本机开发常见 <code>http://localhost:19193</code>）；业务路径都以 <code>/api/v1</code> 开头。</li>")
     w("<li>鉴权：<code>Authorization: Bearer &lt;JWT&gt;</code>，由 <code>POST /api/v1/auth/login</code> 换取"
       "（body <code>{\"username\":…,\"password\":…}</code>，响应 <code>data.token</code>）。</li>")
     w("<li>响应信封：<code>{\"code\":0,\"message\":\"ok\",\"data\":{…},\"trace_id\":\"…\"}</code>；"
