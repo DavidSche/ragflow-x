@@ -103,6 +103,14 @@ __pycache__/
 # of the release (README links into it) and is tracked. Everything else under
 # doc/ (develop/, blog/, performance/, VIDEOS) stays local-only.
 !/doc/user/
+# Exception to the exception (2026-11-26): the *rendered* deliverables under doc/user/
+# are not repository content. They are Word/PDF builds of the markdown beside them,
+# generated locally (tmp/build-*-guide.py), and their screenshots carry the internal
+# test deployment's address — an address that must not travel with the repository, and
+# that makes every one of them stale the moment a route or a menu label changes. The markdown is the source of truth and stays tracked; the binaries are
+# release/delivery artifacts. `git add -A` will no longer pick them up.
+/doc/user/**/*.docx
+/doc/user/**/*.pdf
 # Exception (v0.6.6): the generated API reference under doc/specification/api/ is a
 # deliverable — it is what gets sent to integrators — so it is tracked, and its freshness
 # is a gate row (s28.api-doc: regenerate, compare byte-for-byte, refuse an ignored product).
