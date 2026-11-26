@@ -26,10 +26,15 @@ sentence in a document is not a check (E129 「文字承诺 ≠ 实现」), so t
       nobody sees cannot fall.
   R6  a success response is documented by a 2xx with a schema, **or** by a redirect that
       names its destination, **or** by a non-JSON 2xx whose media type is the payload
-      (CSV download, stream). The first batch of real annotations (doc/310 T310-01) hit both
-      shapes: `GET /auth/oidc/{start,callback}` only redirect, and `GET /tenants/export`
-      returns CSV. Requiring a JSON body schema there would have forced a fake schema into
-      the published contract — the opposite of the point.
+      (CSV download, stream, HTML shell). The first batch of real annotations (doc/310
+      T310-01) hit both shapes: `GET /auth/oidc/{start,callback}` only redirect, and
+      `GET /tenants/export` returns CSV. Requiring a JSON body schema there would have
+      forced a fake schema into the published contract — the opposite of the point.
+  R8  a `204`/`205` with **no** content is a complete success: the RFC forbids a body, so
+      demanding a schema would only produce a lie (`{type: string}` on an empty answer).
+      `DELETE /reports/{id}/schedule` answers exactly that way, and before this rule the only
+      way to satisfy the check was to invent a payload. 200 with an empty body is *not*
+      accepted: there the client is entitled to a body.
   R7  "has a schema" is not "has a payload": the 2xx is resolved and refused when its
       `data` is `{}` (the shared `docs.Envelope`) or when the target was turned into an
       `allOf` by a field override. Both are green under R6 and useless to a client.
@@ -73,7 +78,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 DEFAULT_SPEC = os.path.join(ROOT, "internal", "docs", "swagger.json")
 DEFAULT_BASELINE = os.path.join(ROOT, "scripts", "release-gate", "openapi-annotations-baseline.txt")
 
-METHODS = ("get", "post", "put", "patch", "delete")
+# `head` is included: the router serves HEAD from the same handler as GET (r.Static), and a
+# document that leaves HEAD out of the denominator would silently stop describing it.
+METHODS = ("get", "post", "put", "patch", "delete", "head")
 BODY_METHODS = ("post", "put", "patch")
 PLACEHOLDER_SUMMARY = "Auto-generated API route"
 PLACEHOLDER_TAG = "auto"
@@ -154,6 +161,7 @@ def body_documented(op):
 NON_JSON_BODIES = (
     "text/csv",
     "text/plain",
+    "text/html",  # the SPA shell (`GET /`) is a document, not a bare-string JSON answer
     "text/event-stream",
     "application/octet-stream",
     "application/zip",
@@ -172,10 +180,16 @@ def redirect_documented(op):
     return False
 
 
+# Status codes whose body is empty by definition. A documented one is complete.
+NO_CONTENT = ("204", "205")
+
+
 def success_documented(op):
     for code, resp in (op.get("responses") or {}).items():
         if not str(code).startswith("2"):
             continue
+        if str(code) in NO_CONTENT and not ((resp or {}).get("content") or {}):
+            return True
         for media, spec in ((resp or {}).get("content") or {}).items():
             base = media.split(";")[0].strip().lower()
             if "json" in base:
@@ -414,7 +428,18 @@ def selftest():
 
     tmp = tempfile.mkdtemp()
     try:
-        base = load_spec(DEFAULT_SPEC)
+        real = load_spec(DEFAULT_SPEC)
+        # The fixture is the real spec plus three endpoints that are *not* annotated: the
+        # frozen baseline has to be produced by this test, because the shipped one is now
+        # empty (0 lines) and a self-test that reads it would assert nothing.
+        base = json.loads(json.dumps(real))
+        for n in (1, 2, 3):
+            base["paths"]["/api/v1/selftest-exempt-%d" % n] = {
+                "get": {"operationId": "SelftestExempt%d" % n, "tags": ["auto"],
+                        "summary": PLACEHOLDER_SUMMARY, "responses": {"200": {"description": "OK"}}}}
+        fixture_path = os.path.join(tmp, "fixture-spec.json")
+        with io.open(fixture_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(json.dumps(base, ensure_ascii=False))
         baseline_path = os.path.join(tmp, "baseline.txt")
         empty_baseline = os.path.join(tmp, "empty-baseline.txt")
 
@@ -424,12 +449,13 @@ def selftest():
                 fh.write(json.dumps(spec, ensure_ascii=False))
             return p
 
-        # bootstrap a baseline from the real spec, then use it as the frozen exemption set
-        assert write_baseline(DEFAULT_SPEC, baseline_path) == 0
+        # bootstrap a baseline from the fixture, then use it as the frozen exemption set
+        assert write_baseline(fixture_path, baseline_path) == 0
         with io.open(baseline_path, encoding="utf-8") as fh:
             saved = fh.read()
         frozen_lines = [l for l in saved.splitlines() if l and not l.startswith("#")]
-        ok("baseline 是冻结的豁免集（%d 行）" % len(frozen_lines), len(frozen_lines) > 100)
+        ok("baseline 是冻结的豁免集（%d 行，只有 fixture 的 3 个待补端点）" % len(frozen_lines),
+           len(frozen_lines) == 3)
 
         # ① a new endpoint with no annotation must not inherit the exemption
         spec = json.loads(json.dumps(base))
@@ -451,7 +477,7 @@ def selftest():
 
         # ③ annotation added but the line kept: progress must be recorded by deleting
         spec = json.loads(json.dumps(base))
-        spec["paths"]["/api/v1/usage/filter-options"] = {"get": dict(ANNOTATED_OP)}
+        spec["paths"]["/api/v1/selftest-exempt-1"] = {"get": dict(ANNOTATED_OP, operationId="SelftestExempt1")}
         with io.open(baseline_path, encoding="utf-8") as fh:
             lines = fh.read().splitlines()
         p = save(spec, "spec-annotated-kept.json")
@@ -459,14 +485,14 @@ def selftest():
 
         # ④ a baseline entry for a route that no longer exists
         spec = json.loads(json.dumps(base))
-        del spec["paths"]["/api/v1/usage/filter-options"]
+        del spec["paths"]["/api/v1/selftest-exempt-2"]
         p = save(spec, "spec-route-removed.json")
         ok("基线指向已删除的路由 → 拒绝", run_check_quiet(p, baseline_path) == 1)
 
         # ⑤ an empty baseline cannot become "everything is exempt"
         with io.open(empty_baseline, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(HEADER)
-        ok("基线为空 → 拒绝（未注解端点无处豁免）", run_check_quiet(DEFAULT_SPEC, empty_baseline) == 1)
+        ok("基线为空 → 拒绝（未注解端点无处豁免）", run_check_quiet(fixture_path, empty_baseline) == 1)
 
         # ⑥ a POST with prose but no request body is not a contract
         spec = json.loads(json.dumps(base))
@@ -486,7 +512,7 @@ def selftest():
         # ⑧ the positive half of the ratchet: annotate, rewrite, the file shrinks and the
         # check goes green — progress must be a diff in the baseline, not in someone's memory
         spec = json.loads(json.dumps(base))
-        spec["paths"]["/api/v1/usage/filter-options"] = {"get": dict(ANNOTATED_OP)}
+        spec["paths"]["/api/v1/selftest-exempt-3"] = {"get": dict(ANNOTATED_OP, operationId="SelftestExempt3")}
         p = save(spec, "spec-progress.json")
         wrote = write_baseline(p, baseline_path)
         with io.open(baseline_path, encoding="utf-8") as fh:
@@ -552,13 +578,29 @@ def selftest():
         spec["paths"]["/api/v1/selftest-typed-envelope"] = {"get": typed}
         p = save(spec, "spec-typed-envelope.json")
         ok("2xx 指向具名信封（data 有类型）→ 通过", run_check_quiet(p, baseline_path) == 0)
+
+        # ⑫ a documented 204 is a complete answer; a 200 with no body is not. The pair
+        # keeps the rule from becoming "no content is always fine".
+        spec = json.loads(json.dumps(base))
+        no_content = dict(ANNOTATED_OP, operationId="SelftestNoContent",
+                          responses={"204": {"description": "无响应体"}})
+        spec["paths"]["/api/v1/selftest-no-content"] = {"delete": no_content}
+        p = save(spec, "spec-no-content-204.json")
+        ok("204 无响应体 → 通过（空答案也是契约）", run_check_quiet(p, baseline_path) == 0)
+
+        spec = json.loads(json.dumps(base))
+        empty_200 = dict(ANNOTATED_OP, operationId="SelftestEmpty200",
+                         responses={"200": {"description": "无响应体"}})
+        spec["paths"]["/api/v1/selftest-empty-200"] = {"get": empty_200}
+        p = save(spec, "spec-empty-200.json")
+        ok("200 无响应体 → 拒绝（客户端有权拿到载荷）", run_check_quiet(p, baseline_path) == 1)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     if failures:
         sys.stdout.write("\nopenapi-annotations --selftest: FAIL (%d)\n" % failures)
         return 1
-    sys.stdout.write("\nopenapi-annotations --selftest: PASS (14/14 checks)\n")
+    sys.stdout.write("\nopenapi-annotations --selftest: PASS (16/16 checks)\n")
     return 0
 
 

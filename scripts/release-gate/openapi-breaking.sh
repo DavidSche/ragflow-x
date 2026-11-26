@@ -459,6 +459,12 @@ R2 DELETE /api/v1/widgets  duplicate attempt two: removed in v0.7
   # the baseline-file mode (release asset): readable == the other side reads clean, unreadable
   # is refused rather than silently skipped. Both cases call check_main, not diff_specs,
   # because the option lives there.
+  #
+  # The exemption list is pinned to an empty file for the "readable baseline" case: comparing
+  # the index with itself finds nothing, so every committed exemption is stale there, and the
+  # case would measure the exemption file instead of the baseline reader (it started failing
+  # the day the T310-01 batch grew to 628 lines, with the reader untouched).
+  : >"$WORK/allow-empty.txt"
   check_main >/dev/null 2>&1
   RGX_OAPI_BASELINE_FILE="$WORK/does-not-exist.json" check_main >/dev/null 2>&1; rc=$?
   if [ $rc -ne 0 ]; then say "  ok     a missing baseline file is refused, not read as clean"; hits=$((hits + 1));
@@ -466,7 +472,11 @@ R2 DELETE /api/v1/widgets  duplicate attempt two: removed in v0.7
 
   git -C "$ROOT" show ":$SPEC" >"$WORK/baseline-asset.json" 2>/dev/null
   if [ -s "$WORK/baseline-asset.json" ]; then
+    # ALLOW is resolved once at startup, so an env prefix on the call cannot reach it.
+    local saved_allow="$ALLOW"
+    ALLOW="$WORK/allow-empty.txt"
     RGX_OAPI_BASELINE_FILE="$WORK/baseline-asset.json" check_main >/dev/null 2>&1; rc=$?
+    ALLOW="$saved_allow"
     if [ $rc -eq 0 ]; then say "  ok     a readable baseline file (the release asset shape) compares clean against the same index"; hits=$((hits + 1));
     else say "  FAIL   a readable baseline file was refused"; fi
   else
