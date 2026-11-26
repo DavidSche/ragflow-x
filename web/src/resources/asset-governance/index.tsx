@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Archive, Boxes, Copy, Download, Loader2, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Upload } from "lucide-react";
 import { api, unwrap, ApiError, type ApiEnvelope } from "../../lib/api";
+import { normalizeAssetMapItems } from "../../lib/assetMap";
 import { PARAMETER_PROFILES, PROMPT_PRESETS } from "../workbench/prompt-presets";
 import { NumericRangeField } from "@/components/NumericRangeField";
 import { KnowledgeHealthCards, type KnowledgeHealthSummary } from "./KnowledgeHealthCards";
@@ -129,12 +130,14 @@ export const AssetGovernanceBoard = () => {
         unwrap(api.get<ApiEnvelope<KnowledgeHealthSummary>>("/knowledge-lifecycle/health")),
         unwrap(api.get<ApiEnvelope<KnowledgeAssetMapItem[]>>("/knowledge-lifecycle/asset-map")),
       ]);
-      setTemplates(templatesRes.items);
-      setPolicies(policiesRes.items);
-      setDatasets(datasetsRes);
-      setEvalSets(evalSetsRes.items);
+      setTemplates(templatesRes.items ?? []);
+      setPolicies(policiesRes.items ?? []);
+      setDatasets(datasetsRes ?? []);
+      setEvalSets(evalSetsRes.items ?? []);
       setHealth(healthRes);
-      setAssetMap(assetMapRes);
+      // E159: list fields can arrive as null (older servers, unbound dataset);
+      // the board reads `.length`/`.slice()` on them directly.
+      setAssetMap(normalizeAssetMapItems(assetMapRes));
     } catch (error) {
       fail(error, notify);
     } finally {
