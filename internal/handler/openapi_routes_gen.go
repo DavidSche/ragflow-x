@@ -225,43 +225,6 @@ func OpenAPIRoute19() {}
 // @Router /api/v1/assistants/{id}/rollout-policies [get]
 func OpenAPIRoute20() {}
 
-// OpenAPIRoute21 is an OpenAPI coverage stub for GET /api/v1/auth/oidc/status.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute21
-// @Produce json
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/auth/oidc/status [get]
-func OpenAPIRoute21() {}
-
-// OpenAPIRoute22 is an OpenAPI coverage stub for GET /api/v1/auth/oidc/start.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute22
-// @Produce json
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/auth/oidc/start [get]
-func OpenAPIRoute22() {}
-
-// OpenAPIRoute23 is an OpenAPI coverage stub for GET /api/v1/auth/oidc/callback.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute23
-// @Produce json
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/auth/oidc/callback [get]
-func OpenAPIRoute23() {}
-
-// OpenAPIRoute24 is an OpenAPI coverage stub for GET /api/v1/auth/me.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute24
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/auth/me [get]
-func OpenAPIRoute24() {}
-
 // OpenAPIRoute25 is an OpenAPI coverage stub for GET /api/v1/audit.
 // @Summary Auto-generated API route
 // @Tags auto
@@ -1284,37 +1247,6 @@ func OpenAPIRoute120() {}
 // @Router /api/v1/readyz [get]
 func OpenAPIRoute121() {}
 
-// OpenAPIRoute122 is an OpenAPI coverage stub for GET /api/v1/roles.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute122
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/roles [get]
-func OpenAPIRoute122() {}
-
-// OpenAPIRoute123 is an OpenAPI coverage stub for GET /api/v1/roles/permission-catalog.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute123
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/roles/permission-catalog [get]
-func OpenAPIRoute123() {}
-
-// OpenAPIRoute124 is an OpenAPI coverage stub for GET /api/v1/roles/:id/permissions.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute124
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/roles/{id}/permissions [get]
-func OpenAPIRoute124() {}
-
 // OpenAPIRoute125 is an OpenAPI coverage stub for GET /api/v1/memory-policies.
 // @Summary Auto-generated API route
 // @Tags auto
@@ -2144,26 +2076,6 @@ func OpenAPIRoute201() {}
 // @Router /api/v1/teams/{id}/projects [get]
 func OpenAPIRoute202() {}
 
-// OpenAPIRoute203 is an OpenAPI coverage stub for GET /api/v1/tenants.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute203
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/tenants [get]
-func OpenAPIRoute203() {}
-
-// OpenAPIRoute204 is an OpenAPI coverage stub for GET /api/v1/tenants/export.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute204
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/tenants/export [get]
-func OpenAPIRoute204() {}
-
 // OpenAPIRoute205 is an OpenAPI coverage stub for GET /api/v1/tool-registry.
 // @Summary Auto-generated API route
 // @Tags auto
@@ -2500,27 +2412,6 @@ func OpenAPIRoute235() {}
 // @Success 200 {object} docs.Envelope
 // @Router /api/v1/usage/export [get]
 func OpenAPIRoute236() {}
-
-// OpenAPIRoute237 is an OpenAPI coverage stub for GET /api/v1/users.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute237
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/users [get]
-func OpenAPIRoute237() {}
-
-// OpenAPIRoute238 is an OpenAPI coverage stub for GET /api/v1/users/:id/clearance.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute238
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/users/{id}/clearance [get]
-func OpenAPIRoute238() {}
 
 // OpenAPIRoute239 is an OpenAPI coverage stub for GET /api/v1/projects.
 // @Summary Auto-generated API route
@@ -3153,33 +3044,6 @@ func OpenAPIRoute297() {}
 // @Success 200 {object} docs.Envelope
 // @Router /api/v1/agents/{id}/upload [post]
 func OpenAPIRoute298() {}
-
-// OpenAPIRoute299 is an OpenAPI coverage stub for POST /api/v1/auth/login.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute299
-// @Produce json
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/auth/login [post]
-func OpenAPIRoute299() {}
-
-// OpenAPIRoute300 is an OpenAPI coverage stub for POST /api/v1/auth/logout.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute300
-// @Produce json
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/auth/logout [post]
-func OpenAPIRoute300() {}
-
-// OpenAPIRoute301 is an OpenAPI coverage stub for POST /api/v1/auth/refresh.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute301
-// @Produce json
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/auth/refresh [post]
-func OpenAPIRoute301() {}
 
 // OpenAPIRoute302 is an OpenAPI coverage stub for POST /api/v1/audit/repair.
 // @Summary Auto-generated API route
@@ -3824,16 +3688,6 @@ func OpenAPIRoute360() {}
 // @Router /api/v1/releases/{id}/rollback [post]
 func OpenAPIRoute361() {}
 
-// OpenAPIRoute362 is an OpenAPI coverage stub for POST /api/v1/roles.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute362
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/roles [post]
-func OpenAPIRoute362() {}
-
 // OpenAPIRoute363 is an OpenAPI coverage stub for POST /api/v1/template-instances.
 // @Summary Auto-generated API route
 // @Tags auto
@@ -3932,16 +3786,6 @@ func OpenAPIRoute370() {}
 // @Success 200 {object} docs.Envelope
 // @Router /api/v1/teams/{id}/users [post]
 func OpenAPIRoute371() {}
-
-// OpenAPIRoute372 is an OpenAPI coverage stub for POST /api/v1/tenants.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute372
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/tenants [post]
-func OpenAPIRoute372() {}
 
 // OpenAPIRoute373 is an OpenAPI coverage stub for POST /api/v1/tool-routing/routed-sql-answer.
 // @Summary Auto-generated API route
@@ -5193,16 +5037,6 @@ func OpenAPIRoute489() {}
 // @Router /api/v1/branding/logo [post]
 func OpenAPIRoute490() {}
 
-// OpenAPIRoute491 is an OpenAPI coverage stub for POST /api/v1/users.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute491
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/users [post]
-func OpenAPIRoute491() {}
-
 // OpenAPIRoute492 is an OpenAPI coverage stub for POST /v1/chat/completions.
 // @Summary Auto-generated API route
 // @Tags auto
@@ -5447,28 +5281,6 @@ func OpenAPIRoute512() {}
 // @Router /api/v1/report-retention [put]
 func OpenAPIRoute513() {}
 
-// OpenAPIRoute514 is an OpenAPI coverage stub for PUT /api/v1/roles/:id.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute514
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/roles/{id} [put]
-func OpenAPIRoute514() {}
-
-// OpenAPIRoute515 is an OpenAPI coverage stub for PUT /api/v1/roles/:id/permissions.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute515
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/roles/{id}/permissions [put]
-func OpenAPIRoute515() {}
-
 // OpenAPIRoute516 is an OpenAPI coverage stub for PUT /api/v1/conversation/assistants/:kind/:targetId.
 // @Summary Auto-generated API route
 // @Tags auto
@@ -5535,27 +5347,6 @@ func OpenAPIRoute520() {}
 // @Success 200 {object} docs.Envelope
 // @Router /api/v1/chats/{id} [put]
 func OpenAPIRoute521() {}
-
-// OpenAPIRoute522 is an OpenAPI coverage stub for PUT /api/v1/tenants/status.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute522
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/tenants/status [put]
-func OpenAPIRoute522() {}
-
-// OpenAPIRoute523 is an OpenAPI coverage stub for PUT /api/v1/tenants/:id.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute523
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/tenants/{id} [put]
-func OpenAPIRoute523() {}
 
 // OpenAPIRoute524 is an OpenAPI coverage stub for PUT /api/v1/teams/:id.
 // @Summary Auto-generated API route
@@ -5633,50 +5424,6 @@ func OpenAPIRoute529() {}
 // @Success 200 {object} docs.Envelope
 // @Router /api/v1/parser-policies/{id} [put]
 func OpenAPIRoute530() {}
-
-// OpenAPIRoute531 is an OpenAPI coverage stub for PUT /api/v1/users/:id.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute531
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/users/{id} [put]
-func OpenAPIRoute531() {}
-
-// OpenAPIRoute532 is an OpenAPI coverage stub for PUT /api/v1/users/:id/clearance.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute532
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/users/{id}/clearance [put]
-func OpenAPIRoute532() {}
-
-// OpenAPIRoute533 is an OpenAPI coverage stub for PUT /api/v1/users/:id/status.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute533
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/users/{id}/status [put]
-func OpenAPIRoute533() {}
-
-// OpenAPIRoute534 is an OpenAPI coverage stub for PUT /api/v1/users/:id/role.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute534
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/users/{id}/role [put]
-func OpenAPIRoute534() {}
 
 // OpenAPIRoute535 is an OpenAPI coverage stub for PUT /api/v1/assistant-releases/:id/health.
 // @Summary Auto-generated API route
@@ -6247,17 +5994,6 @@ func OpenAPIRoute584() {}
 // @Router /api/v1/teams/{id}/users/{userId} [delete]
 func OpenAPIRoute585() {}
 
-// OpenAPIRoute586 is an OpenAPI coverage stub for DELETE /api/v1/tenants/:id.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute586
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/tenants/{id} [delete]
-func OpenAPIRoute586() {}
-
 // OpenAPIRoute587 is an OpenAPI coverage stub for DELETE /api/v1/tool-registry/:id.
 // @Summary Auto-generated API route
 // @Tags auto
@@ -6445,17 +6181,6 @@ func OpenAPIRoute602() {}
 // @Router /api/v1/reports/{id}/schedule [delete]
 func OpenAPIRoute603() {}
 
-// OpenAPIRoute604 is an OpenAPI coverage stub for DELETE /api/v1/roles/:id.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute604
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/roles/{id} [delete]
-func OpenAPIRoute604() {}
-
 // OpenAPIRoute605 is an OpenAPI coverage stub for DELETE /api/v1/agents/:id.
 // @Summary Auto-generated API route
 // @Tags auto
@@ -6566,17 +6291,6 @@ func OpenAPIRoute613() {}
 // @Success 200 {object} docs.Envelope
 // @Router /api/v1/logical-documents/{id} [delete]
 func OpenAPIRoute614() {}
-
-// OpenAPIRoute615 is an OpenAPI coverage stub for DELETE /api/v1/users/:id.
-// @Summary Auto-generated API route
-// @Tags auto
-// @ID OpenAPIRoute615
-// @Produce json
-// @Param id path string true "id"
-// @Security BearerAuth
-// @Success 200 {object} docs.Envelope
-// @Router /api/v1/users/{id} [delete]
-func OpenAPIRoute615() {}
 
 // OpenAPIRoute616 is an OpenAPI coverage stub for DELETE /api/v1/eval-sets/:id.
 // @Summary Auto-generated API route

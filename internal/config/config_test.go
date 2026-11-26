@@ -35,6 +35,35 @@ func TestDefaults_NoHardcodedEncryptionKey(t *testing.T) {
 	}
 }
 
+// The OpenAPI surface is a security switch and the offline reference is the delivery
+// channel (doc/310 §13.1, §22; gate rows s28/s29). Both halves need a reader: without this
+// test, flipping the default to `true` would be a one-line diff nobody would question —
+// and the spec covers 452 paths / 616 operations, i.e. an inventory of the attack surface.
+func TestDefaults_DocsSurfaceClosedAndAdminGated(t *testing.T) {
+	cfg := defaults()
+	if cfg.Docs.Enabled {
+		t.Fatal("the OpenAPI surface must be closed by default: the spec is an inventory of 452 paths")
+	}
+	if !cfg.Docs.RequireAdmin {
+		t.Fatal("when enabled, the docs surface must still require a platform admin")
+	}
+
+	t.Setenv("RGX_DOCS_ENABLED", "true")
+	applyEnv(cfg)
+	if !cfg.Docs.Enabled {
+		t.Fatal("RGX_DOCS_ENABLED=true must be able to open the surface explicitly")
+	}
+	if !cfg.Docs.RequireAdmin {
+		t.Fatal("opening the surface must not silently drop the admin gate")
+	}
+
+	t.Setenv("RGX_DOCS_REQUIRE_ADMIN", "false")
+	applyEnv(cfg)
+	if cfg.Docs.RequireAdmin {
+		t.Fatal("RGX_DOCS_REQUIRE_ADMIN=false must be honoured (and is the only way to make it public)")
+	}
+}
+
 func TestDefaults_GatewayTimeouts(t *testing.T) {
 	cfg := defaults()
 	if cfg.Gateway.NonStreamTimeoutSec != 120 {

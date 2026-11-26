@@ -18,14 +18,9 @@ const (
 	refreshCookieName = "rgx_refresh"
 )
 
-type loginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
 // Login authenticates a user and returns a JWT.
 func (h *Handler) Login(c *gin.Context) {
-	var req loginRequest
+	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid login payload")
 		return
@@ -39,13 +34,9 @@ func (h *Handler) Login(c *gin.Context) {
 	response.OK(c, res)
 }
 
-type refreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
 // Refresh rotates the refresh token and returns a fresh access + refresh pair.
 func (h *Handler) Refresh(c *gin.Context) {
-	var req refreshRequest
+	var req RefreshRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid payload")
 		return
@@ -72,7 +63,7 @@ func (h *Handler) Refresh(c *gin.Context) {
 
 // Logout revokes the presented refresh token, ending the session.
 func (h *Handler) Logout(c *gin.Context) {
-	var req refreshRequest
+	var req RefreshRequest
 	if c.Request.Body != nil {
 		body, err := io.ReadAll(io.LimitReader(c.Request.Body, 4096))
 		if err != nil {
@@ -97,7 +88,7 @@ func (h *Handler) Logout(c *gin.Context) {
 		_ = h.Service.Logout(c.Request.Context(), token)
 	}
 	setAuthCookies(c, "", "")
-	response.OK(c, gin.H{"ok": true})
+	response.OK(c, LogoutResponse{OK: true})
 }
 
 func setAuthCookies(c *gin.Context, accessToken, refreshToken string) {
@@ -136,15 +127,19 @@ func (h *Handler) Me(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{
-		"id": u.ID, "username": u.Username, "email": u.Email,
-		"tenant_id": u.TenantID, "role": u.Role,
-		// The UI shows this instead of the 32-char id (report workspace footer):
-		// an id is not a workspace name.
-		"tenant_name":      h.Service.TenantDisplayName(c.Request.Context(), u.TenantID),
-		"permissions":      mp.Permissions,
-		"platform":         mp.Platform,
-		"approval_enabled": h.Service.ApprovalConfig().Enabled,
+	// The UI shows tenant_name instead of the 32-char id (report workspace
+	// footer): an id is not a workspace name. The type is MeResponse, not an
+	// anonymous map, because the OpenAPI annotation names it (doc/310 T310-02).
+	response.OK(c, MeResponse{
+		ID:              u.ID,
+		Username:        u.Username,
+		Email:           u.Email,
+		TenantID:        u.TenantID,
+		TenantName:      h.Service.TenantDisplayName(c.Request.Context(), u.TenantID),
+		Role:            u.Role,
+		Permissions:     mp.Permissions,
+		Platform:        mp.Platform,
+		ApprovalEnabled: h.Service.ApprovalConfig().Enabled,
 	})
 }
 

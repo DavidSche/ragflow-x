@@ -10,13 +10,6 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
-type createRoleRequest struct {
-	Name        string `json:"name" binding:"required"`
-	Scope       string `json:"scope" binding:"required"`
-	Description string `json:"description"`
-	ParentID    string `json:"parent_id"`
-}
-
 // GetPermissionCatalog returns the set of (resource, action) pairs a role may
 // be granted, driving the role permission management UI.
 func (h *Handler) GetPermissionCatalog(c *gin.Context) {
@@ -29,7 +22,7 @@ func (h *Handler) GetPermissionCatalog(c *gin.Context) {
 
 // CreateRole creates an RBAC role (platform/tenant/project scope).
 func (h *Handler) CreateRole(c *gin.Context) {
-	var req createRoleRequest
+	var req CreateRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid role payload")
 		return
@@ -58,7 +51,7 @@ func (h *Handler) DeleteRole(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: c.GetString(middleware.ContextTenantID), UserID: actorID, Action: "role.delete", Resource: "role", ResourceID: roleID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": roleID})
+	response.OK(c, IDResponse{ID: roleID})
 }
 
 // GetRolePermissions returns a role's policy rules.
@@ -74,17 +67,9 @@ func (h *Handler) GetRolePermissions(c *gin.Context) {
 	response.OK(c, perms)
 }
 
-type setRolePermissionsRequest struct {
-	Permissions []struct {
-		Action   string `json:"action"`
-		Resource string `json:"resource"`
-		Effect   string `json:"effect"`
-	} `json:"permissions"`
-}
-
 // SetRolePermissions replaces a role's policy rules.
 func (h *Handler) SetRolePermissions(c *gin.Context) {
-	var req setRolePermissionsRequest
+	var req SetRolePermissionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid permissions payload")
 		return
@@ -101,17 +86,12 @@ func (h *Handler) SetRolePermissions(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: c.GetString(middleware.ContextTenantID), UserID: actorID, Action: "role.permissions", Resource: "role", ResourceID: roleID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": roleID, "permissions": len(req.Permissions)})
+	response.OK(c, RolePermissionsResponse{ID: roleID, Permissions: len(req.Permissions)})
 }
 
 // UpdateRole edits a role's name/description/scope/parent.
 func (h *Handler) UpdateRole(c *gin.Context) {
-	var req struct {
-		Name        string `json:"name"`
-		Scope       string `json:"scope"`
-		Description string `json:"description"`
-		ParentID    string `json:"parent_id"`
-	}
+	var req UpdateRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid role payload")
 		return

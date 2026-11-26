@@ -10,14 +10,6 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
-type createUserRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
-	TenantID string `json:"tenant_id"`
-}
-
 // ListUsers lists users. Platform admins can request scope=all for every tenant.
 func (h *Handler) ListUsers(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -81,7 +73,7 @@ func (h *Handler) ListRoles(c *gin.Context) {
 // Platform admins may choose the target tenant; otherwise the actor's own
 // tenant is used.
 func (h *Handler) CreateUser(c *gin.Context) {
-	var req createUserRequest
+	var req CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid user payload")
 		return
@@ -116,13 +108,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	response.OK(c, u)
 }
 
-type assignRoleRequest struct {
-	Role string `json:"role" binding:"required"`
-}
-
 // AssignRole updates a user's role (cross-tenant for platform admins).
 func (h *Handler) AssignRole(c *gin.Context) {
-	var req assignRoleRequest
+	var req AssignRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid role payload")
 		return
@@ -147,16 +135,12 @@ func (h *Handler) AssignRole(c *gin.Context) {
 	if targetID != userID {
 		h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "user.role", Resource: "user", ResourceID: targetID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
 	}
-	response.OK(c, gin.H{"id": targetID, "role": req.Role})
-}
-
-type userStatusRequest struct {
-	Status string `json:"status" binding:"required"`
+	response.OK(c, AssignRoleResponse{ID: targetID, Role: req.Role})
 }
 
 // SetUserStatus enables or disables a user.
 func (h *Handler) SetUserStatus(c *gin.Context) {
-	var req userStatusRequest
+	var req UserStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid status payload")
 		return
@@ -179,18 +163,13 @@ func (h *Handler) SetUserStatus(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "user.status", Resource: "user", ResourceID: targetID, DetailJSON: req.Status, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": targetID, "status": req.Status})
+	response.OK(c, UserStatusResponse{ID: targetID, Status: req.Status})
 }
 
 // UpdateUserProfile edits a user's username/email/role and optionally resets
 // the password.
 func (h *Handler) UpdateUserProfile(c *gin.Context) {
-	var req struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Role     string `json:"role"`
-		Password string `json:"password"`
-	}
+	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid user update payload")
 		return
@@ -213,7 +192,7 @@ func (h *Handler) UpdateUserProfile(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "user.update", Resource: "user", ResourceID: targetID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": targetID})
+	response.OK(c, IDResponse{ID: targetID})
 }
 
 // DeleteUser removes a user. Platform admin users cannot be deleted.
@@ -236,5 +215,5 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "user.delete", Resource: "user", ResourceID: targetID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": targetID})
+	response.OK(c, IDResponse{ID: targetID})
 }

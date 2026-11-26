@@ -119,7 +119,7 @@ func (h *Handler) GetUserClearance(c *gin.Context) {
 	if rec != nil && rec.Level != "" {
 		level = rec.Level
 	}
-	response.OK(c, gin.H{"user_id": targetID, "level": level, "recorded": rec != nil})
+	response.OK(c, UserClearanceResponse{UserID: targetID, Level: level, Recorded: rec != nil})
 }
 
 // SetUserClearance handles PUT /api/v1/users/:id/clearance (governor only;
@@ -128,9 +128,7 @@ func (h *Handler) SetUserClearance(c *gin.Context) {
 	tenantID := c.GetString(middleware.ContextTenantID)
 	operatorID := c.GetString(middleware.ContextUserID)
 	targetID := c.Param("id")
-	var req struct {
-		Level string `json:"level" binding:"required"`
-	}
+	var req SetClearanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid clearance payload")
 		return

@@ -27,10 +27,10 @@ func randomOIDCValue() (string, error) {
 // OIDCStatus tells the login page whether the deployment offers enterprise SSO.
 func (h *Handler) OIDCStatus(c *gin.Context) {
 	cfg := h.Service.OIDCConfig()
-	response.OK(c, gin.H{
-		"enabled":    cfg.Enabled,
-		"issuer":     cfg.Issuer,
-		"login_path": "/api/v1/auth/oidc/start",
+	response.OK(c, OIDCStatusResponse{
+		Enabled:   cfg.Enabled,
+		Issuer:    cfg.Issuer,
+		LoginPath: "/api/v1/auth/oidc/start",
 	})
 }
 

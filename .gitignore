@@ -103,6 +103,17 @@ __pycache__/
 # of the release (README links into it) and is tracked. Everything else under
 # doc/ (develop/, blog/, performance/, VIDEOS) stays local-only.
 !/doc/user/
+# Exception (v0.6.6): the generated API reference under doc/specification/api/ is a
+# deliverable — it is what gets sent to integrators — so it is tracked, and its freshness
+# is a gate row (s28.api-doc: regenerate, compare byte-for-byte, refuse an ignored product).
+# Only those two files are re-included: the rest of doc/specification/ stays local-only, so
+# the directory chain is un-ignored and its other files are re-excluded individually.
+!/doc/specification/
+/doc/specification/*
+!/doc/specification/api/
+/doc/specification/api/*
+!/doc/specification/api/api-reference.md
+!/doc/specification/api/api-reference.html
 # Demo videos are large binaries hosted as release assets, not repository
 # content; the markdown guides reference ./images/ only.
 /doc/user/videos/

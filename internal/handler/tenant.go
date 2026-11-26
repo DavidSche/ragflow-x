@@ -12,13 +12,6 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
-type createTenantRequest struct {
-	Name      string `json:"name" binding:"required"`
-	Status    string `json:"status"`
-	BrandName string `json:"brand_name"`
-	BrandLogo string `json:"brand_logo"`
-}
-
 // ListTenants returns a paginated list of tenants.
 func (h *Handler) ListTenants(c *gin.Context) {
 	page, pageSize := pageParams(c)
@@ -48,7 +41,7 @@ func (h *Handler) ListTenants(c *gin.Context) {
 // CreateTenant creates a tenant and applies status/branding if provided.
 func (h *Handler) CreateTenant(c *gin.Context) {
 	ctx := c.Request.Context()
-	var req createTenantRequest
+	var req CreateTenantRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid tenant payload")
 		return
@@ -88,13 +81,7 @@ func (h *Handler) CreateTenant(c *gin.Context) {
 
 // UpdateTenant edits a tenant's name/status/branding.
 func (h *Handler) UpdateTenant(c *gin.Context) {
-	var req struct {
-		Name                   string  `json:"name"`
-		Status                 string  `json:"status"`
-		BrandName              *string `json:"brand_name"`
-		BrandLogo              *string `json:"brand_logo"`
-		CompilationTokenBudget *int64  `json:"compilation_token_budget"`
-	}
+	var req UpdateTenantRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid tenant payload")
 		return
@@ -121,10 +108,7 @@ func (h *Handler) UpdateTenant(c *gin.Context) {
 
 // BatchUpdateTenantStatus enables or disables multiple tenants in one call.
 func (h *Handler) BatchUpdateTenantStatus(c *gin.Context) {
-	var req struct {
-		IDs    []string `json:"ids"`
-		Status string   `json:"status"`
-	}
+	var req BatchTenantStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid batch tenant payload")
 		return
@@ -144,7 +128,7 @@ func (h *Handler) BatchUpdateTenantStatus(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: c.GetString(middleware.ContextTenantID), UserID: actorID, Action: "tenant.status.batch", Resource: "tenant", DetailJSON: req.Status + ":" + strings.Join(req.IDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"updated": len(req.IDs)})
+	response.OK(c, BatchTenantStatusResponse{Updated: len(req.IDs)})
 }
 
 // ExportTenants streams all tenants as CSV.
@@ -182,7 +166,7 @@ func (h *Handler) DeleteTenant(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: actorID, Action: "tenant.delete", Resource: "tenant", ResourceID: tenantID, DetailJSON: boolStr(force), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": tenantID})
+	response.OK(c, IDResponse{ID: tenantID})
 }
 
 func boolStr(b bool) string {
