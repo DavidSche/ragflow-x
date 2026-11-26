@@ -108,6 +108,11 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "POST", Path: "/api/v1/chat/completions", Action: "execute", Resource: "chat"},
 		{Method: "POST", Path: "/api/v1/chat/upload", Action: "execute", Resource: "chat"},
 		{Method: "GET", Path: "/api/v1/chat/reference", Action: "read", Resource: "chat"},
+		// E159: the citation panel's reference list. The handler authorizes
+		// `execute`/`chat` itself; the route was missing here, and RBAC
+		// default-denies unregistered paths, so every role including
+		// platform_admin got a 403.
+		{Method: "GET", Path: "/api/v1/chat/:id/references", Action: "execute", Resource: "chat"},
 		{Method: "GET", Path: "/api/v1/chat/document/chunks", Action: "read", Resource: "chat"},
 		{Method: "GET", Path: "/api/v1/chat/document/preview", Action: "read", Resource: "chat"},
 		{Method: "GET", Path: "/api/v1/chat/image", Action: "read", Resource: "chat"},
@@ -116,6 +121,10 @@ func accessRules(svc *service.Service) []middleware.Rule {
 		{Method: "GET", Path: "/api/v1/search-apps", Action: "read", Resource: "search-app"},
 		{Method: "POST", Path: "/api/v1/search-apps", Action: "manage", Resource: "search-app"},
 		{Method: "GET", Path: "/api/v1/search-apps/model-options", Action: "read", Resource: "search-app"},
+		// E159: dataset picker of the search-app form. Registered in router.go
+		// but absent here since the form was written, so the picker was always
+		// empty (default-deny 403, silent on the UI).
+		{Method: "GET", Path: "/api/v1/search-apps/dataset-options", Action: "read", Resource: "search-app"},
 		{Method: "GET", Path: "/api/v1/search-apps/:id", Action: "read", Resource: "search-app"},
 		{Method: "GET", Path: "/api/v1/search-apps/:id/config", Action: "read", Resource: "search-app"},
 		{Method: "PUT", Path: "/api/v1/search-apps/:id", Action: "manage", Resource: "search-app"},
@@ -324,6 +333,10 @@ func accessRules(svc *service.Service) []middleware.Rule {
 
 		// Operations
 		{Method: "GET", Path: "/api/v1/usage", Action: "read", Resource: "usage"},
+		// E159: the dropdown values behind the usage filters. Missing here, so
+		// `/usage` itself answered 200 while every filter select stayed at
+		// "全部" (the options request 403'd).
+		{Method: "GET", Path: "/api/v1/usage/filter-options", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/details", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/attribution", Action: "read", Resource: "usage"},
 		{Method: "GET", Path: "/api/v1/usage/metering", Action: "read", Resource: "usage"},

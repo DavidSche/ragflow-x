@@ -190,8 +190,21 @@ func (s *store) CountUsersByTenant(ctx context.Context, tenantID string) (int64,
 	return n, err
 }
 
+// DeleteUser removes a user and every role assignment that names it, in one
+// transaction (E165).
+//
+// The assignment rows are not a cache of the user: `rgx_user_role` is the only place
+// `DeleteRole` looks when it answers "is this role in use", so a user deleted without
+// its assignments leaves a role that can never be deleted (`40083 role is assigned to
+// users`) with no user left to unassign. One transaction, because the two writes
+// describe one fact: the user and its grants disappear together or not at all.
 func (s *store) DeleteUser(ctx context.Context, userID string) error {
-	return s.WithContext(ctx).Where("id = ?", userID).Delete(&model.User{}).Error
+	return s.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&model.UserRole{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", userID).Delete(&model.User{}).Error
+	})
 }
 
 func (s *store) GetRole(ctx context.Context, id string) (*model.Role, error) {

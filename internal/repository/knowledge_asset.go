@@ -94,9 +94,20 @@ func (s *store) ListKnowledgeAssetViews(ctx context.Context, tenantID string, da
 	}
 
 	for _, dataset := range datasets {
+		// A dataset with no ACTIVE binding has no map entry, and a nil slice
+		// marshals as JSON `null` — the asset-governance board reads
+		// `assistant_ids.length` and crashed on it (E159). Empty slice, not nil.
+		assistants := assistantsByDataset[dataset.ID]
+		if assistants == nil {
+			assistants = []string{}
+		}
+		releases := releasesByDataset[dataset.ID]
+		if releases == nil {
+			releases = []string{}
+		}
 		view := KnowledgeAssetView{
-			DatasetLink: dataset, AssistantIDs: assistantsByDataset[dataset.ID],
-			AssistantReleas: releasesByDataset[dataset.ID],
+			DatasetLink: dataset, AssistantIDs: assistants,
+			AssistantReleas: releases,
 			TraceRuns:       []KnowledgeAssetTrace{}, ChunkEvidence: []KnowledgeAssetEvidence{},
 			KnowledgeTasks: []KnowledgeAssetTask{},
 		}

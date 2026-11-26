@@ -13,6 +13,15 @@ import (
 // in router.go. The RBAC middleware denies any unregistered protected route, so
 // this list must stay in sync: every entry here must exist in accessRules and
 // every accessRule must reference an actual protected route.
+//
+// E159: this list is no longer the source of truth. It is a hand-written copy of
+// the same fact accessRules holds, and when both are missing the same route they
+// agree with each other and nothing goes red (usage/filter-options,
+// chat/:id/references and search-apps/dataset-options were denied to every role,
+// platform_admin included, until 2026-11-26). The behavioural guard is
+// TestEveryAuthenticatedRouteHasAnAccessRule in access_routes_probe_test.go: it
+// derives the protected set from a live *gin.Engine by sending anonymous
+// requests (401/403 ⇒ behind Auth) and checks both directions.
 func protectedRoutes() []string {
 	return []string{
 		"GET /api/v1/auth/me",

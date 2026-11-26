@@ -132,3 +132,50 @@ func TestRoleDeleteUsageInUse(t *testing.T) {
 		t.Fatalf("delete after unassign: %v", err)
 	}
 }
+
+// E165 (doc/304 §4): deleting a user must release the roles it held.
+//
+// `40083 role is assigned to users` is answered from `rgx_user_role`, so a user that
+// was deleted while its assignment rows survived leaves a role that no one holds and
+// no one can delete — the operator is told "assigned to users" with zero users left.
+// The test deletes through the *service*, not the store, because the service is what
+// the endpoint calls; a store-level fix that the service bypassed would be invisible.
+func TestDeletingAUserReleasesItsRoles(t *testing.T) {
+	ctx := context.Background()
+	svc := newAuthzSvc(t)
+	admin, err := svc.Store.GetUserByUsername(ctx, "admin")
+	if err != nil || admin == nil {
+		t.Fatalf("admin: %v", err)
+	}
+	ta, _ := svc.CreateTenant(ctx, "T165")
+	r, err := svc.CreateRole(ctx, admin.ID, model.RolePlatformAdmin, CreateRoleRequest{Name: "released", Scope: "tenant"})
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	u, err := svc.CreateUser(ctx, ta.ID, "", CreateUserRequest{
+		Username: "e165", Password: "secret123", Role: model.RoleOperator,
+	})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := svc.Store.AssignUserRole(ctx, u.ID, r.ID); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	if n, err := svc.Store.RoleUserCount(ctx, r.ID); err != nil || n != 1 {
+		t.Fatalf("role user count before delete = %d, %v; want 1", n, err)
+	}
+
+	if err := svc.DeleteUser(ctx, ta.ID, model.RoleTenantAdmin, u.ID); err != nil {
+		t.Fatalf("delete user: %v", err)
+	}
+	if n, err := svc.Store.RoleUserCount(ctx, r.ID); err != nil || n != 0 {
+		t.Fatalf("role user count after delete = %d, %v; a deleted user's grants survived", n, err)
+	}
+	// The observable consequence: the role is deletable without a manual unassign.
+	if err := svc.DeleteRole(ctx, admin.ID, model.RolePlatformAdmin, r.ID); err != nil {
+		t.Fatalf("role must be deletable after its only user is gone: %v", err)
+	}
+	// `RoleUserCount` above already proves the rows are gone (it counts by role_id),
+	// so no row survives to make the role undeletable later — the rating is on the
+	// row that decides `40083`, not on a convention.
+}
