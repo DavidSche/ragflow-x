@@ -7934,7 +7934,7 @@ ul.op { margin:4px 0 0; padding-left:18px; font-size:13px; color:var(--muted); }
 <h2 id="g-v1/agents">v1/agents（1 个操作）</h2>
 <h3 id="POST-/v1/agents/-id-/completions"><span class="method">POST</span> /v1/agents/{id}/completions</h3>
 <ul class="op"><li>说明：GatewayAgent exposes a controlled Agent completion path for API keys</li><li>鉴权：BearerAuth</li><li>所需权限：无（公开路由）</li><li>业务错误码：<code>40000</code>、<code>40981</code>、<code>40982</code>、<code>50240</code>、<code>50241</code></li><li>operationId：<code>gatewayAgent</code></li>
-<li>描述：GatewayAgent exposes a controlled Agent completion path for API keys.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）</li>
+<li>描述：GatewayAgent exposes a controlled Agent completion path for API keys.。需要网关 API Key（Authorization: Bearer &lt;api-key&gt;），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）</li>
 </ul>
 <table><tr><th>参数</th><th>位置</th><th>类型</th><th>必填</th><th>说明</th></tr>
 <tr><td><code>id</code></td><td>path</td><td>string</td><td>是</td><td>路径参数 id</td></tr>
@@ -7952,7 +7952,7 @@ ul.op { margin:4px 0 0; padding-left:18px; font-size:13px; color:var(--muted); }
 <h2 id="g-v1/chat">v1/chat（1 个操作）</h2>
 <h3 id="POST-/v1/chat/completions"><span class="method">POST</span> /v1/chat/completions</h3>
 <ul class="op"><li>说明：GatewayChat is the OpenAI-compatible gateway entry point</li><li>鉴权：BearerAuth</li><li>所需权限：无（公开路由）</li><li>业务错误码：<code>40000</code>、<code>40981</code>、<code>40982</code>、<code>50240</code>、<code>50241</code></li><li>operationId：<code>gatewayChat</code></li>
-<li>描述：GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）</li>
+<li>描述：GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。需要网关 API Key（Authorization: Bearer &lt;api-key&gt;），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）</li>
 </ul>
 <table><tr><th>请求体类型</th><th>Schema</th><th>必填</th></tr>
 <tr><td>application/json</td><td>object</td><td>否</td></tr>
@@ -7967,7 +7967,7 @@ ul.op { margin:4px 0 0; padding-left:18px; font-size:13px; color:var(--muted); }
 <h2 id="g-v1/search-apps">v1/search-apps（1 个操作）</h2>
 <h3 id="POST-/v1/search-apps/-id-/completions"><span class="method">POST</span> /v1/search-apps/{id}/completions</h3>
 <ul class="op"><li>说明：GatewaySearchApp exposes a controlled Search App execution path for API keys</li><li>鉴权：BearerAuth</li><li>所需权限：无（公开路由）</li><li>业务错误码：<code>40000</code>、<code>40981</code>、<code>40982</code>、<code>50240</code>、<code>50241</code></li><li>operationId：<code>gatewaySearchApp</code></li>
-<li>描述：GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）</li>
+<li>描述：GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。需要网关 API Key（Authorization: Bearer &lt;api-key&gt;），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）</li>
 </ul>
 <table><tr><th>参数</th><th>位置</th><th>类型</th><th>必填</th><th>说明</th></tr>
 <tr><td><code>id</code></td><td>path</td><td>string</td><td>是</td><td>路径参数 id</td></tr>
