@@ -233,7 +233,10 @@ readings="$(printf '%s' "$fresh" | tail -n 1)"
 spec_counts="$(API_SPEC="$SPEC" "$PYTHON" - <<'PYSPEC'
 import io, json, os
 spec = json.load(io.open(os.environ["API_SPEC"], encoding="utf-8"))
-ops = [m for ops in (spec.get("paths") or {}).values() for m in ops if m in ("get","post","put","patch","delete")]
+# The same six methods the spec can carry. While this list and the renderer's both said five,
+# a renderer that dropped HEAD looked self-consistent: the product and the check agreed with
+# each other instead of with the spec (doc/304 §4 E176).
+ops = [m for ops in (spec.get("paths") or {}).values() for m in ops if m in ("get","post","put","patch","delete","head")]
 print(len(ops), len(spec.get("paths") or {}))
 PYSPEC
 )"

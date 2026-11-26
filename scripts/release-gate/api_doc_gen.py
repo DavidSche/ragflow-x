@@ -40,8 +40,13 @@ import os
 import sys
 from collections import OrderedDict
 
-METHOD_ORDER = ["get", "post", "put", "patch", "delete"]
-METHOD_LABEL = {"get": "GET", "post": "POST", "put": "PUT", "patch": "PATCH", "delete": "DELETE"}
+# `head` is a real operation on this router: `r.Static` serves GET and HEAD from one handler,
+# and the spec declares both. Leaving it out of this list made the rendered document describe
+# 616 of the 617 operations the spec carries — and the gate could not see it, because its own
+# denominator used the same five-method list (a shared blindness, not a check).
+METHOD_ORDER = ["get", "post", "put", "patch", "delete", "head"]
+METHOD_LABEL = {"get": "GET", "post": "POST", "put": "PUT", "patch": "PATCH",
+                "delete": "DELETE", "head": "HEAD"}
 PLACEHOLDER_SUMMARIES = {"Auto-generated API route", ""}
 HTML_ESCAPES = [("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"), ('"', "&quot;")]
 
@@ -146,6 +151,8 @@ def walk(spec):
                 "placeholder": summary in PLACEHOLDER_SUMMARIES,
                 "description": (op.get("description") or "").strip(),
                 "auth": "BearerAuth" if security else "公开（无 security 声明）",
+                "perm": op.get("x-ragflow-permission") or "",
+                "codes": op.get("x-error-codes") or [],
                 "params": parameters_of(op),
                 "bodies": bodies_of(op),
                 "responses": responses_of(op),
@@ -165,6 +172,8 @@ def maturity(spec, ops):
         ("with_description", sum(1 for o in ops if o["description"])),
         ("with_request_body", sum(1 for o in ops if o["bodies"])),
         ("with_parameters", sum(1 for o in ops if o["params"])),
+        ("with_permission", sum(1 for o in ops if o["perm"])),
+        ("with_error_codes", sum(1 for o in ops if o["codes"])),
         ("schemas", len(schemas)),
         ("schema_names", schemas),
         ("security_schemes", schemes),
@@ -205,10 +214,15 @@ def render_md(spec, ops, mat, source_name):
     w("| 操作标题仍是占位符 | %d / %d | `Auto-generated API route` = handler 上没有 `@Summary` 注解 |"
       % (mat["summary_unannotated"], mat["operations"]))
     w("| 有 `@Description` | %d / %d | 业务语义、前置条件、副作用 |" % (mat["with_description"], mat["operations"]))
-    w("| 有请求体 | %d / %d | 今天是 0：`@Param … body` 还没写 |" % (mat["with_request_body"], mat["operations"]))
+    w("| 有请求体 | %d / %d | 从 handler 的 `ShouldBindJSON` 类型派生 |"
+      % (mat["with_request_body"], mat["operations"]))
     w("| 有参数 | %d / %d | 路径/查询参数的名字、位置、类型、是否必填 |"
       % (mat["with_parameters"], mat["operations"]))
-    w("| 声明的 schema | %d（%s） | 目前只有统一信封，业务对象没有 schema |"
+    w("| 写了所需权限 | %d / %d | `x-ragflow-permission` = 服务端 RBAC 表的 `(action, resource)` |"
+      % (mat["with_permission"], mat["operations"]))
+    w("| 写了业务错误码 | %d / %d | `x-error-codes` = 该操作失败响应里点名的 `httperr` 码 |"
+      % (mat["with_error_codes"], mat["operations"]))
+    w("| 声明的 schema | %d（%s） | 信封与业务对象，名字对得上 handler 里的 Go 类型 |"
       % (mat["schemas"], "、".join(mat["schema_names"]) or "无"))
     w("| 鉴权 scheme | %s | 所有受保护端点都是 Bearer JWT |"
       % ("、".join(mat["security_schemes"]) or "无"))
@@ -226,8 +240,13 @@ def render_md(spec, ops, mat, source_name):
       "（body：`{\"username\": \"…\", \"password\": \"…\"}`，响应 `data.token`）。")
     w("- 响应信封：`{\"code\": 0, \"message\": \"ok\", \"data\": {…}, \"trace_id\": \"…\"}`；"
       "`code != 0` 时 `message` 可读，`trace_id` 用于对日志。")
-    w("- 权限：每个端点在服务端还有一层 RBAC `(action, resource)` 判断，"
-      "授予关系见 `doc/user/zh-CN/permission-matrix.md`；描述符里目前只写 BearerAuth，没写所需权限。")
+    w("- 权限：每个受保护端点除了 Bearer JWT，服务端还有一层 RBAC `(action, resource)` 判断。"
+      "本文件把该值写进每个端点的 `x-ragflow-permission`（`read`/`manage`/`execute` + 资源名），"
+      "`无（公开路由）` 表示这条路走在 RBAC 组之前；角色→权限的授予关系见 "
+      "`doc/user/zh-CN/permission-matrix.md`。")
+    w("- 业务错误码：`x-error-codes` 列出该端点失败时可能返回的业务码（`code` 字段）。"
+      "空数组表示这个端点只在 HTTP 层失败（401/403/404 等），没有业务码；"
+      "码到中文句子的映射见 `web/src/lib/errors.ts`。")
     w("")
     w("## 目录")
     w("")
@@ -244,6 +263,11 @@ def render_md(spec, ops, mat, source_name):
             title = "（未注解，见文首说明）" if op["placeholder"] else esc(op["summary"])
             w("- 说明：%s" % title)
             w("- 鉴权：%s" % esc(op["auth"]))
+            w("- 所需权限：%s" % ("`%s`" % op["perm"] if op["perm"] else "无（公开路由）"))
+            if op["codes"]:
+                w("- 业务错误码：%s" % "、".join("`%s`" % c for c in op["codes"]))
+            else:
+                w("- 业务错误码：无（只在 HTTP 层失败）")
             w("- operationId：`%s`" % op["operationId"])
             if op["description"]:
                 w("- 描述：%s" % esc(op["description"]))
@@ -325,6 +349,10 @@ def render_html(spec, ops, mat, source_name):
          "<code>@Param … body</code> 还没写"),
         ("有参数", "%d / %d" % (mat["with_parameters"], mat["operations"]),
          "路径/查询参数的名字、位置、类型、是否必填"),
+        ("写了所需权限", "%d / %d" % (mat["with_permission"], mat["operations"]),
+         "x-ragflow-permission = 服务端 RBAC 表的 (action, resource)"),
+        ("写了业务错误码", "%d / %d" % (mat["with_error_codes"], mat["operations"]),
+         "x-error-codes = 失败响应里点名的 httperr 码"),
         ("声明的 schema", "%d（%s）" % (mat["schemas"], esc("、".join(mat["schema_names"]) or "无")),
          "业务对象还没有 schema"),
         ("鉴权 scheme", esc("、".join(mat["security_schemes"]) or "无"), "受保护端点都是 Bearer JWT"),
@@ -344,8 +372,11 @@ def render_html(spec, ops, mat, source_name):
       "（body <code>{\"username\":…,\"password\":…}</code>，响应 <code>data.token</code>）。</li>")
     w("<li>响应信封：<code>{\"code\":0,\"message\":\"ok\",\"data\":{…},\"trace_id\":\"…\"}</code>；"
       "<code>code != 0</code> 时 <code>message</code> 可读，<code>trace_id</code> 用于对日志。</li>")
-    w("<li>权限：每个端点在服务端还有一层 RBAC <code>(action, resource)</code> 判断，"
-      "授予关系见 <code>doc/user/zh-CN/permission-matrix.md</code>；描述符只声明 BearerAuth，未声明所需权限。</li></ul>")
+    w("<li>权限：每个受保护端点除 Bearer JWT 外还有一层 RBAC <code>(action, resource)</code> 判断，"
+      "值写在各端点的 <code>x-ragflow-permission</code>；<code>无（公开路由）</code> 表示走在 RBAC 组之前；"
+      "角色→权限的授予关系见 <code>doc/user/zh-CN/permission-matrix.md</code>。</li>")
+    w("<li>业务错误码：<code>x-error-codes</code> 是该端点失败时可能返回的业务码（响应 <code>code</code> 字段）；"
+      "空表示只在 HTTP 层失败。码到中文句子的映射见 <code>web/src/lib/errors.ts</code>。</li></ul>")
 
     groups = grouped(ops)
     w("<h2>目录</h2><ul class=\"toc\">")
@@ -359,8 +390,12 @@ def render_html(spec, ops, mat, source_name):
             w("<h3 id=\"%s\"><span class=\"method\">%s</span> %s</h3>"
               % (esc(anchor(op["method"] + " " + op["path"])), op["method"], esc(op["path"])))
             title = "（未注解，见文首说明）" if op["placeholder"] else esc(op["summary"])
-            w("<ul class=\"op\"><li>说明：%s</li><li>鉴权：%s</li><li>operationId：<code>%s</code></li>"
-              % (title, esc(op["auth"]), esc(op["operationId"])))
+            perm = ("<code>%s</code>" % esc(op["perm"])) if op["perm"] else "无（公开路由）"
+            codes = ("、".join("<code>%s</code>" % esc(c) for c in op["codes"])
+                     if op["codes"] else "无（只在 HTTP 层失败）")
+            w("<ul class=\"op\"><li>说明：%s</li><li>鉴权：%s</li><li>所需权限：%s</li>"
+              "<li>业务错误码：%s</li><li>operationId：<code>%s</code></li>"
+              % (title, esc(op["auth"]), perm, codes, esc(op["operationId"])))
             if op["description"]:
                 w("<li>描述：%s</li>" % esc(op["description"]))
             w("</ul>")
