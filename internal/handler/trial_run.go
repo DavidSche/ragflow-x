@@ -70,7 +70,7 @@ func listTrialRuns(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": out})
+	response.OK(c, ListTrialRunsResponse{Items: out})
 }
 
 func cancelTrialRun(c *gin.Context) {

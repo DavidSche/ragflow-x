@@ -79,7 +79,7 @@ func (h *Handler) DeleteGovernanceDictionaryEntry(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"deleted": true})
+	response.OK(c, DeleteGovernanceDictionaryEntryResponse{Deleted: true})
 }
 
 // ---------------------------------------------------------------
@@ -156,7 +156,7 @@ func (h *Handler) DeleteGovernanceSchema(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"deleted": true})
+	response.OK(c, DeleteGovernanceSchemaResponse{Deleted: true})
 }
 
 // ---------------------------------------------------------------

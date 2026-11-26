@@ -79,5 +79,5 @@ func deleteSourceRoutingRule(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteSourceRoutingRuleResponse{ID: id})
 }

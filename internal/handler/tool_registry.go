@@ -126,11 +126,7 @@ func listRoutedEvidenceFacts(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{
-		"answer_run_id": answerRunID,
-		"facts":         facts,
-		"conflicts":     conflicts,
-	})
+	response.OK(c, ListRoutedEvidenceFactsResponse{AnswerRunID: answerRunID, Facts: facts, Conflicts: conflicts})
 }
 
 func getRoutedFactGuardOverview(c *gin.Context) {
@@ -152,7 +148,7 @@ func deleteToolRegistry(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteToolRegistryResponse{ID: id})
 }
 
 func RegisterToolRoutingRoutes(group *gin.RouterGroup) {

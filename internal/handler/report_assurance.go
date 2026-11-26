@@ -91,7 +91,7 @@ func listReportAssuranceRuns(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": runs})
+	response.OK(c, ListReportAssuranceRunsResponse{Items: runs})
 }
 
 // getReportAssuranceRun is the single-run read. It is polled by the workbench while

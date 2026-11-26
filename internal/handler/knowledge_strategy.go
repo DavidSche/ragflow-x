@@ -82,7 +82,7 @@ func deleteKnowledgeStrategy(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteKnowledgeStrategyResponse{ID: id})
 }
 
 func probeKnowledgeStrategy(c *gin.Context) {

@@ -70,7 +70,7 @@ func (h *Handler) CreateAPIKey(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "api-key.create", Resource: "api-key", ResourceID: key.ID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"key": key, "secret": raw})
+	response.OK(c, CreateAPIKeyResponse{Key: key, Secret: raw})
 }
 
 type rotateAPIKeyRequest struct {
@@ -122,7 +122,7 @@ func (h *Handler) RotateAPIKey(c *gin.Context) {
 		DetailJSON: `{"successor_id":"` + successor.ID + `"}`,
 		IP:         c.ClientIP(), TraceID: c.GetString("request_id"),
 	})
-	response.OK(c, gin.H{"key": successor, "secret": raw, "retired": retired})
+	response.OK(c, RotateAPIKeyResponse{Key: successor, Secret: raw, Retired: retired})
 }
 
 // RevokeAPIKey disables a tenant's gateway key.
@@ -143,5 +143,5 @@ func (h *Handler) RevokeAPIKey(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "api-key.revoke", Resource: "api-key", ResourceID: keyID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": keyID, "enabled": false})
+	response.OK(c, RevokeAPIKeyResponse{ID: keyID, Enabled: false})
 }

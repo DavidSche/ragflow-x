@@ -29,7 +29,7 @@ func (h *Handler) ReconcileGatewayBilling(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"day": reconciled, "tenants": tenants})
+	response.OK(c, ReconcileGatewayBillingResponse{Day: reconciled, Tenants: tenants})
 }
 
 // GatewayBillingReconcileRuns lists the caller's tenant's recent daily runs.
@@ -45,7 +45,7 @@ func (h *Handler) GatewayBillingReconcileRuns(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"runs": runs})
+	response.OK(c, GatewayBillingReconcileRunsResponse{Runs: runs})
 }
 
 // GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind.
@@ -62,5 +62,5 @@ func (h *Handler) GatewayBillingReconcileFindings(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"findings": findings})
+	response.OK(c, GatewayBillingReconcileFindingsResponse{Findings: findings})
 }

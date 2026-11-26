@@ -135,7 +135,7 @@ func (h *Handler) ReviewKnowledgeOpsEvent(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": c.Param("id"), "status": req.Status})
+	response.OK(c, ReviewKnowledgeOpsEventResponse{ID: c.Param("id"), Status: req.Status})
 }
 
 // MetricsContract returns the frozen metric contract board (doc/107 §3.3.2):
@@ -221,7 +221,7 @@ func (h *Handler) TriggerChatCitationAudit(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"run": run, "created": created})
+	response.OK(c, TriggerChatCitationAuditResponse{Run: run, Created: created})
 }
 
 // ChatCitationAuditRuns lists the recent weekly runs of the caller's tenant.
@@ -237,7 +237,7 @@ func (h *Handler) ChatCitationAuditRuns(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"runs": runs})
+	response.OK(c, ChatCitationAuditRunsResponse{Runs: runs})
 }
 
 // ChatCitationAuditFindings pages one run's per-citation verdicts.
@@ -255,5 +255,5 @@ func (h *Handler) ChatCitationAuditFindings(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"findings": findings, "total": total})
+	response.OK(c, ChatCitationAuditFindingsResponse{Findings: findings, Total: total})
 }

@@ -81,13 +81,11 @@ func (h *Handler) DeleteResourceSyncTenantMapping(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"deleted": true})
+	response.OK(c, DeleteResourceSyncTenantMappingResponse{Deleted: true})
 }
 
 func (h *Handler) ScanResourceSync(c *gin.Context) {
-	var request struct {
-		ResourceTypes []string `json:"resource_types"`
-	}
+	var request ScanResourceSyncRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		response.Fail(c, 400, 40000, "invalid request")
 		return
@@ -109,7 +107,7 @@ func (h *Handler) ListResourceSyncRuns(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
+	response.OK(c, ListResourceSyncRunsResponse{Items: items, Total: total, Page: page, PageSize: pageSize})
 }
 
 func (h *Handler) GetResourceSyncRun(c *gin.Context) {
@@ -128,7 +126,7 @@ func (h *Handler) ListResourceSyncRunItems(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
+	response.OK(c, ListResourceSyncRunItemsResponse{Items: items, Total: total, Page: page, PageSize: pageSize})
 }
 
 func (h *Handler) ImportResourceSync(c *gin.Context) {
@@ -165,9 +163,7 @@ func (h *Handler) AssignResourceSyncItems(c *gin.Context) {
 }
 
 func (h *Handler) ReconcileResourceSync(c *gin.Context) {
-	var request struct {
-		ResourceTypes []string `json:"resource_types"`
-	}
+	var request ReconcileResourceSyncRequest
 	_ = c.ShouldBindJSON(&request)
 	run, err := h.Service.ReconcileResourceSync(c.Request.Context(), c.GetString(middleware.ContextUserID), model.SyncTriggerManualReconcile, request.ResourceTypes)
 	if err != nil {
@@ -186,7 +182,7 @@ func (h *Handler) ListResourceSyncResources(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
+	response.OK(c, ListResourceSyncResourcesResponse{Items: items, Total: total, Page: page, PageSize: pageSize})
 }
 
 func (h *Handler) ListResourceSyncRelinkTenantOptions(c *gin.Context) {
@@ -199,7 +195,7 @@ func (h *Handler) ListResourceSyncRelinkTenantOptions(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
+	response.OK(c, ListResourceSyncRelinkTenantOptionsResponse{Items: items, Total: total, Page: page, PageSize: pageSize})
 }
 
 func (h *Handler) ListResourceSyncRelinkResourceOptions(c *gin.Context) {
@@ -212,7 +208,7 @@ func (h *Handler) ListResourceSyncRelinkResourceOptions(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
+	response.OK(c, ListResourceSyncRelinkResourceOptionsResponse{Items: items, Total: total, Page: page, PageSize: pageSize})
 }
 
 func (h *Handler) ListResourceBindingVersions(c *gin.Context) {
@@ -222,7 +218,7 @@ func (h *Handler) ListResourceBindingVersions(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
+	response.OK(c, ListResourceBindingVersionsResponse{Items: items, Total: total, Page: page, PageSize: pageSize})
 }
 
 func (h *Handler) GetResourceSyncArtifact(c *gin.Context) {

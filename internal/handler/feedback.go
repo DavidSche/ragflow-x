@@ -13,15 +13,7 @@ import (
 
 // ChatFeedback records a user's like/dislike on a chat turn.
 func (h *Handler) ChatFeedback(c *gin.Context) {
-	var req struct {
-		ChatID      string `json:"chat_id" binding:"required"`
-		SessionID   string `json:"session_id" binding:"required"`
-		MessageID   string `json:"message_id" binding:"required"`
-		Rating      string `json:"rating" binding:"required"`
-		Attribution string `json:"attribution"`
-		Comment     string `json:"comment"`
-		RequestID   string `json:"request_id"`
-	}
+	var req ChatFeedbackRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid feedback payload")
 		return

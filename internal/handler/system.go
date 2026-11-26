@@ -43,5 +43,5 @@ func (h *Handler) Ready(c *gin.Context) {
 		c.JSON(503, gin.H{"status": "not_ready", "error": "dependency unavailable"})
 		return
 	}
-	c.JSON(200, gin.H{"status": "ready"})
+	c.JSON(200, ReadyResponse{Status: "ready"})
 }

@@ -185,7 +185,7 @@ func (h *Handler) DeleteMemory(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "memory.delete", Resource: "memory", ResourceID: memoryID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": memoryID})
+	response.OK(c, DeleteMemoryResponse{ID: memoryID})
 }
 
 // ListMemoryMessages lists the messages of a memory.
@@ -224,7 +224,7 @@ func (h *Handler) AddMemoryMessage(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "memory.message.add", Resource: "memory", ResourceID: memoryID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"ok": true})
+	response.OK(c, AddMemoryMessageResponse{Ok: true})
 }
 
 // DeleteMemoryMessage forgets a memory message.
@@ -247,7 +247,7 @@ func (h *Handler) DeleteMemoryMessage(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "memory.message.delete", Resource: "memory", ResourceID: memoryID, DetailJSON: strconv.FormatInt(messageID, 10), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"message_id": messageID})
+	response.OK(c, DeleteMemoryMessageResponse{MessageID: messageID})
 }
 
 // ComplianceDeleteMemoryMessage performs the admin compliance delete behind
@@ -259,9 +259,7 @@ func (h *Handler) ComplianceDeleteMemoryMessage(c *gin.Context) {
 		response.Fail(c, 400, 40000, "invalid message id")
 		return
 	}
-	var req struct {
-		Reason string `json:"reason"`
-	}
+	var req ComplianceDeleteMemoryMessageRequest
 	_ = c.ShouldBindJSON(&req)
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
@@ -280,7 +278,7 @@ func (h *Handler) ComplianceDeleteMemoryMessage(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "memory.message.compliance_delete", Resource: "memory", ResourceID: memoryID, DetailJSON: fmt.Sprintf(`{"message_id":%d,"reason":%q}`, messageID, reason), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"message_id": messageID, "deleted": true})
+	response.OK(c, ComplianceDeleteMemoryMessageResponse{MessageID: messageID, Deleted: true})
 }
 
 // UpdateMemoryMessageStatus sets a message's status.
@@ -308,7 +306,7 @@ func (h *Handler) UpdateMemoryMessageStatus(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "memory.message.status", Resource: "memory", ResourceID: memoryID, DetailJSON: strconv.FormatInt(messageID, 10), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"message_id": messageID, "status": req.Status})
+	response.OK(c, UpdateMemoryMessageStatusResponse{MessageID: messageID, Status: req.Status})
 }
 
 // SearchMemoryMessages runs a semantic retrieval against a memory.

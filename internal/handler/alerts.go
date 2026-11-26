@@ -92,7 +92,7 @@ func (h *Handler) RetryAlertDelivery(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"summary": summary})
+	response.OK(c, RetryAlertDeliveryResponse{Summary: summary})
 }
 
 // MarkAlertRead marks an alert as read.
@@ -109,7 +109,7 @@ func (h *Handler) MarkAlertRead(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": c.Param("id"), "status": model.AlertStatusRead})
+	response.OK(c, MarkAlertReadResponse{ID: c.Param("id"), Status: model.AlertStatusRead})
 }
 
 // ClaimAlert claims an alert for operations follow-up.
@@ -126,5 +126,5 @@ func (h *Handler) ClaimAlert(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": c.Param("id"), "status": model.AlertStatusClaimed})
+	response.OK(c, ClaimAlertResponse{ID: c.Param("id"), Status: model.AlertStatusClaimed})
 }

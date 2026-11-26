@@ -31,10 +31,7 @@ func (h *Handler) GetBranding(c *gin.Context) {
 
 // SetBranding updates the caller tenant's branding.
 func (h *Handler) SetBranding(c *gin.Context) {
-	var req struct {
-		Name string `json:"name"`
-		Logo string `json:"logo"`
-	}
+	var req SetBrandingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid branding payload")
 		return
@@ -96,7 +93,7 @@ func (h *Handler) UploadBrandingLogo(c *gin.Context) {
 	}
 	url := "/api/v1/static/logos/" + filename
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "branding.logo", Resource: "branding", ResourceID: tenantID, DetailJSON: url, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"url": url})
+	response.OK(c, UploadBrandingLogoResponse{URL: url})
 }
 
 func sanitizeExt(ext string) string {

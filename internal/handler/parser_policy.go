@@ -95,7 +95,7 @@ func deleteParserPolicy(c *gin.Context) {
 	}
 	recordParserPolicyAudit(c, "parser_policy.delete", "parser-policy", id, nil)
 	_ = userID
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteParserPolicyResponse{ID: id})
 }
 
 func listQualityProfiles(c *gin.Context) {
@@ -169,7 +169,7 @@ func deleteQualityProfile(c *gin.Context) {
 	}
 	recordParserPolicyAudit(c, "quality_profile.delete", "quality-profile", id, nil)
 	_ = userID
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteQualityProfileResponse{ID: id})
 }
 
 func parseOptionalBool(value string) (*bool, error) {

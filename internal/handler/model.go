@@ -154,7 +154,7 @@ func (h *Handler) DeleteModelProvider(c *gin.Context) {
 		return
 	}
 	h.auditProvider(ctx, c, userID, tenantID, "model-provider.delete", providerID)
-	response.OK(c, gin.H{"id": providerID})
+	response.OK(c, DeleteModelProviderResponse{ID: providerID})
 }
 
 // CreateModelProvider supports both the new factory-add (provider_name) and the
@@ -330,7 +330,7 @@ func (h *Handler) DeleteProviderInstances(c *gin.Context) {
 		return
 	}
 	h.auditProvider(ctx, c, userID, tenantID, "model-provider.instance.delete", c.Param("id"))
-	response.OK(c, gin.H{"deleted": len(req.Instances)})
+	response.OK(c, DeleteProviderInstancesResponse{Deleted: len(req.Instances)})
 }
 
 // VerifyProviderConnection validates an API key/base URL against RAGFlow.
@@ -510,7 +510,7 @@ func (h *Handler) DeleteProviderModels(c *gin.Context) {
 		return
 	}
 	h.auditProvider(ctx, c, userID, tenantID, "model-provider.model.delete", c.Param("instanceId"))
-	response.OK(c, gin.H{"deleted": len(req.ModelIDs)})
+	response.OK(c, DeleteProviderModelsResponse{Deleted: len(req.ModelIDs)})
 }
 
 // TestProviderModel sends a chat test message to a configured model.
@@ -662,7 +662,7 @@ func (h *Handler) DeleteModelRoute(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "model-route.delete", Resource: "model-route", ResourceID: routeID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": routeID})
+	response.OK(c, DeleteModelRouteResponse{ID: routeID})
 }
 
 // PinEnterpriseModelRoute pins a route to exact enterprise runtime versions.

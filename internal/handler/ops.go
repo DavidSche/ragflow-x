@@ -43,14 +43,12 @@ func (h *Handler) SyncTasks(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "task.sync", Resource: "task", ResourceID: tenantID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"enqueued": inserted})
+	response.OK(c, SyncTasksResponse{Enqueued: inserted})
 }
 
 // DeleteTasks batch-deletes terminal task history records.
 func (h *Handler) DeleteTasks(c *gin.Context) {
-	var req struct {
-		IDs []string `json:"ids"`
-	}
+	var req DeleteTasksRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "ids is required")
 		return
@@ -71,7 +69,7 @@ func (h *Handler) DeleteTasks(c *gin.Context) {
 		TenantID: tenantID, UserID: userID, Action: "task.delete.batch", Resource: "task",
 		ResourceID: tenantID, DetailJSON: strings.Join(req.IDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 	})
-	response.OK(c, gin.H{"deleted": deleted})
+	response.OK(c, DeleteTasksResponse{Deleted: deleted})
 }
 
 // ListJobs returns a page of the tenant's async job execution records (worker

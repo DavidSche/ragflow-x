@@ -39,7 +39,7 @@ func (h *Handler) SystemConfigPublicKey(c *gin.Context) {
 	if !h.requireSetup(c) {
 		return
 	}
-	response.OK(c, gin.H{"public_key": h.setupMgr.PublicKeyPEM()})
+	response.OK(c, SystemConfigPublicKeyResponse{PublicKey: h.setupMgr.PublicKeyPEM()})
 }
 
 // SystemConfigPreflight validates the proposed database/RAGFlow settings
@@ -78,5 +78,5 @@ func (h *Handler) SystemConfigApply(c *gin.Context) {
 		response.Fail(c, 400, 40005, err.Error())
 		return
 	}
-	response.OK(c, gin.H{"configured": true})
+	response.OK(c, SystemConfigApplyResponse{Configured: true})
 }

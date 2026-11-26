@@ -228,7 +228,7 @@ func getAssistantRolloutPolicies(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "active": active, "total": total, "page": page, "page_size": pageSize})
+	response.OK(c, GetAssistantRolloutPoliciesResponse{Items: items, Active: active, Total: total, Page: page, PageSize: pageSize})
 }
 
 func createAssistantRolloutPolicy(c *gin.Context) {

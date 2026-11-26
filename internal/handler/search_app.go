@@ -277,7 +277,7 @@ func (h *Handler) DeleteSearchApp(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "search_app.delete", Resource: "search-app", ResourceID: searchAppID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": searchAppID})
+	response.OK(c, DeleteSearchAppResponse{ID: searchAppID})
 }
 
 type searchAppCompletePayload struct {

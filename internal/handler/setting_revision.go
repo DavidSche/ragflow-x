@@ -76,10 +76,7 @@ func (h *Handler) GetSystemSettingRevision(c *gin.Context) {
 }
 
 func (h *Handler) RollbackSystemSettingRevision(c *gin.Context) {
-	var request struct {
-		Confirmed bool   `json:"confirmed"`
-		Note      string `json:"note"`
-	}
+	var request RollbackSystemSettingRevisionRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		response.Fail(c, 400, 40098, "invalid request")
 		return

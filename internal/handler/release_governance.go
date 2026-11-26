@@ -122,7 +122,7 @@ func markReleaseCandidateReady(c *gin.Context) {
 		return
 	}
 	governanceAudit(c, "release_candidate.ready", "release-governance", c.Param("id"), "")
-	response.OK(c, gin.H{"status": "READY_FOR_EVALUATION"})
+	response.OK(c, MarkReleaseCandidateReadyResponse{Status: "READY_FOR_EVALUATION"})
 }
 
 func createExecutionSnapshot(c *gin.Context) {

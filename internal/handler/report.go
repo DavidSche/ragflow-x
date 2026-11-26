@@ -169,7 +169,7 @@ func deleteReport(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"deleted": true, "recoverable": !force})
+	response.OK(c, DeleteReportResponse{Deleted: true, Recoverable: !force})
 }
 
 // restoreReport re-opens a soft-deleted report inside its recovery window (A47).
@@ -385,14 +385,7 @@ func createReportExport(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{
-		"export_job":      result.Job,
-		"export_artifact": result.Artifact,
-		"canonical_hash":  result.Canonical,
-		// Server-made decision (doc/288 §7.7): the panel's download button follows
-		// this flag instead of re-deriving readiness from the row.
-		"downloadable": result.Downloadable,
-	})
+	response.OK(c, CreateReportExportResponse{ExportJob: result.Job, ExportArtifact: result.Artifact, CanonicalHash: result.Canonical, Downloadable: result.Downloadable})
 }
 
 // downloadReportExport streams one frozen artifact. The route carries report id +
@@ -466,7 +459,7 @@ func getReportSchedule(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"schedule": view})
+	response.OK(c, GetReportScheduleResponse{Schedule: view})
 }
 
 // putReportSchedule creates or replaces the plan (idempotent on the report). 201 on
@@ -524,7 +517,7 @@ func listReportSections(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"sections": sections})
+	response.OK(c, ListReportSectionsResponse{Sections: sections})
 }
 
 // listReportRevisions answers the report's version history (doc/288 §7.10).
@@ -542,7 +535,7 @@ func listReportRevisions(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"revisions": rows})
+	response.OK(c, ListReportRevisionsResponse{Revisions: rows})
 }
 
 // getReportRevision reads "second revision of report X" by its number, the

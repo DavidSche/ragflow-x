@@ -306,7 +306,7 @@ func (h *Handler) DeleteAgent(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "agent.delete", Resource: "agent", ResourceID: agentID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": agentID})
+	response.OK(c, DeleteAgentResponse{ID: agentID})
 }
 
 // ListAgentVersions lists an agent's versions.
@@ -364,7 +364,7 @@ func (h *Handler) RollbackAgentVersion(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "agent.version.rollback", Resource: "agent", ResourceID: agentID, DetailJSON: c.Param("versionId"), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": agentID})
+	response.OK(c, RollbackAgentVersionResponse{ID: agentID})
 }
 
 // ListAgentSessions lists an agent's sessions.
@@ -440,7 +440,7 @@ func (h *Handler) ListAgentSessionMessages(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "next_cursor": next})
+	response.OK(c, ListAgentSessionMessagesResponse{Items: items, NextCursor: next})
 }
 
 // DeleteAgentSession deletes an agent session.
@@ -459,7 +459,7 @@ func (h *Handler) DeleteAgentSession(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "agent.session.delete", Resource: "agent", ResourceID: agentID, DetailJSON: sessionID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": sessionID})
+	response.OK(c, DeleteAgentSessionResponse{ID: sessionID})
 }
 
 // UploadAgentFile uploads a temporary attachment for an owned Agent.

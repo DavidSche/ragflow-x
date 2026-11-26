@@ -247,7 +247,7 @@ func (h *Handler) DeleteChat(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "chat.delete", Resource: "chat", ResourceID: chatID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": chatID})
+	response.OK(c, DeleteChatResponse{ID: chatID})
 }
 
 // ListChatSessions lists the sessions of a chat assistant.
@@ -303,7 +303,7 @@ func (h *Handler) ListChatSessionMessages(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": items, "next_cursor": next})
+	response.OK(c, ListChatSessionMessagesResponse{Items: items, NextCursor: next})
 }
 
 type createSessionPayload struct {
@@ -380,7 +380,7 @@ func (h *Handler) DeleteChatSessions(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "chat.session.delete", Resource: "chat", ResourceID: c.Param("id"), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"deleted": len(req.IDs)})
+	response.OK(c, DeleteChatSessionsResponse{Deleted: len(req.IDs)})
 }
 
 // DeleteChatSession deletes a single session.
@@ -398,7 +398,7 @@ func (h *Handler) DeleteChatSession(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "chat.session.delete", Resource: "chat", ResourceID: c.Param("id"), DetailJSON: sessionID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": sessionID})
+	response.OK(c, DeleteChatSessionResponse{ID: sessionID})
 }
 
 type batchChatStatusPayload struct {
@@ -429,7 +429,7 @@ func (h *Handler) BatchUpdateChatStatus(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "chat.status.batch", Resource: "chat", DetailJSON: req.Status, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"updated": len(req.IDs)})
+	response.OK(c, BatchUpdateChatStatusResponse{Updated: len(req.IDs)})
 }
 
 // BatchDeleteChats deletes multiple chats.
@@ -451,7 +451,7 @@ func (h *Handler) BatchDeleteChats(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "chat.delete.batch", Resource: "chat", DetailJSON: "", IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"deleted": len(req.IDs)})
+	response.OK(c, BatchDeleteChatsResponse{Deleted: len(req.IDs)})
 }
 
 // ChatUsage returns the metered usage/cost of a chat.

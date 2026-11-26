@@ -22,10 +22,7 @@ func (h *Handler) GetAnswerSnapshot(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{
-		"answer_snapshot":          snapshot,
-		"authorization_projection": projection,
-	})
+	response.OK(c, GetAnswerSnapshotResponse{AnswerSnapshot: snapshot, AuthorizationProjection: projection})
 }
 
 func (h *Handler) GetAnswerSnapshotByRequest(c *gin.Context) {
@@ -38,18 +35,11 @@ func (h *Handler) GetAnswerSnapshotByRequest(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{
-		"answer_snapshot":          snapshot,
-		"authorization_projection": projection,
-	})
+	response.OK(c, GetAnswerSnapshotByRequestResponse{AnswerSnapshot: snapshot, AuthorizationProjection: projection})
 }
 
 func (h *Handler) CreateAnswerExport(c *gin.Context) {
-	var req struct {
-		Format         string `json:"format"`
-		Scope          string `json:"scope"`
-		IdempotencyKey string `json:"idempotency_key"`
-	}
+	var req CreateAnswerExportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40130, "invalid answer export payload")
 		return
@@ -74,7 +64,7 @@ func (h *Handler) CreateAnswerExport(c *gin.Context) {
 		DetailJSON: fmt.Sprintf(`{"format":%q,"export_job_id":%q}`, result.Job.Format, result.Job.ID),
 		IP:         c.ClientIP(), TraceID: traceID,
 	})
-	response.OK(c, gin.H{"export_job": result.Job, "export_artifact": result.Artifact})
+	response.OK(c, CreateAnswerExportResponse{ExportJob: result.Job, ExportArtifact: result.Artifact})
 }
 
 // GetAnswerSnapshotAuditExport serves the audit-grade forensic export
@@ -104,7 +94,7 @@ func (h *Handler) GetAnswerSnapshotAuditExport(c *gin.Context) {
 			result.Job.Format, result.Job.ID, result.Job.PolicyInputHash),
 		IP: c.ClientIP(), TraceID: traceID,
 	})
-	response.OK(c, gin.H{"export_job": result.Job, "export_artifact": result.Artifact})
+	response.OK(c, GetAnswerSnapshotAuditExportResponse{ExportJob: result.Job, ExportArtifact: result.Artifact})
 }
 
 func (h *Handler) GetAnswerExportJob(c *gin.Context) {
@@ -115,7 +105,7 @@ func (h *Handler) GetAnswerExportJob(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"export_job": job})
+	response.OK(c, GetAnswerExportJobResponse{ExportJob: job})
 }
 
 func (h *Handler) RetryAnswerExportJob(c *gin.Context) {
@@ -133,7 +123,7 @@ func (h *Handler) RetryAnswerExportJob(c *gin.Context) {
 		DetailJSON: fmt.Sprintf(`{"format":%q,"export_job_id":%q}`, result.Job.Format, result.Job.ID),
 		IP:         c.ClientIP(), TraceID: traceID,
 	})
-	response.OK(c, gin.H{"export_job": result.Job, "export_artifact": result.Artifact})
+	response.OK(c, RetryAnswerExportJobResponse{ExportJob: result.Job, ExportArtifact: result.Artifact})
 }
 
 func (h *Handler) DownloadAnswerExport(c *gin.Context) {

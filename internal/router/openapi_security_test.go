@@ -11,31 +11,7 @@ import (
 )
 
 func expectedOpenAPISecurity(path string) []string {
-	if strings.HasPrefix(path, "/v1/") {
-		return []string{"ApiKeyAuth"}
-	}
-	if !strings.HasPrefix(path, "/api/v1/") {
-		return nil
-	}
-	if path == "/api/v1/auth/me" {
-		return []string{"BearerAuth"}
-	}
-	publicPrefixes := []string{
-		"/api/v1/health", "/api/v1/healthz", "/api/v1/readyz",
-		"/api/v1/branding/public",
-		"/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout",
-		"/api/v1/auth/oidc/",
-		"/api/v1/system/setup/",
-		"/api/v1/system/settings/runtime/report",
-		"/api/v1/im/",
-		"/api/v1/static/",
-	}
-	for _, prefix := range publicPrefixes {
-		if path == prefix || strings.HasPrefix(path, prefix) {
-			return nil
-		}
-	}
-	return []string{"BearerAuth"}
+	return OpenAPISecurity(path)
 }
 
 func TestOpenAPISecurityMatchesRoutePolicy(t *testing.T) {

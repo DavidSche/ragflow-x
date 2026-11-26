@@ -87,7 +87,7 @@ func (h *Handler) CreateApproval(c *gin.Context) {
 		c.JSON(http.StatusOK, response.Body{
 			Code:    0,
 			Message: "no matching policy",
-			Data:    gin.H{"created": false},
+			Data:    CreateApprovalResponse{Created: false},
 			TraceID: c.GetString("request_id"),
 		})
 		return
@@ -249,7 +249,7 @@ func (h *Handler) DeleteApprovalDelegation(c *gin.Context) {
 		response.Fail(c, 404, 40400, "approval delegation not found")
 		return
 	}
-	c.JSON(http.StatusOK, response.Body{Code: 0, Message: "", Data: gin.H{"deleted": true}, TraceID: c.GetString("request_id")})
+	c.JSON(http.StatusOK, response.Body{Code: 0, Message: "", Data: DeleteApprovalDelegationResponse{Deleted: true}, TraceID: c.GetString("request_id")})
 }
 
 func (h *Handler) ListApprovalPolicies(c *gin.Context) {
@@ -349,16 +349,7 @@ func approvalAccepted(c *gin.Context, approval *model.Approval) {
 	c.JSON(202, response.Body{
 		Code:    0,
 		Message: "approval submitted",
-		Data: gin.H{
-			"approval_id":   approval.ID,
-			"request_no":    approval.RequestNo,
-			"object_type":   approval.ObjectType,
-			"action":        approval.Action,
-			"status":        approval.Status,
-			"current_step":  approval.CurrentStep,
-			"expire_at":     approval.ExpiresAt,
-			"approval_path": "/approvals/" + approval.ID + "/show",
-		},
+		Data:    ApprovalAcceptedResponse{ApprovalID: approval.ID, RequestNo: approval.RequestNo, ObjectType: approval.ObjectType, Action: approval.Action, Status: approval.Status, CurrentStep: approval.CurrentStep, ExpireAt: approval.ExpiresAt, ApprovalPath: "/approvals/" + approval.ID + "/show"},
 		TraceID: c.GetString("request_id"),
 	})
 }

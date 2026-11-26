@@ -90,7 +90,7 @@ func (h *Handler) VerifyAuditChain(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"valid": valid})
+	response.OK(c, VerifyAuditChainResponse{Valid: valid})
 }
 
 func (h *Handler) RepairAuditChain(c *gin.Context) {
@@ -98,9 +98,7 @@ func (h *Handler) RepairAuditChain(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	var req struct {
-		TenantID string `json:"tenant_id"`
-	}
+	var req RepairAuditChainRequest
 	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.TenantID) == "" {
 		response.Fail(c, 400, 40000, "tenant_id is required")
 		return
@@ -123,5 +121,5 @@ func (h *Handler) RepairAuditChain(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"tenant_id": req.TenantID, "valid": valid})
+	response.OK(c, RepairAuditChainResponse{TenantID: req.TenantID, Valid: valid})
 }

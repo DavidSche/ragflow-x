@@ -115,7 +115,7 @@ func deleteMemoryPrivacyExemption(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"ok": true})
+	response.OK(c, DeleteMemoryPrivacyExemptionResponse{Ok: true})
 }
 
 // previewMemoryPrivacy evaluates sample text through the deterministic PII
@@ -164,7 +164,7 @@ func deleteMemoryPolicy(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": policyID})
+	response.OK(c, DeleteMemoryPolicyResponse{ID: policyID})
 }
 
 func optInMemoryPolicy(c *gin.Context) {

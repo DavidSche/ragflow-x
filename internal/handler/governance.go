@@ -292,7 +292,7 @@ func getScenarioTemplate(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"template": asset, "version": selected, "versions": versions})
+	response.OK(c, GetScenarioTemplateResponse{Template: asset, Version: selected, Versions: versions})
 }
 
 func exportScenarioTemplate(c *gin.Context) {
@@ -395,9 +395,7 @@ func scenarioTemplateHealth(c *gin.Context) {
 
 func copyScenarioTemplate(c *gin.Context) {
 	tenantID, _, _ := governanceContext(c)
-	var req struct {
-		TargetTenantID string `json:"target_tenant_id" binding:"required"`
-	}
+	var req CopyScenarioTemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40063, "target_tenant_id is required")
 		return
@@ -451,7 +449,7 @@ func publishScenarioTemplateBaseline(c *gin.Context) {
 		return
 	}
 	governanceAudit(c, "scenario_template.baseline_publish", "scenario-template-baseline", asset.ID, asset.Key)
-	response.OK(c, gin.H{"asset": asset, "replayed": replayed})
+	response.OK(c, PublishScenarioTemplateBaselineResponse{Asset: asset, Replayed: replayed})
 }
 
 // capabilityCheckScenarioTemplate probes the supplied datasets against the
@@ -549,7 +547,7 @@ func listScenarioTemplateBaselines(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"items": baselines, "total": len(baselines)})
+	response.OK(c, ListScenarioTemplateBaselinesResponse{Items: baselines, Total: len(baselines)})
 }
 
 func archiveScenarioTemplate(c *gin.Context) {
@@ -564,7 +562,7 @@ func archiveScenarioTemplate(c *gin.Context) {
 		return
 	}
 	governanceAudit(c, "scenario_template.archive", "scenario-template", c.Param("id"), "")
-	response.OK(c, gin.H{"id": c.Param("id"), "status": model.AssetStatusArchived})
+	response.OK(c, ArchiveScenarioTemplateResponse{ID: c.Param("id"), Status: model.AssetStatusArchived})
 }
 
 func instantiateChatFromScenarioTemplate(c *gin.Context) {
@@ -610,9 +608,7 @@ func createEvalSetFromTemplate(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	var req struct {
-		Name string `json:"name"`
-	}
+	var req CreateEvalSetFromTemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40064, "invalid evaluation set payload")
 		return
@@ -664,7 +660,7 @@ func generateMissingTemplateEvalSets(c *gin.Context) {
 		return
 	}
 	governanceAudit(c, "eval_set.generate_missing", "eval-set", tenantID, strconv.Itoa(created))
-	response.OK(c, gin.H{"created": created})
+	response.OK(c, GenerateMissingTemplateEvalSetsResponse{Created: created})
 }
 
 func listPromptPolicies(c *gin.Context) {
@@ -758,7 +754,7 @@ func deletePromptPolicy(c *gin.Context) {
 		return
 	}
 	governanceAudit(c, "prompt_policy.delete", "prompt-policy", c.Param("id"), "")
-	response.OK(c, gin.H{"id": c.Param("id")})
+	response.OK(c, DeletePromptPolicyResponse{ID: c.Param("id")})
 }
 
 func listKnowledgeLifecycle(c *gin.Context) {
@@ -889,7 +885,7 @@ func getEvalSet(c *gin.Context) {
 		response.Err(c, httperr.NotFound("evaluation set not found"))
 		return
 	}
-	response.OK(c, gin.H{"eval_set": evalSet, "cases": cases})
+	response.OK(c, GetEvalSetResponse{EvalSet: evalSet, Cases: cases})
 }
 
 func updateEvalSet(c *gin.Context) {
@@ -925,7 +921,7 @@ func deleteEvalSet(c *gin.Context) {
 		return
 	}
 	governanceAudit(c, "eval_set.delete", "eval-set", c.Param("id"), "")
-	response.OK(c, gin.H{"id": c.Param("id")})
+	response.OK(c, DeleteEvalSetResponse{ID: c.Param("id")})
 }
 
 func convertBadcaseToEvalCase(c *gin.Context) {
@@ -933,9 +929,7 @@ func convertBadcaseToEvalCase(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	var req struct {
-		EvalSetID string `json:"eval_set_id" binding:"required"`
-	}
+	var req ConvertBadcaseToEvalCaseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40069, "eval_set_id is required")
 		return

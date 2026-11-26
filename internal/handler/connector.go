@@ -245,11 +245,7 @@ func (h *Handler) CreateConnector(c *gin.Context) {
 // TestConnector probes an unsaved provider/spec/credential triple (wizard
 // validation); the persisted probe lives at POST /connectors/:id/test.
 func (h *Handler) TestConnector(c *gin.Context) {
-	var req struct {
-		Provider   string         `json:"provider"`
-		Spec       map[string]any `json:"spec"`
-		Credential map[string]any `json:"credential"`
-	}
+	var req TestConnectorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40060, "invalid connector test payload")
 		return
@@ -269,7 +265,7 @@ func (h *Handler) TestConnector(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"ok": true})
+	response.OK(c, TestConnectorResponse{Ok: true})
 }
 
 // TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2).
@@ -419,7 +415,7 @@ func (h *Handler) DeleteConnector(c *gin.Context) {
 		Resource: "connector", ResourceID: id,
 		IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 	})
-	response.OK(c, gin.H{"ok": true})
+	response.OK(c, DeleteConnectorResponse{Ok: true})
 }
 
 // SetConnectorEnabled handles both POST /enable and POST /disable; the router
@@ -456,7 +452,7 @@ func (h *Handler) SetConnectorEnabled(c *gin.Context) {
 		Resource: "connector", ResourceID: id,
 		IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 	})
-	response.OK(c, gin.H{"ok": true})
+	response.OK(c, SetConnectorEnabledResponse{Ok: true})
 }
 
 // SyncConnectorNow enqueues a durable manual sync job.
@@ -473,20 +469,13 @@ func (h *Handler) SyncConnectorNow(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"queued": queued})
+	response.OK(c, SyncConnectorNowResponse{Queued: queued})
 }
 
 // SetConnectorSchedule changes the period or switches between manual/interval/
 // daily without touching the source spec (doc/225 §7.2 PUT /schedule).
 func (h *Handler) SetConnectorSchedule(c *gin.Context) {
-	var req struct {
-		Kind        string `json:"kind"`
-		Value       int    `json:"value"`
-		Minutes     int    `json:"minutes"`
-		HHMM        string `json:"hhmm"`
-		Schedule    any    `json:"schedule"` // doc/225 §7.2 object form
-		TZOffsetMin *int   `json:"schedule_tz_offset_min"`
-	}
+	var req SetConnectorScheduleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40335, "invalid connector schedule payload")
 		return
@@ -551,9 +540,7 @@ func (h *Handler) SetConnectorSchedule(c *gin.Context) {
 
 // PreviewConnector dry-runs one scan page and reports the diff (read-only).
 func (h *Handler) PreviewConnector(c *gin.Context) {
-	var req struct {
-		Limit int `json:"limit"`
-	}
+	var req PreviewConnectorRequest
 	_ = c.ShouldBindJSON(&req)
 	ctx := c.Request.Context()
 	userID := c.GetString(middleware.ContextUserID)

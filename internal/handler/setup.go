@@ -38,7 +38,7 @@ func (h *Handler) SetupPublicKey(c *gin.Context) {
 		response.Fail(c, 500, 500, "setup manager not configured")
 		return
 	}
-	response.OK(c, gin.H{"public_key": h.setupMgr.PublicKeyPEM()})
+	response.OK(c, SetupPublicKeyResponse{PublicKey: h.setupMgr.PublicKeyPEM()})
 }
 
 // SetupApply persists the wizard configuration and hot-swaps the running engine.
@@ -57,7 +57,7 @@ func (h *Handler) SetupApply(c *gin.Context) {
 		response.Fail(c, 400, 40004, err.Error())
 		return
 	}
-	response.OK(c, gin.H{"configured": true})
+	response.OK(c, SetupApplyResponse{Configured: true})
 }
 
 // SetupAdmin creates the first platform admin. It is only effective before
@@ -85,7 +85,7 @@ func (h *Handler) SetupAdmin(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"initialized": true})
+	response.OK(c, SetupAdminResponse{Initialized: true})
 }
 
 // Preflight validates a proposed RAGFlow connection without persisting any

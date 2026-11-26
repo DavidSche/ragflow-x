@@ -213,14 +213,12 @@ func (h *Handler) DeleteDataset(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "dataset.delete", Resource: "dataset", ResourceID: datasetID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": datasetID})
+	response.OK(c, DeleteDatasetResponse{ID: datasetID})
 }
 
 // DeleteDatasets batch-deletes datasets.
 func (h *Handler) DeleteDatasets(c *gin.Context) {
-	var req struct {
-		IDs []string `json:"ids"`
-	}
+	var req DeleteDatasetsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "ids is required")
 		return
@@ -245,7 +243,7 @@ func (h *Handler) DeleteDatasets(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "dataset.delete.batch", Resource: "dataset", DetailJSON: strings.Join(req.IDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"deleted": len(req.IDs)})
+	response.OK(c, DeleteDatasetsResponse{Deleted: len(req.IDs)})
 }
 
 // ExportDatasets streams the dataset list as CSV.
@@ -288,9 +286,7 @@ func (h *Handler) ExportDatasets(c *gin.Context) {
 
 // BindDatasetProject assigns a dataset to a tenant project.
 func (h *Handler) BindDatasetProject(c *gin.Context) {
-	var req struct {
-		ProjectID string `json:"project_id"`
-	}
+	var req BindDatasetProjectRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid project binding payload")
 		return
@@ -316,7 +312,7 @@ func (h *Handler) BindDatasetProject(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "dataset.project", Resource: "dataset", ResourceID: datasetID, DetailJSON: req.ProjectID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": datasetID, "project_id": req.ProjectID})
+	response.OK(c, BindDatasetProjectResponse{ID: datasetID, ProjectID: req.ProjectID})
 }
 
 // CreateDataset creates a dataset for the authenticated tenant.
@@ -519,7 +515,7 @@ func (h *Handler) ParseDocuments(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "document.parse", Resource: "document", ResourceID: datasetID, DetailJSON: strings.Join(req.DocumentIDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"parsed": len(req.DocumentIDs)})
+	response.OK(c, ParseDocumentsResponse{Parsed: len(req.DocumentIDs)})
 }
 
 // StopDocuments stops parsing for documents of a dataset.
@@ -561,7 +557,7 @@ func (h *Handler) StopDocuments(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: c.GetString(middleware.ContextUserID), Action: "document.stop", Resource: "document", ResourceID: datasetID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"stopped": len(req.DocumentIDs)})
+	response.OK(c, StopDocumentsResponse{Stopped: len(req.DocumentIDs)})
 }
 
 // DeleteDocuments removes documents from a dataset.
@@ -599,7 +595,7 @@ func (h *Handler) DeleteDocuments(c *gin.Context) {
 			return
 		}
 		h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "document.delete.own", Resource: "document", ResourceID: datasetID, DetailJSON: strings.Join(req.DocumentIDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-		response.OK(c, gin.H{"deleted": len(req.DocumentIDs)})
+		response.OK(c, DeleteDocumentsResponse{Deleted: len(req.DocumentIDs)})
 		return
 	}
 	if crossTenant {
@@ -621,16 +617,13 @@ func (h *Handler) DeleteDocuments(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: c.GetString(middleware.ContextUserID), Action: "document.delete", Resource: "document", ResourceID: datasetID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"deleted": len(req.DocumentIDs)})
+	response.OK(c, DeleteDocumentsResponse{Deleted: len(req.DocumentIDs)})
 }
 
 // UpdateDataset renames a dataset.
 // SetDocumentsStatus enables or disables the selected documents of a dataset.
 func (h *Handler) SetDocumentsStatus(c *gin.Context) {
-	var req struct {
-		DocumentIDs []string `json:"document_ids"`
-		Enabled     bool     `json:"enabled"`
-	}
+	var req SetDocumentsStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid document status payload")
 		return
@@ -681,14 +674,12 @@ func (h *Handler) SetDocumentsStatus(c *gin.Context) {
 		actionName = "document.enable"
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: actionName, Resource: "document", ResourceID: strings.Join(req.DocumentIDs, ","), DetailJSON: strings.Join(req.DocumentIDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"enabled": req.Enabled, "updated": len(req.DocumentIDs)})
+	response.OK(c, SetDocumentsStatusResponse{Enabled: req.Enabled, Updated: len(req.DocumentIDs)})
 }
 
 // UpdateDocumentMetadata replaces a document's metadata configuration.
 func (h *Handler) UpdateDocumentMetadata(c *gin.Context) {
-	var req struct {
-		Metadata map[string]interface{} `json:"metadata"`
-	}
+	var req UpdateDocumentMetadataRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid metadata payload")
 		return
@@ -727,7 +718,7 @@ func (h *Handler) UpdateDocumentMetadata(c *gin.Context) {
 	}
 	metaJSON, _ := json.Marshal(req.Metadata)
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "document.metadata", Resource: "document", ResourceID: docID, DetailJSON: string(metaJSON), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"document_id": docID, "updated": true})
+	response.OK(c, UpdateDocumentMetadataResponse{DocumentID: docID, Updated: true})
 }
 
 // ListDocumentChunks returns a document's parsed chunks for verification.
@@ -784,9 +775,7 @@ func (h *Handler) PreviewDocument(c *gin.Context) {
 
 // DeleteDocumentChunks deletes the selected chunks of a document.
 func (h *Handler) DeleteDocumentChunks(c *gin.Context) {
-	var req struct {
-		ChunkIDs []string `json:"chunk_ids"`
-	}
+	var req DeleteDocumentChunksRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid chunk payload")
 		return
@@ -830,15 +819,12 @@ func (h *Handler) DeleteDocumentChunks(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "chunk.delete", Resource: "document", ResourceID: docID, DetailJSON: strings.Join(req.ChunkIDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"deleted": len(req.ChunkIDs)})
+	response.OK(c, DeleteDocumentChunksResponse{Deleted: len(req.ChunkIDs)})
 }
 
 // SetDocumentChunksAvailable enables or disables the selected chunks.
 func (h *Handler) SetDocumentChunksAvailable(c *gin.Context) {
-	var req struct {
-		ChunkIDs []string `json:"chunk_ids"`
-		Enabled  bool     `json:"enabled"`
-	}
+	var req SetDocumentChunksAvailableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid chunk payload")
 		return
@@ -890,16 +876,12 @@ func (h *Handler) SetDocumentChunksAvailable(c *gin.Context) {
 		actionName = "chunk.enable"
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: actionName, Resource: "document", ResourceID: docID, DetailJSON: strings.Join(req.ChunkIDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"enabled": req.Enabled, "updated": len(req.ChunkIDs)})
+	response.OK(c, SetDocumentChunksAvailableResponse{Enabled: req.Enabled, Updated: len(req.ChunkIDs)})
 }
 
 // AddDocumentChunk appends a manually authored chunk to a parsed document.
 func (h *Handler) AddDocumentChunk(c *gin.Context) {
-	var req struct {
-		Content           string   `json:"content"`
-		ImportantKeywords []string `json:"important_keywords"`
-		Questions         []string `json:"questions"`
-	}
+	var req AddDocumentChunkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid chunk payload")
 		return
@@ -946,16 +928,12 @@ func (h *Handler) AddDocumentChunk(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "chunk.create", Resource: "document", ResourceID: docID, DetailJSON: chunk.ID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"chunk": chunk})
+	response.OK(c, AddDocumentChunkResponse{Chunk: chunk})
 }
 
 // UpdateDocumentChunk rewrites an existing chunk's editable fields.
 func (h *Handler) UpdateDocumentChunk(c *gin.Context) {
-	var req struct {
-		Content           *string  `json:"content"`
-		ImportantKeywords []string `json:"important_keywords"`
-		Questions         []string `json:"questions"`
-	}
+	var req UpdateDocumentChunkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid chunk payload")
 		return
@@ -1010,7 +988,7 @@ func (h *Handler) UpdateDocumentChunk(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "chunk.update", Resource: "document", ResourceID: docID, DetailJSON: chunkID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"updated": true})
+	response.OK(c, UpdateDocumentChunkResponse{Updated: true})
 }
 
 // GetDatasetParseProfile returns the dataset's current parse profile plus the
@@ -1123,7 +1101,7 @@ func (h *Handler) UpdateDatasetConfig(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "dataset.config", Resource: "dataset", ResourceID: datasetID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": datasetID, "updated": true})
+	response.OK(c, UpdateDatasetConfigResponse{ID: datasetID, Updated: true})
 }
 func (h *Handler) UpdateDataset(c *gin.Context) {
 

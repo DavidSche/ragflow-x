@@ -116,7 +116,7 @@ func (h *Handler) DeleteTeam(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "team.delete", Resource: "team", ResourceID: id, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteTeamResponse{ID: id})
 }
 
 // ListTeamUsers lists the members of a team.
@@ -137,9 +137,7 @@ func (h *Handler) ListTeamUsers(c *gin.Context) {
 
 // AddTeamUser binds a user to a team (owner or tenant admin only).
 func (h *Handler) AddTeamUser(c *gin.Context) {
-	var req struct {
-		UserID string `json:"user_id" binding:"required"`
-	}
+	var req AddTeamUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "user_id is required")
 		return
@@ -157,7 +155,7 @@ func (h *Handler) AddTeamUser(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: actor, Action: "team.member.add", Resource: "team", ResourceID: teamID, DetailJSON: req.UserID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"team_id": teamID, "user_id": req.UserID})
+	response.OK(c, AddTeamUserResponse{TeamID: teamID, UserID: req.UserID})
 }
 
 // RemoveTeamUser unbinds a user from a team (owner or tenant admin only).
@@ -176,7 +174,7 @@ func (h *Handler) RemoveTeamUser(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: actor, Action: "team.member.remove", Resource: "team", ResourceID: teamID, DetailJSON: memberID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"team_id": teamID, "user_id": memberID})
+	response.OK(c, RemoveTeamUserResponse{TeamID: teamID, UserID: memberID})
 }
 
 // ListTeamProjects returns the projects authorized to a tenant team.
@@ -198,9 +196,7 @@ func (h *Handler) ListTeamProjects(c *gin.Context) {
 
 // BindTeamProjects replaces the projects authorized to a tenant team.
 func (h *Handler) BindTeamProjects(c *gin.Context) {
-	var req struct {
-		ProjectIDs []string `json:"project_ids"`
-	}
+	var req BindTeamProjectsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "invalid team project binding payload")
 		return
@@ -218,5 +214,5 @@ func (h *Handler) BindTeamProjects(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "team.project.bind", Resource: "team", ResourceID: teamID, DetailJSON: strings.Join(req.ProjectIDs, ","), IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"team_id": teamID, "project_ids": req.ProjectIDs})
+	response.OK(c, BindTeamProjectsResponse{TeamID: teamID, ProjectIDs: req.ProjectIDs})
 }

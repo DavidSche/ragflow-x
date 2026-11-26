@@ -13,12 +13,7 @@ import (
 )
 
 func (h *Handler) CreateKnowledgeImpactReport(c *gin.Context) {
-	var req struct {
-		ProjectID     string `json:"project_id"`
-		TargetType    string `json:"target_type"`
-		TargetID      string `json:"target_id"`
-		TargetVersion string `json:"target_version"`
-	}
+	var req CreateKnowledgeImpactReportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40140, "invalid knowledge impact payload")
 		return

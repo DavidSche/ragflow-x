@@ -63,5 +63,5 @@ func (h *Handler) SetSetupManager(m SetupApplier) { h.setupMgr = m }
 
 // Health is an unauthenticated liveness endpoint.
 func (h *Handler) Health(c *gin.Context) {
-	c.JSON(200, gin.H{"status": "ok"})
+	c.JSON(200, HealthResponse{Status: "ok"})
 }

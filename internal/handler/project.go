@@ -108,7 +108,7 @@ func (h *Handler) DeleteProject(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: actor, Action: "project.delete", Resource: "project", ResourceID: id, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteProjectResponse{ID: id})
 }
 
 // ListProjectUsers lists project members.
@@ -129,9 +129,7 @@ func (h *Handler) ListProjectUsers(c *gin.Context) {
 
 // AddProjectUser adds a user to a project.
 func (h *Handler) AddProjectUser(c *gin.Context) {
-	var req struct {
-		UserID string `json:"user_id" binding:"required"`
-	}
+	var req AddProjectUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.Fail(c, 400, 40000, "user_id is required")
 		return
@@ -149,7 +147,7 @@ func (h *Handler) AddProjectUser(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: actor, Action: "project.member.add", Resource: "project", ResourceID: projectID, DetailJSON: req.UserID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"project_id": projectID, "user_id": req.UserID})
+	response.OK(c, AddProjectUserResponse{ProjectID: projectID, UserID: req.UserID})
 }
 
 // RemoveProjectUser removes a user from a project.
@@ -168,7 +166,7 @@ func (h *Handler) RemoveProjectUser(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: actor, Action: "project.member.remove", Resource: "project", ResourceID: projectID, DetailJSON: memberID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"project_id": projectID, "user_id": memberID})
+	response.OK(c, RemoveProjectUserResponse{ProjectID: projectID, UserID: memberID})
 }
 
 type projectBindRequest struct {
@@ -214,7 +212,7 @@ func (h *Handler) BindProjectDatasets(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: actor, Action: "project.dataset.bind", Resource: "project", ResourceID: projectID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"project_id": projectID})
+	response.OK(c, BindProjectDatasetsResponse{ProjectID: projectID})
 }
 
 // GetProjectTeams lists all tenant teams with their binding to the project.
@@ -255,5 +253,5 @@ func (h *Handler) BindProjectTeams(c *gin.Context) {
 		return
 	}
 	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: actor, Action: "project.team.bind", Resource: "project", ResourceID: projectID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
-	response.OK(c, gin.H{"project_id": projectID})
+	response.OK(c, BindProjectTeamsResponse{ProjectID: projectID})
 }

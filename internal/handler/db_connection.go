@@ -73,7 +73,7 @@ func deleteDBConnection(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteDBConnectionResponse{ID: id})
 }
 
 func testDBConnection(c *gin.Context) {

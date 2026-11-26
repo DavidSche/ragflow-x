@@ -57,7 +57,7 @@ func (h *Handler) DeleteDocumentGovernance(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"deleted": true})
+	response.OK(c, DeleteDocumentGovernanceResponse{Deleted: true})
 }
 
 // ListDocumentGovernance handles GET /api/v1/documents/governance (tenant-wide

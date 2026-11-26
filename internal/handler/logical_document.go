@@ -68,7 +68,7 @@ func deleteLogicalDocument(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": id})
+	response.OK(c, DeleteLogicalDocumentResponse{ID: id})
 }
 
 func listLogicalDocumentVersions(c *gin.Context) {

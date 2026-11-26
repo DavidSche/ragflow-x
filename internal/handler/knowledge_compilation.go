@@ -71,7 +71,7 @@ func deleteKnowledgeProfile(c *gin.Context) {
 		response.Err(c, err)
 		return
 	}
-	response.OK(c, gin.H{"id": profileID})
+	response.OK(c, DeleteKnowledgeProfileResponse{ID: profileID})
 }
 
 func triggerCompilationRun(c *gin.Context) {
@@ -93,9 +93,7 @@ func triggerCompilationRun(c *gin.Context) {
 
 func cancelCompilationRun(c *gin.Context) {
 	tenantID, userID := knowledgeStrategyContext(c)
-	var body struct {
-		Reason string `json:"reason"`
-	}
+	var body CancelCompilationRunRequest
 	_ = c.ShouldBindJSON(&body)
 	item, err := handlerFrom(c).Service.CancelCompilationRun(
 		c.Request.Context(), tenantID, userID, c.Param("id"), c.Param("runId"), body.Reason,
