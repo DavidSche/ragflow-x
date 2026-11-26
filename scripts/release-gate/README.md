@@ -27,8 +27,8 @@ scripts/release-gate.sh --list=tsv                    # 同一声明，机器读
 
 | 层级 | 内容 | 在哪里跑 |
 | --- | --- | --- |
-| `static` | 密钥/本地指纹扫描、改动文件的 gofmt、vet/build、GORM 共享 builder 检查、RBAC 路由契约、迁移只追加、全量后端测试、前端 typecheck + 单测、OpenAPI 生成物新鲜度（`s25`）+ 兼容性（`s26`）、CHANGELOG/发版说明 | 任何机器，CI 也跑 |
-| `build` | 前端生产构建、打包演练 `scripts/release-drill.sh`、记录产物指纹、`internal/webfs/dist` 不得入库 | 工作站（需要 npm） |
+| `static` | 密钥/本地指纹扫描、改动文件的 gofmt、vet/build、GORM 共享 builder 检查、RBAC 路由契约、迁移只追加、全量后端测试、前端 typecheck + 单测、OpenAPI 生成物新鲜度（`s25`）+ 兼容性（`s26`）+ 可发给客户的接口参考（`s28`）+ 注解棘轮（`s29`）+ 发版包里的 spec 三处同字节（`s30`）、CHANGELOG/发版说明 | 任何机器，CI 也跑 |
+| `build` | 前端生产构建、打包演练 `scripts/release-drill.sh`、记录产物指纹、`internal/webfs/dist` 不得入库、**镜像服务的契约 == 索引字节（`s31`）**、**上一版还能写（`s32`）** | 工作站（需要 npm + docker） |
 | `live` | `readyz`、**线上 bundle == 本次构建的 bundle**、`suites.tsv` 里的真机接口/浏览器套件 | 工作站 + 一台真机部署 |
 
 ## 状态与退出码
@@ -154,9 +154,13 @@ make clean-clone-selftest   # 证明它读的是 worktree，不是你手上那�
 bash scripts/release-gate/clean-clone.sh --ci   # 不拷 doc/：release.yml preflight 的形态
 ```
 
-它 `--selftest` 的三条变异：① 干净检出必须 PASS；② 把 worktree 里的 `blind.go` 覆盖成一行
+它 `--selftest` 的四条变异：① 干净检出必须 PASS；② 把 worktree 里的 `blind.go` 覆盖成一行
 （若读的是你自己的树，这个污染就看不见）→ 必红且**点名** `s21.blind-packet`；③ 删掉拷进去的
-`doc/`（若 doc 行其实答了 N/A，这条就不会红）→ 必红且点名 `s21`。
+`doc/`（若 doc 行其实答了 N/A，这条就不会红）→ 必红且点名 `s21`；④（E171）用
+`CLEAN_CLONE_COPY_SHAPE=nest` 复现 `cp -a src dst` 在目的地已存在时的「拷进去」语义 → 必被拒且
+拒信点出 `doc/<base>/<base>`。④ 存在的理由：`doc/specification/api/` 是 tracked，于是那一层目的地
+一直在，拷贝把 `12_…md` 埋进了 `specification/specification/`，而每一行问的都是「我需要的文件在不在」，
+只有一个答案——「不在」。
 
 门禁里只有一条 3 秒的 `s22.clean-clone`（`--ci`，窄选集）：它证明**工具还能跑**，
 不证明"这棵树干净"——后者归 `release.yml` preflight（每次打 tag 的真检出）与 `--selftest`。
@@ -191,6 +195,14 @@ make doc-present-selftest   # 证明它能为红：删掉检出里的 doc/、摘
 （路径里没有空格，`.md` 才挡得住散文），并加了变异 ③：摘 `s13` 的标记 → 必红且点名 `assurance.sh`。
 **③ 在旧判断式下是绿的**，所以它是证据而不是装饰。① 现在还会区分两种红：输出里没有 `RELEASE GATE:` 这一行
 说明克隆或门禁根本没跑到（例如上一轮残留的 worktree），那不是「doc 行没红」。
+
+E170：那句「`.md` 才挡得住散文」当时并没有真正守住——判断式还留着一个裸的 `doc/develop` 分支，
+于是 `migration-window.sh` 因为头注释写着「doc/develop/313 §7 C8 要求……」被收进了选集（`--tier all`
+第一次跑到 `s24` 就红在它上面）。让它变绿只有两条路，两条都是说谎：删掉那句注释（删掉脚本存在的理由），
+或给 `s32` 挂 `doc`（标记的意思是「这行需要 doc/」，它不需要）。现在只认 markdown 路径，并把判断变成
+可证伪的：`--check-selection`（只跑选面与标记守卫、不进 worktree）+ 变异 ④（一条只在注释里提
+`doc/develop/313` 的 fixture 不得被点名，真读 `doc/develop/313-x.md` 的必须被点名）+ ④b（把读者标上就
+通过，否则 ④ 只是「永远红」）。**④ 在旧判断式下会同时点名两条**，这也是证据。
 
 `s13`/`s14`/`s15`/`s17`/`s21`/`s23` 断言的**原句**本来就在仓里（`s14` 从跟踪的 Go 源、`s15` 从跟踪的
 `prereg-e1-v1.json`、其余是脚本字面量、`s19` 从跟踪的快照）——所以第 26 条「把原句冻进快照」被
@@ -230,7 +242,7 @@ bash scripts/release-gate/openapi.sh gen internal/docs   # `make swagger` 现在
 ```bash
 bash scripts/release-gate/openapi-breaking.sh                 # 门禁那一行：索引 vs 最近带产物的 tag
 bash scripts/release-gate/openapi-breaking.sh check <ref>     # 对着指定的 ref（演练用）
-bash scripts/release-gate/openapi-breaking.sh --selftest      # 13 例：7 条规则各自红、增长绿、4 种豁免形状、空侧面红
+bash scripts/release-gate/openapi-breaking.sh --selftest      # 15 例：7 条规则各自红、增长绿、4 种豁免形状、空侧面红、2 种基线文件形态
 ```
 
 * 七条**损失**规则：R1 路径、R2 操作、R3 operationId、R4 新增必填参数、R5 文档化响应码、R6 枚举变窄、R7 schema 类型。
@@ -243,6 +255,8 @@ bash scripts/release-gate/openapi-breaking.sh --selftest      # 13 例：7 条�
   同一损失写了第二条理由同样红（否则「最后一条胜出」会让另一条理由从记录里消失），
   被豁免的 finding 仍以 `exempt …(reason)` 打印——门禁展示它放过了什么，而不是忘掉它。
 * 顺带修掉 `s25` 的读数：`grep -c '"operationId"'` 报 622，真实操作数 616（多出的是路径参数名与描述串）。
+* 基线还能是**文件**（E163）：`RGX_OAPI_BASELINE_FILE=api/openapi-0.6.5.json bash …`。给浅克隆的 CI 和只拿到 tar 包的人用；
+  读不到就拒，不当「干净」——和「某一侧零操作」同一条纪律（自检里两个形态各一条）。
 
 
 ### 读数必须说出它读到了什么（`s27`，301 GW-2、304 §4 E151）
@@ -267,6 +281,189 @@ python E:/tmpgo/replay/e151_mut.py                      # 7 变异全 KILLED（�
   这条门禁证明的是**仪器会把三种不足分开印、并且在被改坏时会红**，不证明网关的并发扩展性。
 * 门禁里这是一行 `static`（`s27.perf-selftest`），跟着 `s26` 跑；`--list` 里与其它行一样自动出现，因为它就是从声明处读的。
 
+
+### 能发出去的那一份，不是让人手工导出的那一份（`s28`，304 §4 E161）
+
+用户的原话是「需要接口开发文档的时候，可以直接取，发给客户」。当时有三个地方都不能取：
+
+* `internal/docs/swagger.json`（674 KB）——机器产物，`$ref` 满天飞，给人看不成立；
+* 151 上的 `/docs/openapi.json`——2026-11-26 才把 `RGX_DOCS_ENABLED` 打开，而且**刻意保留 `REQUIRE_ADMIN=true`**
+  （spec 覆盖 452 条路径，是一份攻击面清单，不该匿名可取）；
+* 手册 PDF——手写的，下一条路由就过期。
+
+`doc/specification/api/api-reference.{md,html}` 是第四个位置：由**服务端同一份字节**渲染，进版本库，
+克隆下来就有。渲染器 `scripts/release-gate/api_doc_gen.py`，门禁 `s28.api-doc` 重新生成后**逐字节**比较。
+
+这条行的一半价值在它**不肯说**的东西。描述符是 `swag` 从 handler 注解生成的，而今天的注解只有路由和参数：
+
+| 读数（每次从 spec 数出来） | 值 |
+| --- | --- |
+| 操作标题仍是占位符 `Auto-generated API route` | **616 / 616** |
+| 有 `@Description` | 0 / 616 |
+| 有请求体 | 0 / 616 |
+| 有参数 | 369 / 616 |
+| 声明的 schema | 1（`docs.Envelope`） |
+
+所以文档第一屏就写着「**这是路由契约，不是业务接口手册**」，并把这五个数字列出来。
+如果只检查「文件存在且新鲜」，这份存根就能以「客户接口文档」的名义发出去——
+一封印得漂亮的谎。数字每次重新算：谁给某个 handler 补了注解，数字就动，门禁就红，要求重新生成。
+
+三条断言，每条对应一种「看着没事但其实坏了」：
+
+1. **新鲜度**：重新生成到临时目录，两个产品逐字节比较。spec 变了没重新生成，是让文档描述上个月 API 的
+   那种失败（E120/E126/E133 的同一形状：仪式在，读者不在）。
+2. **覆盖由渲染器负责，不由它自述**：期望值从 **spec** 数（`get/post/put/patch/delete`），不从渲染器自己的
+   JSON 读数拿。这一点是 `--selftest` 抓出来的——第一版把渲染器的 `operations` 当分母，于是「渲染器少画一个操作」
+   时报 615==615，自洽且错。现在渲染器自述与 spec 不符会单独红一句。
+3. **可发货**：`git check-ignore` 必须不命中两个产品。`doc/*` 按政策被忽略（`.gitignore:91`），
+   所以在 `.gitignore` 里加了一条**只放行这两个文件**的例外（`doc/specification/` 下其余文件仍被忽略，
+   已用 `12_前后端接口交互规范.md` 和 `api/stray.txt` 验证）。发不出去的产物，就是没有读者的文档。
+
+```bash
+bash scripts/release-gate/api-doc.sh              # 检查（约 1s）
+bash scripts/release-gate/api-doc.sh gen          # 生成/更新两件产品
+bash scripts/release-gate/api-doc.sh --selftest   # 8 个变异体，全部必须被拒
+```
+
+`--selftest` 的 8 个变异体：产品缺失、手改一个字节、渲染器少画一个操作、渲染器写坏路径字面量、
+**放在被忽略路径上的完美副本**、spec 少了路径而文档没重生成、spec 多了路由而文档没重生成、空描述符。
+
+**这条行不证明的事**：它不证明接口文档够用。请求体字段、业务语义、错误码仍然缺席（0/616）。
+要让这份东西真正能发给集成方，下一步是给对外端点补 `@Summary` / `@Description` / `@Param … body` /
+`@Success`（616 个操作里的哪一批，是产品决定，不是门禁决定，已记入 304 §7 第 47 条）。
+
+### 写下来的约束，不是约束（`s29`，304 §4 E162）
+
+`s25` 查生成物新不新鲜、`s26` 查有没有破坏性变更、`s28` 查文档是不是 spec 的逐字节渲染。
+三条都是真门禁，三条都会对一个**刚加、零注解**的新端点说 PASS。
+于是「新增接口必须写 OpenAPI 注解」的实际含义是「下一批人也会忘」（E129/E138 同形）。
+
+`s29.openapi-annotations` 把「写得好」降级成「可判定」。一条操作算「完全注解」需要同时满足：
+
+| # | 判据 | 为什么不能少 |
+| --- | --- | --- |
+| 1 | `summary` 非空且不是 `Auto-generated API route` | 占位符也是非空字符串 |
+| 2 | `description` ≥ 20 字符 | 「列表」两个字骗不过读文档的人 |
+| 3 | `tags` 不是只有 `auto` | 否则 616 个操作全在同一个抽屉里 |
+| 4 | `operationId` 不是 `OpenAPIRouteNN` 且全文唯一 | 客户端 SDK 靠它生成方法名 |
+| 5 | `POST/PUT/PATCH` 有 `requestBody`，schema 是 `$ref` 或 object | 没有请求体的写操作，客户端无法调用 |
+| 6 | 至少一个带 schema 的 2xx | 否则“成功”只是一个状态码 |
+
+冻结基线 `scripts/release-gate/openapi-annotations-baseline.txt`（**616 行**）是欠债台账，不是成绩单。
+棘轮三条，每条对应一种消音方式：
+
+1. **新端点不能继承豁免**——不在基线的操作必须完全注解（否则「先加端点，下轮再说」会成为常态）；
+2. **基线只记录真实欠债**——条目对应的路由已不存在、或该操作已经注解完，也红（前者是谎，后者是进度没记账）；
+3. **`--write-baseline` 拒绝长大**——最多只能删行。没有这条，遇到红就重新生成基线，棘轮变成旋转门。
+
+```bash
+python scripts/release-gate/openapi_annotations.py --check           # 0/616，打印分子
+python scripts/release-gate/openapi_annotations.py --write-baseline  # 只允许删行
+python scripts/release-gate/openapi_annotations.py --selftest        # 8/8 必须被拒
+make api   # openapi.sh gen → api-doc.sh gen → --write-baseline → --check
+```
+
+`--selftest` 的 8 个变异体：新端点零注解、**新端点注解齐全（必须通过，否则规则退化成“不许加端点”）**、
+已注解但仍留在基线、基线指向已删路由、基线为空、写操作缺 `requestBody`、`--write-baseline` 想长大（`REFUSED`）、
+注解后重写基线（`616 → 615` 且 PASS）。
+
+**这条行不证明的事**：它不证明注解写得对（`summary` 写成「列表」而不说列什么，六条全过；质量规则见 310 §22.4 T310-07），
+也不声称 616 条会自己减少——棘轮只保证不再增加第 617 条，要变小只能一批批补（T310-01，基线 diff 里的删除行才是证据）。
+
+### 一句话要能用字节回答（`s30`，310 §18 Phase 3、304 §4 E163）
+
+`doc/310` 的 Phase 3 从 v0.1 就写着「发布时附带版本化 OpenAPI 文件」，而
+`grep -n openapi .github/workflows/release.yml scripts/release-drill.sh` 直到本轮是 **0 命中**：包里只有
+`config`/`docker`/`README`/`CHANGELOG`/`start.sh`/web 资产。客户手上没有 git tag，所以「这个版本对外承诺了什么接口」这件事，
+在发版页上原本无可查。
+
+只把文件塞进包还不够——**路径不是读数**（E126）。`s30` 断言三条**逐字节**等式：
+
+| 侧 | 来源 | 回答 |
+|---|---|---|
+| ① 索引 | `git show :internal/docs/swagger.json` | 这次提交**声称**的契约（工作树只是这台机器的读数，E140） |
+| ② 包内 | `api/openapi-<version>.{json,yaml}` | 客户下载到的就是 ① |
+| ③ 二进制 | ② 的字节在可执行文件里**逐字出现** | 这个包里的程序，编译进了同一份契约 |
+
+③ 不需要起服务、不需要库、不需要 token：Go 的 `//go:embed` 把文件原样存进二进制，判定就是一次子串查找。
+
+包根上还有一份**人读的** `api-reference-<version>.html`，与 json/yaml 并列进 `SHA256SUMS` 与 `gh release upload`。
+它由 `stage` **渲染**得到（不是从仓库里抄一个：仓库里那份由 `s28` 管），`verify` 再用**索引** spec 渲一遍并 `cmp`——
+第 ④ 条断言的是「同一生成输入」，所以它**不是**第四条独立契约（310 §22.3，304 §4 E164）。第一次实现时
+临时副本用了别的 basename，渲染器把输入名写进页头，于是同一份 spec 渲出两个差 7 字节的文件：确定性不该取决于调用者把文件放在哪。
+顺带它钉住了一个容易读错的区别——`Docs.Enabled=false`（默认）只是**关掉 HTTP 面**，不是「二进制里没有 spec」（310 §13.1a）。
+
+```bash
+bash scripts/release/spec-artifact.sh gate        # 门禁那一行：build → stage → verify → 自检
+bash scripts/release/spec-artifact.sh stage 0.6.5 dist/bundle
+bash scripts/release/spec-artifact.sh verify 0.6.5 dist/bundle dist/ragflow-x-linux-amd64
+bash scripts/release/spec-artifact.sh verify 0.6.5 dist/bundle --no-binary   # 只证 ① == ②
+bash scripts/release/spec-artifact.sh --selftest  # 7 例：1 对照 + 5 拒绝 + 1 参数形态
+```
+
+接进三处，同一套断言：`release.yml`（打包前 stage、逐平台 verify、布局守护加两个必需文件、`dist/openapi-*` 作为独立资产并入
+`SHA256SUMS` 与 `gh release upload`）、`scripts/release-drill.sh`（同三步 + 解包后 `cmp`，证明 tar/zip 没改字节）、
+`s30.release-spec-artifact`（每次 push 都跑，不用等发 tag）。
+
+**这条行不证明的事**：三处同字节（加页面生成同源）只说明「这几处是同一份」，不说明那份是**对的**（行为在 `s05`、新鲜度在 `s25`、兼容性在 `s26`、
+文档同步在 `s28`）；也不证明 `release.yml` 真的跑过——那条腿的证据在 Actions 日志里，仓库里能保证的只是 `gate` 模式每次都会红。
+
+### 容器用户拿到的那个二进制（`s31`，310 §22.3、304 §4 E164）
+
+`s30` 的三条等式覆盖的是 tar/zip 里的二进制。**容器用户拿到的不是它**：`release.yml` 的 `docker` job 用
+`docker/Dockerfile` 再编译一次，`//go:embed` 取的是那一刻构建上下文里的文件。已发布的
+`ghcr.io/davidsche/ragflow-x:v0.6.5` 实测 `/docs/openapi.json` → **200 `text/html` 1230 B**（SPA 壳）：
+那个镜像里连可读的契约面都没有。
+
+于是有第四条等式，而且是**唯一必须走网络**的一条：`served bytes == git show :internal/docs/swagger.json`。
+从镜像里把二进制抠出来做子串查找也能绿，但 `//go:embed` 里对、handler 发别的东西（读错变量、gzip、`Content-Type` 写错、
+路由没注册）全都看不见——客户端拿到的是 HTTP 响应体，不是文件。
+
+```bash
+bash scripts/release/image-spec.sh verify ragflow-x:spec-s31          # 期望值默认取 git 索引
+bash scripts/release/image-spec.sh verify <镜像> --json x.json --yaml y.yaml
+bash scripts/release/image-spec.sh verify "ghcr.io/…@sha256:…" --platform linux/amd64 --platform linux/arm64
+bash scripts/release/image-spec.sh --selftest   # 6 例：1 对照 + 5 拒绝（含「拉不到的平台必须报出平台名」）
+```
+
+容器怎么起：`sqlite` + 假引擎地址（`http://127.0.0.1:1`）+ 本容器 `RGX_DOCS_ENABLED=true`、`RGX_DOCS_REQUIRE_ADMIN=false`。
+**就绪判据是被测的那个面**（`/docs/openapi.json` 200 + `application/json`），不是 `/api/v1/readyz` ——
+后者在引擎不可达时恒 503，拿它当门会让检查因为「假引擎地址」超时失败。
+
+接进两处：`release.yml` 在推送后读 build-push 的 `containerimage.digest`（manifest list）→ 逐平台
+`IMAGE@sha256:…` 验（**tag 可以被重指，digest 不行**）；门禁 `s31.release-image-spec` 从当前树 build 一个镜像再问。
+本机跑要带 `RGX_IMAGE_SPEC_GOPROXY=https://goproxy.cn,direct`（`proxy.golang.org` 超时会让它红——红得对，构建不了就不是验过）。
+
+**这条行不证明的事**：它不证明两个架构的行为一致、不证明 `release.yml` 那条腿跑过（证据在 Actions 日志里，
+304 §7 第 51 条），也不证明镜像里的页面可读——`api-reference.html` 是发版资产，不是 HTTP 面。
+
+### 只挡住了删除，没挡住「旧版本写不进去」（`s32`，313 §7 C8c、304 §4 E168）
+
+`s06.migrations-append-only` 拒绝 `DropTable` / `DropColumn` / `RenameColumn`——**消失的**东西。
+它看不见镜像方向：**新出现**的东西。GORM 的 `AutoMigrate` 会把 `not null` 原样下发；如果这个新列没有 `default:`，
+上一版二进制的 INSERT 就会失败——**在回滚目标上失败，事后才知道**，而且这时能做的只有「再发一版」。
+
+```bash
+bash scripts/release-gate/migration-window.sh v0.6.5     # 门禁就是这条，BASE 由 release-gate.sh 传
+bash scripts/release-gate/migration-window.sh --selftest # 7 个变异：4 拒 3 收
+```
+
+判据是**结构体层面**的 tag→tag 比较（不是跑库）：`internal/model` 在上个 release tag 与工作树之间，
+**新出现到已有表上的列**必须满足其一——`*T`（可空）、有 `default:`、（或拆成 expand/contract 两步）。
+新结构体 = 新表，旧二进制根本不写它，所以只计数不判红。
+
+读数长这样（两种 base，一个 0 一个 21，证明它数得出东西）：
+
+```
+migration-window: 207 structs at v0.6.5, 0 new column(s) on existing tables, 0 new struct(s)   → PASS
+migration-window: 177 structs at v0.6.0, 21 new column(s) on existing tables, 511 new struct(s) → PASS
+```
+
+豁免在 `migration-window-allow.txt`（`Struct.Field  reason`，理由 ≥12 字符）；**匹配不到任何 finding 的豁免行会被拒**
+（E143：没人用的豁免是一句已经失效的声明）。
+
+**这条行不证明的事**：它不证明上一版镜像能在新库上起来并服务请求（那要镜像 + 库，是 304 §7 的 drill）；
+不证明列类型收窄无害；不证明带 CHECK/枚举约束的可空新列安全。它证明的只有一件：**回滚之后，旧代码的写入路径没有因为新列而关闭**。
 
 ### 选集本身就是被检查的面（`--only`/`--skip`，304 §4 E98/E102）
 

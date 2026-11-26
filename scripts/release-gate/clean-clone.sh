@@ -138,8 +138,36 @@ create_worktree() {
     for entry in "$ROOT"/doc/*; do
       base="$(basename "$entry")"
       [ "$base" = "user" ] && continue   # tracked, already in the worktree
-      cp -a "$entry" "$WT/doc/$base" || fail "cannot copy doc/$base into $WT"
+      # `cp -a src dst` copies *into* dst when dst already exists, and for one entry it now
+      # does: `doc/specification/api/` is tracked (.gitignore excepts it), so the destination
+      # directory is there before the copy. The result was `doc/specification/specification/12_…`
+      # and a `doc/specification` without the spec — every doc row that looks for a file it
+      # knows then reported "not in this checkout" about a checkout that had just copied it
+      # (E171). Copy the *contents*, and then assert the shape, because a nested directory is
+      # invisible to any check that only asks "is the file I need there?".
+      # CLEAN_CLONE_COPY_SHAPE=nest exists for --selftest only: it reproduces the old shape so
+      # the assertion below can be seen to trip.
+      if [ -d "$entry" ]; then
+        mkdir -p "$WT/doc/$base" || fail "cannot create $WT/doc/$base"
+        if [ "${CLEAN_CLONE_COPY_SHAPE:-}" = "nest" ]; then
+          cp -a "$entry" "$WT/doc/$base/" || fail "cannot copy doc/$base into $WT"
+        else
+          cp -a "$entry/." "$WT/doc/$base/" || fail "cannot copy doc/$base into $WT"
+        fi
+      else
+        cp -a "$entry" "$WT/doc/" || fail "cannot copy doc/$base into $WT"
+      fi
     done
+    nested=()
+    for entry in "$ROOT"/doc/*; do
+      base="$(basename "$entry")"
+      [ "$base" = "user" ] && continue
+      [ -d "$entry" ] || continue
+      [ -e "$WT/doc/$base/$base" ] && nested+=("doc/$base/$base")
+    done
+    if [ "${#nested[@]}" -gt 0 ]; then
+      fail "the doc copy nested (${nested[*]}): cp -a src dst copies into dst when dst exists; use src/. — the rows would look for the copied file and not find it (E171)"
+    fi
     say "clean-clone: copied doc/ (minus doc/user, which git carries) from the working tree"
   else
     say "clean-clone: N/A — this working tree has no doc/develop, so the doc half cannot be"
@@ -277,9 +305,35 @@ if [ "$SELFTEST" -eq 1 ]; then
     say "skip    ③ this tree has no doc/develop, so the doc-copy half was NOT exercised"
   fi
 
+  # ④ E171: the copy must land flat. `cp -a src dst` with dst already present nests it, and
+  #    `doc/specification/api/` being tracked means that directory is present. The reading that
+  #    exposed this: s24 asked for eight doc rows, s13 answered "doc/specification/12 is not in
+  #    this checkout" about a worktree that had just copied it, and the green was a directory
+  #    called doc/specification/specification. This mutation reproduces the old shape and
+  #    requires a refusal that names it, so a future edit that drops the assertion goes red.
+  if [ "$have_doc" -eq 1 ]; then
+    out="$(CLEAN_CLONE_COPY_SHAPE=nest bash scripts/release-gate/clean-clone.sh --from-worktree \
+      -- --only s19.docs-ledger-snapshot 2>&1)"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      say "SELFTEST FAIL: ④ a nested doc copy was accepted — the doc rows then look for a file"
+      say "  the tool claims it copied, and no row can see the difference"
+      bad=1
+    elif ! printf '%s\n' "$out" | grep -q 'doc/.*/.*: cp -a src dst copies into dst'; then
+      say "SELFTEST FAIL: ④ refused, but not on the nested-copy assertion: $(printf '%s' "$out" | tail -2)"
+      bad=1
+    else
+      say "ok      ④ a nested doc copy -> refused, naming the nested path (E171)"
+    fi
+    [ -e "$WT" ] && teardown
+  else
+    say "skip    ④ this tree has no doc/develop, so the copy shape was NOT exercised"
+  fi
+
   say ""
   if [ "$bad" -eq 0 ] && [ "$have_doc" -eq 1 ]; then
-    say "SELFTEST OK — the tool reads the worktree, and the doc copy is load-bearing"
+    say "SELFTEST OK — the tool reads the worktree, the doc copy is load-bearing, and a nested"
+    say "  copy is refused instead of reported as a missing file"
     exit 0
   fi
   if [ "$bad" -eq 0 ]; then

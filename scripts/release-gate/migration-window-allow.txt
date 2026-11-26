@@ -1,0 +1,13 @@
+# Exemptions for s32.release-upgrade-rollback (scripts/release-gate/migration_window.py).
+#
+# One line per column: `<Struct>.<Field>  <reason>` — exactly two spaces before the
+# reason, and the reason must say what makes the old binary's insert safe and when the
+# exemption goes away. An entry that matches no finding is refused (doc/304 §4 E143):
+# an exemption nobody uses is a claim about the tree that has stopped being true.
+#
+# Not a place to silence the checker. The three honest fixes are: make the column
+# nullable (*T), add `default:`, or split it into an expand/contract pair (add nullable
+# + backfill now, tighten the constraint in the release after the rollback window
+# closes).
+#
+# (no entries — the tree is clean as of 2026-11-26)

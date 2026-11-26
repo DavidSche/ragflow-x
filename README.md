@@ -253,6 +253,7 @@ install path.
 | [Built-in permission matrix](./doc/user/en/permission-matrix.md) | Built-in roles, resources, actions, and boundaries |
 | [Operations runbook](./doc/user/en/operations-runbook-and-failure-drill-sop.md) | Initialization, upgrade, rollback, degradation, sync, and quota operations |
 | [Audit-chain backup and repair SOP](./doc/user/en/audit-chain-backup-and-repair-sop.md) | Verification, backup, repair, and evidence archiving |
+| [API reference](./doc/specification/api/api-reference.md) | Every HTTP route the binary serves (also as a single-file [HTML page](./doc/specification/api/api-reference.html)). Rendered from the same spec bytes the server serves and gated by `s28.api-doc`; it currently calls itself a **route contract, not a business API manual** — the annotation coverage line in its header says why, and `doc/310 §22` is the plan to change that. No network or container needed: `Docs.Enabled` is off by default |
 
 Chinese documentation is available in the
 [user documentation index](./doc/user/README.md).

@@ -641,6 +641,57 @@ if tier_selected static; then
   # not to measure" (doc/304 §4 E146's three kinds of empty, applied to a latency table).
   run_check "s27.perf-selftest" "static" 1 "perf baseline harness still refuses to pass an unmeasured cell, and names which kind of unmeasured it is (doc/301 GW-2, doc/304 §4 E151)" "$PYTHON" scripts/gateway-perf-baseline.py --selftest
 
+  # doc/304 §4 E161: "需要接口开发文档的时候，可以直接取，发给客户". The deliverable existed in
+  # three places it could not be taken from — a 674 KB `swagger.json` full of `$ref`s, a running
+  # 151 whose docs surface is admin-gated, and a hand-written PDF that would be stale by the next
+  # route. This row makes the fourth place real: `doc/specification/api/api-reference.{md,html}`,
+  # rendered from the same bytes the binary serves and tracked so a clone carries it.
+  #
+  # The row's second job matters more than its first. The rendering can only say what the
+  # annotations say, and today 616/616 operations still carry the generator's placeholder summary
+  # with 0 request bodies — so the document opens with those counts (computed on every run) and
+  # calls itself a route contract, not a business interface manual. A gate that only checked
+  # "file exists and is fresh" would let that stub ship as "the customer interface doc"; the
+  # freshness check plus the printed annotation coverage is what keeps the claim honest, and the
+  # day someone annotates a handler the numbers move and this row demands a regeneration.
+  run_check "s28.api-doc" "static" 1 "the shipped API reference == a fresh render of the served spec, tracked (not gitignored), with annotation coverage printed (doc/304 §4 E161)" bash scripts/release-gate/api-doc.sh
+
+  # doc/310 §22, doc/304 §4 E162: AGENTS.md 「API 契约（强制）」 says every new or changed
+  # endpoint must carry OpenAPI annotations. A sentence in a document is not a check (E129),
+  # and 616/616 endpoints today have none — so nothing would have refused the 617th.
+  #
+  # This row is the ratchet, not a wish: a frozen baseline lists the endpoints still allowed to
+  # have no annotation, a **new** endpoint cannot inherit that exemption, and the baseline may
+  # only shrink (`--write-baseline` refuses to add a line, so it cannot be used as a silencer).
+  # Two rules keep the file from rotting the other way: a baseline entry whose route is gone,
+  # or which has meanwhile been annotated, also fails — progress is a diff, not a memory.
+  #
+  # The PASS line prints `annotated/total` every run. Today it reads `0/616`, which is the
+  # honest distance to a real interface manual (doc/304 §7 item 47 is the burn-down plan).
+  run_check "s29.openapi-annotations" "static" 1 "no new endpoint ships without a contract: every operation is annotated or in a baseline that may only shrink (doc/310 §22, doc/304 §4 E162)" "$PYTHON" scripts/release-gate/openapi_annotations.py --check
+
+  # doc/310 §18 Phase 3, §22.4 T310-04, doc/304 §4 E163: “发布时附带版本化 OpenAPI 文件”.
+  #
+  # The sentence is easy to satisfy with any file named right (E126: a path is not a reading).
+  # The claim worth checking is three-way byte equality: index (`git show :internal/docs/…`) ==
+  # the packaged `api/openapi-<version>.{json,yaml}` == the bytes that occur verbatim inside the
+  # shipped binary (Go `//go:embed` stores the file raw). Two consequences matter:
+  #   ① a dirty tree cannot ship an uncommitted contract (worktree vs index is asserted);
+  #   ② docs.Enabled=false does not mean “the binary knows nothing” — the spec is compiled in,
+  #      only the HTTP surface is gated (doc/310 §13.1a).
+  # The row builds one native ./cmd/server (no webfs_embed) so the assertion runs on every push
+  # rather than only when someone cuts a tag, and then runs 4 mutations + 1 control.
+  run_check "s30.release-spec-artifact" "static" 1 "the release package carries the contract its binary compiled in: index bytes == packaged bytes == bytes embedded in the binary (doc/310 §18 Phase 3, T310-04; doc/304 §4 E163)" bash scripts/release/spec-artifact.sh gate
+
+  # doc/develop/313 §7 C8 approved v0.7.0 on condition that upgrade *and* rollback are
+  # verified. s06 covers the half where a table or column disappears. The half it cannot
+  # see is a column that appears and the previous release cannot fill: AutoMigrate adds
+  # `not null` verbatim, and every old insert then fails — on the rollback target, after
+  # the fact. Cheap to check statically (a tag-to-worktree struct diff), impossible to
+  # notice in review.
+  run_check "s32.release-upgrade-rollback" "static" 1 "the previous release can still write: every column added to an existing table since the last release tag is nullable or defaulted (doc/develop/313 §7 C8; the half s06 cannot see) and every written exemption is used" \
+    bash scripts/release-gate/migration-window.sh "$BASE"
+
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
@@ -697,6 +748,14 @@ if tier_selected build; then
   # pay that; `--tier all` does, and that is what a release run is.
   run_check "s24.doc-present" "build" 1 "the doc rows really run in a checkout that carries doc/ and nothing untracked (doc/304 §7 item 39, needs the docs)" \
     bash scripts/release-gate/doc-present.sh
+
+  # The fourth equation (doc/304 §4 E164, doc/310 §22.4 T310-12): the tarballs carry the
+  # committed contract, and so must the *image*, which `docker/Dockerfile` compiles a second
+  # time with no earlier check looking at the result. This row builds the image from this tree
+  # and asks it over HTTP; `release.yml` asks the *published* per-platform digests the same
+  # way, because a local build proves the recipe, not the artifact that was pushed.
+  run_check "s31.release-image-spec" "build" 1 "the image serves the committed contract: /docs/openapi.json bytes == git index bytes (doc/310 §22.4 T310-12; doc/304 §4 E164)" \
+    bash scripts/release/image-spec.sh gate "${VERSION:-v0.0.0-image}"
 fi
 
 

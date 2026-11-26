@@ -285,3 +285,32 @@ swagger:
 
 swagger-check:
 	bash scripts/release-gate/openapi.sh check
+
+# The hand-out-able reference: rendered from internal/docs/swagger.json (the bytes the
+# binary serves), tracked under doc/specification/api/, and checked byte-for-byte by
+# s28.api-doc. `make api` is the one command a handler change has to remember:
+# regenerate the spec, then re-render the document, then look at the coverage line.
+api-doc:
+	bash scripts/release-gate/api-doc.sh gen
+
+api-doc-check:
+	bash scripts/release-gate/api-doc.sh
+
+# One command for "I changed a route": the three artifacts, the document, and the
+# annotation ratchet (s29 refuses a new endpoint that has no contract).
+api: swagger api-doc
+	@python scripts/release-gate/openapi_annotations.py --write-baseline
+	@python scripts/release-gate/openapi_annotations.py --check
+
+# What a release package promises (s30, doc/304 §4 E163): the index bytes, the packaged
+# `api/openapi-<version>.{json,yaml}`, and the bytes embedded in the binary are the same
+# bytes. Runs the same assertions the release job does, on a binary built here.
+release-spec:
+	bash scripts/release/spec-artifact.sh gate
+# What a container user gets (s31, doc/304 §4 E164): the release job's docker build compiles
+# a SECOND binary, so the three equations above say nothing about it. Start the image with a
+# controlled config and compare the bytes it SERVES (HTTP, not a file inside the image).
+# Host note: this needs RGX_IMAGE_SPEC_GOPROXY=https://goproxy.cn,direct behind the GFW.
+release-image-spec:
+	bash scripts/release/image-spec.sh gate
+

@@ -297,7 +297,20 @@ check_main() {
   local ref="${1:-}"
   local cur="$WORK/current.json" base="$WORK/baseline.json" out rc
   materialise INDEX "$cur" || return 1
-  if [ -z "$ref" ]; then
+  # A baseline can also be a *file*: the release page / package carries
+  # `api/openapi-<version>.json` (doc/310 §18 Phase 3, doc/304 §4 E163), so a CI job on a
+  # shallow clone (no tags) or a user holding only the tarball can still ask "did this build
+  # lose anything a release shipped". Unreadable is refused, not treated as clean — the same
+  # distinction the empty-side rule makes.
+  if [ -n "${RGX_OAPI_BASELINE_FILE:-}" ]; then
+    if [ ! -s "$RGX_OAPI_BASELINE_FILE" ]; then
+      bad "RGX_OAPI_BASELINE_FILE=$RGX_OAPI_BASELINE_FILE is missing or empty — an unread baseline is not a clean baseline"
+      return 1
+    fi
+    cp "$RGX_OAPI_BASELINE_FILE" "$base" || { bad "could not copy $RGX_OAPI_BASELINE_FILE"; return 1; }
+    say "      baseline file: $RGX_OAPI_BASELINE_FILE ($(wc -c <"$base" | tr -d ' ') B)"
+    say "      (a release asset: api/openapi-<version>.json from a package or the release page)"
+  elif [ -z "$ref" ]; then
     if ref="$(newest_spec_tag)"; then
       say "      baseline tag: $ref (newest tag carrying $SPEC)"
       materialise "$ref" "$base" || return 1
@@ -443,8 +456,25 @@ R2 DELETE /api/v1/widgets  duplicate attempt two: removed in v0.7
   if [ $rc -ne 0 ]; then say "  ok     a side with zero operations is refused, not read as compatible"; hits=$((hits + 1));
   else say "  FAIL   an empty spec read as compatible"; fi
 
-  if [ "$hits" -eq 13 ]; then say "selftest: OK (13 cases; 7 rules fire, growth passes, 4 exemption shapes, 1 empty side)"; return 0; fi
-  say "selftest: FAILED ($hits/13)"; return 1
+  # the baseline-file mode (release asset): readable == the other side reads clean, unreadable
+  # is refused rather than silently skipped. Both cases call check_main, not diff_specs,
+  # because the option lives there.
+  check_main >/dev/null 2>&1
+  RGX_OAPI_BASELINE_FILE="$WORK/does-not-exist.json" check_main >/dev/null 2>&1; rc=$?
+  if [ $rc -ne 0 ]; then say "  ok     a missing baseline file is refused, not read as clean"; hits=$((hits + 1));
+  else say "  FAIL   a missing baseline file passed"; fi
+
+  git -C "$ROOT" show ":$SPEC" >"$WORK/baseline-asset.json" 2>/dev/null
+  if [ -s "$WORK/baseline-asset.json" ]; then
+    RGX_OAPI_BASELINE_FILE="$WORK/baseline-asset.json" check_main >/dev/null 2>&1; rc=$?
+    if [ $rc -eq 0 ]; then say "  ok     a readable baseline file (the release asset shape) compares clean against the same index"; hits=$((hits + 1));
+    else say "  FAIL   a readable baseline file was refused"; fi
+  else
+    say "  FAIL   could not stage the baseline-asset case (no index copy of $SPEC)"
+  fi
+
+  if [ "$hits" -eq 15 ]; then say "selftest: OK (15 cases; 7 rules fire, growth passes, 4 exemption shapes, 1 empty side, 2 baseline-file shapes)"; return 0; fi
+  say "selftest: FAILED ($hits/15)"; return 1
 }
 
 # write_pair — the fabricated pair both the clean case and every mutation start from. A

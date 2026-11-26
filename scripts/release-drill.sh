@@ -48,6 +48,11 @@ mkdir -p "$DIST/bundle/config" "$DIST/bundle/docker"
 cp config/config.example.yaml "$DIST/bundle/config/"
 cp docker/docker-compose.yml docker/.env.example docker/ragflow-x.yaml "$DIST/bundle/docker/"
 cp README.md "$DIST/bundle/"
+# doc/310 §18 Phase 3 / doc/304 §4 E163: the package carries the contract the binaries
+# compiled in, named for the version. Staged from the worktree; verify() below proves the
+# worktree copy still equals the index (a dirty tree would otherwise ship an uncommitted
+# contract) and that the bytes occur verbatim inside every shipped binary.
+bash "$ROOT/scripts/release/spec-artifact.sh" stage "$VERSION" "$DIST/bundle"
 # Git Bash on Windows often lacks `zip`; fall back to Python's zipfile.
 # Argument is a directory; it is packed with paths relative to itself.
 zip_one() {
@@ -67,6 +72,13 @@ PY
   fi
 }
 (cd "$DIST" || exit 1
+  # ② == ③ for every platform binary, before the binaries are moved into the stage dirs:
+  # Go's //go:embed stores the spec raw, so this is an offline substring check, not a boot.
+  for b in ragflow-x-linux-* ragflow-x-darwin-* ragflow-x-windows-*; do
+    [ -f "$b" ] || continue
+    bash "$ROOT/scripts/release/spec-artifact.sh" verify "$VERSION" "$DIST/bundle" "$DIST/$b" \
+      || { echo "DRILL FAILED: $b does not carry the staged contract" >&2; exit 1; }
+  done
   for f in ragflow-x-linux-* ragflow-x-darwin-* ragflow-x-windows-*; do
     [ -f "$f" ] || continue
     rm -rf stage; cp -r bundle stage
@@ -84,22 +96,42 @@ PY
     esac
   done
   tar czf "ragflow-x-${VERSION_NUM}-web.tar.gz" -C "$ROOT/web" dist/
-  sha256sum *.tar.gz *.zip > SHA256SUMS
+  # Standalone assets: a client should not have to untar a binary to read the contract.
+  cp "bundle/api/openapi-${VERSION_NUM}.json" "bundle/api/openapi-${VERSION_NUM}.yaml" .
+  # The human page rides along too (doc/304 §4 E164): it was rendered by `stage` from the
+  # same spec, and spec-artifact.sh verify already proved it equals a fresh render of the
+  # index. Here it only has to survive the copy and the checksum manifest.
+  cp "bundle/api-reference-${VERSION_NUM}.html" .
+  sha256sum *.tar.gz *.zip openapi-*.json openapi-*.yaml api-reference-*.html > SHA256SUMS
 
   # Layout guard (mirrors the release.yml packaging check): every platform
-  # package must carry the binary + config + docker + README companions.
+  # package must carry the binary + config + docker + README companions,
+  # and the versioned contract (doc/310 §18 Phase 3 / T310-04).
   for pkgname in ragflow-x-*.tar.gz ragflow-x-*.zip; do
     case "$pkgname" in
       ragflow-x-${VERSION_NUM}-src.tar.gz|ragflow-x-${VERSION_NUM}-web.tar.gz) continue ;;
     esac
     listing=$(tar tzf "$pkgname" 2>/dev/null || unzip -Z1 "$pkgname")
-    for required in "config/config.example.yaml" "docker/docker-compose.yml" "README.md"; do
+    for required in "config/config.example.yaml" "docker/docker-compose.yml" "README.md" \
+                    "api/openapi-${VERSION_NUM}.json" "api/openapi-${VERSION_NUM}.yaml" \
+                    "api-reference-${VERSION_NUM}.html"; do
       echo "$listing" | grep -Eq "(^|/)${required}$" || {
         echo "DRILL FAILED: $pkgname is missing $required" >&2; exit 1;
       }
     done
+    # ② after tar/zip == ② before: the packaging step must not rewrite or drop the contract.
+    case "$pkgname" in
+      *.zip) unzip -p "$pkgname" "api/openapi-${VERSION_NUM}.json" | cmp -s - "bundle/api/openapi-${VERSION_NUM}.json" ;;
+      *)     tar xzf "$pkgname" -O "./api/openapi-${VERSION_NUM}.json" | cmp -s - "bundle/api/openapi-${VERSION_NUM}.json" ;;
+    esac || { echo "DRILL FAILED: $pkgname carries a different contract than the bundle" >&2; exit 1; }
+    # Same for the reading view: an unpacked page that differs from the staged one is a page
+    # that was generated from something else.
+    case "$pkgname" in
+      *.zip) unzip -p "$pkgname" "api-reference-${VERSION_NUM}.html" | cmp -s - "bundle/api-reference-${VERSION_NUM}.html" ;;
+      *)     tar xzf "$pkgname" -O "./api-reference-${VERSION_NUM}.html" | cmp -s - "bundle/api-reference-${VERSION_NUM}.html" ;;
+    esac || { echo "DRILL FAILED: $pkgname carries a different doc page than the bundle" >&2; exit 1; }
   done
-  echo "==> Layout guard passed: all platform packages carry config/docker/README"
+  echo "==> Layout guard passed: all platform packages carry config/docker/README + the versioned OpenAPI contract + its reading view"
 )
 
 echo "==> [4/6] Source snapshot (git archive HEAD)"

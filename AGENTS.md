@@ -102,11 +102,23 @@ RAGFlow-X 的目标不是复述“RAGFlow 管控平面”，而是消除企业�
 - 组件保持函数式；推荐 ≤400 行，超长优先抽纯函数、子组件或自定义 hook。
 - 前端权限只控制展示与入口，实际授权必须由后端 RBAC + ABAC 强制。
 
+### API 契约（强制）
+
+- **新增或修改任何路由，必须在 handler 上写 OpenAPI 注解**：`@Summary`（它做什么）、`@Description`（前置条件、副作用、权限范围）、`@Tags`（分组，不得用占位符 `auto`）、`@ID`（稳定且唯一，客户端据此生成方法名）、`@Security`、`@Param`（路径/查询/body）、`@Success`/`@Failure`（带 schema）。
+- **写操作（POST/PUT/PATCH）必须有 `@Param … body …`**；每个端点至少有一个带 schema 的 2xx 响应。“有注解”不等于“有契约”——没有 schema 的端点，客户端无法据此生成类型。
+- 改完跑 `make api`（`openapi.sh gen` → `api-doc.sh gen` → 注解棘轮自检），四类产物与代码**同一次提交**：`internal/docs/{docs.go,swagger.json,swagger.yaml}` 与 `doc/specification/api/api-reference.{md,html}`。
+- 四条门禁会拒（不是建议）：`s25` 生成物新鲜度、`s26` 破坏性变更（删路径/改 operationId/参数变必填 → 红）、`s28` 可交付文档与 spec 逐字节、`s29` 注解棘轮（新端点无注解 → 红；基线只能缩小）。
+- **发版产物必须携带版本化契约**：`api/openapi-<version>.{json,yaml}` 进每个平台包与 `dist/`，且三处逐字节相等——索引（`git show :internal/docs/swagger.json`）、包内 `api/`、二进制里逐字出现的那串字节（`//go:embed` 原样存盘）。判定命令 `bash scripts/release/spec-artifact.sh gate`（门禁 `s30`）；`release.yml` 与 `release-drill.sh` 跑同一套断言。所以 `RGX_DOCS_ENABLED=false` 只是关了 HTTP 面，**不表示二进制里没有 spec**。
+- 原因：注解是接口的**唯一真相源**——Swagger UI、离线文档、发给客户的接口参考、以及后续的 TS 类型全部由它派生。没有注解的端点不是“以后再补”，是**没有契约却已经在跑的端点**：616 个（其中 0/616 有请求体）就是这条约束存在的理由（`doc/304 §4` E162，烧断计划见 `doc/310 §22`）。
+- 例外只有一种：`scripts/release-gate/openapi-annotations-baseline.txt` 里的历史端点。那个文件只能删行（注解完就删），`--write-baseline` 拒绝增加行——不能用一个命令就把新端点豁免掉。
+- **镜像里的契约也要验（第四条等式）**：`release.yml` 的 `docker` job 会用 `docker/Dockerfile` **再编译一次**，容器用户拿到的那个二进制不在 `s30` 的三条等式里。判定命令 `bash scripts/release/image-spec.sh verify <镜像>`（门禁 `s31`）：受控配置起容器，比 `/docs/openapi.json` **服务出来的字节**与 `git show :internal/docs/swagger.json`——`//go:embed` 里对、handler 发别的也算错。多架构必须逐平台 `--platform` 验（CI 用 manifest-list digest，不用 tag）。
+- 默认不启用 OpenAPI 访问面（`RGX_DOCS_ENABLED=false`；启用后仍需平台管理员）。离线交付物与访问面是**两件事**：前者必须永远在库里且新鲜（`s28`），后者是安全开关（一个开关不能让“文档不存在”变成可接受）。
+
 ## Testing
 
 - 新功能、Bug 修复、权限、租户隔离、审批、审计和网关用量治理变更必须包含回归测试；不依赖“本地看起来正常”。
 - Backend：
-  - Handler/router 变更更新路由覆盖、权限规则与端到端测试。
+  - Handler/router 变更更新路由覆盖、权限规则与端到端测试；同时写 OpenAPI 注解并跑 `make api`（`s29` 会拒没有契约的新端点）。
   - Service 变更补充领域单测，优先通过 mock Provider/repository 隔离外部服务。
   - Provider 变更同时验证 HTTP 请求契约和 mock 行为。
   - 迁移变更验证 PostgreSQL + SQLite 两条路径与 reconciliation。

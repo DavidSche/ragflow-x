@@ -213,6 +213,22 @@ jobs:
           # Launchers ship at the archive root so "download and run" is one command:
           # ./start.sh (linux/darwin), or start.cmd / start.ps1 (Windows).
           cp ../scripts/release/start.sh bundle/ && chmod +x bundle/start.sh
+          # doc/310 §18 Phase 3 / doc/304 §4 E163: the package carries the contract the
+          # binaries compiled in, named for the version ("v0.6.5" -> api/openapi-0.6.5.json).
+          # verify() proves worktree == index and the bytes occur verbatim in each binary.
+          bash ../scripts/release/spec-artifact.sh stage "$TAG" bundle
+          for b in ragflow-x-*; do
+            case "$b" in *.tar.gz|*.zip|bundle) continue ;; esac
+            bash ../scripts/release/spec-artifact.sh verify "$TAG" bundle "$b" \
+              || { echo "::error::$b does not carry the staged contract"; exit 1; }
+          done
+          SPECV="${TAG#v}"
+          cp "bundle/api/openapi-${SPECV}.json" "bundle/api/openapi-${SPECV}.yaml" .
+          # The reading view is a release asset too (doc/304 §4 E164, decision 2): JSON/YAML
+          # are for machines, the page is for the people integrating against them. `stage`
+          # rendered it from the same spec and `verify` re-renders from the index and
+          # compares bytes, so an older page cannot ride along with a newer contract.
+          cp "bundle/api-reference-${SPECV}.html" .
 
           # Package each binary with the shared layout
           for f in ragflow-x-*; do
@@ -244,7 +260,7 @@ jobs:
 
           # SHA256SUMS
           cd dist
-          sha256sum *.tar.gz *.zip > SHA256SUMS
+          sha256sum *.tar.gz *.zip openapi-*.json openapi-*.yaml api-reference-*.html > SHA256SUMS
           echo "--- Release artifacts ---"
           ls -lh *.tar.gz *.zip SHA256SUMS
 
@@ -256,8 +272,8 @@ jobs:
             esac
             listing=$(tar tzf "$pkgname" 2>/dev/null || unzip -Z1 "$pkgname")
             case "$pkgname" in
-              *-windows-amd64.zip) required_list="config/config.example.yaml docker/docker-compose.yml README.md start.ps1 start.cmd" ;;
-              *) required_list="config/config.example.yaml docker/docker-compose.yml README.md start.sh" ;;
+              *-windows-amd64.zip) required_list="config/config.example.yaml docker/docker-compose.yml README.md start.ps1 start.cmd api/openapi-${SPECV}.json api/openapi-${SPECV}.yaml api-reference-${SPECV}.html" ;;
+              *) required_list="config/config.example.yaml docker/docker-compose.yml README.md start.sh api/openapi-${SPECV}.json api/openapi-${SPECV}.yaml api-reference-${SPECV}.html" ;;
             esac
             for required in $required_list; do
               echo "$listing" | grep -Eq "(^|/)${required}$" || {
@@ -286,6 +302,9 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/openapi-*.json
+            dist/openapi-*.yaml
+            dist/api-reference-*.html
             dist/SHA256SUMS
           if-no-files-found: error
 
@@ -361,6 +380,31 @@ jobs:
             VERSION=${{ needs.build.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # The manifest-list digest of what this step pushed. Everything after this
+          # point verifies *that* digest, not the tag: a tag can be repointed, and then
+          # "we verified the image" would be a claim about a name.
+          metadata-file: /tmp/push-meta.json
+
+      # The fourth equation (doc/304 §4 E164, doc/310 §22.4 T310-12): the tarballs carry
+      # the committed contract, and so must the image — `docker/Dockerfile` compiles Go a
+      # second time, so no earlier check has ever looked at these bytes. Every published
+      # platform is started and asked, because verifying one architecture of a manifest
+      # list leaves the other unexamined.
+      - name: Verify every published platform serves the committed contract
+        if: steps.buildpush.outcome == 'success'
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.tag }}
+        run: |
+          IMAGE="${IMAGE,,}"
+          LIST=$(python3 -c 'import json;print(json.load(open("/tmp/push-meta.json"))["containerimage.digest"])')
+          case "$LIST" in
+            sha256:*) ;;
+            *) echo "::error::no manifest-list digest from the build step ('$LIST')"; exit 1 ;;
+          esac
+          echo "pushed manifest list: $LIST"
+          docker buildx imagetools inspect "${IMAGE}:${VERSION}" || true
+          MSYS_NO_PATHCONV=1 bash scripts/release/image-spec.sh verify "${IMAGE}@${LIST}"             --platform linux/amd64 --platform linux/arm64
 
       # Record the outcome before the refusal step can end the job, so the notes
       # job reads a fact ("is the image pullable?") instead of an intention.
@@ -572,7 +616,7 @@ jobs:
         run: |
           TAG="${{ needs.build.outputs.tag }}"
           echo "Creating release: $TAG"
-          ls -lh artifacts/dist/*.tar.gz artifacts/dist/*.zip artifacts/dist/SHA256SUMS
+          ls -lh artifacts/dist/*.tar.gz artifacts/dist/*.zip artifacts/dist/openapi-* artifacts/dist/api-reference-*.html artifacts/dist/SHA256SUMS
           # Idempotent by design: a re-run (workflow_dispatch after a failed docker
           # leg, or a re-pushed tag) must not die on "release already exists" - it
           # refreshes notes/title and clobbers the assets, so the published page
@@ -585,12 +629,16 @@ jobs:
             gh release upload "$TAG" \
               artifacts/dist/*.tar.gz \
               artifacts/dist/*.zip \
+              artifacts/dist/openapi-* \
+              artifacts/dist/api-reference-*.html \
               artifacts/dist/SHA256SUMS \
               --clobber
           else
             gh release create "$TAG" \
               artifacts/dist/*.tar.gz \
               artifacts/dist/*.zip \
+              artifacts/dist/openapi-* \
+              artifacts/dist/api-reference-*.html \
               artifacts/dist/SHA256SUMS \
               --notes-file release-notes.md \
               --title "ragflow-x $TAG"
