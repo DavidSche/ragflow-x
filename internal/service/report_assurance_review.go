@@ -712,11 +712,13 @@ func orderReviewFindings(rows []model.ReportReviewFinding) []model.ReportReviewF
 }
 
 // reportRevisionAckPayload is what `acknowledge_assurance=true` writes onto the
-// revision. It records *how many* conflicts were accepted, so a later run with more
-// conflicts is a new decision rather than a silent continuation.
-func reportRevisionAckPayload(conflicts int, actorID string, now time.Time) string {
+// revision. It records *how many* conflicts were accepted and which eligibility was
+// shipped, so a later run with more conflicts — or a run that degraded further — is a
+// new decision rather than a silent continuation.
+func reportRevisionAckPayload(conflicts int, eligibility, actorID string, now time.Time) string {
 	payload, err := json.Marshal(map[string]interface{}{
-		"conflicts": conflicts, "acknowledged_by": actorID, "acknowledged_at": now,
+		"conflicts": conflicts, "release_eligibility": eligibility,
+		"acknowledged_by": actorID, "acknowledged_at": now,
 	})
 	if err != nil {
 		return ""

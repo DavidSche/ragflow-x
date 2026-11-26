@@ -88,28 +88,35 @@ type ReportExportRequest struct {
 }
 
 // gateReportExportOnAssurance is §7.2: 44122 (the template wants assurance and the
-// run is not done) and 44121 (unresolved conflicts, no acknowledgement).
+// run is not done) and 44121 (something the caller must acknowledge, unacknowledged).
 //
 // Two refusals, in this order, because they need different actions from the caller:
 // 44122 says "wait", 44121 says "decide". Returning 44121 for an unfinished run
 // would tell the reader to acknowledge conflicts that have not been found yet.
+//
+// 44121 has two reasons and they are different sentences (doc/301 D6/J6, T18):
+// open conflicts (a finding to decide about) and an unusable run — `tier_0` or
+// `blocked`, which is what "the semantic layer was not calibrated" looks like from
+// the reader's side. Neither refuses the export in v0.7.0: uncalibrated semantics
+// must not become a hard gate, but the delivery still needs an explicit, audited
+// acknowledgement.
 func (s *Service) gateReportExportOnAssurance(
 	ctx context.Context, actorID, tenantID string, revision *model.ReportRevision,
 	request ReportExportRequest,
 ) error {
-	policy, conflicts := reportAssuranceGateState(revision)
-	if policy == model.ReportAssurancePolicyRequired &&
+	gate := reportAssuranceGateState(revision)
+	if gate.Policy == model.ReportAssurancePolicyRequired &&
 		!model.ReportAssuranceTerminal(revision.AssuranceStatus) {
 		return errReportAssuranceNotReady()
 	}
-	if conflicts == 0 {
+	if !gate.needsAck() {
 		return nil
 	}
 	if request.AcknowledgeAssurance {
 		// Recorded on the revision, and recorded *before* the render: if the render
 		// fails, the acknowledgement still stands as "what the caller was shown", and
 		// the next attempt is an ordinary retry rather than a second decision.
-		ack := reportRevisionAckPayload(conflicts, actorID, time.Now().UTC())
+		ack := reportRevisionAckPayload(gate.Conflicts, gate.Eligibility, actorID, time.Now().UTC())
 		if ack != "" {
 			if err := s.Store.SetRevisionAssuranceAck(ctx, tenantID, revision.ID, ack); err != nil {
 				return err
@@ -125,12 +132,41 @@ func (s *Service) gateReportExportOnAssurance(
 		s.recordReportAudit(ctx, actorID, tenantID, "report.assurance_ack",
 			revision.ReportID, map[string]any{
 				"run_id": revision.AssuranceRunID, "revision": revision.Revision,
-				"acknowledged": conflicts, "format": request.Format,
+				"acknowledged": gate.Conflicts, "format": request.Format,
+				"release_eligibility": gate.Eligibility, "ack_reason": gate.ackReason(),
 			})
 		return nil
 	}
-	return errReportAssuranceAckRequired(conflicts)
+	return errReportAssuranceAckRequired(gate)
 }
+
+// reportAssuranceGate is the frozen §7.2 answer for one revision.
+type reportAssuranceGate struct {
+	Policy      string
+	Conflicts   int
+	Eligibility string
+}
+
+// ackReason names the sentence the refusal has to say, or "" when no
+// acknowledgement is required.
+//
+// Eligibility is checked only after conflicts, because a conflict set is the
+// stronger statement: it names things the reviewer can go and fix, while
+// `tier_0`/`blocked` only says the run cannot be used as a release input.
+// `pending` never asks for anything — a run that has not produced a verdict has
+// nothing to acknowledge, and 44122 is the code that answers for it.
+func (g reportAssuranceGate) ackReason() string {
+	if g.Conflicts > 0 {
+		return "conflicts"
+	}
+	switch g.Eligibility {
+	case model.ReportAssuranceEligibilityTier0, model.ReportAssuranceEligibilityBlocked:
+		return "release_eligibility"
+	}
+	return ""
+}
+
+func (g reportAssuranceGate) needsAck() bool { return g.ackReason() != "" }
 
 // reportAssuranceGateState reads the gate inputs from the revision projection.
 //
@@ -138,25 +174,33 @@ func (s *Service) gateReportExportOnAssurance(
 // query: the gate must answer the same way every time for the same revision, and a
 // live count would let a reviewer dismiss a finding after the preview and change
 // what an *already started* export was checked against.
-func reportAssuranceGateState(revision *model.ReportRevision) (string, int) {
-	policy := model.ReportAssurancePolicyAdvisory
+//
+// `release_eligibility` rides on the same frozen summary, so "was this run usable"
+// is answered from the row the run wrote, not from a second derivation that could
+// drift from what the workbench showed the reviewer.
+func reportAssuranceGateState(revision *model.ReportRevision) reportAssuranceGate {
+	gate := reportAssuranceGate{Policy: model.ReportAssurancePolicyAdvisory}
 	var summary struct {
-		RequestedPolicy string `json:"requested_policy"`
-		Conflicts       int    `json:"conflicts"`
-		HighFindings    int    `json:"high_findings"`
+		RequestedPolicy    string `json:"requested_policy"`
+		Conflicts          int    `json:"conflicts"`
+		HighFindings       int    `json:"high_findings"`
+		ReleaseEligibility string `json:"release_eligibility"`
 	}
 	if strings.TrimSpace(revision.AssuranceSummaryJSON) != "" {
 		if err := json.Unmarshal([]byte(revision.AssuranceSummaryJSON), &summary); err == nil {
 			if summary.RequestedPolicy != "" {
-				policy = summary.RequestedPolicy
+				gate.Policy = summary.RequestedPolicy
 			}
+			gate.Eligibility = summary.ReleaseEligibility
 			if summary.Conflicts > 0 {
-				return policy, summary.Conflicts
+				gate.Conflicts = summary.Conflicts
+				return gate
 			}
-			return policy, summary.HighFindings
+			gate.Conflicts = summary.HighFindings
+			return gate
 		}
 	}
-	return policy, 0
+	return gate
 }
 
 // ReportExportResult is the successful export answer: the job and the artifact

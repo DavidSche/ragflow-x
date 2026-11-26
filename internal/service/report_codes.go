@@ -259,14 +259,29 @@ func errReportFindingNotFound() error {
 	return httperr.New(404, codeReportFindingNotFound, "review finding not found")
 }
 
-// errReportAssuranceAckRequired is 44121: the revision has open conflicts or a
-// failed run and the caller did not acknowledge them. Refusing is the whole point
-// of the gate: an export that silently ships a known conflict is worse than no
+// errReportAssuranceAckRequired is 44121: the revision has open conflicts, or its
+// run is not usable as a release input, and the caller did not acknowledge it.
+// Refusing is the whole point of the gate: an export that silently ships a known
+// conflict — or a `tier_0` review whose semantic layer never ran — is worse than no
 // export.
-func errReportAssuranceAckRequired(conflicts int) error {
+//
+// The code is the same for both reasons because the caller's action is the same (set
+// `acknowledge_assurance`); the message and `data.reason` differ because the reader's
+// question differs: "which conflict do I fix" versus "why was this review unusable".
+func errReportAssuranceAckRequired(gate reportAssuranceGate) error {
+	if gate.ackReason() == "release_eligibility" {
+		return httperr.New(409, codeReportAssuranceAckRequired,
+			"this revision's assurance review is "+gate.Eligibility+
+				", which v0.7.0 does not treat as a release input (advisory only); "+
+				"pass acknowledge_assurance=true to export anyway").
+			WithData(map[string]any{
+				"reason": "release_eligibility", "release_eligibility": gate.Eligibility,
+			})
+	}
 	return httperr.New(409, codeReportAssuranceAckRequired,
-		"this revision has "+strconv.Itoa(conflicts)+
-			" unresolved assurance conflict(s); pass acknowledge_assurance=true to export anyway")
+		"this revision has "+strconv.Itoa(gate.Conflicts)+
+			" unresolved assurance conflict(s); pass acknowledge_assurance=true to export anyway").
+		WithData(map[string]any{"reason": "conflicts", "conflicts": gate.Conflicts})
 }
 
 // errReportAssuranceNotReady is 44122: the template requires assurance and the run

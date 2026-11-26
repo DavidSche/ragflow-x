@@ -309,6 +309,34 @@ describe("ArtifactPanel assurance gate", () => {
     expect(notifyMock).not.toHaveBeenCalled();
   });
 
+  /**
+   * doc/301 D6/J6 + T18 (2026-11-26): v0.7.0 is advisory + ack. An uncalibrated
+   * review (tier_0) must reach the same dialog, and the dialog must state the
+   * eligibility rather than claim there are conflicts to look at — otherwise the
+   * reviewer confirms "2 conflicts" that do not exist.
+   */
+  it("asks for the ack when the review is tier_0, not only when conflicts exist", async () => {
+    const user = userEvent.setup();
+    const adapter = adapterRefusing(44121);
+    const uncalibrated = {
+      ...review,
+      release_eligibility: "tier_0" as const,
+      release_eligibility_basis: ["semantic_layer_unavailable"],
+      counters: { ...review.counters, open_findings: 0, high_findings: 0, conflicting: 0 },
+    };
+    render(
+      <ArtifactPanel adapter={adapter} reportId="rep1" revision={1} loadReview={async () => uncalibrated} />,
+    );
+    await user.click(screen.getByTestId("export-docx"));
+
+    const dialog = await screen.findByTestId("ack-dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByTestId("ack-counts")).toHaveTextContent("未解决冲突 0 项");
+    expect(screen.getByTestId("ack-counts")).toHaveTextContent("即使冲突为 0");
+    expect(screen.getByTestId("ack-eligibility")).toHaveTextContent("复核结论");
+    expect(notifyMock).not.toHaveBeenCalled();
+  });
+
   it("re-exports with acknowledge_assurance only after the user confirms", async () => {
     const user = userEvent.setup();
     const adapter = adapterRefusing(44121);

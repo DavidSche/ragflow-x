@@ -203,3 +203,146 @@ func TestExportNeedsNoAckWhenNothingIsInConflict(t *testing.T) {
 		t.Fatalf("clean export recorded an ack audit")
 	}
 }
+
+// stampEligibility writes only `release_eligibility` onto an existing summary, the
+// way `reportAssuranceSummary` does after a run: the gate reads that frozen value, so
+// "the semantic layer did not run" must be expressed on the row rather than by
+// configuring anything at export time.
+func stampEligibility(t *testing.T, fx *reportFixture, revision *model.ReportRevision, eligibility string) {
+	t.Helper()
+	var summary map[string]any
+	if err := json.Unmarshal([]byte(revision.AssuranceSummaryJSON), &summary); err != nil {
+		t.Fatalf("existing summary is not readable: %v", err)
+	}
+	summary["release_eligibility"] = eligibility
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatalf("marshal summary: %v", err)
+	}
+	if err := fx.gdb.Model(&model.ReportRevision{}).
+		Where("id = ?", revision.ID).
+		Update("assurance_summary_json", string(encoded)).Error; err != nil {
+		t.Fatalf("stamp eligibility: %v", err)
+	}
+	revision.AssuranceSummaryJSON = string(encoded)
+}
+
+// doc/301 D6/J6 + T18 (2026-11-26 decision): v0.7.0 ships *advisory + ack*. An
+// uncalibrated model must not block delivery, and it must not pass silently either —
+// so a `tier_0` run requires the same explicit acknowledgement a conflict set does,
+// and the acknowledgement records what was shipped.
+func TestUncalibratedReviewNeedsAnAckInsteadOfBlockingDelivery(t *testing.T) {
+	fx := newReportFixture(t, "gate-tier0")
+	ctx := context.Background()
+	revision := publishReport(t, fx, successSeeds())
+	report, err := fx.svc.Store.GetReport(ctx, fx.tenantID, revision.ReportID)
+	if err != nil {
+		t.Fatalf("load report: %v", err)
+	}
+	// Zero conflicts and zero high findings: the *only* reason to ask for anything is
+	// that the run itself is not a release input.
+	stampAssurance(t, fx, revision, model.ReportAssurancePolicyAdvisory, "degraded", 0, 0)
+	stampEligibility(t, fx, revision, model.ReportAssuranceEligibilityTier0)
+
+	_, err = fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatMarkdown,
+	})
+	business, ok := err.(*httperr.Error)
+	if !ok || business.Code != 44121 {
+		t.Fatalf("unacknowledged tier_0 review: got %v, want 44121 (ack), not a refusal to deliver", err)
+	}
+	if !strings.Contains(business.Message, "tier_0") {
+		t.Fatalf("44121 must name the eligibility it is asking about, got %q", business.Message)
+	}
+	data, _ := business.Data.(map[string]any)
+	if data["reason"] != "release_eligibility" || data["release_eligibility"] != "tier_0" {
+		t.Fatalf("44121 data names the wrong reason: %+v", business.Data)
+	}
+	if stored := fx.reportRevision(t, revision.ID); stored.AssuranceAckJSON != "" {
+		t.Fatalf("a refusal wrote an ack payload: %q", stored.AssuranceAckJSON)
+	}
+
+	if _, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatMarkdown,
+		AcknowledgeAssurance: true,
+	}); err != nil {
+		t.Fatalf("acknowledged tier_0 export must be allowed (advisory, not blocking): %v", err)
+	}
+
+	stored := fx.reportRevision(t, revision.ID)
+	var ack struct {
+		Conflicts   int    `json:"conflicts"`
+		Eligibility string `json:"release_eligibility"`
+		ActorID     string `json:"acknowledged_by"`
+	}
+	if err := json.Unmarshal([]byte(stored.AssuranceAckJSON), &ack); err != nil {
+		t.Fatalf("ack payload is not readable: %v", err)
+	}
+	if ack.Conflicts != 0 || ack.Eligibility != model.ReportAssuranceEligibilityTier0 {
+		t.Fatalf("ack recorded %+v, want 0 conflicts + tier_0", ack)
+	}
+	if ack.ActorID != fx.owner.ID {
+		t.Fatalf("ack recorded actor %q, want %q", ack.ActorID, fx.owner.ID)
+	}
+
+	acks := assuranceAckAudits(t, fx)
+	if len(acks) != 1 {
+		t.Fatalf("ack audits = %d, want exactly 1", len(acks))
+	}
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(acks[0].DetailJSON), &detail); err != nil {
+		t.Fatalf("ack audit detail: %v", err)
+	}
+	if detail["ack_reason"] != "release_eligibility" ||
+		detail["release_eligibility"] != model.ReportAssuranceEligibilityTier0 {
+		t.Fatalf("ack audit cannot explain what was accepted: %+v", detail)
+	}
+}
+
+func TestBlockedReviewNeedsAnAckAndStaysDeliverable(t *testing.T) {
+	fx := newReportFixture(t, "gate-blocked")
+	ctx := context.Background()
+	revision := publishReport(t, fx, successSeeds())
+	report, err := fx.svc.Store.GetReport(ctx, fx.tenantID, revision.ReportID)
+	if err != nil {
+		t.Fatalf("load report: %v", err)
+	}
+	stampAssurance(t, fx, revision, model.ReportAssurancePolicyAdvisory, "succeeded", 0, 0)
+	stampEligibility(t, fx, revision, model.ReportAssuranceEligibilityBlocked)
+
+	if _, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatMarkdown,
+	}); err == nil {
+		t.Fatal("a blocked review must not export without an acknowledgement")
+	}
+	if _, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatMarkdown,
+		AcknowledgeAssurance: true,
+	}); err != nil {
+		t.Fatalf("advisory policy must keep a blocked review deliverable after the ack: %v", err)
+	}
+}
+
+// The counter-test: a usable run asks for nothing. Without this, "ask for an ack"
+// could be implemented as "always ask", which would train reviewers to click through
+// the one dialog that matters.
+func TestTierOneReviewNeedsNoAck(t *testing.T) {
+	fx := newReportFixture(t, "gate-tier1")
+	ctx := context.Background()
+	revision := publishReport(t, fx, successSeeds())
+	report, err := fx.svc.Store.GetReport(ctx, fx.tenantID, revision.ReportID)
+	if err != nil {
+		t.Fatalf("load report: %v", err)
+	}
+	stampAssurance(t, fx, revision, model.ReportAssurancePolicyAdvisory, "succeeded", 0, 0)
+	stampEligibility(t, fx, revision, model.ReportAssuranceEligibilityTier1)
+
+	if _, err := fx.svc.CreateReportExport(ctx, fx.owner.ID, fx.tenantID, ReportExportRequest{
+		ReportID: report.ID, Revision: revision.Revision, Format: model.ExportFormatMarkdown,
+	}); err != nil {
+		t.Fatalf("tier_1 export must not require an ack: %v", err)
+	}
+	if acks := assuranceAckAudits(t, fx); len(acks) != 0 {
+		t.Fatalf("tier_1 export recorded an ack audit")
+	}
+}
