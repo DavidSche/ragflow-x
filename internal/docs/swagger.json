@@ -65337,7 +65337,7 @@
         },
         "/v1/agents/{id}/completions": {
             "post": {
-                "description": "GatewayAgent exposes a controlled Agent completion path for API keys.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
+                "description": "GatewayAgent exposes a controlled Agent completion path for API keys.。需要网关 API Key（Authorization: Bearer \u003capi-key\u003e），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
                 "operationId": "gatewayAgent",
                 "x-error-codes": ["40000", "40981", "40982", "50240", "50241"],
                 "parameters": [
@@ -65422,7 +65422,7 @@
         },
         "/v1/chat/completions": {
             "post": {
-                "description": "GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
+                "description": "GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。需要网关 API Key（Authorization: Bearer \u003capi-key\u003e），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
                 "operationId": "gatewayChat",
                 "x-error-codes": ["40000", "40981", "40982", "50240", "50241"],
                 "requestBody": {
@@ -65496,7 +65496,7 @@
         },
         "/v1/search-apps/{id}/completions": {
             "post": {
-                "description": "GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
+                "description": "GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。需要网关 API Key（Authorization: Bearer \u003capi-key\u003e），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
                 "operationId": "gatewaySearchApp",
                 "x-error-codes": ["40000", "40981", "40982", "50240", "50241"],
                 "parameters": [

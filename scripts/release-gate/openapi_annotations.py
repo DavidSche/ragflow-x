@@ -233,6 +233,46 @@ def untyped_payload(op, schemas):
     return None
 
 
+PLACEHOLDER_WORDS = ("TODO", "TBD", "WIP", "Auto-generated", "待补", "未命名", "Lorem")
+
+# Verbs a summary can open with. The list is read as "a sentence about an action", not as
+# English style policing: the generator humanises the handler name (`listAssistantReleases`
+# → "list Assistant Releases"), and a summary that is a bare noun phrase tells an integrator
+# nothing about what the call does.
+# The question the reader has is "which credential do I present, and what must it be allowed
+# to do". Three answers are legitimate here and they are not interchangeable: an RBAC pair,
+# the gateway's API key (a different credential, E159), or "no rule, everyone logged in".
+PERMISSION_WORDS = ("权限", "read:", "manage:", "execute:", "API Key", "公开路由")
+
+
+def summary_is_a_sentence(summary):
+    """Two words, or four CJK characters. `Get`/`角色` alone are not summaries."""
+    words = [w for w in summary.split() if w]
+    cjk = sum(1 for ch in summary if "\u4e00" <= ch <= "\u9fff")
+    return len(words) >= 2 or cjk >= 4
+
+
+def quality_gaps(method, path, op):
+    """T310-07: the ratchet proves "there is an annotation", not "the annotation is right".
+    These three rules are the part of "right" that can be decided by reading the descriptor."""
+    gaps = []
+    summary = (op.get("summary") or "").strip()
+    desc = (op.get("description") or "").strip()
+    if summary and not summary_is_a_sentence(summary):
+        gaps.append("summary 不是一句动作描述（%r：少于两个词/四个汉字）" % summary)
+    blob = summary + " " + desc
+    hit = [w for w in PLACEHOLDER_WORDS if w.lower() in blob.lower()]
+    if hit:
+        gaps.append("summary/description 里还有占位词 %s" % "、".join(hit))
+    if op.get("security"):
+        # Either spelling of the same fact is enough: the machine-readable key T310-05 added,
+        # or prose. A protected endpoint where a client cannot find out *which* permission it
+        # needs is the one that produces a 403 nobody can explain (E159).
+        if not op.get("x-ragflow-permission") and not any(w in desc for w in PERMISSION_WORDS):
+            gaps.append("受保护端点没写所需权限（既无 x-ragflow-permission，description 也没提）")
+    return gaps
+
+
 def annotation_gaps(method, path, op, ids, schemas=None):
     """Every reason this endpoint is not a contract a client could code against."""
     gaps = []
@@ -273,6 +313,7 @@ def annotation_gaps(method, path, op, ids, schemas=None):
         if untyped:
             gaps.append(untyped)
 
+    gaps.extend(quality_gaps(method, path, op))
     return gaps
 
 
@@ -594,13 +635,44 @@ def selftest():
         spec["paths"]["/api/v1/selftest-empty-200"] = {"get": empty_200}
         p = save(spec, "spec-empty-200.json")
         ok("200 无响应体 → 拒绝（客户端有权拿到载荷）", run_check_quiet(p, baseline_path) == 1)
+
+        # ⑬⑭⑮ T310-07: the ratchet proves "there is an annotation". These three prove the
+        # quality rules can fail — each one mutation of an otherwise-passing endpoint, so the
+        # rule is what turns it red.
+        bare = dict(ANNOTATED_OP, operationId="SelftestBareNoun", summary="用量")
+        spec = json.loads(json.dumps(base))
+        spec["paths"]["/api/v1/selftest-bare-noun"] = {"get": bare}
+        p = save(spec, "spec-bare-noun.json")
+        ok("summary 只有名词（「用量」）→ 拒绝", run_check_quiet(p, baseline_path) == 1)
+
+        todo = dict(ANNOTATED_OP, operationId="SelftestTodo",
+                    description="返回用量过滤维度。TODO 补齐口径说明。")
+        spec = json.loads(json.dumps(base))
+        spec["paths"]["/api/v1/selftest-todo"] = {"get": todo}
+        p = save(spec, "spec-todo.json")
+        ok("description 里留着 TODO → 拒绝", run_check_quiet(p, baseline_path) == 1)
+
+        silent = dict(ANNOTATED_OP, operationId="SelftestSilentPerm",
+                      description="返回当前账号可见的用量过滤维度，按可见范围裁剪。",
+                      security=[{"BearerAuth": []}])
+        spec = json.loads(json.dumps(base))
+        spec["paths"]["/api/v1/selftest-silent-perm"] = {"get": silent}
+        p = save(spec, "spec-silent-perm.json")
+        ok("受保护端点不说要哪个权限 → 拒绝", run_check_quiet(p, baseline_path) == 1)
+
+        named = dict(silent, operationId="SelftestNamedPerm",
+                     **{"x-ragflow-permission": "read:usage"})
+        spec = json.loads(json.dumps(base))
+        spec["paths"]["/api/v1/selftest-named-perm"] = {"get": named}
+        p = save(spec, "spec-named-perm.json")
+        ok("受保护端点带 x-ragflow-permission → 通过", run_check_quiet(p, baseline_path) == 0)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
     if failures:
         sys.stdout.write("\nopenapi-annotations --selftest: FAIL (%d)\n" % failures)
         return 1
-    sys.stdout.write("\nopenapi-annotations --selftest: PASS (16/16 checks)\n")
+    sys.stdout.write("\nopenapi-annotations --selftest: PASS (20/20 checks)\n")
     return 0
 
 

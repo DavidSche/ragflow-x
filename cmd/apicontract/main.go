@@ -1324,9 +1324,15 @@ func describeText(c contract, doc string) string {
 		}
 		b.WriteString(s)
 	}
-	if c.Permission != "" {
+	switch {
+	case c.Permission != "":
 		add("需要权限 " + c.Permission + "（由 accessRules 强制）")
-	} else {
+	case strings.HasPrefix(c.Path, "/v1/"):
+		// The customer-facing gateway surface: API-key authenticated and rate limited per
+		// key, registered outside the RBAC group (internal/router/router.go gatewayRouteSpecs).
+		// Saying "只要求登录" here would be the wrong credential, which is what E159 was.
+		add("需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流")
+	default:
 		add("只要求登录，没有额外的 RBAC 规则")
 	}
 	if c.Request != "" {

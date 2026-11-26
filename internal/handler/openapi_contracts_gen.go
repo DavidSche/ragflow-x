@@ -13951,7 +13951,7 @@ func contractRecentCrossAppSessionsEnvelope() {}
 // contractGatewayAgentEnvelope documents POST /v1/agents/{id}/completions.
 //
 // @Summary GatewayAgent exposes a controlled Agent completion path for API keys
-// @Description GatewayAgent exposes a controlled Agent completion path for API keys.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
+// @Description GatewayAgent exposes a controlled Agent completion path for API keys.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
 // @Tags agents
 // @ID gatewayAgent
 // @Security BearerAuth
@@ -13968,7 +13968,7 @@ func contractGatewayAgentEnvelope() {}
 // contractGatewayChatEnvelope documents POST /v1/chat/completions.
 //
 // @Summary GatewayChat is the OpenAI-compatible gateway entry point
-// @Description GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
+// @Description GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID gatewayChat
 // @Security BearerAuth
@@ -13984,7 +13984,7 @@ func contractGatewayChatEnvelope() {}
 // contractGatewaySearchAppEnvelope documents POST /v1/search-apps/{id}/completions.
 //
 // @Summary GatewaySearchApp exposes a controlled Search App execution path for API keys
-// @Description GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
+// @Description GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
 // @Tags search-apps
 // @ID gatewaySearchApp
 // @Security BearerAuth
