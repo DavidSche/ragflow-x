@@ -693,7 +693,7 @@ if tier_selected static; then
     bash scripts/release-gate/migration-window.sh "$BASE"
 
 
-  # doc/310 §22.5 T310-05 / T310-06, doc/304 §4 E176: the spec told a client *that* an
+  # doc/310 §22.5 T310-05 / T310-06, doc/304 §4 E173: the spec told a client *that* an
   # endpoint needs a bearer token, never *which* permission, and never which business codes a
   # failure carries. A client generator can only see machine-readable fields, and prose
   # (`@Description` "需要权限 read:agent") is not one.
@@ -716,8 +716,17 @@ if tier_selected static; then
   #
   # The mutations run in the same row (1.6 s) rather than in a ritual: a reader that has never
   # been seen to fail is a reader whose exponent nobody has measured.
-  run_check "s33.openapi-contract-extensions" "static" 1 "each operation carries the permission accessRules enforces and the business codes its failures name, in all three artifacts, and 7 mutations of that claim are refused (doc/310 §22.5 T310-05/T310-06; doc/304 §4 E176)" \
+  run_check "s33.openapi-contract-extensions" "static" 1 "each operation carries the permission accessRules enforces and the business codes its failures name, in all three artifacts, and 7 mutations of that claim are refused (doc/310 §22.5 T310-05/T310-06; doc/304 §4 E173)" \
     bash -c "\"$PYTHON\" scripts/release-gate/openapi_extensions.py check internal/docs --rules internal/router/access.go && \"$PYTHON\" scripts/release-gate/openapi_extensions.py --selftest"
+
+  # T310-10 / doc/304 §7 item 48: "how do I turn the docs surface on" was answerable on exactly
+  # one machine, because the recipe lived in `localenv/151-test/deploy.sh` — a path `.gitignore`
+  # excludes. A prose runbook rots silently, so the recipe is now a script whose selftest reads
+  # the variable names out of `internal/config/config.go`: if the product renames
+  # `RGX_DOCS_ENABLED`, this row goes red instead of exporting a name nobody reads (E159 shape,
+  # which is exactly how the docs surface was dark on 151 for two releases).
+  run_check "s34.docs-surface-recipe" "static" 1 "the recipe that enables the /docs surface names only variables the product actually reads, is idempotent, and refuses a stale recipe or a missing env file (doc/304 §4 E174, §7 item 48)" \
+    bash -c "bash scripts/enable-docs-surface.sh --selftest"
 
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
