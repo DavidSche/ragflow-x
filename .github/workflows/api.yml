@@ -1,0 +1,86 @@
+# API contract workflow for ragflow-x
+#
+# doc/310 T310-11: the contract checks used to run only inside the release gate, and the
+# release gate runs when someone cuts a release — once a month, maybe. Annotations rot daily.
+# This workflow puts the same three readers on every push/PR, so "a handler changed and its
+# contract did not" turns red the same day instead of at the next tag.
+#
+# Every step below is a script that already exists and already has its own `--selftest`
+# (E98): the workflow is a schedule, not a second implementation. If a step is red locally,
+# it is red here for the same reason.
+#
+#   bash scripts/release-gate/openapi.sh          s25 freshness + the version stamp (T310-09)
+#   python .../openapi_annotations.py --check     s29 no endpoint ships without a contract
+#   bash scripts/release-gate/openapi-breaking.sh s26 nothing documented disappeared
+#   bash scripts/release-gate/api-doc.sh check    s28 the page people read == the spec
+#
+# Deliberately absent: `s31.release-image-spec` (needs a published image) and the drift-heavy
+# `s13`/`s24` checks; those need a real release, i.e. `--tier build`/`--tier all`.
+
+name: API contract
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: 0
+
+jobs:
+  contract:
+    name: contract (s25/s26/s28/s29)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # `s26` needs the tags to find "the newest tag that ships a spec" as its baseline;
+          # a shallow clone turns that into "no baseline", which is a pass-shaped failure.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # The generator is pinned and fetched with `go run …@vX` (scripts/release-gate/openapi.sh),
+      # so a warm module cache is the only setup step it needs.
+      - name: warm the generator
+        run: go run "github.com/swaggo/swag/v2/cmd/swag@v2.0.0-rc6" --version
+
+      - name: s25 freshness + version stamp
+        run: bash scripts/release-gate/openapi.sh
+
+      - name: s29 every endpoint has a contract
+        run: python scripts/release-gate/openapi_annotations.py --check
+
+      - name: s26 nothing documented disappeared
+        run: bash scripts/release-gate/openapi-breaking.sh
+
+      - name: s28 the page equals the spec
+        run: bash scripts/release-gate/api-doc.sh check
+
+      # The self-tests are cheap and they are the only proof these readers can fail; a check
+      # that has been silently no-op'd (empty denominator, unreadable baseline) passes forever.
+      - name: the four readers can still fail
+        run: |
+          bash scripts/release-gate/openapi.sh --selftest
+          python scripts/release-gate/openapi_stamp.py --selftest
+          python scripts/release-gate/openapi_annotations.py --selftest
+          bash scripts/release-gate/openapi-breaking.sh --selftest
+          bash scripts/release-gate/api-doc.sh --selftest
