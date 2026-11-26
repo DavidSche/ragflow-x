@@ -30306,6 +30306,7 @@ const docTemplate = `{
             "get": {
                 "description": "未命中的路径都交给单页应用：返回 text/html 外壳，由前端路由接管。",
                 "operationId": "get",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -30328,6 +30329,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListAgents returns the caller's agents.。需要权限 read:agent（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AgentShadow",
                 "operationId": "listAgents",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -30411,6 +30414,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateAgent creates an agent owned by the caller's tenant.。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentCreatePayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createAgent",
+                "x-ragflow-permission": "manage:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -30489,6 +30494,8 @@ const docTemplate = `{
             "get": {
                 "description": "AgentAuthoringOptions returns the picker lists the canvas inspector needs (chat/rerank models, governance-scoped datasets, memories) so node parameters that reference a system resource are dropdowns instead of free-text id inputs. Read permission on ` + "`" + `agent` + "`" + ` is enough: the payload is catalog metadata, not resource content.。需要权限 read:agent（由 accessRules 强制）。成功返回 *service.AgentAuthoringOptions",
                 "operationId": "agentAuthoringOptions",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -30534,6 +30541,8 @@ const docTemplate = `{
             "post": {
                 "description": "ValidateAgentDSL checks a canvas without saving it, so the editor can show the blocking items before the author hits save (and before publishing turns them into a 40099). Read permission on ` + "`" + `agent` + "`" + ` is enough: nothing is persisted.。需要权限 read:agent（由 accessRules 强制）。请求体类型 agentValidatePayload。成功返回 *service.AgentDslValidation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "validateAgentDSL",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -30600,8 +30609,10 @@ const docTemplate = `{
         },
         "/api/v1/agents/{id}": {
             "delete": {
-                "description": "DeleteAgent deletes an agent.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteAgentResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteAgent deletes an agent.。需要权限 manage:agent（由 accessRules 强制）。成功返回 DeleteAgentResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteAgent",
+                "x-ragflow-permission": "manage:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -30668,12 +30679,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteAgent deletes an agent",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             },
             "get": {
-                "description": "GetAgent returns an agent shadow.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.AgentShadow",
+                "description": "GetAgent returns an agent shadow.。需要权限 read:agent（由 accessRules 强制）。成功返回 *model.AgentShadow",
                 "operationId": "getAgent",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -30720,12 +30733,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetAgent returns an agent shadow",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             },
             "put": {
-                "description": "UpdateAgent edits an agent (title/dsl/release).。只要求登录，没有额外的 RBAC 规则。请求体类型 agentUpdatePayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateAgent edits an agent (title/dsl/release).。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentUpdatePayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateAgent",
+                "x-ragflow-permission": "manage:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -30805,14 +30820,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateAgent edits an agent (title/dsl/release)",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/chat/completions": {
             "post": {
-                "description": "AgentChatCompletion runs an agent completion (non-streaming + metered).。只要求登录，没有额外的 RBAC 规则。请求体类型 agentChatPayload。成功返回 *ragflow.CompletionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "AgentChatCompletion runs an agent completion (non-streaming + metered).。需要权限 execute:agent（由 accessRules 强制）。请求体类型 agentChatPayload。成功返回 *ragflow.CompletionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "agentChatCompletion",
+                "x-ragflow-permission": "execute:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -30866,14 +30883,16 @@ const docTemplate = `{
                 ],
                 "summary": "AgentChatCompletion runs an agent completion (non-streaming + metered)",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/chat/completions/stream": {
             "post": {
-                "description": "StreamAgentChatCompletion proxies an agent completion (SSE).。只要求登录，没有额外的 RBAC 规则。请求体类型 agentChatPayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "StreamAgentChatCompletion proxies an agent completion (SSE).。需要权限 execute:agent（由 accessRules 强制）。请求体类型 agentChatPayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "streamAgentChatCompletion",
+                "x-ragflow-permission": "execute:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -30927,14 +30946,16 @@ const docTemplate = `{
                 ],
                 "summary": "StreamAgentChatCompletion proxies an agent completion (SSE)",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/detail": {
             "get": {
-                "description": "GetAgentDetail returns the live RAGFlow-side agent canvas.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.Agent",
+                "description": "GetAgentDetail returns the live RAGFlow-side agent canvas.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.Agent",
                 "operationId": "getAgentDetail",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -30981,14 +31002,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetAgentDetail returns the live RAGFlow-side agent canvas",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/publish": {
             "post": {
-                "description": "PublishAgent toggles an agent's publish/unpublish state.。只要求登录，没有额外的 RBAC 规则。请求体类型 agentPublishPayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "PublishAgent toggles an agent's publish/unpublish state.。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentPublishPayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "publishAgent",
+                "x-ragflow-permission": "manage:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31068,14 +31091,16 @@ const docTemplate = `{
                 ],
                 "summary": "PublishAgent toggles an agent's publish/unpublish state",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/sessions": {
             "get": {
-                "description": "ListAgentSessions lists an agent's sessions.。只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 ragflow.AgentSession",
+                "description": "ListAgentSessions lists an agent's sessions.。需要权限 read:agent（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.AgentSession",
                 "operationId": "listAgentSessions",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31130,12 +31155,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListAgentSessions lists an agent's sessions",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             },
             "post": {
-                "description": "CreateAgentSession starts an agent session.。只要求登录，没有额外的 RBAC 规则。请求体类型 agentSessionPayload。成功返回 *ragflow.AgentSession",
+                "description": "CreateAgentSession starts an agent session.。需要权限 session:create:agent（由 accessRules 强制）。请求体类型 agentSessionPayload。成功返回 *ragflow.AgentSession",
                 "operationId": "createAgentSession",
+                "x-ragflow-permission": "session:create:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31179,14 +31206,16 @@ const docTemplate = `{
                 ],
                 "summary": "CreateAgentSession starts an agent session",
                 "tags": [
-                    "agents"
+                    "create:agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/sessions/{sessionId}": {
             "delete": {
-                "description": "DeleteAgentSession deletes an agent session.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteAgentSessionResponse",
+                "description": "DeleteAgentSession deletes an agent session.。需要权限 manage:agent（由 accessRules 强制）。成功返回 DeleteAgentSessionResponse",
                 "operationId": "deleteAgentSession",
+                "x-ragflow-permission": "manage:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31226,12 +31255,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteAgentSession deletes an agent session",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             },
             "get": {
-                "description": "GetAgentSession returns an agent session.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.AgentSession",
+                "description": "GetAgentSession returns an agent session.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.AgentSession",
                 "operationId": "getAgentSession",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31271,14 +31302,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetAgentSession returns an agent session",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/sessions/{sessionId}/messages": {
             "get": {
-                "description": "ListAgentSessionMessages returns a bounded page of agent session messages.。只要求登录，没有额外的 RBAC 规则。成功返回 ListAgentSessionMessagesResponse",
+                "description": "ListAgentSessionMessages returns a bounded page of agent session messages.。需要权限 read:agent（由 accessRules 强制）。成功返回 ListAgentSessionMessagesResponse",
                 "operationId": "listAgentSessionMessages",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31334,14 +31367,16 @@ const docTemplate = `{
                 ],
                 "summary": "ListAgentSessionMessages returns a bounded page of agent session messages",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/upload": {
             "post": {
-                "description": "UploadAgentFile uploads a temporary attachment for an owned Agent.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UploadAgentFile uploads a temporary attachment for an owned Agent.。需要权限 execute:agent（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "uploadAgentFile",
+                "x-ragflow-permission": "execute:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31398,14 +31433,16 @@ const docTemplate = `{
                 ],
                 "summary": "UploadAgentFile uploads a temporary attachment for an owned Agent",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/validation": {
             "get": {
-                "description": "AgentValidation validates the DSL the engine currently stores for one agent. The editor calls it on open, so canvases saved before the validator existed are flagged without being re-saved.。只要求登录，没有额外的 RBAC 规则。请求体类型 agentValidatePayload。成功返回 *service.AgentDslValidation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "AgentValidation validates the DSL the engine currently stores for one agent. The editor calls it on open, so canvases saved before the validator existed are flagged without being re-saved.。需要权限 read:agent（由 accessRules 强制）。请求体类型 agentValidatePayload。成功返回 *service.AgentDslValidation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "agentValidation",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31475,14 +31512,16 @@ const docTemplate = `{
                 ],
                 "summary": "AgentValidation validates the DSL the engine currently stores for one agent",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/versions": {
             "get": {
-                "description": "ListAgentVersions lists an agent's versions.。只要求登录，没有额外的 RBAC 规则。成功返回 []ragflow.AgentVersion",
+                "description": "ListAgentVersions lists an agent's versions.。需要权限 read:agent（由 accessRules 强制）。成功返回 []ragflow.AgentVersion",
                 "operationId": "listAgentVersions",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31513,14 +31552,16 @@ const docTemplate = `{
                 ],
                 "summary": "ListAgentVersions lists an agent's versions",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/versions/{versionId}": {
             "get": {
-                "description": "GetAgentVersion returns a single version of an agent.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.AgentVersion",
+                "description": "GetAgentVersion returns a single version of an agent.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.AgentVersion",
                 "operationId": "getAgentVersion",
+                "x-ragflow-permission": "read:agent",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31560,14 +31601,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetAgentVersion returns a single version of an agent",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
         "/api/v1/agents/{id}/versions/{versionId}/rollback": {
             "post": {
-                "description": "RollbackAgentVersion restores an agent's DSL from a saved version.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RollbackAgentVersionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "RollbackAgentVersion restores an agent's DSL from a saved version.。需要权限 manage:agent（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RollbackAgentVersionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "rollbackAgentVersion",
+                "x-ragflow-permission": "manage:agent",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31659,7 +31702,7 @@ const docTemplate = `{
                 ],
                 "summary": "RollbackAgentVersion restores an agent's DSL from a saved version",
                 "tags": [
-                    "agents"
+                    "agent"
                 ]
             }
         },
@@ -31667,6 +31710,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListAlerts returns the persisted operational alert worklist.。需要权限 read:alert（由 accessRules 强制）。成功返回分页载荷，items 元素类型 alertRow",
                 "operationId": "listAlerts",
+                "x-ragflow-permission": "read:alert",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -31752,6 +31797,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListAlertDeliveries returns the restartable outbound delivery lifecycle.。需要权限 read:alert（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AlertDelivery",
                 "operationId": "listAlertDeliveries",
+                "x-ragflow-permission": "read:alert",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -31819,8 +31866,10 @@ const docTemplate = `{
         },
         "/api/v1/alerts/{id}/claim": {
             "post": {
-                "description": "ClaimAlert claims an alert for operations follow-up.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ClaimAlertResponse",
+                "description": "ClaimAlert claims an alert for operations follow-up.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ClaimAlertResponse",
                 "operationId": "claimAlert",
+                "x-ragflow-permission": "manage:alert",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31875,14 +31924,16 @@ const docTemplate = `{
                 ],
                 "summary": "ClaimAlert claims an alert for operations follow-up",
                 "tags": [
-                    "alerts"
+                    "alert"
                 ]
             }
         },
         "/api/v1/alerts/{id}/deliveries/{channel}/retry": {
             "post": {
-                "description": "RetryAlertDelivery manually redelivers one pending/failed/abandoned channel.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RetryAlertDeliveryResponse",
+                "description": "RetryAlertDelivery manually redelivers one pending/failed/abandoned channel.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RetryAlertDeliveryResponse",
                 "operationId": "retryAlertDelivery",
+                "x-ragflow-permission": "manage:alert",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -31946,14 +31997,16 @@ const docTemplate = `{
                 ],
                 "summary": "RetryAlertDelivery manually redelivers one pending/failed/abandoned channel",
                 "tags": [
-                    "alerts"
+                    "alert"
                 ]
             }
         },
         "/api/v1/alerts/{id}/read": {
             "post": {
-                "description": "MarkAlertRead marks an alert as read.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkAlertReadResponse",
+                "description": "MarkAlertRead marks an alert as read.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkAlertReadResponse",
                 "operationId": "markAlertRead",
+                "x-ragflow-permission": "manage:alert",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -32008,14 +32061,16 @@ const docTemplate = `{
                 ],
                 "summary": "MarkAlertRead marks an alert as read",
                 "tags": [
-                    "alerts"
+                    "alert"
                 ]
             }
         },
         "/api/v1/answer-snapshots/artifacts/{artifactId}/download": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型",
+                "description": "需要权限 read:chat（由 accessRules 强制）。成功返回原始字节，媒体类型",
                 "operationId": "downloadAnswerExport",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 artifactId",
@@ -32046,14 +32101,16 @@ const docTemplate = `{
                 ],
                 "summary": "Download Answer Export",
                 "tags": [
-                    "answer-snapshots"
+                    "chat"
                 ]
             }
         },
         "/api/v1/answer-snapshots/by-request/{requestId}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 GetAnswerSnapshotByRequestResponse",
+                "description": "需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerSnapshotByRequestResponse",
                 "operationId": "getAnswerSnapshotByRequest",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 requestId",
@@ -32084,14 +32141,16 @@ const docTemplate = `{
                 ],
                 "summary": "Get Answer Snapshot By Request",
                 "tags": [
-                    "answer-snapshots"
+                    "chat"
                 ]
             }
         },
         "/api/v1/answer-snapshots/export-jobs/{jobId}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 GetAnswerExportJobResponse",
+                "description": "需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerExportJobResponse",
                 "operationId": "getAnswerExportJob",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 jobId",
@@ -32122,14 +32181,16 @@ const docTemplate = `{
                 ],
                 "summary": "Get Answer Export Job",
                 "tags": [
-                    "answer-snapshots"
+                    "chat"
                 ]
             }
         },
         "/api/v1/answer-snapshots/export-jobs/{jobId}/retry": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 GetAnswerSnapshotResponse",
+                "description": "需要权限 read:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 GetAnswerSnapshotResponse",
                 "operationId": "retryAnswerExportJob",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 jobId",
@@ -32176,14 +32237,16 @@ const docTemplate = `{
                 ],
                 "summary": "Retry Answer Export Job",
                 "tags": [
-                    "answer-snapshots"
+                    "chat"
                 ]
             }
         },
         "/api/v1/answer-snapshots/{snapshotId}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 GetAnswerSnapshotResponse",
+                "description": "需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerSnapshotResponse",
                 "operationId": "getAnswerSnapshot",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 snapshotId",
@@ -32214,14 +32277,16 @@ const docTemplate = `{
                 ],
                 "summary": "Get Answer Snapshot",
                 "tags": [
-                    "answer-snapshots"
+                    "chat"
                 ]
             }
         },
         "/api/v1/answer-snapshots/{snapshotId}/audit-export": {
             "get": {
-                "description": "GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4). The middleware gate is audit-export:read; the handler re-checks per doc/11 §6.1 item 3.。只要求登录，没有额外的 RBAC 规则。成功返回 GetAnswerSnapshotAuditExportResponse",
+                "description": "GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4). The middleware gate is audit-export:read; the handler re-checks per doc/11 §6.1 item 3.。需要权限 read:audit-export（由 accessRules 强制）。成功返回 GetAnswerSnapshotAuditExportResponse",
                 "operationId": "getAnswerSnapshotAuditExport",
+                "x-ragflow-permission": "read:audit-export",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 snapshotId",
@@ -32260,14 +32325,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4)",
                 "tags": [
-                    "answer-snapshots"
+                    "audit-export"
                 ]
             }
         },
         "/api/v1/answer-snapshots/{snapshotId}/export": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 CreateAnswerExportRequest。成功返回 GetAnswerSnapshotResponse。声明了 1 个业务错误码：40130(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:chat（由 accessRules 强制）。请求体类型 CreateAnswerExportRequest。成功返回 GetAnswerSnapshotResponse。声明了 1 个业务错误码：40130(400)（括号内是 HTTP 状态）",
                 "operationId": "createAnswerExport",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": ["40130"],
                 "parameters": [
                     {
                         "description": "路径参数 snapshotId",
@@ -32321,7 +32388,7 @@ const docTemplate = `{
                 ],
                 "summary": "Create Answer Export",
                 "tags": [
-                    "answer-snapshots"
+                    "chat"
                 ]
             }
         },
@@ -32329,6 +32396,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:approval（由 accessRules 强制）。成功返回 []model.ApprovalDelegation",
                 "operationId": "listApprovalDelegations",
+                "x-ragflow-permission": "read:approval",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -32354,6 +32423,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 read:approval（由 accessRules 强制）。请求体类型 approvalDelegationRequest。成功返回 *model.ApprovalDelegation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createApprovalDelegation",
+                "x-ragflow-permission": "read:approval",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -32402,8 +32473,10 @@ const docTemplate = `{
         },
         "/api/v1/approval-delegations/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteApprovalDelegationResponse。声明了 1 个业务错误码：40400(404)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:approval（由 accessRules 强制）。成功返回 DeleteApprovalDelegationResponse。声明了 1 个业务错误码：40400(404)（括号内是 HTTP 状态）",
                 "operationId": "deleteApprovalDelegation",
+                "x-ragflow-permission": "read:approval",
+                "x-error-codes": ["40400"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -32444,7 +32517,7 @@ const docTemplate = `{
                 ],
                 "summary": "Delete Approval Delegation",
                 "tags": [
-                    "approval-delegations"
+                    "approval"
                 ]
             }
         },
@@ -32452,6 +32525,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:approval-policy（由 accessRules 强制）。成功返回 []model.ApprovalPolicy",
                 "operationId": "listApprovalPolicies",
+                "x-ragflow-permission": "read:approval-policy",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -32477,6 +32552,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:approval-policy（由 accessRules 强制）。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "saveApprovalPolicy",
+                "x-ragflow-permission": "manage:approval-policy",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -32525,8 +32602,10 @@ const docTemplate = `{
         },
         "/api/v1/approval-policies/{id}": {
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:approval-policy（由 accessRules 强制）。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "saveApprovalPolicyPut",
+                "x-ragflow-permission": "manage:approval-policy",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -32580,7 +32659,7 @@ const docTemplate = `{
                 ],
                 "summary": "Save Approval Policy",
                 "tags": [
-                    "approval-policies"
+                    "approval-policy"
                 ]
             }
         },
@@ -32588,6 +32667,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:approval（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Approval",
                 "operationId": "listApprovals",
+                "x-ragflow-permission": "read:approval",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 tenant_id",
@@ -32727,6 +32808,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:approval（由 accessRules 强制）。请求体类型 service.ApprovalSubmitRequest。成功返回 CreateApprovalResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createApproval",
+                "x-ragflow-permission": "execute:approval",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -32787,6 +32870,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalBatchDecisionRequest。成功返回 []service.ApprovalBatchDecisionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "batchApproveApprovals",
+                "x-ragflow-permission": "manage:approval",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -32837,6 +32922,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalBatchDecisionRequest。成功返回 []service.ApprovalBatchDecisionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "batchRejectApprovals",
+                "x-ragflow-permission": "manage:approval",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -32887,6 +32974,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:approval（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv",
                 "operationId": "exportApprovals",
+                "x-ragflow-permission": "read:approval",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 tenant_id",
@@ -33010,8 +33099,10 @@ const docTemplate = `{
         },
         "/api/v1/approvals/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.ApprovalDetail",
+                "description": "需要权限 read:approval（由 accessRules 强制）。成功返回 *service.ApprovalDetail",
                 "operationId": "getApproval",
+                "x-ragflow-permission": "read:approval",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33042,14 +33133,16 @@ const docTemplate = `{
                 ],
                 "summary": "Get Approval",
                 "tags": [
-                    "approvals"
+                    "approval"
                 ]
             }
         },
         "/api/v1/approvals/{id}/approve": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "approveApproval",
+                "x-ragflow-permission": "execute:approval",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33103,14 +33196,16 @@ const docTemplate = `{
                 ],
                 "summary": "Approve Approval",
                 "tags": [
-                    "approvals"
+                    "approval"
                 ]
             }
         },
         "/api/v1/approvals/{id}/cancel": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "cancelApproval",
+                "x-ragflow-permission": "execute:approval",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33164,14 +33259,16 @@ const docTemplate = `{
                 ],
                 "summary": "Cancel Approval",
                 "tags": [
-                    "approvals"
+                    "approval"
                 ]
             }
         },
         "/api/v1/approvals/{id}/reject": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "rejectApproval",
+                "x-ragflow-permission": "execute:approval",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33225,14 +33322,16 @@ const docTemplate = `{
                 ],
                 "summary": "Reject Approval",
                 "tags": [
-                    "approvals"
+                    "approval"
                 ]
             }
         },
         "/api/v1/approvals/{id}/retry": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "retryApproval",
+                "x-ragflow-permission": "manage:approval",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33286,7 +33385,7 @@ const docTemplate = `{
                 ],
                 "summary": "Retry Approval",
                 "tags": [
-                    "approvals"
+                    "approval"
                 ]
             }
         },
@@ -33294,6 +33393,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AssistantRelease",
                 "operationId": "listAssistantReleases",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -33353,6 +33454,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
                 "operationId": "createAssistantRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -33394,8 +33497,10 @@ const docTemplate = `{
         },
         "/api/v1/assistant-releases/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.AssistantRelease",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.AssistantRelease",
                 "operationId": "getAssistantRelease",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33426,14 +33531,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Assistant Release",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/activate": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
                 "operationId": "activateAssistantRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33480,14 +33587,16 @@ const docTemplate = `{
                 ],
                 "summary": "activate Assistant Release",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/apply": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
                 "operationId": "applyAssistantRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33534,14 +33643,16 @@ const docTemplate = `{
                 ],
                 "summary": "apply Assistant Release",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/authorization-snapshots": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.AuthorizationSnapshot",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuthorizationSnapshot",
                 "operationId": "listAssistantAuthorizationSnapshots",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33596,12 +33707,14 @@ const docTemplate = `{
                 ],
                 "summary": "list Assistant Authorization Snapshots",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             },
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AuthorizationSnapshot",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AuthorizationSnapshot",
                 "operationId": "createAssistantAuthorizationSnapshot",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33648,14 +33761,16 @@ const docTemplate = `{
                 ],
                 "summary": "create Assistant Authorization Snapshot",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/compensate": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
                 "operationId": "compensateAssistantRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33702,14 +33817,16 @@ const docTemplate = `{
                 ],
                 "summary": "compensate Assistant Release",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/gate": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.AssistantReleaseGateSummary",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.AssistantReleaseGateSummary",
                 "operationId": "getAssistantReleaseGateSummary",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33740,14 +33857,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Assistant Release Gate Summary",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/health": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.RuntimeHealth",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.RuntimeHealth",
                 "operationId": "getAssistantReleaseHealth",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33778,12 +33897,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Assistant Release Health",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RuntimeHealth",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RuntimeHealth",
                 "operationId": "updateAssistantReleaseHealth",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33830,14 +33951,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Assistant Release Health",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/manifest": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.SnapshotManifest",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.SnapshotManifest",
                 "operationId": "getAssistantSnapshotManifest",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33868,14 +33991,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Assistant Snapshot Manifest",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/operations": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ReleaseOperation",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ReleaseOperation",
                 "operationId": "listAssistantReleaseOperations",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -33938,14 +34063,16 @@ const docTemplate = `{
                 ],
                 "summary": "list Assistant Release Operations",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/operations/{operationId}/recover": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
                 "operationId": "recoverAssistantReleaseOperation",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -34001,14 +34128,16 @@ const docTemplate = `{
                 ],
                 "summary": "recover Assistant Release Operation",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/promote-canary": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
                 "operationId": "promoteCanaryAssistantRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -34055,14 +34184,16 @@ const docTemplate = `{
                 ],
                 "summary": "promote Canary Assistant Release",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/reconcile": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
                 "operationId": "reconcileAssistantRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -34109,14 +34240,16 @@ const docTemplate = `{
                 ],
                 "summary": "reconcile Assistant Release",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/rollback/{targetId}": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
                 "operationId": "rollbackAssistantRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -34172,14 +34305,16 @@ const docTemplate = `{
                 ],
                 "summary": "rollback Assistant Release",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistant-releases/{id}/transition": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
                 "operationId": "transitionAssistantRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -34226,7 +34361,7 @@ const docTemplate = `{
                 ],
                 "summary": "transition Assistant Release",
                 "tags": [
-                    "assistant-releases"
+                    "release-governance"
                 ]
             }
         },
@@ -34234,6 +34369,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Assistant",
                 "operationId": "listAssistants",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -34293,8 +34430,10 @@ const docTemplate = `{
         },
         "/api/v1/assistants/{id}/rollout-policies": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 GetAssistantRolloutPoliciesResponse",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回 GetAssistantRolloutPoliciesResponse",
                 "operationId": "getAssistantRolloutPolicies",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -34341,12 +34480,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Assistant Rollout Policies",
                 "tags": [
-                    "assistants"
+                    "release-governance"
                 ]
             },
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy",
                 "operationId": "createAssistantRolloutPolicy",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -34393,14 +34534,16 @@ const docTemplate = `{
                 ],
                 "summary": "create Assistant Rollout Policy",
                 "tags": [
-                    "assistants"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/assistants/{id}/rollout-policies/{policyId}": {
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy",
                 "operationId": "updateAssistantRolloutPolicy",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -34456,7 +34599,7 @@ const docTemplate = `{
                 ],
                 "summary": "update Assistant Rollout Policy",
                 "tags": [
-                    "assistants"
+                    "release-governance"
                 ]
             }
         },
@@ -34464,6 +34607,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListAudits returns a page of the tenant's audit logs.。需要权限 read:audit（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuditLog",
                 "operationId": "listAudits",
+                "x-ragflow-permission": "read:audit",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -34597,6 +34742,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListAuditAnchors returns immutable audit-chain tail snapshots.。需要权限 read:audit-anchor（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuditAnchor",
                 "operationId": "listAuditAnchors",
+                "x-ragflow-permission": "read:audit-anchor",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -34642,6 +34789,8 @@ const docTemplate = `{
             "get": {
                 "description": "ExportAudits streams the audit log as CSV.。需要权限 read:audit（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv",
                 "operationId": "exportAudits",
+                "x-ragflow-permission": "read:audit",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -34687,6 +34836,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:audit（由 accessRules 强制）。请求体类型 RepairAuditChainRequest。成功返回 RepairAuditChainResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "repairAuditChain",
+                "x-ragflow-permission": "manage:audit",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -34737,6 +34888,8 @@ const docTemplate = `{
             "get": {
                 "description": "VerifyAuditChain checks the audit hash chain integrity.。需要权限 read:audit（由 accessRules 强制）。成功返回 VerifyAuditChainResponse",
                 "operationId": "verifyAuditChain",
+                "x-ragflow-permission": "read:audit",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -34764,6 +34917,7 @@ const docTemplate = `{
             "post": {
                 "description": "校验凭据、按来源 IP 限制失败次数，成功后签发访问令牌与刷新令牌并写入 HttpOnly Cookie，同时记录一条登录审计。连续失败返回 429 而不是 401，客户端应提示稍后重试。",
                 "operationId": "authLogin",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -34829,6 +34983,7 @@ const docTemplate = `{
             "post": {
                 "description": "吊销请求体（或 Cookie）里的刷新令牌并清空 rgx_access/rgx_refresh，因此拿旧刷新令牌无法再续期。幂等：令牌无效或缺失同样返回成功，客户端不需要区分「本来就没登录」。",
                 "operationId": "authLogout",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -34873,6 +35028,8 @@ const docTemplate = `{
             "get": {
                 "description": "返回登录账号的 id/用户名/邮箱、所属工作区（含用于展示的名称）、主角色、已解析的权限规则、是否平台管理员，以及该部署是否开启审批。前端据此渲染侧边栏与按钮，无需再逐条试探接口。",
                 "operationId": "getCurrentUser",
+                "x-ragflow-permission": "read:user",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -34920,6 +35077,7 @@ const docTemplate = `{
             "get": {
                 "description": "IdP 在用户认证后回跳本接口。校验 state/nonce 与 ID Token 的签名、issuer、audience、有效期，把通过校验的企业身份映射到本地账号，写入 rgx_access/rgx_refresh Cookie 后 302 回前端；校验失败时清空流程 Cookie 并 302 回登录页（不返回错误码），调用方应把「回跳后仍未登录」当作失败信号。",
                 "operationId": "oidcCallback",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "IdP 回传的 state，必须与 rgx_oidc_state 一致",
@@ -34970,6 +35128,7 @@ const docTemplate = `{
             "get": {
                 "description": "生成 state/nonce 并写入两个短时效 Cookie（rgx_oidc_state / rgx_oidc_nonce，绑定到 /api/v1/auth/oidc），随后以 302 跳转到 IdP 授权地址。跳转目标是本次唯一的响应体，所以契约是 Location 头而不是 JSON；失败（本部署未配置 OIDC、或签名材料缺失）返回 500 的标准错误信封，不会跳转。",
                 "operationId": "oidcStart",
+                "x-error-codes": [],
                 "responses": {
                     "302": {
                         "content": {
@@ -35000,6 +35159,7 @@ const docTemplate = `{
             "get": {
                 "description": "登录页在渲染前调用本接口决定是否显示「企业 SSO」入口；无需认证。返回是否启用、IdP 的 issuer，以及发起登录的相对路径（前端不应硬编码该路径）。",
                 "operationId": "oidcStatus",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -35022,6 +35182,7 @@ const docTemplate = `{
             "post": {
                 "description": "旋转刷新令牌：旧令牌立即失效，返回新的访问令牌与刷新令牌并重写 Cookie。请求体可以省略 refresh_token，此时从 rgx_refresh Cookie 读取——浏览器客户端正是这样静默续期的。",
                 "operationId": "authRefresh",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -35077,6 +35238,8 @@ const docTemplate = `{
             "get": {
                 "description": "GetBranding returns the caller's effective tenant branding.。需要权限 read:branding（由 accessRules 强制）。成功返回 service.Branding",
                 "operationId": "getBranding",
+                "x-ragflow-permission": "read:branding",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -35102,6 +35265,8 @@ const docTemplate = `{
             "put": {
                 "description": "SetBranding updates the caller tenant's branding.。需要权限 manage:branding（由 accessRules 强制）。请求体类型 SetBrandingRequest。成功返回 service.Branding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "setBranding",
+                "x-ragflow-permission": "manage:branding",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -35152,6 +35317,8 @@ const docTemplate = `{
             "post": {
                 "description": "UploadBrandingLogo accepts an image upload, stores it under the data dir, and returns the served URL which is then persisted as the tenant logo.。需要权限 manage:branding（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 UploadBrandingLogoResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "uploadBrandingLogo",
+                "x-ragflow-permission": "manage:branding",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -35205,6 +35372,7 @@ const docTemplate = `{
             "get": {
                 "description": "PublicBranding returns platform branding for unauthenticated pages (login).。只要求登录，没有额外的 RBAC 规则。成功返回 service.Branding",
                 "operationId": "publicBranding",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -35227,6 +35395,8 @@ const docTemplate = `{
             "post": {
                 "description": "UserChatCompletion is the JWT-authenticated chat endpoint used by the workbench. Unlike the gateway (/v1/chat/completions), it authenticates with the logged-in user's session and resolves a chat scoped to their tenant, so end users never need to paste an API key.。需要权限 execute:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "userChatCompletion",
+                "x-ragflow-permission": "execute:chat",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -35280,6 +35450,8 @@ const docTemplate = `{
             "get": {
                 "description": "ChatDocChunks lists a chat-referenced document's chunks for the full-document viewer.。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.Chunk",
                 "operationId": "chatDocChunks",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -35341,6 +35513,8 @@ const docTemplate = `{
             "get": {
                 "description": "ChatDocPreview streams the original file of a chat-referenced document.。需要权限 read:chat（由 accessRules 强制）。成功返回原始字节，媒体类型",
                 "operationId": "chatDocPreview",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 dataset",
@@ -35386,6 +35560,8 @@ const docTemplate = `{
             "post": {
                 "description": "ChatFeedback records a user's like/dislike on a chat turn.。需要权限 execute:chat（由 accessRules 强制）。请求体类型 ChatFeedbackRequest。成功返回 *model.MessageFeedback。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "chatFeedback",
+                "x-ragflow-permission": "execute:chat",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -35436,6 +35612,8 @@ const docTemplate = `{
             "get": {
                 "description": "ChatImage streams a referenced chunk image.。需要权限 read:chat（由 accessRules 强制）。成功返回原始字节，媒体类型",
                 "operationId": "chatImage",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 dataset",
@@ -35497,6 +35675,8 @@ const docTemplate = `{
             "get": {
                 "description": "ChatChunk deep-links to a source chunk referenced by a chat answer. It uses RAGFlow dataset/doc/chunk ids and enforces tenant ownership of the dataset.。需要权限 read:chat（由 accessRules 强制）。成功返回 *ragflow.Chunk",
                 "operationId": "chatChunk",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 dataset",
@@ -35550,6 +35730,8 @@ const docTemplate = `{
             "post": {
                 "description": "UploadChatFile accepts a multipart chat attachment and uploads it to the engine as a temporary blob, returning its metadata for attaching to messages.。需要权限 execute:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "uploadChatFile",
+                "x-ragflow-permission": "execute:chat",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -35601,8 +35783,10 @@ const docTemplate = `{
         },
         "/api/v1/chat/{id}/references": {
             "get": {
-                "description": "ChatReferences returns the citation evidence (with in-document locator positions) for a chat turn so the forward UI can render the citation drawer and highlight the cited span (P2 citation experience, report §13.5.1). The chat is resolved through the tenant-owned scope; a cross-tenant chat reference leaks nothing because execution is authorized per tenant.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.CitationReference",
+                "description": "ChatReferences returns the citation evidence (with in-document locator positions) for a chat turn so the forward UI can render the citation drawer and highlight the cited span (P2 citation experience, report §13.5.1). The chat is resolved through the tenant-owned scope; a cross-tenant chat reference leaks nothing because execution is authorized per tenant.。需要权限 execute:chat（由 accessRules 强制）。成功返回 []model.CitationReference",
                 "operationId": "chatReferences",
+                "x-ragflow-permission": "execute:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -35649,6 +35833,8 @@ const docTemplate = `{
             "delete": {
                 "description": "BatchDeleteChats deletes multiple chats.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 deleteSessionPayload。成功返回 BatchDeleteChatsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "batchDeleteChats",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -35697,6 +35883,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListChats returns the caller's chat assistants (platform scope=all to list all).。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ChatShadow",
                 "operationId": "listChats",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -35788,6 +35976,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateChat creates a chat assistant owned by the caller's tenant.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createChat",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -35866,6 +36056,8 @@ const docTemplate = `{
             "post": {
                 "description": "BatchUpdateChatStatus enables/disables multiple chats.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 batchChatStatusPayload。成功返回 BatchUpdateChatStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "batchUpdateChatStatus",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -35916,6 +36108,8 @@ const docTemplate = `{
             "get": {
                 "description": "GetChatModelOptions returns RAGFlow's concrete model catalog and defaults so the Chat config editor lists real model names for LLM / rerank pickers.。需要权限 read:chat（由 accessRules 强制）。成功返回 *service.ModelOptions",
                 "operationId": "getChatModelOptions",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -35941,8 +36135,10 @@ const docTemplate = `{
         },
         "/api/v1/chats/{id}": {
             "delete": {
-                "description": "DeleteChat deletes a chat assistant.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteChatResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteChat deletes a chat assistant.。需要权限 manage:chat（由 accessRules 强制）。成功返回 DeleteChatResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteChat",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36009,12 +36205,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteChat deletes a chat assistant",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             },
             "get": {
-                "description": "GetChat returns a chat assistant.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.ChatShadow",
+                "description": "GetChat returns a chat assistant.。需要权限 read:chat（由 accessRules 强制）。成功返回 *model.ChatShadow",
                 "operationId": "getChat",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36061,12 +36259,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetChat returns a chat assistant",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             },
             "put": {
-                "description": "UpdateChat updates a chat assistant (name, scope and authoring config).。只要求登录，没有额外的 RBAC 规则。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateChat updates a chat assistant (name, scope and authoring config).。需要权限 manage:chat（由 accessRules 强制）。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateChat",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36146,14 +36346,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateChat updates a chat assistant (name, scope and authoring config)",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             }
         },
         "/api/v1/chats/{id}/config": {
             "get": {
-                "description": "GetChatConfig returns the RAGFlow-side editable config for prefill.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ChatConfig",
+                "description": "GetChatConfig returns the RAGFlow-side editable config for prefill.。需要权限 read:chat（由 accessRules 强制）。成功返回 *service.ChatConfig",
                 "operationId": "getChatConfig",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36200,14 +36402,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetChatConfig returns the RAGFlow-side editable config for prefill",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             }
         },
         "/api/v1/chats/{id}/sessions": {
             "delete": {
-                "description": "DeleteChatSessions deletes sessions of a chat assistant (batch).。只要求登录，没有额外的 RBAC 规则。请求体类型 deleteSessionPayload。成功返回 DeleteChatSessionsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteChatSessions deletes sessions of a chat assistant (batch).。需要权限 manage:chat（由 accessRules 强制）。请求体类型 deleteSessionPayload。成功返回 DeleteChatSessionsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteChatSessions",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36261,12 +36465,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteChatSessions deletes sessions of a chat assistant (batch)",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             },
             "get": {
-                "description": "ListChatSessions lists the sessions of a chat assistant.。只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 ragflow.Session",
+                "description": "ListChatSessions lists the sessions of a chat assistant.。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.Session",
                 "operationId": "listChatSessions",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36321,12 +36527,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListChatSessions lists the sessions of a chat assistant",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             },
             "post": {
-                "description": "CreateChatSession creates a session on a chat assistant.。只要求登录，没有额外的 RBAC 规则。请求体类型 createSessionPayload。成功返回 *ragflow.Session",
+                "description": "CreateChatSession creates a session on a chat assistant.。需要权限 session:create:chat（由 accessRules 强制）。请求体类型 createSessionPayload。成功返回 *ragflow.Session",
                 "operationId": "createChatSession",
+                "x-ragflow-permission": "session:create:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36370,14 +36578,16 @@ const docTemplate = `{
                 ],
                 "summary": "CreateChatSession creates a session on a chat assistant",
                 "tags": [
-                    "chats"
+                    "create:chat"
                 ]
             }
         },
         "/api/v1/chats/{id}/sessions/{sessionId}": {
             "delete": {
-                "description": "DeleteChatSession deletes a single session.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteChatSessionResponse",
+                "description": "DeleteChatSession deletes a single session.。需要权限 manage:chat（由 accessRules 强制）。成功返回 DeleteChatSessionResponse",
                 "operationId": "deleteChatSession",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36417,12 +36627,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteChatSession deletes a single session",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             },
             "get": {
-                "description": "GetChatSession returns a session with its messages.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.Session",
+                "description": "GetChatSession returns a session with its messages.。需要权限 read:chat（由 accessRules 强制）。成功返回 *ragflow.Session",
                 "operationId": "getChatSession",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36462,12 +36674,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetChatSession returns a session with its messages",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             },
             "patch": {
-                "description": "UpdateChatSession renames a session.。只要求登录，没有额外的 RBAC 规则。请求体类型 createSessionPayload。成功返回 *ragflow.Session。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateChatSession renames a session.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 createSessionPayload。成功返回 *ragflow.Session。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateChatSession",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36530,14 +36744,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateChatSession renames a session",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             }
         },
         "/api/v1/chats/{id}/sessions/{sessionId}/messages": {
             "get": {
-                "description": "ListChatSessionMessages returns a bounded page of session messages.。只要求登录，没有额外的 RBAC 规则。成功返回 ListChatSessionMessagesResponse",
+                "description": "ListChatSessionMessages returns a bounded page of session messages.。需要权限 read:chat（由 accessRules 强制）。成功返回 ListChatSessionMessagesResponse",
                 "operationId": "listChatSessionMessages",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36593,14 +36809,16 @@ const docTemplate = `{
                 ],
                 "summary": "ListChatSessionMessages returns a bounded page of session messages",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             }
         },
         "/api/v1/chats/{id}/usage": {
             "get": {
-                "description": "ChatUsage returns the metered usage/cost of a chat.。只要求登录，没有额外的 RBAC 规则。成功返回 *repository.ChatUsageAgg",
+                "description": "ChatUsage returns the metered usage/cost of a chat.。需要权限 read:chat（由 accessRules 强制）。成功返回 *repository.ChatUsageAgg",
                 "operationId": "chatUsage",
+                "x-ragflow-permission": "read:chat",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36631,7 +36849,7 @@ const docTemplate = `{
                 ],
                 "summary": "ChatUsage returns the metered usage/cost of a chat",
                 "tags": [
-                    "chats"
+                    "chat"
                 ]
             }
         },
@@ -36639,6 +36857,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:connector（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Connector",
                 "operationId": "listConnectors",
+                "x-ragflow-permission": "read:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -36714,6 +36934,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:connector（由 accessRules 强制）。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
                 "operationId": "createConnector",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": ["40060"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -36774,6 +36996,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListConnectorProvidersMeta is a platform-wide capability read; no tenant scope applies.。需要权限 read:connector（由 accessRules 强制）。成功返回 []connector.Meta",
                 "operationId": "listConnectorProvidersMeta",
+                "x-ragflow-permission": "read:connector",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -36801,6 +37025,8 @@ const docTemplate = `{
             "post": {
                 "description": "TestConnector probes an unsaved provider/spec/credential triple (wizard validation); the persisted probe lives at POST /connectors/:id/test.。需要权限 manage:connector（由 accessRules 强制）。请求体类型 TestConnectorRequest。成功返回 TestConnectorResponse。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
                 "operationId": "testConnector",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": ["40060"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -36849,8 +37075,10 @@ const docTemplate = `{
         },
         "/api/v1/connectors/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteConnectorResponse",
+                "description": "需要权限 manage:connector（由 accessRules 强制）。成功返回 DeleteConnectorResponse",
                 "operationId": "deleteConnector",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36891,12 +37119,14 @@ const docTemplate = `{
                 ],
                 "summary": "Delete Connector",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.Connector",
+                "description": "需要权限 read:connector（由 accessRules 强制）。成功返回 *model.Connector",
                 "operationId": "getConnector",
+                "x-ragflow-permission": "read:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -36943,12 +37173,14 @@ const docTemplate = `{
                 ],
                 "summary": "Get Connector",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:connector（由 accessRules 强制）。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
                 "operationId": "updateConnector",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": ["40060"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37012,14 +37244,16 @@ const docTemplate = `{
                 ],
                 "summary": "Update Connector",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
         "/api/v1/connectors/{id}/disable": {
             "post": {
-                "description": "SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse",
+                "description": "SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse",
                 "operationId": "setConnectorEnabled",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37076,14 +37310,16 @@ const docTemplate = `{
                 ],
                 "summary": "SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
         "/api/v1/connectors/{id}/enable": {
             "post": {
-                "description": "SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse",
+                "description": "SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse",
                 "operationId": "setConnectorEnabledPost",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37140,14 +37376,16 @@ const docTemplate = `{
                 ],
                 "summary": "SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
         "/api/v1/connectors/{id}/preview": {
             "post": {
-                "description": "PreviewConnector dry-runs one scan page and reports the diff (read-only).。只要求登录，没有额外的 RBAC 规则。请求体类型 PreviewConnectorRequest。成功返回 *service.ConnectorPreview",
+                "description": "PreviewConnector dry-runs one scan page and reports the diff (read-only).。需要权限 manage:connector（由 accessRules 强制）。请求体类型 PreviewConnectorRequest。成功返回 *service.ConnectorPreview",
                 "operationId": "previewConnector",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37207,14 +37445,16 @@ const docTemplate = `{
                 ],
                 "summary": "PreviewConnector dry-runs one scan page and reports the diff (read-only)",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
         "/api/v1/connectors/{id}/runs": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ConnectorRun",
+                "description": "需要权限 read:connector（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ConnectorRun",
                 "operationId": "listConnectorRuns",
+                "x-ragflow-permission": "read:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37277,14 +37517,16 @@ const docTemplate = `{
                 ],
                 "summary": "List Connector Runs",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
         "/api/v1/connectors/{id}/runs/{runID}": {
             "get": {
-                "description": "GetConnectorRun returns one run row (doc/225 §7.2 run detail).。只要求登录，没有额外的 RBAC 规则。成功返回 struct{*model.ConnectorRun; Detail map[string]any \"json:\\\"detail\\\"\"}",
+                "description": "GetConnectorRun returns one run row (doc/225 §7.2 run detail).。需要权限 read:connector（由 accessRules 强制）。成功返回 struct{*model.ConnectorRun; Detail map[string]any \"json:\\\"detail\\\"\"}",
                 "operationId": "getConnectorRun",
+                "x-ragflow-permission": "read:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37340,14 +37582,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetConnectorRun returns one run row (doc/225 §7.2 run detail)",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
         "/api/v1/connectors/{id}/schedule": {
             "put": {
-                "description": "SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule).。只要求登录，没有额外的 RBAC 规则。请求体类型 SetConnectorScheduleRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40335(400)（括号内是 HTTP 状态）",
+                "description": "SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule).。需要权限 manage:connector（由 accessRules 强制）。请求体类型 SetConnectorScheduleRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40335(400)（括号内是 HTTP 状态）",
                 "operationId": "setConnectorSchedule",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": ["40335"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37411,14 +37655,16 @@ const docTemplate = `{
                 ],
                 "summary": "SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule)",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
         "/api/v1/connectors/{id}/sync": {
             "post": {
-                "description": "SyncConnectorNow enqueues a durable manual sync job.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncConnectorNowResponse",
+                "description": "SyncConnectorNow enqueues a durable manual sync job.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncConnectorNowResponse",
                 "operationId": "syncConnectorNow",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37465,14 +37711,16 @@ const docTemplate = `{
                 ],
                 "summary": "SyncConnectorNow enqueues a durable manual sync job",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
         "/api/v1/connectors/{id}/test": {
             "post": {
-                "description": "TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConnectorHealth",
+                "description": "TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2).。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConnectorHealth",
                 "operationId": "testConnectorByID",
+                "x-ragflow-permission": "manage:connector",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -37535,7 +37783,7 @@ const docTemplate = `{
                 ],
                 "summary": "TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2)",
                 "tags": [
-                    "connectors"
+                    "connector"
                 ]
             }
         },
@@ -37543,6 +37791,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:context-decision（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ContextDecision",
                 "operationId": "listConversationContextDecisions",
+                "x-ragflow-permission": "read:context-decision",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -37626,8 +37876,10 @@ const docTemplate = `{
         },
         "/api/v1/conversation-context/decisions/by-request/{requestId}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.ContextDecision",
+                "description": "需要权限 read:context-decision（由 accessRules 强制）。成功返回 *model.ContextDecision",
                 "operationId": "getConversationContextDecisionByRequest",
+                "x-ragflow-permission": "read:context-decision",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 requestId",
@@ -37658,14 +37910,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Conversation Context Decision By Request",
                 "tags": [
-                    "conversation-context"
+                    "context-decision"
                 ]
             }
         },
         "/api/v1/conversation-context/decisions/{decisionId}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.ContextDecision",
+                "description": "需要权限 read:context-decision（由 accessRules 强制）。成功返回 *model.ContextDecision",
                 "operationId": "getConversationContextDecision",
+                "x-ragflow-permission": "read:context-decision",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 decisionId",
@@ -37696,7 +37950,7 @@ const docTemplate = `{
                 ],
                 "summary": "get Conversation Context Decision",
                 "tags": [
-                    "conversation-context"
+                    "context-decision"
                 ]
             }
         },
@@ -37704,6 +37958,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 read:context-decision（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationContextPreview",
                 "operationId": "previewConversationContext",
+                "x-ragflow-permission": "read:context-decision",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -37747,6 +38003,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListConversationAssistants returns executable Chat/Agent assistants.。需要权限 read:assistant（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.ConversationAssistant",
                 "operationId": "listConversationAssistants",
+                "x-ragflow-permission": "read:assistant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 kind",
@@ -37806,8 +38064,10 @@ const docTemplate = `{
         },
         "/api/v1/conversation/assistants/{kind}/{targetId}": {
             "put": {
-                "description": "UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.UpdateConversationAssistantRequest。成功返回 *service.ConversationAssistant",
+                "description": "UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateConversationAssistantRequest。成功返回 *service.ConversationAssistant",
                 "operationId": "updateConversationAssistant",
+                "x-ragflow-permission": "manage:assistant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 kind",
@@ -37860,14 +38120,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in",
                 "tags": [
-                    "conversation"
+                    "assistant"
                 ]
             }
         },
         "/api/v1/conversation/assistants/{kind}/{targetId}/governance": {
             "put": {
-                "description": "UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk).。只要求登录，没有额外的 RBAC 规则。请求体类型 service.UpdateConversationAssistantGovernanceRequest。成功返回 *service.ConversationAssistant",
+                "description": "UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk).。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateConversationAssistantGovernanceRequest。成功返回 *service.ConversationAssistant",
                 "operationId": "updateConversationAssistantGovernance",
+                "x-ragflow-permission": "manage:assistant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 kind",
@@ -37920,7 +38182,7 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk)",
                 "tags": [
-                    "conversation"
+                    "assistant"
                 ]
             }
         },
@@ -37928,6 +38190,8 @@ const docTemplate = `{
             "post": {
                 "description": "RouteConversation recommends executable assistants from deterministic metadata. The response is always a suggestion in M2.。需要权限 execute:assistant（由 accessRules 强制）。请求体类型 service.RouteRequest。成功返回 *service.RouteDecisionResponse",
                 "operationId": "routeConversation",
+                "x-ragflow-permission": "execute:assistant",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -37966,8 +38230,10 @@ const docTemplate = `{
         },
         "/api/v1/conversation/route-selections/{routeSelectionId}/bootstrap": {
             "post": {
-                "description": "BootstrapRouteSelection creates the target session after real-time checks.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationBootstrapResponse",
+                "description": "BootstrapRouteSelection creates the target session after real-time checks.。需要权限 execute:assistant（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationBootstrapResponse",
                 "operationId": "bootstrapRouteSelection",
+                "x-ragflow-permission": "execute:assistant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 routeSelectionId",
@@ -38014,14 +38280,16 @@ const docTemplate = `{
                 ],
                 "summary": "BootstrapRouteSelection creates the target session after real-time checks",
                 "tags": [
-                    "conversation"
+                    "assistant"
                 ]
             }
         },
         "/api/v1/conversation/route/{routeId}/select": {
             "post": {
-                "description": "SelectRouteCandidate creates a one-time selection binding.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.SelectRouteCandidateRequest。成功返回 *service.RouteSelectionResponse",
+                "description": "SelectRouteCandidate creates a one-time selection binding.。需要权限 execute:assistant（由 accessRules 强制）。请求体类型 service.SelectRouteCandidateRequest。成功返回 *service.RouteSelectionResponse",
                 "operationId": "selectRouteCandidate",
+                "x-ragflow-permission": "execute:assistant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 routeId",
@@ -38065,7 +38333,7 @@ const docTemplate = `{
                 ],
                 "summary": "SelectRouteCandidate creates a one-time selection binding",
                 "tags": [
-                    "conversation"
+                    "assistant"
                 ]
             }
         },
@@ -38073,6 +38341,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListRouteEvaluationRuns returns prior M2.5 gate outcomes.。需要权限 read:assistant（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.RouteEvaluationRun",
                 "operationId": "listRouteEvaluationRuns",
+                "x-ragflow-permission": "read:assistant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -38116,6 +38386,8 @@ const docTemplate = `{
             "post": {
                 "description": "RunRouteEvaluation executes the M2.5 offline discovery gate.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.RouteEvaluationRequest。成功返回 *service.RouteEvaluationReport",
                 "operationId": "runRouteEvaluation",
+                "x-ragflow-permission": "manage:assistant",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -38154,8 +38426,10 @@ const docTemplate = `{
         },
         "/api/v1/conversation/routing/evaluations/{runId}": {
             "get": {
-                "description": "GetRouteEvaluationRun returns one immutable M2.5 report.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.RouteEvaluationRun",
+                "description": "GetRouteEvaluationRun returns one immutable M2.5 report.。需要权限 read:assistant（由 accessRules 强制）。成功返回 *model.RouteEvaluationRun",
                 "operationId": "getRouteEvaluationRun",
+                "x-ragflow-permission": "read:assistant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 runId",
@@ -38186,7 +38460,7 @@ const docTemplate = `{
                 ],
                 "summary": "GetRouteEvaluationRun returns one immutable M2.5 report",
                 "tags": [
-                    "conversation"
+                    "assistant"
                 ]
             }
         },
@@ -38194,6 +38468,8 @@ const docTemplate = `{
             "get": {
                 "description": "GetTenantRoutePolicy returns the tenant rollout mode.。需要权限 manage:assistant（由 accessRules 强制）。成功返回 *service.RoutePolicyResponse",
                 "operationId": "getTenantRoutePolicy",
+                "x-ragflow-permission": "manage:assistant",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -38219,6 +38495,8 @@ const docTemplate = `{
             "put": {
                 "description": "SetTenantRoutePolicy updates the tenant rollout mode.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateRoutePolicyRequest。成功返回 *service.RoutePolicyResponse",
                 "operationId": "setTenantRoutePolicy",
+                "x-ragflow-permission": "manage:assistant",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -38259,6 +38537,8 @@ const docTemplate = `{
             "get": {
                 "description": "Dashboard returns the role-scoped operational summary.。需要权限 read:dashboard（由 accessRules 强制）。成功返回 *service.DashboardSummary",
                 "operationId": "dashboard",
+                "x-ragflow-permission": "read:dashboard",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -38286,6 +38566,8 @@ const docTemplate = `{
             "delete": {
                 "description": "DeleteDatasets batch-deletes datasets.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 DeleteDatasetsRequest。成功返回 DeleteDatasetsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteDatasets",
+                "x-ragflow-permission": "manage:dataset",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -38352,6 +38634,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListAllDatasets lists datasets across tenants for platform admins.。需要权限 read:dataset（由 accessRules 强制）。成功返回 []service.DatasetSummary",
                 "operationId": "listAllDatasets",
+                "x-ragflow-permission": "read:dataset",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 name",
@@ -38419,6 +38703,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateDataset creates a dataset for the authenticated tenant.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 createDatasetRequest。成功返回 *service.DatasetSummary。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createDataset",
+                "x-ragflow-permission": "manage:dataset",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -38497,6 +38783,8 @@ const docTemplate = `{
             "get": {
                 "description": "ExportDatasets streams the dataset list as CSV.。需要权限 read:dataset-export（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv",
                 "operationId": "exportDatasets",
+                "x-ragflow-permission": "read:dataset-export",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -38542,6 +38830,8 @@ const docTemplate = `{
             "get": {
                 "description": "GetDatasetModelOptions returns the tenant's chat/rerank/embedding models and defaults for the dataset config editor (embedding picker).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.ModelOptions",
                 "operationId": "getDatasetModelOptions",
+                "x-ragflow-permission": "read:dataset",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -38567,8 +38857,10 @@ const docTemplate = `{
         },
         "/api/v1/datasets/{id}": {
             "delete": {
-                "description": "DeleteDataset deletes a dataset and its RAGFlow backing knowledge base.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteDatasetResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteDataset deletes a dataset and its RAGFlow backing knowledge base.。需要权限 manage:dataset（由 accessRules 强制）。成功返回 DeleteDatasetResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteDataset",
+                "x-ragflow-permission": "manage:dataset",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -38635,12 +38927,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteDataset deletes a dataset and its RAGFlow backing knowledge base",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             },
             "get": {
-                "description": "GetDataset returns a single dataset bound to the authenticated tenant.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.DatasetSummary",
+                "description": "GetDataset returns a single dataset bound to the authenticated tenant.。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.DatasetSummary",
                 "operationId": "getDataset",
+                "x-ragflow-permission": "read:dataset",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -38687,12 +38981,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetDataset returns a single dataset bound to the authenticated tenant",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 updateDatasetRequest。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、41122(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:dataset（由 accessRules 强制）。请求体类型 updateDatasetRequest。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、41122(400)（括号内是 HTTP 状态）",
                 "operationId": "updateDataset",
+                "x-ragflow-permission": "manage:dataset",
+                "x-error-codes": ["40000", "41122"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -38772,14 +39068,16 @@ const docTemplate = `{
                 ],
                 "summary": "Update Dataset",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             }
         },
         "/api/v1/datasets/{id}/artifacts": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ArtifactProjection",
+                "description": "需要权限 read:compilation（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ArtifactProjection",
                 "operationId": "listArtifactProjections",
+                "x-ragflow-permission": "read:compilation",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -38834,14 +39132,16 @@ const docTemplate = `{
                 ],
                 "summary": "list Artifact Projections",
                 "tags": [
-                    "datasets"
+                    "compilation"
                 ]
             }
         },
         "/api/v1/datasets/{id}/compilation/reconcile": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 []model.CompilationRun",
+                "description": "需要权限 execute:compilation（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 []model.CompilationRun",
                 "operationId": "reconcileCompilationRuns",
+                "x-ragflow-permission": "execute:compilation",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -38888,14 +39188,16 @@ const docTemplate = `{
                 ],
                 "summary": "reconcile Compilation Runs",
                 "tags": [
-                    "datasets"
+                    "compilation"
                 ]
             }
         },
         "/api/v1/datasets/{id}/compilation/runs": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.CompilationRun",
+                "description": "需要权限 read:compilation（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.CompilationRun",
                 "operationId": "listCompilationRuns",
+                "x-ragflow-permission": "read:compilation",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -38958,12 +39260,14 @@ const docTemplate = `{
                 ],
                 "summary": "list Compilation Runs",
                 "tags": [
-                    "datasets"
+                    "compilation"
                 ]
             },
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun",
+                "description": "需要权限 manage:compilation（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun",
                 "operationId": "triggerCompilationRun",
+                "x-ragflow-permission": "manage:compilation",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39010,14 +39314,16 @@ const docTemplate = `{
                 ],
                 "summary": "trigger Compilation Run",
                 "tags": [
-                    "datasets"
+                    "compilation"
                 ]
             }
         },
         "/api/v1/datasets/{id}/compilation/runs/{runId}/cancel": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 CancelCompilationRunRequest。成功返回 *model.CompilationRun",
+                "description": "需要权限 manage:compilation（由 accessRules 强制）。请求体类型 CancelCompilationRunRequest。成功返回 *model.CompilationRun",
                 "operationId": "cancelCompilationRun",
+                "x-ragflow-permission": "manage:compilation",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39070,14 +39376,16 @@ const docTemplate = `{
                 ],
                 "summary": "cancel Compilation Run",
                 "tags": [
-                    "datasets"
+                    "compilation"
                 ]
             }
         },
         "/api/v1/datasets/{id}/config": {
             "get": {
-                "description": "GetDatasetConfig returns a dataset's parsing/embedding/permission config.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.DatasetConfig",
+                "description": "GetDatasetConfig returns a dataset's parsing/embedding/permission config.。需要权限 read:dataset（由 accessRules 强制）。成功返回 *ragflow.DatasetConfig",
                 "operationId": "getDatasetConfig",
+                "x-ragflow-permission": "read:dataset",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39124,12 +39432,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetDatasetConfig returns a dataset's parsing/embedding/permission config",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             },
             "put": {
-                "description": "UpdateDatasetConfig updates a dataset's config (parser, embedding, permission).。只要求登录，没有额外的 RBAC 规则。请求体类型 ragflow.DatasetConfigUpdate。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateDatasetConfig updates a dataset's config (parser, embedding, permission).。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 ragflow.DatasetConfigUpdate。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateDatasetConfig",
+                "x-ragflow-permission": "manage:dataset",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39209,14 +39519,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateDatasetConfig updates a dataset's config (parser, embedding, permission)",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents": {
             "delete": {
-                "description": "DeleteDocuments removes documents from a dataset.。只要求登录，没有额外的 RBAC 规则。请求体类型 parseRequest。成功返回 DeleteDocumentsResponse。声明了 2 个业务错误码：40000(400)、40300(403)（括号内是 HTTP 状态）",
+                "description": "DeleteDocuments removes documents from a dataset.。需要权限 delete:own:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 DeleteDocumentsResponse。声明了 2 个业务错误码：40000(400)、40300(403)（括号内是 HTTP 状态）",
                 "operationId": "deleteDocuments",
+                "x-ragflow-permission": "delete:own:document",
+                "x-error-codes": ["40000", "40300"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39306,12 +39618,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteDocuments removes documents from a dataset",
                 "tags": [
-                    "datasets"
+                    "own:document"
                 ]
             },
             "get": {
-                "description": "ListDocuments lists documents of a dataset.。只要求登录，没有额外的 RBAC 规则。成功返回 []service.DocumentSummary",
+                "description": "ListDocuments lists documents of a dataset.。需要权限 read:document（由 accessRules 强制）。成功返回 []service.DocumentSummary",
                 "operationId": "listDocuments",
+                "x-ragflow-permission": "read:document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39358,12 +39672,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListDocuments lists documents of a dataset",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             },
             "post": {
-                "description": "UploadDocument uploads a document into a dataset via multipart form.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DocumentSummary。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UploadDocument uploads a document into a dataset via multipart form.。需要权限 append:document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DocumentSummary。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "uploadDocument",
+                "x-ragflow-permission": "append:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39436,14 +39752,16 @@ const docTemplate = `{
                 ],
                 "summary": "UploadDocument uploads a document into a dataset via multipart form",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/status": {
             "post": {
-                "description": "UpdateDataset renames a dataset. SetDocumentsStatus enables or disables the selected documents of a dataset.。只要求登录，没有额外的 RBAC 规则。请求体类型 SetDocumentsStatusRequest。成功返回 SetDocumentsStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateDataset renames a dataset. SetDocumentsStatus enables or disables the selected documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 SetDocumentsStatusRequest。成功返回 SetDocumentsStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "setDocumentsStatus",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39523,14 +39841,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateDataset renames a dataset",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/stop": {
             "post": {
-                "description": "StopDocuments stops parsing for documents of a dataset.。只要求登录，没有额外的 RBAC 规则。请求体类型 parseRequest。成功返回 StopDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "StopDocuments stops parsing for documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 StopDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "stopDocuments",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39610,14 +39930,16 @@ const docTemplate = `{
                 ],
                 "summary": "StopDocuments stops parsing for documents of a dataset",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/chunks": {
             "delete": {
-                "description": "DeleteDocumentChunks deletes the selected chunks of a document.。只要求登录，没有额外的 RBAC 规则。请求体类型 DeleteDocumentChunksRequest。成功返回 DeleteDocumentChunksResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteDocumentChunks deletes the selected chunks of a document.。需要权限 execute:document（由 accessRules 强制）。请求体类型 DeleteDocumentChunksRequest。成功返回 DeleteDocumentChunksResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteDocumentChunks",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39706,12 +40028,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteDocumentChunks deletes the selected chunks of a document",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             },
             "get": {
-                "description": "ListDocumentChunks returns a document's parsed chunks for verification.。只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 service.ChunkSummary",
+                "description": "ListDocumentChunks returns a document's parsed chunks for verification.。需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.ChunkSummary",
                 "operationId": "listDocumentChunks",
+                "x-ragflow-permission": "read:document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39783,12 +40107,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListDocumentChunks returns a document's parsed chunks for verification",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             },
             "patch": {
-                "description": "SetDocumentChunksAvailable enables or disables the selected chunks.。只要求登录，没有额外的 RBAC 规则。请求体类型 SetDocumentChunksAvailableRequest。成功返回 SetDocumentChunksAvailableResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "SetDocumentChunksAvailable enables or disables the selected chunks.。需要权限 execute:document（由 accessRules 强制）。请求体类型 SetDocumentChunksAvailableRequest。成功返回 SetDocumentChunksAvailableResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "setDocumentChunksAvailable",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39877,12 +40203,14 @@ const docTemplate = `{
                 ],
                 "summary": "SetDocumentChunksAvailable enables or disables the selected chunks",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             },
             "post": {
-                "description": "AddDocumentChunk appends a manually authored chunk to a parsed document.。只要求登录，没有额外的 RBAC 规则。请求体类型 AddDocumentChunkRequest。成功返回 AddDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "AddDocumentChunk appends a manually authored chunk to a parsed document.。需要权限 execute:document（由 accessRules 强制）。请求体类型 AddDocumentChunkRequest。成功返回 AddDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "addDocumentChunk",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -39971,14 +40299,16 @@ const docTemplate = `{
                 ],
                 "summary": "AddDocumentChunk appends a manually authored chunk to a parsed document",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/chunks/{chunkId}": {
             "put": {
-                "description": "UpdateDocumentChunk rewrites an existing chunk's editable fields.。只要求登录，没有额外的 RBAC 规则。请求体类型 UpdateDocumentChunkRequest。成功返回 UpdateDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateDocumentChunk rewrites an existing chunk's editable fields.。需要权限 execute:document（由 accessRules 强制）。请求体类型 UpdateDocumentChunkRequest。成功返回 UpdateDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateDocumentChunk",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40076,14 +40406,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateDocumentChunk rewrites an existing chunk's editable fields",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/governance": {
             "delete": {
-                "description": "DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteDocumentGovernanceResponse",
+                "description": "DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance.。需要权限 manage:document-governance（由 accessRules 强制）。成功返回 DeleteDocumentGovernanceResponse",
                 "operationId": "deleteDocumentGovernance",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40123,12 +40455,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance",
                 "tags": [
-                    "datasets"
+                    "document-governance"
                 ]
             },
             "get": {
-                "description": "GetDocumentGovernance handles GET /api/v1/datasets/:id/documents/:docId/governance.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40421(404)（括号内是 HTTP 状态）",
+                "description": "GetDocumentGovernance handles GET /api/v1/datasets/:id/documents/:docId/governance.。需要权限 read:document-governance（由 accessRules 强制）。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40421(404)（括号内是 HTTP 状态）",
                 "operationId": "getDocumentGovernance",
+                "x-ragflow-permission": "read:document-governance",
+                "x-error-codes": ["40421"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40178,12 +40512,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetDocumentGovernance handles GET /api/v1/datasets/:id/documents/:docId/governance",
                 "tags": [
-                    "datasets"
+                    "document-governance"
                 ]
             },
             "put": {
-                "description": "SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)。只要求登录，没有额外的 RBAC 规则。请求体类型 service.DocumentGovernanceInput。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.DocumentGovernanceInput。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "setDocumentGovernance",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40246,14 +40582,16 @@ const docTemplate = `{
                 ],
                 "summary": "SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)",
                 "tags": [
-                    "datasets"
+                    "document-governance"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/governance/{decision}": {
             "post": {
-                "description": "ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DocumentGovernance",
+                "description": "ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}.。需要权限 manage:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DocumentGovernance",
                 "operationId": "approveDocumentGovernance",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40318,14 +40656,16 @@ const docTemplate = `{
                 ],
                 "summary": "ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}",
                 "tags": [
-                    "datasets"
+                    "document-governance"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/metadata": {
             "put": {
-                "description": "UpdateDocumentMetadata replaces a document's metadata configuration.。只要求登录，没有额外的 RBAC 规则。请求体类型 UpdateDocumentMetadataRequest。成功返回 UpdateDocumentMetadataResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateDocumentMetadata replaces a document's metadata configuration.。需要权限 execute:document（由 accessRules 强制）。请求体类型 UpdateDocumentMetadataRequest。成功返回 UpdateDocumentMetadataResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateDocumentMetadata",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40414,14 +40754,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateDocumentMetadata replaces a document's metadata configuration",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/parse-attempts": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ParseAttempt",
+                "description": "需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseAttempt",
                 "operationId": "listDocumentParseAttempts",
+                "x-ragflow-permission": "read:document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40477,14 +40819,16 @@ const docTemplate = `{
                 ],
                 "summary": "list Document Parse Attempts",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/parse-quality-report": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.ParseQualityReport。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:document（由 accessRules 强制）。成功返回 *model.ParseQualityReport。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
                 "operationId": "getLatestDocumentParseQualityReport",
+                "x-ragflow-permission": "read:document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40534,14 +40878,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Latest Document Parse Quality Report",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/parse-quality-reports": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ParseQualityReport",
+                "description": "需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseQualityReport",
                 "operationId": "listDocumentParseQualityReports",
+                "x-ragflow-permission": "read:document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40597,14 +40943,16 @@ const docTemplate = `{
                 ],
                 "summary": "list Document Parse Quality Reports",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/documents/{docId}/preview": {
             "get": {
-                "description": "PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型",
+                "description": "PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks.。需要权限 read:document（由 accessRules 强制）。成功返回原始字节，媒体类型",
                 "operationId": "previewDocument",
+                "x-ragflow-permission": "read:document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40660,14 +41008,16 @@ const docTemplate = `{
                 ],
                 "summary": "PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/governance/auto-project": {
             "post": {
-                "description": "AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project. governor only (execute:document-governance).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.GovernanceAutoProjectionResult",
+                "description": "AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project. governor only (execute:document-governance).。需要权限 execute:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.GovernanceAutoProjectionResult",
                 "operationId": "autoProjectGovernance",
+                "x-ragflow-permission": "execute:document-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40714,14 +41064,16 @@ const docTemplate = `{
                 ],
                 "summary": "AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project",
                 "tags": [
-                    "datasets"
+                    "document-governance"
                 ]
             }
         },
         "/api/v1/datasets/{id}/graph": {
             "get": {
-                "description": "GetDatasetGraph returns the read-only knowledge graph for one dataset (C6).。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.DatasetKnowledgeGraph",
+                "description": "GetDatasetGraph returns the read-only knowledge graph for one dataset (C6).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *ragflow.DatasetKnowledgeGraph",
                 "operationId": "getDatasetGraph",
+                "x-ragflow-permission": "read:dataset",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40768,14 +41120,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetDatasetGraph returns the read-only knowledge graph for one dataset (C6)",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             }
         },
         "/api/v1/datasets/{id}/incremental": {
             "get": {
-                "description": "ListIncrementalLedger exposes the tenant's logical revision projection.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.IncrementalLedger",
+                "description": "ListIncrementalLedger exposes the tenant's logical revision projection.。需要权限 read:document（由 accessRules 强制）。成功返回 []model.IncrementalLedger",
                 "operationId": "listIncrementalLedger",
+                "x-ragflow-permission": "read:document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40822,14 +41176,16 @@ const docTemplate = `{
                 ],
                 "summary": "ListIncrementalLedger exposes the tenant's logical revision projection",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/incremental/scan": {
             "post": {
-                "description": "ApplyIncrementalSourceBatch accepts a bounded connector snapshot. The batch can add/change documents and tombstone sources absent from the snapshot.。只要求登录，没有额外的 RBAC 规则。请求体类型 incrementalScanRequest。成功返回 *service.IncrementalSourceBatch。声明了 2 个业务错误码：40000(400)、40295(400)（括号内是 HTTP 状态）",
+                "description": "ApplyIncrementalSourceBatch accepts a bounded connector snapshot. The batch can add/change documents and tombstone sources absent from the snapshot.。需要权限 execute:document（由 accessRules 强制）。请求体类型 incrementalScanRequest。成功返回 *service.IncrementalSourceBatch。声明了 2 个业务错误码：40000(400)、40295(400)（括号内是 HTTP 状态）",
                 "operationId": "applyIncrementalSourceBatch",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000", "40295"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40899,14 +41255,16 @@ const docTemplate = `{
                 ],
                 "summary": "ApplyIncrementalSourceBatch accepts a bounded connector snapshot",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/lifecycle": {
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.DatasetLifecycleInput。成功返回 *service.DatasetLifecycleView。声明了 1 个业务错误码：40066(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:knowledge-lifecycle（由 accessRules 强制）。请求体类型 service.DatasetLifecycleInput。成功返回 *service.DatasetLifecycleView。声明了 1 个业务错误码：40066(400)（括号内是 HTTP 状态）",
                 "operationId": "updateDatasetLifecycle",
+                "x-ragflow-permission": "manage:knowledge-lifecycle",
+                "x-error-codes": ["40066"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -40960,14 +41318,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Dataset Lifecycle",
                 "tags": [
-                    "datasets"
+                    "knowledge-lifecycle"
                 ]
             }
         },
         "/api/v1/datasets/{id}/parse": {
             "post": {
-                "description": "ParseDocuments triggers parsing for documents of a dataset.。只要求登录，没有额外的 RBAC 规则。请求体类型 parseRequest。成功返回 ParseDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "ParseDocuments triggers parsing for documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 ParseDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "parseDocuments",
+                "x-ragflow-permission": "execute:document",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41047,14 +41407,16 @@ const docTemplate = `{
                 ],
                 "summary": "ParseDocuments triggers parsing for documents of a dataset",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/parse-profile": {
             "get": {
-                "description": "GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4).。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ParseProfileView",
+                "description": "GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.ParseProfileView",
                 "operationId": "getDatasetParseProfile",
+                "x-ragflow-permission": "read:dataset",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41101,12 +41463,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4)",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             },
             "post": {
-                "description": "ApplyDatasetParseProfile is the single protected channel for the ` + "`" + `apply_parse_profile` + "`" + ` repair action (doc/276 §7.4 / R4). It refuses to rewrite already-parsed content and refuses to touch a shared dataset without an explicit acknowledgement.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.ParseProfileInput。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "ApplyDatasetParseProfile is the single protected channel for the ` + "`" + `apply_parse_profile` + "`" + ` repair action (doc/276 §7.4 / R4). It refuses to rewrite already-parsed content and refuses to touch a shared dataset without an explicit acknowledgement.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 service.ParseProfileInput。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "applyDatasetParseProfile",
+                "x-ragflow-permission": "manage:dataset",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41186,14 +41550,16 @@ const docTemplate = `{
                 ],
                 "summary": "ApplyDatasetParseProfile is the single protected channel for the ` + "`" + `apply_parse_profile` + "`" + ` repair action (doc/276 §7.4 / R4)",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             }
         },
         "/api/v1/datasets/{id}/parse-quality-reports": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ParseQualityReport",
+                "description": "需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseQualityReport",
                 "operationId": "listDatasetParseQualityReports",
+                "x-ragflow-permission": "read:document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41240,14 +41606,16 @@ const docTemplate = `{
                 ],
                 "summary": "list Dataset Parse Quality Reports",
                 "tags": [
-                    "datasets"
+                    "document"
                 ]
             }
         },
         "/api/v1/datasets/{id}/project": {
             "put": {
-                "description": "BindDatasetProject assigns a dataset to a tenant project.。只要求登录，没有额外的 RBAC 规则。请求体类型 BindDatasetProjectRequest。成功返回 BindDatasetProjectResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "BindDatasetProject assigns a dataset to a tenant project.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 BindDatasetProjectRequest。成功返回 BindDatasetProjectResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "bindDatasetProject",
+                "x-ragflow-permission": "manage:dataset",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41327,14 +41695,16 @@ const docTemplate = `{
                 ],
                 "summary": "BindDatasetProject assigns a dataset to a tenant project",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             }
         },
         "/api/v1/datasets/{id}/retrieval-test": {
             "post": {
-                "description": "TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4). Read-path: read dataset + resolved tenant scope; every execution is recorded as a knowledge-ops event inside the service layer.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.DatasetRetrievalTestInput。成功返回 *service.DatasetRetrievalTestResult。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）",
+                "description": "TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4). Read-path: read dataset + resolved tenant scope; every execution is recorded as a knowledge-ops event inside the service layer.。需要权限 read:dataset（由 accessRules 强制）。请求体类型 service.DatasetRetrievalTestInput。成功返回 *service.DatasetRetrievalTestResult。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）",
                 "operationId": "testDatasetRetrieval",
+                "x-ragflow-permission": "read:dataset",
+                "x-error-codes": ["40120"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41404,7 +41774,7 @@ const docTemplate = `{
                 ],
                 "summary": "TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4)",
                 "tags": [
-                    "datasets"
+                    "dataset"
                 ]
             }
         },
@@ -41412,6 +41782,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:db-connection（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.DBConnection",
                 "operationId": "listDBConnections",
+                "x-ragflow-permission": "read:db-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -41471,6 +41843,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection",
                 "operationId": "createDBConnection",
+                "x-ragflow-permission": "manage:db-connection",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -41512,8 +41886,10 @@ const docTemplate = `{
         },
         "/api/v1/db-connections/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteDBConnectionResponse",
+                "description": "需要权限 manage:db-connection（由 accessRules 强制）。成功返回 DeleteDBConnectionResponse",
                 "operationId": "deleteDBConnection",
+                "x-ragflow-permission": "manage:db-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41544,12 +41920,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete D B Connection",
                 "tags": [
-                    "db-connections"
+                    "db-connection"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.DBConnection",
+                "description": "需要权限 read:db-connection（由 accessRules 强制）。成功返回 *model.DBConnection",
                 "operationId": "getDBConnection",
+                "x-ragflow-permission": "read:db-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41580,12 +41958,14 @@ const docTemplate = `{
                 ],
                 "summary": "get D B Connection",
                 "tags": [
-                    "db-connections"
+                    "db-connection"
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection",
+                "description": "需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection",
                 "operationId": "updateDBConnection",
+                "x-ragflow-permission": "manage:db-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41632,12 +42012,14 @@ const docTemplate = `{
                 ],
                 "summary": "update D B Connection",
                 "tags": [
-                    "db-connections"
+                    "db-connection"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection",
+                "description": "需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection",
                 "operationId": "updateDBConnectionPut",
+                "x-ragflow-permission": "manage:db-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41684,14 +42066,16 @@ const docTemplate = `{
                 ],
                 "summary": "update D B Connection",
                 "tags": [
-                    "db-connections"
+                    "db-connection"
                 ]
             }
         },
         "/api/v1/db-connections/{id}/test": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DBConnectionTestResult",
+                "description": "需要权限 test:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DBConnectionTestResult",
                 "operationId": "testDBConnection",
+                "x-ragflow-permission": "test:db-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -41738,7 +42122,7 @@ const docTemplate = `{
                 ],
                 "summary": "test D B Connection",
                 "tags": [
-                    "db-connections"
+                    "db-connection"
                 ]
             }
         },
@@ -41746,6 +42130,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListDocumentGovernance handles GET /api/v1/documents/governance (tenant-wide governance ledger, includes the approval workbench filter).。需要权限 read:document-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.DocumentGovernance",
                 "operationId": "listDocumentGovernance",
+                "x-ragflow-permission": "read:document-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -41839,6 +42225,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionList",
                 "operationId": "listEnterpriseConnections",
+                "x-ragflow-permission": "read:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -41922,6 +42310,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.CreateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
                 "operationId": "createEnterpriseConnection",
+                "x-ragflow-permission": "manage:enterprise-connection",
+                "x-error-codes": ["40060"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -41970,8 +42360,10 @@ const docTemplate = `{
         },
         "/api/v1/enterprise-connections/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseConnectionView",
+                "description": "需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionView",
                 "operationId": "getEnterpriseConnection",
+                "x-ragflow-permission": "read:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42018,12 +42410,14 @@ const docTemplate = `{
                 ],
                 "summary": "Get Enterprise Connection",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.UpdateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.UpdateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
                 "operationId": "updateEnterpriseConnection",
+                "x-ragflow-permission": "manage:enterprise-connection",
+                "x-error-codes": ["40060"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42077,14 +42471,16 @@ const docTemplate = `{
                 ],
                 "summary": "Update Enterprise Connection",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/availability": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseAvailabilityView",
+                "description": "需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseAvailabilityView",
                 "operationId": "getEnterpriseConnectionAvailability",
+                "x-ragflow-permission": "read:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42131,14 +42527,16 @@ const docTemplate = `{
                 ],
                 "summary": "Get Enterprise Connection Availability",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/bindings": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 service.EnterpriseBindingView",
+                "description": "需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.EnterpriseBindingView",
                 "operationId": "listEnterpriseBindings",
+                "x-ragflow-permission": "read:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42209,12 +42607,14 @@ const docTemplate = `{
                 ],
                 "summary": "List Enterprise Bindings",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             },
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.CreateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.CreateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）",
                 "operationId": "createEnterpriseBinding",
+                "x-ragflow-permission": "manage:enterprise-connection",
+                "x-error-codes": ["40064"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42268,14 +42668,16 @@ const docTemplate = `{
                 ],
                 "summary": "Create Enterprise Binding",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/bindings/{bindingId}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseBindingView",
+                "description": "需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseBindingView",
                 "operationId": "getEnterpriseBinding",
+                "x-ragflow-permission": "read:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42331,12 +42733,14 @@ const docTemplate = `{
                 ],
                 "summary": "Get Enterprise Binding",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.UpdateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.UpdateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）",
                 "operationId": "updateEnterpriseBinding",
+                "x-ragflow-permission": "manage:enterprise-connection",
+                "x-error-codes": ["40064"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42399,14 +42803,16 @@ const docTemplate = `{
                 ],
                 "summary": "Update Enterprise Binding",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/bindings/{bindingId}/revoke": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseBindingView",
+                "description": "需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseBindingView",
                 "operationId": "revokeEnterpriseBinding",
+                "x-ragflow-permission": "manage:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42462,14 +42868,16 @@ const docTemplate = `{
                 ],
                 "summary": "Revoke Enterprise Binding",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/bindings/{bindingId}/versions": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseBindingView",
+                "description": "需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseBindingView",
                 "operationId": "listEnterpriseBindingVersions",
+                "x-ragflow-permission": "read:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42525,14 +42933,16 @@ const docTemplate = `{
                 ],
                 "summary": "List Enterprise Binding Versions",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/deprecate": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView",
+                "description": "需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView",
                 "operationId": "deprecateEnterpriseConnection",
+                "x-ragflow-permission": "manage:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42579,14 +42989,16 @@ const docTemplate = `{
                 ],
                 "summary": "Deprecate Enterprise Connection",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/health": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseConnectionHealthView",
+                "description": "需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionHealthView",
                 "operationId": "getEnterpriseConnectionHealth",
+                "x-ragflow-permission": "read:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42633,14 +43045,16 @@ const docTemplate = `{
                 ],
                 "summary": "Get Enterprise Connection Health",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/retire": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView",
+                "description": "需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView",
                 "operationId": "retireEnterpriseConnection",
+                "x-ragflow-permission": "manage:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42687,14 +43101,16 @@ const docTemplate = `{
                 ],
                 "summary": "Retire Enterprise Connection",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/rotate-credential": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.RotateEnterpriseConnectionCredentialRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.RotateEnterpriseConnectionCredentialRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）",
                 "operationId": "rotateEnterpriseConnectionCredential",
+                "x-ragflow-permission": "manage:enterprise-connection",
+                "x-error-codes": ["40069"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42748,14 +43164,16 @@ const docTemplate = `{
                 ],
                 "summary": "Rotate Enterprise Connection Credential",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/test": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionHealthView",
+                "description": "需要权限 test:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionHealthView",
                 "operationId": "testEnterpriseConnection",
+                "x-ragflow-permission": "test:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42818,14 +43236,16 @@ const docTemplate = `{
                 ],
                 "summary": "Test Enterprise Connection",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/enterprise-connections/{id}/versions": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseConnectionView",
+                "description": "需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionView",
                 "operationId": "listEnterpriseConnectionVersions",
+                "x-ragflow-permission": "read:enterprise-connection",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42872,14 +43292,16 @@ const docTemplate = `{
                 ],
                 "summary": "List Enterprise Connection Versions",
                 "tags": [
-                    "enterprise-connections"
+                    "enterprise-connection"
                 ]
             }
         },
         "/api/v1/eval-cases/{id}/evidence": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *repository.EvidenceSnapshotBundle",
+                "description": "需要权限 read:eval-set（由 accessRules 强制）。成功返回 *repository.EvidenceSnapshotBundle",
                 "operationId": "getEvalCaseEvidence",
+                "x-ragflow-permission": "read:eval-set",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42910,12 +43332,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Eval Case Evidence",
                 "tags": [
-                    "eval-cases"
+                    "eval-set"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.EvidenceSnapshotInput。成功返回 *repository.EvidenceSnapshotBundle。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvidenceSnapshotInput。成功返回 *repository.EvidenceSnapshotBundle。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）",
                 "operationId": "updateEvalCaseEvidence",
+                "x-ragflow-permission": "manage:eval-set",
+                "x-error-codes": ["40090"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -42969,14 +43393,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Eval Case Evidence",
                 "tags": [
-                    "eval-cases"
+                    "eval-set"
                 ]
             }
         },
         "/api/v1/eval-cases/{id}/revalidate": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.EvidenceSnapshotBundle",
+                "description": "需要权限 execute:eval-set（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.EvidenceSnapshotBundle",
                 "operationId": "revalidateEvalCaseEvidence",
+                "x-ragflow-permission": "execute:eval-set",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -43023,7 +43449,7 @@ const docTemplate = `{
                 ],
                 "summary": "revalidate Eval Case Evidence",
                 "tags": [
-                    "eval-cases"
+                    "eval-set"
                 ]
             }
         },
@@ -43031,6 +43457,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:eval-set（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.EvalSet",
                 "operationId": "listEvalSets",
+                "x-ragflow-permission": "read:eval-set",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -43098,6 +43526,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 1 个业务错误码：40067(400)（括号内是 HTTP 状态）",
                 "operationId": "createEvalSet",
+                "x-ragflow-permission": "manage:eval-set",
+                "x-error-codes": ["40067"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -43148,6 +43578,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:eval-set（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 GenerateMissingTemplateEvalSetsResponse",
                 "operationId": "generateMissingTemplateEvalSets",
+                "x-ragflow-permission": "manage:eval-set",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -43189,8 +43621,10 @@ const docTemplate = `{
         },
         "/api/v1/eval-sets/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteEvalSetResponse",
+                "description": "需要权限 manage:eval-set（由 accessRules 强制）。成功返回 DeleteEvalSetResponse",
                 "operationId": "deleteEvalSet",
+                "x-ragflow-permission": "manage:eval-set",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -43221,12 +43655,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Eval Set",
                 "tags": [
-                    "eval-sets"
+                    "eval-set"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 GetEvalSetResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:eval-set（由 accessRules 强制）。成功返回 GetEvalSetResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
                 "operationId": "getEvalSet",
+                "x-ragflow-permission": "read:eval-set",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -43267,12 +43703,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Eval Set",
                 "tags": [
-                    "eval-sets"
+                    "eval-set"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 1 个业务错误码：40068(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 1 个业务错误码：40068(400)（括号内是 HTTP 状态）",
                 "operationId": "updateEvalSet",
+                "x-ragflow-permission": "manage:eval-set",
+                "x-error-codes": ["40068"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -43326,7 +43764,7 @@ const docTemplate = `{
                 ],
                 "summary": "update Eval Set",
                 "tags": [
-                    "eval-sets"
+                    "eval-set"
                 ]
             }
         },
@@ -43334,6 +43772,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseVersion",
                 "operationId": "createEvaluationCaseVersion",
+                "x-ragflow-permission": "execute:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -43377,6 +43817,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.EvaluationProtocolRegistration",
                 "operationId": "listEvaluationProtocolRegistrations",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -43444,6 +43886,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration",
                 "operationId": "registerEvaluationProtocol",
+                "x-ragflow-permission": "execute:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -43485,8 +43929,10 @@ const docTemplate = `{
         },
         "/api/v1/evaluation-protocol-registrations/{id}/revoke": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration",
                 "operationId": "revokeEvaluationProtocolRegistration",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -43533,7 +43979,7 @@ const docTemplate = `{
                 ],
                 "summary": "revoke Evaluation Protocol Registration",
                 "tags": [
-                    "evaluation-protocol-registrations"
+                    "release-governance"
                 ]
             }
         },
@@ -43541,6 +43987,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.EvaluationRun",
                 "operationId": "listEvaluationRuns",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -43632,6 +44080,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun",
                 "operationId": "createEvaluationRun",
+                "x-ragflow-permission": "execute:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -43673,8 +44123,10 @@ const docTemplate = `{
         },
         "/api/v1/evaluation-runs/{id}/case-results": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseResult",
+                "description": "需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseResult",
                 "operationId": "addEvaluationCaseResult",
+                "x-ragflow-permission": "execute:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -43721,14 +44173,16 @@ const docTemplate = `{
                 ],
                 "summary": "add Evaluation Case Result",
                 "tags": [
-                    "evaluation-runs"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/evaluation-runs/{id}/complete": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun",
+                "description": "需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun",
                 "operationId": "completeEvaluationRun",
+                "x-ragflow-permission": "execute:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -43775,14 +44229,16 @@ const docTemplate = `{
                 ],
                 "summary": "complete Evaluation Run",
                 "tags": [
-                    "evaluation-runs"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/evaluation-runs/{id}/execute": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun",
+                "description": "需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun",
                 "operationId": "executeScopedEvaluationRun",
+                "x-ragflow-permission": "execute:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -43829,7 +44285,7 @@ const docTemplate = `{
                 ],
                 "summary": "execute Scoped Evaluation Run",
                 "tags": [
-                    "evaluation-runs"
+                    "release-governance"
                 ]
             }
         },
@@ -43837,6 +44293,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationSetVersion",
                 "operationId": "createEvaluationSetVersion",
+                "x-ragflow-permission": "execute:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -43880,6 +44338,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.EvidenceBundle",
                 "operationId": "listEvidenceBundles",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -43971,6 +44431,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvidenceBundle",
                 "operationId": "createEvidenceBundle",
+                "x-ragflow-permission": "execute:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -44014,6 +44476,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:evidence-snapshot（由 accessRules 强制）。成功返回分页载荷，items 元素类型 repository.EvidenceSnapshotListItem",
                 "operationId": "listEvidenceSnapshots",
+                "x-ragflow-permission": "read:evidence-snapshot",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -44081,8 +44545,10 @@ const docTemplate = `{
         },
         "/api/v1/evidence-snapshots/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *repository.EvidenceSnapshotBundle",
+                "description": "需要权限 read:evidence-snapshot（由 accessRules 强制）。成功返回 *repository.EvidenceSnapshotBundle",
                 "operationId": "getEvidenceSnapshot",
+                "x-ragflow-permission": "read:evidence-snapshot",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -44113,7 +44579,7 @@ const docTemplate = `{
                 ],
                 "summary": "get Evidence Snapshot",
                 "tags": [
-                    "evidence-snapshots"
+                    "evidence-snapshot"
                 ]
             }
         },
@@ -44121,6 +44587,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ExecutionSnapshot",
                 "operationId": "listExecutionSnapshots",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -44172,6 +44640,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ExecutionSnapshot",
                 "operationId": "createExecutionSnapshot",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -44215,6 +44685,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListGovernanceDictionary handles GET /api/v1/governance/dictionary. Returns the effective vocabulary (platform builtins + approved tenant extensions) grouped by category. Read across governance roles.。需要权限 read:document-governance（由 accessRules 强制）。成功返回 map[string][]model.GovernanceDictionaryEntry",
                 "operationId": "listGovernanceDictionary",
+                "x-ragflow-permission": "read:document-governance",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -44240,6 +44712,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary. A tenant extension lands in approval pending (governor decides next).。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceDictionaryEntryInput。成功返回 *model.GovernanceDictionaryEntry。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createGovernanceDictionaryEntry",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -44288,8 +44762,10 @@ const docTemplate = `{
         },
         "/api/v1/governance/dictionary/{id}": {
             "delete": {
-                "description": "DeleteGovernanceDictionaryEntry handles DELETE /api/v1/governance/dictionary/:id. Removes a tenant extension; platform terms are immutable (404).。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteGovernanceDictionaryEntryResponse",
+                "description": "DeleteGovernanceDictionaryEntry handles DELETE /api/v1/governance/dictionary/:id. Removes a tenant extension; platform terms are immutable (404).。需要权限 manage:document-governance（由 accessRules 强制）。成功返回 DeleteGovernanceDictionaryEntryResponse",
                 "operationId": "deleteGovernanceDictionaryEntry",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -44320,14 +44796,16 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteGovernanceDictionaryEntry handles DELETE /api/v1/governance/dictionary/:id",
                 "tags": [
-                    "governance"
+                    "document-governance"
                 ]
             }
         },
         "/api/v1/governance/dictionary/{id}/{decision}": {
             "post": {
-                "description": "DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision. :decision ∈ {approve, reject}; governor only.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.GovernanceDictionaryEntry。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision. :decision ∈ {approve, reject}; governor only.。需要权限 manage:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.GovernanceDictionaryEntry。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "decideGovernanceDictionaryEntry",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -44393,7 +44871,7 @@ const docTemplate = `{
                 ],
                 "summary": "DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision",
                 "tags": [
-                    "governance"
+                    "document-governance"
                 ]
             }
         },
@@ -44401,6 +44879,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *service.GovernanceSummary",
                 "operationId": "governanceOverview",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -44428,6 +44908,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListGovernanceSchemas handles GET /api/v1/governance/schemas. Optional ?dataset_id= filter.。需要权限 read:document-governance（由 accessRules 强制）。成功返回 []model.GovernanceSchema",
                 "operationId": "listGovernanceSchemas",
+                "x-ragflow-permission": "read:document-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 dataset_id",
@@ -44463,6 +44945,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateGovernanceSchema handles POST /api/v1/governance/schemas.。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createGovernanceSchema",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -44511,8 +44995,10 @@ const docTemplate = `{
         },
         "/api/v1/governance/schemas/{id}": {
             "delete": {
-                "description": "DeleteGovernanceSchema handles DELETE /api/v1/governance/schemas/:id.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteGovernanceSchemaResponse",
+                "description": "DeleteGovernanceSchema handles DELETE /api/v1/governance/schemas/:id.。需要权限 manage:document-governance（由 accessRules 强制）。成功返回 DeleteGovernanceSchemaResponse",
                 "operationId": "deleteGovernanceSchema",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -44543,12 +45029,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteGovernanceSchema handles DELETE /api/v1/governance/schemas/:id",
                 "tags": [
-                    "governance"
+                    "document-governance"
                 ]
             },
             "get": {
-                "description": "GetGovernanceSchema handles GET /api/v1/governance/schemas/:id.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40441(404)（括号内是 HTTP 状态）",
+                "description": "GetGovernanceSchema handles GET /api/v1/governance/schemas/:id.。需要权限 read:document-governance（由 accessRules 强制）。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40441(404)（括号内是 HTTP 状态）",
                 "operationId": "getGovernanceSchema",
+                "x-ragflow-permission": "read:document-governance",
+                "x-error-codes": ["40441"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -44589,12 +45077,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetGovernanceSchema handles GET /api/v1/governance/schemas/:id",
                 "tags": [
-                    "governance"
+                    "document-governance"
                 ]
             },
             "put": {
-                "description": "UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id.。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateGovernanceSchema",
+                "x-ragflow-permission": "manage:document-governance",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -44648,7 +45138,7 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id",
                 "tags": [
-                    "governance"
+                    "document-governance"
                 ]
             }
         },
@@ -44656,6 +45146,7 @@ const docTemplate = `{
             "get": {
                 "description": "Health is an unauthenticated liveness endpoint.。只要求登录，没有额外的 RBAC 规则。成功返回 HealthResponse",
                 "operationId": "health",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -44678,6 +45169,7 @@ const docTemplate = `{
             "get": {
                 "description": "Health is an unauthenticated liveness endpoint.。只要求登录，没有额外的 RBAC 规则。成功返回 HealthResponse",
                 "operationId": "healthGet",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -44700,6 +45192,7 @@ const docTemplate = `{
             "post": {
                 "description": "DingTalkCallback verifies the enterprise robot signature and answers text messages on the caller's sessionWebhook. Ack + background execution keeps the handler inside the platform callback timeout (doc/125 §2.4).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.CallbackAck",
                 "operationId": "dingTalkCallback",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 timestamp",
@@ -44756,6 +45249,7 @@ const docTemplate = `{
             "post": {
                 "description": "FeishuCallback answers the url_verification handshake synchronously and acknowledges message events with 200 before executing the question in the background (the LLM completion can exceed the platform callback timeout). The security contract mirrors the WeCom adapter: signature/token checks, replay window, dedupe and fail-closed identity mapping (doc/125 §2.4).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.CallbackAck",
                 "operationId": "feishuCallback",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -44794,6 +45288,7 @@ const docTemplate = `{
             "get": {
                 "description": "WeComCallback verifies the encrypted platform callback. GET handles WeCom's URL verification; POST acknowledges quickly and executes the question in the background because LLM completion can exceed the platform callback timeout.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型 text/plain",
                 "operationId": "weComCallback",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 msg_signature",
@@ -44848,6 +45343,7 @@ const docTemplate = `{
             "post": {
                 "description": "WeComCallback verifies the encrypted platform callback. GET handles WeCom's URL verification; POST acknowledges quickly and executes the question in the background because LLM completion can exceed the platform callback timeout.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回原始字节，媒体类型 text/plain",
                 "operationId": "weComCallbackPost",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 msg_signature",
@@ -44920,6 +45416,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListAPIKeys lists the tenant's gateway keys.。需要权限 read:api-key（由 accessRules 强制）。成功返回 []model.APIKey",
                 "operationId": "listAPIKeys",
+                "x-ragflow-permission": "read:api-key",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -44945,6 +45443,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateAPIKey creates a gateway key and returns the raw secret once.。需要权限 manage:api-key（由 accessRules 强制）。请求体类型 createAPIKeyRequest。成功返回 CreateAPIKeyResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createAPIKey",
+                "x-ragflow-permission": "manage:api-key",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -44993,8 +45493,10 @@ const docTemplate = `{
         },
         "/api/v1/keys/{id}/revoke": {
             "post": {
-                "description": "RevokeAPIKey disables a tenant's gateway key.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RevokeAPIKeyResponse",
+                "description": "RevokeAPIKey disables a tenant's gateway key.。需要权限 manage:api-key（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RevokeAPIKeyResponse",
                 "operationId": "revokeAPIKey",
+                "x-ragflow-permission": "manage:api-key",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -45041,14 +45543,16 @@ const docTemplate = `{
                 ],
                 "summary": "RevokeAPIKey disables a tenant's gateway key",
                 "tags": [
-                    "keys"
+                    "api-key"
                 ]
             }
         },
         "/api/v1/keys/{id}/rotate": {
             "post": {
-                "description": "RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4). The raw secret is returned exactly once, like create.。只要求登录，没有额外的 RBAC 规则。请求体类型 rotateAPIKeyRequest。成功返回 RotateAPIKeyResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4). The raw secret is returned exactly once, like create.。需要权限 manage:api-key（由 accessRules 强制）。请求体类型 rotateAPIKeyRequest。成功返回 RotateAPIKeyResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "rotateAPIKey",
+                "x-ragflow-permission": "manage:api-key",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -45102,7 +45606,7 @@ const docTemplate = `{
                 ],
                 "summary": "RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4)",
                 "tags": [
-                    "keys"
+                    "api-key"
                 ]
             }
         },
@@ -45110,6 +45614,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.DuplicateCandidate",
                 "operationId": "listDuplicateCandidates",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -45201,6 +45707,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.DuplicateCandidateInput。成功返回 *model.DuplicateCandidate。声明了 1 个业务错误码：40141(400)（括号内是 HTTP 状态）",
                 "operationId": "createDuplicateCandidate",
+                "x-ragflow-permission": "manage:knowledge-ops",
+                "x-error-codes": ["40141"],
                 "parameters": [
                     {
                         "description": "查询参数 project_id",
@@ -45259,8 +45767,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-duplicate-candidates/{id}/decision": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.DuplicateCandidateDecision。成功返回 *model.DuplicateCandidate。声明了 1 个业务错误码：40142(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.DuplicateCandidateDecision。成功返回 *model.DuplicateCandidate。声明了 1 个业务错误码：40142(400)（括号内是 HTTP 状态）",
                 "operationId": "decideDuplicateCandidate",
+                "x-ragflow-permission": "manage:knowledge-ops",
+                "x-error-codes": ["40142"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -45314,7 +45824,7 @@ const docTemplate = `{
                 ],
                 "summary": "Decide Duplicate Candidate",
                 "tags": [
-                    "knowledge-duplicate-candidates"
+                    "knowledge-ops"
                 ]
             }
         },
@@ -45322,6 +45832,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ImpactReport",
                 "operationId": "listKnowledgeImpactReports",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -45381,6 +45893,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 CreateKnowledgeImpactReportRequest。成功返回 *model.ImpactReport。声明了 1 个业务错误码：40140(400)（括号内是 HTTP 状态）",
                 "operationId": "createKnowledgeImpactReport",
+                "x-ragflow-permission": "manage:knowledge-ops",
+                "x-error-codes": ["40140"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -45431,6 +45945,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-lifecycle（由 accessRules 强制）。成功返回 []service.DatasetLifecycleView",
                 "operationId": "listKnowledgeLifecycle",
+                "x-ragflow-permission": "read:knowledge-lifecycle",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 owner_id",
@@ -45492,6 +46008,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-lifecycle（由 accessRules 强制）。成功返回 []repository.KnowledgeAssetView",
                 "operationId": "listKnowledgeAssetMap",
+                "x-ragflow-permission": "read:knowledge-lifecycle",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 owner_id",
@@ -45553,6 +46071,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-lifecycle（由 accessRules 强制）。成功返回 *service.KnowledgeHealthSummary",
                 "operationId": "knowledgeHealth",
+                "x-ragflow-permission": "read:knowledge-lifecycle",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -45580,6 +46100,8 @@ const docTemplate = `{
             "get": {
                 "description": "KnowledgeOpsSummary returns aggregate KPIs for a date range.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.KnowledgeOpsSummary",
                 "operationId": "knowledgeOpsSummary",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 date_from",
@@ -45633,6 +46155,8 @@ const docTemplate = `{
             "get": {
                 "description": "KnowledgeOpsAnswerQuality returns the Q\u0026A proxy metrics (doc/301 §5.9 QA-3 / T20). It is a *proxy* board and the shape says so: every rate travels with the counts it was derived from, ` + "`" + `null` + "`" + ` means \"no denominator\", and the ` + "`" + `bias` + "`" + ` block carries feedback coverage so the page can print the caveat next to the number instead of in a footnote.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *service.AnswerQualityProxyView",
                 "operationId": "knowledgeOpsAnswerQuality",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 weeks（默认 0）",
@@ -45686,6 +46210,8 @@ const docTemplate = `{
             "post": {
                 "description": "TriggerChatCitationAudit runs QA-2's weekly chat citation sample for the caller's tenant (doc/301 §5.10 / T19). The handler is thin on purpose: it authorizes, resolves the tenant and hands over. Everything else — the week boundary, the sample size, the judgement, the idempotency — belongs to the service, because a second copy of \"which week is it\" in a handler is a second answer waiting to disagree with the first.。需要权限 manage:knowledge-ops（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 TriggerChatCitationAuditResponse",
                 "operationId": "triggerChatCitationAudit",
+                "x-ragflow-permission": "manage:knowledge-ops",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -45729,6 +46255,8 @@ const docTemplate = `{
             "get": {
                 "description": "ChatCitationAuditRuns lists the recent weekly runs of the caller's tenant.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 ChatCitationAuditRunsResponse",
                 "operationId": "chatCitationAuditRuns",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 limit（默认 12）",
@@ -45764,8 +46292,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-ops/citation-audit/runs/{runId}/findings": {
             "get": {
-                "description": "ChatCitationAuditFindings pages one run's per-citation verdicts.。只要求登录，没有额外的 RBAC 规则。成功返回 ChatCitationAuditFindingsResponse",
+                "description": "ChatCitationAuditFindings pages one run's per-citation verdicts.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 ChatCitationAuditFindingsResponse",
                 "operationId": "chatCitationAuditFindings",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 runId",
@@ -45820,6 +46350,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListCompilationRecovery exposes the unknown-run governance queue.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.CompilationRecoveryQueueItem",
                 "operationId": "listCompilationRecovery",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -45871,8 +46403,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-ops/compilation/runs/{runId}/recovery-approval": {
             "post": {
-                "description": "RequestCompilationRecoveryApproval submits the governed recovery action.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.CompilationRecoveryApprovalRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "RequestCompilationRecoveryApproval submits the governed recovery action.。需要权限 execute:compilation（由 accessRules 强制）。请求体类型 service.CompilationRecoveryApprovalRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "requestCompilationRecoveryApproval",
+                "x-ragflow-permission": "execute:compilation",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 runId",
@@ -45926,14 +46460,16 @@ const docTemplate = `{
                 ],
                 "summary": "RequestCompilationRecoveryApproval submits the governed recovery action",
                 "tags": [
-                    "knowledge-ops"
+                    "compilation"
                 ]
             }
         },
         "/api/v1/knowledge-ops/compilation/runs/{runId}/recovery-probe": {
             "post": {
-                "description": "ProbeCompilationRecoveryRun performs one read-only downstream probe.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun",
+                "description": "ProbeCompilationRecoveryRun performs one read-only downstream probe.。需要权限 execute:compilation（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun",
                 "operationId": "probeCompilationRecoveryRun",
+                "x-ragflow-permission": "execute:compilation",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 runId",
@@ -45980,7 +46516,7 @@ const docTemplate = `{
                 ],
                 "summary": "ProbeCompilationRecoveryRun performs one read-only downstream probe",
                 "tags": [
-                    "knowledge-ops"
+                    "compilation"
                 ]
             }
         },
@@ -45988,6 +46524,8 @@ const docTemplate = `{
             "get": {
                 "description": "KnowledgeOpsEvents returns badcase candidates with review state.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.KnowledgeOpsEventView",
                 "operationId": "knowledgeOpsEvents",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -46103,8 +46641,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-ops/events/{id}/review": {
             "patch": {
-                "description": "ReviewKnowledgeOpsEvent closes a badcase candidate.。只要求登录，没有额外的 RBAC 规则。请求体类型 knowledgeOpsReviewPayload。成功返回 ReviewKnowledgeOpsEventResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "ReviewKnowledgeOpsEvent closes a badcase candidate.。需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 knowledgeOpsReviewPayload。成功返回 ReviewKnowledgeOpsEventResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "reviewKnowledgeOpsEvent",
+                "x-ragflow-permission": "manage:knowledge-ops",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -46164,8 +46704,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-ops/events/{id}/to-eval-case": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 ConvertBadcaseToEvalCaseRequest。成功返回 *model.EvalCase。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 ConvertBadcaseToEvalCaseRequest。成功返回 *model.EvalCase。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）",
                 "operationId": "convertBadcaseToEvalCase",
+                "x-ragflow-permission": "manage:eval-set",
+                "x-error-codes": ["40069"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -46219,7 +46761,7 @@ const docTemplate = `{
                 ],
                 "summary": "convert Badcase To Eval Case",
                 "tags": [
-                    "knowledge-ops"
+                    "eval-set"
                 ]
             }
         },
@@ -46227,6 +46769,8 @@ const docTemplate = `{
             "get": {
                 "description": "MetricsContract returns the frozen metric contract board (doc/107 §3.3.2): the latest route evaluation gate plus the 30-day answer/operations KPIs.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *service.MetricsContractBoard",
                 "operationId": "metricsContract",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -46254,6 +46798,8 @@ const docTemplate = `{
             "get": {
                 "description": "KnowledgeOpsTopQueries returns the highest-volume questions in a date range.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 []model.KnowledgeOpsQueryRow",
                 "operationId": "knowledgeOpsTopQueries",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 date_from",
@@ -46307,6 +46853,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.TraceRun",
                 "operationId": "listTraceRuns",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -46398,6 +46946,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.TraceRunInput。成功返回 *model.TraceRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createTraceRun",
+                "x-ragflow-permission": "manage:knowledge-ops",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -46446,8 +46996,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-ops/trace-runs/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.TraceRun",
+                "description": "需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.TraceRun",
                 "operationId": "getTraceRun",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -46486,6 +47038,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-profile（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.KnowledgeProfile",
                 "operationId": "listKnowledgeProfiles",
+                "x-ragflow-permission": "read:knowledge-profile",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -46553,6 +47107,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:knowledge-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile",
                 "operationId": "createKnowledgeProfile",
+                "x-ragflow-permission": "manage:knowledge-profile",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -46594,8 +47150,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-profiles/{profileId}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteKnowledgeProfileResponse",
+                "description": "需要权限 manage:knowledge-profile（由 accessRules 强制）。成功返回 DeleteKnowledgeProfileResponse",
                 "operationId": "deleteKnowledgeProfile",
+                "x-ragflow-permission": "manage:knowledge-profile",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 profileId",
@@ -46626,12 +47184,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Knowledge Profile",
                 "tags": [
-                    "knowledge-profiles"
+                    "knowledge-profile"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.KnowledgeProfile",
+                "description": "需要权限 read:knowledge-profile（由 accessRules 强制）。成功返回 *model.KnowledgeProfile",
                 "operationId": "getKnowledgeProfile",
+                "x-ragflow-permission": "read:knowledge-profile",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 profileId",
@@ -46662,12 +47222,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Knowledge Profile",
                 "tags": [
-                    "knowledge-profiles"
+                    "knowledge-profile"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile",
+                "description": "需要权限 manage:knowledge-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile",
                 "operationId": "updateKnowledgeProfile",
+                "x-ragflow-permission": "manage:knowledge-profile",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 profileId",
@@ -46714,7 +47276,7 @@ const docTemplate = `{
                 ],
                 "summary": "update Knowledge Profile",
                 "tags": [
-                    "knowledge-profiles"
+                    "knowledge-profile"
                 ]
             }
         },
@@ -46722,6 +47284,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-strategy（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.KnowledgeStrategy。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）",
                 "operationId": "listKnowledgeStrategies",
+                "x-ragflow-permission": "read:knowledge-strategy",
+                "x-error-codes": ["40120"],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -46807,6 +47371,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy",
                 "operationId": "createKnowledgeStrategy",
+                "x-ragflow-permission": "manage:knowledge-strategy",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -46848,8 +47414,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-strategies/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteKnowledgeStrategyResponse",
+                "description": "需要权限 manage:knowledge-strategy（由 accessRules 强制）。成功返回 DeleteKnowledgeStrategyResponse",
                 "operationId": "deleteKnowledgeStrategy",
+                "x-ragflow-permission": "manage:knowledge-strategy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -46880,12 +47448,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Knowledge Strategy",
                 "tags": [
-                    "knowledge-strategies"
+                    "knowledge-strategy"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.KnowledgeStrategy",
+                "description": "需要权限 read:knowledge-strategy（由 accessRules 强制）。成功返回 *model.KnowledgeStrategy",
                 "operationId": "getKnowledgeStrategy",
+                "x-ragflow-permission": "read:knowledge-strategy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -46916,12 +47486,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Knowledge Strategy",
                 "tags": [
-                    "knowledge-strategies"
+                    "knowledge-strategy"
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy",
+                "description": "需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy",
                 "operationId": "updateKnowledgeStrategy",
+                "x-ragflow-permission": "manage:knowledge-strategy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -46968,12 +47540,14 @@ const docTemplate = `{
                 ],
                 "summary": "update Knowledge Strategy",
                 "tags": [
-                    "knowledge-strategies"
+                    "knowledge-strategy"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy",
+                "description": "需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy",
                 "operationId": "updateKnowledgeStrategyPut",
+                "x-ragflow-permission": "manage:knowledge-strategy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47020,14 +47594,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Knowledge Strategy",
                 "tags": [
-                    "knowledge-strategies"
+                    "knowledge-strategy"
                 ]
             }
         },
         "/api/v1/knowledge-strategies/{id}/probe": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeCapabilityProbe",
+                "description": "需要权限 execute:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeCapabilityProbe",
                 "operationId": "probeKnowledgeStrategy",
+                "x-ragflow-permission": "execute:knowledge-strategy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47074,14 +47650,16 @@ const docTemplate = `{
                 ],
                 "summary": "probe Knowledge Strategy",
                 "tags": [
-                    "knowledge-strategies"
+                    "knowledge-strategy"
                 ]
             }
         },
         "/api/v1/knowledge-strategies/{id}/quality-gate": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.KnowledgeStrategyQualityGateSummary",
+                "description": "需要权限 read:knowledge-strategy（由 accessRules 强制）。成功返回 *service.KnowledgeStrategyQualityGateSummary",
                 "operationId": "getKnowledgeStrategyQualityGate",
+                "x-ragflow-permission": "read:knowledge-strategy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47112,14 +47690,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Knowledge Strategy Quality Gate",
                 "tags": [
-                    "knowledge-strategies"
+                    "knowledge-strategy"
                 ]
             }
         },
         "/api/v1/knowledge-strategies/{id}/retrieve": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.KnowledgeStrategyExecution",
+                "description": "需要权限 execute:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.KnowledgeStrategyExecution",
                 "operationId": "executeKnowledgeStrategy",
+                "x-ragflow-permission": "execute:knowledge-strategy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47166,7 +47746,7 @@ const docTemplate = `{
                 ],
                 "summary": "execute Knowledge Strategy",
                 "tags": [
-                    "knowledge-strategies"
+                    "knowledge-strategy"
                 ]
             }
         },
@@ -47174,6 +47754,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.KnowledgeTask",
                 "operationId": "listKnowledgeTasks",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -47273,6 +47855,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.KnowledgeTaskInput。成功返回 *model.KnowledgeTask。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createKnowledgeTask",
+                "x-ragflow-permission": "manage:knowledge-ops",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -47323,6 +47907,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.KnowledgeTaskSummary",
                 "operationId": "knowledgeTaskSummary",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -47348,8 +47934,10 @@ const docTemplate = `{
         },
         "/api/v1/knowledge-tasks/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.KnowledgeTask",
+                "description": "需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.KnowledgeTask",
                 "operationId": "getKnowledgeTask",
+                "x-ragflow-permission": "read:knowledge-ops",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47380,12 +47968,14 @@ const docTemplate = `{
                 ],
                 "summary": "Get Knowledge Task",
                 "tags": [
-                    "knowledge-tasks"
+                    "knowledge-ops"
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.KnowledgeTaskUpdateInput。成功返回 *model.KnowledgeTask。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.KnowledgeTaskUpdateInput。成功返回 *model.KnowledgeTask。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateKnowledgeTask",
+                "x-ragflow-permission": "manage:knowledge-ops",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47439,7 +48029,7 @@ const docTemplate = `{
                 ],
                 "summary": "Update Knowledge Task",
                 "tags": [
-                    "knowledge-tasks"
+                    "knowledge-ops"
                 ]
             }
         },
@@ -47447,6 +48037,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:logical-document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.LogicalDocument",
                 "operationId": "listLogicalDocuments",
+                "x-ragflow-permission": "read:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -47498,6 +48090,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument",
                 "operationId": "createLogicalDocument",
+                "x-ragflow-permission": "manage:logical-document",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -47539,8 +48133,10 @@ const docTemplate = `{
         },
         "/api/v1/logical-documents/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteLogicalDocumentResponse",
+                "description": "需要权限 manage:logical-document（由 accessRules 强制）。成功返回 DeleteLogicalDocumentResponse",
                 "operationId": "deleteLogicalDocument",
+                "x-ragflow-permission": "manage:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47571,12 +48167,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Logical Document",
                 "tags": [
-                    "logical-documents"
+                    "logical-document"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.LogicalDocument",
+                "description": "需要权限 read:logical-document（由 accessRules 强制）。成功返回 *model.LogicalDocument",
                 "operationId": "getLogicalDocument",
+                "x-ragflow-permission": "read:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47607,12 +48205,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Logical Document",
                 "tags": [
-                    "logical-documents"
+                    "logical-document"
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument",
+                "description": "需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument",
                 "operationId": "updateLogicalDocument",
+                "x-ragflow-permission": "manage:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47659,12 +48259,14 @@ const docTemplate = `{
                 ],
                 "summary": "update Logical Document",
                 "tags": [
-                    "logical-documents"
+                    "logical-document"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument",
+                "description": "需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument",
                 "operationId": "updateLogicalDocumentPut",
+                "x-ragflow-permission": "manage:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47711,14 +48313,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Logical Document",
                 "tags": [
-                    "logical-documents"
+                    "logical-document"
                 ]
             }
         },
         "/api/v1/logical-documents/{id}/publish-attempts": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.VersionPublishAttempt",
+                "description": "需要权限 read:logical-document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.VersionPublishAttempt",
                 "operationId": "listLogicalDocumentPublishAttempts",
+                "x-ragflow-permission": "read:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47765,14 +48369,16 @@ const docTemplate = `{
                 ],
                 "summary": "list Logical Document Publish Attempts",
                 "tags": [
-                    "logical-documents"
+                    "logical-document"
                 ]
             }
         },
         "/api/v1/logical-documents/{id}/restore": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult",
+                "description": "需要权限 execute:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult",
                 "operationId": "restoreLogicalDocumentVersion",
+                "x-ragflow-permission": "execute:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47819,14 +48425,16 @@ const docTemplate = `{
                 ],
                 "summary": "restore Logical Document Version",
                 "tags": [
-                    "logical-documents"
+                    "logical-document"
                 ]
             }
         },
         "/api/v1/logical-documents/{id}/supersede": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult",
+                "description": "需要权限 execute:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult",
                 "operationId": "supersedeLogicalDocumentVersion",
+                "x-ragflow-permission": "execute:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47873,14 +48481,16 @@ const docTemplate = `{
                 ],
                 "summary": "supersede Logical Document Version",
                 "tags": [
-                    "logical-documents"
+                    "logical-document"
                 ]
             }
         },
         "/api/v1/logical-documents/{id}/versions": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.DocumentVersion",
+                "description": "需要权限 read:logical-document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.DocumentVersion",
                 "operationId": "listLogicalDocumentVersions",
+                "x-ragflow-permission": "read:logical-document",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -47927,7 +48537,7 @@ const docTemplate = `{
                 ],
                 "summary": "list Logical Document Versions",
                 "tags": [
-                    "logical-documents"
+                    "logical-document"
                 ]
             }
         },
@@ -47935,6 +48545,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListMemories returns the caller's memories.。需要权限 read:memory（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.MemoryShadow",
                 "operationId": "listMemories",
+                "x-ragflow-permission": "read:memory",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -48010,6 +48622,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateMemory creates a memory owned by the caller's tenant.。需要权限 manage:memory（由 accessRules 强制）。请求体类型 memoryCreatePayload。成功返回 *model.MemoryShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createMemory",
+                "x-ragflow-permission": "manage:memory",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -48060,6 +48674,8 @@ const docTemplate = `{
             "get": {
                 "description": "MemoryModelOptions returns the tenant's embedding/chat models and defaults so the memory create/edit dialogs can pick real models.。需要权限 read:memory（由 accessRules 强制）。成功返回 *service.ModelOptions",
                 "operationId": "memoryModelOptions",
+                "x-ragflow-permission": "read:memory",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -48085,8 +48701,10 @@ const docTemplate = `{
         },
         "/api/v1/memories/{id}": {
             "delete": {
-                "description": "DeleteMemory deletes a memory.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteMemoryResponse",
+                "description": "DeleteMemory deletes a memory.。需要权限 manage:memory（由 accessRules 强制）。成功返回 DeleteMemoryResponse",
                 "operationId": "deleteMemory",
+                "x-ragflow-permission": "manage:memory",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48125,12 +48743,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteMemory deletes a memory",
                 "tags": [
-                    "memories"
+                    "memory"
                 ]
             },
             "get": {
-                "description": "GetMemory returns a memory.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.MemoryShadow",
+                "description": "GetMemory returns a memory.。需要权限 read:memory（由 accessRules 强制）。成功返回 *model.MemoryShadow",
                 "operationId": "getMemory",
+                "x-ragflow-permission": "read:memory",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48169,12 +48789,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetMemory returns a memory",
                 "tags": [
-                    "memories"
+                    "memory"
                 ]
             },
             "put": {
-                "description": "UpdateMemory updates a memory.。只要求登录，没有额外的 RBAC 规则。请求体类型 memoryUpdatePayload。成功返回 *model.MemoryShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateMemory updates a memory.。需要权限 manage:memory（由 accessRules 强制）。请求体类型 memoryUpdatePayload。成功返回 *model.MemoryShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateMemory",
+                "x-ragflow-permission": "manage:memory",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48236,14 +48858,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateMemory updates a memory",
                 "tags": [
-                    "memories"
+                    "memory"
                 ]
             }
         },
         "/api/v1/memories/{id}/config": {
             "get": {
-                "description": "GetMemoryConfig returns the live memory config for the editor.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.Memory",
+                "description": "GetMemoryConfig returns the live memory config for the editor.。需要权限 read:memory（由 accessRules 强制）。成功返回 *ragflow.Memory",
                 "operationId": "getMemoryConfig",
+                "x-ragflow-permission": "read:memory",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48282,14 +48906,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetMemoryConfig returns the live memory config for the editor",
                 "tags": [
-                    "memories"
+                    "memory"
                 ]
             }
         },
         "/api/v1/memories/{id}/governed-search": {
             "post": {
-                "description": "SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read.。只要求登录，没有额外的 RBAC 规则。请求体类型 memoryGovernedSearchPayload。成功返回 *service.GovernedMemorySearchResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read.。需要权限 execute:memory-policy（由 accessRules 强制）。请求体类型 memoryGovernedSearchPayload。成功返回 *service.GovernedMemorySearchResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "searchGovernedMemory",
+                "x-ragflow-permission": "execute:memory-policy",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48343,14 +48969,16 @@ const docTemplate = `{
                 ],
                 "summary": "SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read",
                 "tags": [
-                    "memories"
+                    "memory-policy"
                 ]
             }
         },
         "/api/v1/memories/{id}/messages": {
             "get": {
-                "description": "ListMemoryMessages lists the messages of a memory.。只要求登录，没有额外的 RBAC 规则。成功返回 []ragflow.MemoryMessage",
+                "description": "ListMemoryMessages lists the messages of a memory.。需要权限 read:memory-content（由 accessRules 强制）。成功返回 []ragflow.MemoryMessage",
                 "operationId": "listMemoryMessages",
+                "x-ragflow-permission": "read:memory-content",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48389,12 +49017,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListMemoryMessages lists the messages of a memory",
                 "tags": [
-                    "memories"
+                    "memory-content"
                 ]
             },
             "post": {
-                "description": "AddMemoryMessage stores a message into a memory.。只要求登录，没有额外的 RBAC 规则。请求体类型 memoryMessagePayload。成功返回 AddMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "AddMemoryMessage stores a message into a memory.。需要权限 execute:memory-write（由 accessRules 强制）。请求体类型 memoryMessagePayload。成功返回 AddMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "addMemoryMessage",
+                "x-ragflow-permission": "execute:memory-write",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48456,14 +49086,16 @@ const docTemplate = `{
                 ],
                 "summary": "AddMemoryMessage stores a message into a memory",
                 "tags": [
-                    "memories"
+                    "memory-write"
                 ]
             }
         },
         "/api/v1/memories/{id}/messages/search": {
             "get": {
-                "description": "SearchMemoryMessages runs a semantic retrieval against a memory.。只要求登录，没有额外的 RBAC 规则。成功返回 []ragflow.MemoryMessage。声明了 5 个业务错误码：40096(400)、40143(400)、40144(400)、40145(400)、40146(400)（括号内是 HTTP 状态）",
+                "description": "SearchMemoryMessages runs a semantic retrieval against a memory.。需要权限 execute:memory-content（由 accessRules 强制）。成功返回 []ragflow.MemoryMessage。声明了 5 个业务错误码：40096(400)、40143(400)、40144(400)、40145(400)、40146(400)（括号内是 HTTP 状态）",
                 "operationId": "searchMemoryMessages",
+                "x-ragflow-permission": "execute:memory-content",
+                "x-error-codes": ["40096", "40143", "40144", "40145", "40146"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48568,14 +49200,16 @@ const docTemplate = `{
                 ],
                 "summary": "SearchMemoryMessages runs a semantic retrieval against a memory",
                 "tags": [
-                    "memories"
+                    "memory-content"
                 ]
             }
         },
         "/api/v1/memories/{id}/messages/{messageId}": {
             "delete": {
-                "description": "DeleteMemoryMessage forgets a memory message.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteMemoryMessage forgets a memory message.。需要权限 execute:memory-forget（由 accessRules 强制）。成功返回 DeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteMemoryMessage",
+                "x-ragflow-permission": "execute:memory-forget",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48633,12 +49267,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteMemoryMessage forgets a memory message",
                 "tags": [
-                    "memories"
+                    "memory-forget"
                 ]
             },
             "put": {
-                "description": "UpdateMemoryMessageStatus sets a message's status.。只要求登录，没有额外的 RBAC 规则。请求体类型 memoryMessageStatusPayload。成功返回 UpdateMemoryMessageStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateMemoryMessageStatus sets a message's status.。需要权限 manage:memory-content（由 accessRules 强制）。请求体类型 memoryMessageStatusPayload。成功返回 UpdateMemoryMessageStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateMemoryMessageStatus",
+                "x-ragflow-permission": "manage:memory-content",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48709,14 +49345,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateMemoryMessageStatus sets a message's status",
                 "tags": [
-                    "memories"
+                    "memory-content"
                 ]
             }
         },
         "/api/v1/memories/{id}/messages/{messageId}/compliance-delete": {
             "post": {
-                "description": "ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2). The reason is required in the audit entry but optional in the payload; it never carries memory content.。只要求登录，没有额外的 RBAC 规则。请求体类型 ComplianceDeleteMemoryMessageRequest。成功返回 ComplianceDeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2). The reason is required in the audit entry but optional in the payload; it never carries memory content.。需要权限 manage:memory-forget（由 accessRules 强制）。请求体类型 ComplianceDeleteMemoryMessageRequest。成功返回 ComplianceDeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "complianceDeleteMemoryMessage",
+                "x-ragflow-permission": "manage:memory-forget",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48787,14 +49425,16 @@ const docTemplate = `{
                 ],
                 "summary": "ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2)",
                 "tags": [
-                    "memories"
+                    "memory-forget"
                 ]
             }
         },
         "/api/v1/memories/{id}/messages/{messageId}/content": {
             "get": {
-                "description": "GetMemoryMessageContent returns a memory message's full content.。只要求登录，没有额外的 RBAC 规则。成功返回 json.RawMessage。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "GetMemoryMessageContent returns a memory message's full content.。需要权限 read:memory-content（由 accessRules 强制）。成功返回 json.RawMessage。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "getMemoryMessageContent",
+                "x-ragflow-permission": "read:memory-content",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -48852,7 +49492,7 @@ const docTemplate = `{
                 ],
                 "summary": "GetMemoryMessageContent returns a memory message's full content",
                 "tags": [
-                    "memories"
+                    "memory-content"
                 ]
             }
         },
@@ -48860,6 +49500,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:memory-operation（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.MemoryOperation。声明了 1 个业务错误码：40142(400)（括号内是 HTTP 状态）",
                 "operationId": "listMemoryOperations",
+                "x-ragflow-permission": "read:memory-operation",
+                "x-error-codes": ["40142"],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -48969,8 +49611,10 @@ const docTemplate = `{
         },
         "/api/v1/memory-operations/{operationId}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.MemoryOperation",
+                "description": "需要权限 read:memory-operation（由 accessRules 强制）。成功返回 *model.MemoryOperation",
                 "operationId": "getMemoryOperation",
+                "x-ragflow-permission": "read:memory-operation",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 operationId",
@@ -49001,14 +49645,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Memory Operation",
                 "tags": [
-                    "memory-operations"
+                    "memory-operation"
                 ]
             }
         },
         "/api/v1/memory-operations/{operationId}/tombstone": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryOperation",
+                "description": "需要权限 execute:memory-forget（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryOperation",
                 "operationId": "tombstoneMemoryOperation",
+                "x-ragflow-permission": "execute:memory-forget",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 operationId",
@@ -49055,7 +49701,7 @@ const docTemplate = `{
                 ],
                 "summary": "tombstone Memory Operation",
                 "tags": [
-                    "memory-operations"
+                    "memory-forget"
                 ]
             }
         },
@@ -49063,6 +49709,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:memory-policy（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.MemoryPolicy",
                 "operationId": "listMemoryPolicies",
+                "x-ragflow-permission": "read:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -49146,6 +49794,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy",
                 "operationId": "createMemoryPolicy",
+                "x-ragflow-permission": "manage:memory-policy",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -49187,8 +49837,10 @@ const docTemplate = `{
         },
         "/api/v1/memory-policies/{policyId}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteMemoryPolicyResponse",
+                "description": "需要权限 manage:memory-policy（由 accessRules 强制）。成功返回 DeleteMemoryPolicyResponse",
                 "operationId": "deleteMemoryPolicy",
+                "x-ragflow-permission": "manage:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 policyId",
@@ -49219,12 +49871,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Memory Policy",
                 "tags": [
-                    "memory-policies"
+                    "memory-policy"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.MemoryPolicy",
+                "description": "需要权限 read:memory-policy（由 accessRules 强制）。成功返回 *model.MemoryPolicy",
                 "operationId": "getMemoryPolicy",
+                "x-ragflow-permission": "read:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 policyId",
@@ -49255,12 +49909,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Memory Policy",
                 "tags": [
-                    "memory-policies"
+                    "memory-policy"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy",
+                "description": "需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy",
                 "operationId": "updateMemoryPolicy",
+                "x-ragflow-permission": "manage:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 policyId",
@@ -49307,14 +49963,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Memory Policy",
                 "tags": [
-                    "memory-policies"
+                    "memory-policy"
                 ]
             }
         },
         "/api/v1/memory-policies/{policyId}/consents": {
             "get": {
-                "description": "listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012). Identity and version only, never content.。只要求登录，没有额外的 RBAC 规则。成功返回 []service.MemoryPolicyConsentView",
+                "description": "listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012). Identity and version only, never content.。需要权限 read:memory-policy（由 accessRules 强制）。成功返回 []service.MemoryPolicyConsentView",
                 "operationId": "listMemoryPolicyConsents",
+                "x-ragflow-permission": "read:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 policyId",
@@ -49345,14 +50003,16 @@ const docTemplate = `{
                 ],
                 "summary": "listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012)",
                 "tags": [
-                    "memory-policies"
+                    "memory-policy"
                 ]
             }
         },
         "/api/v1/memory-policies/{policyId}/opt-in": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy",
+                "description": "需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy",
                 "operationId": "optInMemoryPolicy",
+                "x-ragflow-permission": "execute:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 policyId",
@@ -49399,14 +50059,16 @@ const docTemplate = `{
                 ],
                 "summary": "opt In Memory Policy",
                 "tags": [
-                    "memory-policies"
+                    "memory-policy"
                 ]
             }
         },
         "/api/v1/memory-policies/{policyId}/opt-out": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy",
+                "description": "需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy",
                 "operationId": "optOutMemoryPolicy",
+                "x-ragflow-permission": "execute:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 policyId",
@@ -49453,14 +50115,16 @@ const docTemplate = `{
                 ],
                 "summary": "opt Out Memory Policy",
                 "tags": [
-                    "memory-policies"
+                    "memory-policy"
                 ]
             }
         },
         "/api/v1/memory-policies/{policyId}/quality-gate": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.MemoryPolicyQualityGateSummary",
+                "description": "需要权限 read:memory-policy（由 accessRules 强制）。成功返回 *service.MemoryPolicyQualityGateSummary",
                 "operationId": "getMemoryPolicyQualityGate",
+                "x-ragflow-permission": "read:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 policyId",
@@ -49491,7 +50155,7 @@ const docTemplate = `{
                 ],
                 "summary": "get Memory Policy Quality Gate",
                 "tags": [
-                    "memory-policies"
+                    "memory-policy"
                 ]
             }
         },
@@ -49499,6 +50163,8 @@ const docTemplate = `{
             "get": {
                 "description": "listMemoryPrivacyExemptions returns the tenant's versioned PII exemption rules (MEM-003). No corpus content is returned.。需要权限 read:memory-policy（由 accessRules 强制）。成功返回 []model.MemoryPrivacyExemption",
                 "operationId": "listMemoryPrivacyExemptions",
+                "x-ragflow-permission": "read:memory-policy",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -49524,6 +50190,8 @@ const docTemplate = `{
             "put": {
                 "description": "upsertMemoryPrivacyExemptions replaces/adds tenant PII exemptions. Requires tenant_admin or platform governance context (plan-137 §10.1 rule 15).。需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPrivacyExemption",
                 "operationId": "upsertMemoryPrivacyExemptions",
+                "x-ragflow-permission": "manage:memory-policy",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -49565,8 +50233,10 @@ const docTemplate = `{
         },
         "/api/v1/memory-privacy/pii-exemptions/{exemptionId}": {
             "delete": {
-                "description": "DeleteMemoryPrivacyExemption removes one tenant PII exemption row.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteMemoryPrivacyExemptionResponse",
+                "description": "DeleteMemoryPrivacyExemption removes one tenant PII exemption row.。需要权限 manage:memory-policy（由 accessRules 强制）。成功返回 DeleteMemoryPrivacyExemptionResponse",
                 "operationId": "deleteMemoryPrivacyExemption",
+                "x-ragflow-permission": "manage:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 exemptionId",
@@ -49597,7 +50267,7 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteMemoryPrivacyExemption removes one tenant PII exemption row",
                 "tags": [
-                    "memory-privacy"
+                    "memory-policy"
                 ]
             }
         },
@@ -49605,6 +50275,8 @@ const docTemplate = `{
             "post": {
                 "description": "previewMemoryPrivacy evaluates sample text through the deterministic PII gate without persisting anything. Returns label+count and action only; exempted spans never echo raw content.。需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.MemoryPrivacyEvaluation",
                 "operationId": "previewMemoryPrivacy",
+                "x-ragflow-permission": "manage:memory-policy",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -49648,6 +50320,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:memory-policy（由 accessRules 强制）。成功返回 *model.Tenant",
                 "operationId": "getSelfMemoryPolicyTemplate",
+                "x-ragflow-permission": "read:memory-policy",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -49673,6 +50347,8 @@ const docTemplate = `{
             "put": {
                 "description": "需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Tenant",
                 "operationId": "updateSelfMemoryPolicyTemplate",
+                "x-ragflow-permission": "manage:memory-policy",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -49716,6 +50392,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListModelProviders lists the tenant's providers with instance/model counts.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []service.ProviderView",
                 "operationId": "listModelProviders",
+                "x-ragflow-permission": "read:model-provider",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -49767,6 +50445,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateModelProvider supports both the new factory-add (provider_name) and the legacy quick-add (provider_type + name + api_key).。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createModelProviderRequest。成功返回 *model.ModelProvider。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createModelProvider",
+                "x-ragflow-permission": "manage:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -49845,6 +50525,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListAvailableProviders returns the RAGFlow provider catalog.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []service.CatalogProvider",
                 "operationId": "listAvailableProviders",
+                "x-ragflow-permission": "read:model-provider",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -49872,6 +50554,8 @@ const docTemplate = `{
             "get": {
                 "description": "GetModelDefaults returns the platform default models with per-type four-state status (ok / invalid / verify_failed / unset, doc/269 §4.3). Response only exposes model identity — never provider config or API keys.。需要权限 read:model-default（由 accessRules 强制）。成功返回 []service.DefaultModelStatus",
                 "operationId": "getModelDefaults",
+                "x-ragflow-permission": "read:model-default",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -49897,6 +50581,8 @@ const docTemplate = `{
             "patch": {
                 "description": "SetModelDefault sets or clears a platform default model for a model type (doc/269 §4.3). The body must carry the CAS declaration expected_model_id (three-state: absent field / explicit null / exact value); the safe-write UI always sends it and the service refuses a missing declaration.。需要权限 manage:model-default（由 accessRules 强制）。请求体类型 service.SetDefaultRequest。成功返回 *service.DefaultModelWriteResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "setModelDefault",
+                "x-ragflow-permission": "manage:model-default",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -49947,6 +50633,8 @@ const docTemplate = `{
             "get": {
                 "description": "GetModelDefaultOptions returns the per-type candidate model tree for the default-model panel (doc/269 §4.4). Read-only; authorized read:model-default.。需要权限 read:model-default（由 accessRules 强制）。成功返回 map[string][]service.DefaultModelOption",
                 "operationId": "getModelDefaultOptions",
+                "x-ragflow-permission": "read:model-default",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -49972,8 +50660,10 @@ const docTemplate = `{
         },
         "/api/v1/model-providers/{id}": {
             "delete": {
-                "description": "DeleteModelProvider removes a tenant's provider (local + RAGFlow).。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteModelProviderResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteModelProvider removes a tenant's provider (local + RAGFlow).。需要权限 manage:model-provider（由 accessRules 强制）。成功返回 DeleteModelProviderResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteModelProvider",
+                "x-ragflow-permission": "manage:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50040,12 +50730,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteModelProvider removes a tenant's provider (local + RAGFlow)",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             },
             "get": {
-                "description": "GetModelProvider returns a single provider's summary for the detail view.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ProviderView",
+                "description": "GetModelProvider returns a single provider's summary for the detail view.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 *service.ProviderView",
                 "operationId": "getModelProvider",
+                "x-ragflow-permission": "read:model-provider",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50076,14 +50768,16 @@ const docTemplate = `{
                 ],
                 "summary": "GetModelProvider returns a single provider's summary for the detail view",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             }
         },
         "/api/v1/model-providers/{id}/instances": {
             "delete": {
-                "description": "DeleteProviderInstances deletes one or more instances of a provider.。只要求登录，没有额外的 RBAC 规则。请求体类型 deleteInstancesRequest。成功返回 DeleteProviderInstancesResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteProviderInstances deletes one or more instances of a provider.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 deleteInstancesRequest。成功返回 DeleteProviderInstancesResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteProviderInstances",
+                "x-ragflow-permission": "manage:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50163,12 +50857,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteProviderInstances deletes one or more instances of a provider",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             },
             "get": {
-                "description": "ListProviderInstances lists a provider's instances.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "ListProviderInstances lists a provider's instances.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "listProviderInstances",
+                "x-ragflow-permission": "read:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50225,12 +50921,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListProviderInstances lists a provider's instances",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             },
             "post": {
-                "description": "CreateProviderInstance creates an instance + models (synced to RAGFlow).。只要求登录，没有额外的 RBAC 规则。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "CreateProviderInstance creates an instance + models (synced to RAGFlow).。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createProviderInstance",
+                "x-ragflow-permission": "manage:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50310,14 +51008,16 @@ const docTemplate = `{
                 ],
                 "summary": "CreateProviderInstance creates an instance + models (synced to RAGFlow)",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             }
         },
         "/api/v1/model-providers/{id}/instances/{instanceId}": {
             "put": {
-                "description": "UpdateProviderInstance updates an instance and reconciles its models.。只要求登录，没有额外的 RBAC 规则。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateProviderInstance updates an instance and reconciles its models.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateProviderInstance",
+                "x-ragflow-permission": "manage:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50406,14 +51106,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateProviderInstance updates an instance and reconciles its models",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             }
         },
         "/api/v1/model-providers/{id}/instances/{instanceId}/models": {
             "delete": {
-                "description": "DeleteProviderModels removes models from an instance.。只要求登录，没有额外的 RBAC 规则。请求体类型 deleteModelsRequest。成功返回 DeleteProviderModelsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "DeleteProviderModels removes models from an instance.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 deleteModelsRequest。成功返回 DeleteProviderModelsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteProviderModels",
+                "x-ragflow-permission": "manage:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50502,12 +51204,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteProviderModels removes models from an instance",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             },
             "get": {
-                "description": "ListProviderInstanceModels lists models on an instance.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "ListProviderInstanceModels lists models on an instance.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "listProviderInstanceModels",
+                "x-ragflow-permission": "read:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50573,12 +51277,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListProviderInstanceModels lists models on an instance",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             },
             "post": {
-                "description": "AddProviderModel adds a model to an instance.。只要求登录，没有额外的 RBAC 规则。请求体类型 modelInfoRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "AddProviderModel adds a model to an instance.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 modelInfoRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "addProviderModel",
+                "x-ragflow-permission": "manage:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50667,14 +51373,16 @@ const docTemplate = `{
                 ],
                 "summary": "AddProviderModel adds a model to an instance",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             }
         },
         "/api/v1/model-providers/{id}/instances/{instanceId}/models/{modelId}": {
             "patch": {
-                "description": "UpdateProviderModel patches a model's status/max_tokens/model_type.。只要求登录，没有额外的 RBAC 规则。请求体类型 updateModelRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateProviderModel patches a model's status/max_tokens/model_type.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 updateModelRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateProviderModel",
+                "x-ragflow-permission": "manage:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50772,14 +51480,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateProviderModel patches a model's status/max_tokens/model_type",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             }
         },
         "/api/v1/model-providers/{id}/instances/{instanceId}/models/{modelId}/test": {
             "post": {
-                "description": "TestProviderModel sends a chat test message to a configured model.。只要求登录，没有额外的 RBAC 规则。请求体类型 chatTestRequest。成功返回 string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "TestProviderModel sends a chat test message to a configured model.。需要权限 execute:model-provider（由 accessRules 强制）。请求体类型 chatTestRequest。成功返回 string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "testProviderModel",
+                "x-ragflow-permission": "execute:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50877,14 +51587,16 @@ const docTemplate = `{
                 ],
                 "summary": "TestProviderModel sends a chat test message to a configured model",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             }
         },
         "/api/v1/model-providers/{id}/verify": {
             "post": {
-                "description": "VerifyProviderConnection validates an API key/base URL against RAGFlow.。只要求登录，没有额外的 RBAC 规则。请求体类型 createProviderInstanceRequest。成功返回 map[string]string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "VerifyProviderConnection validates an API key/base URL against RAGFlow.。需要权限 execute:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 map[string]string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "verifyProviderConnection",
+                "x-ragflow-permission": "execute:model-provider",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -50954,7 +51666,7 @@ const docTemplate = `{
                 ],
                 "summary": "VerifyProviderConnection validates an API key/base URL against RAGFlow",
                 "tags": [
-                    "model-providers"
+                    "model-provider"
                 ]
             }
         },
@@ -50962,6 +51674,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListModelRoutes lists the tenant's routing rules.。需要权限 read:model-route（由 accessRules 强制）。成功返回 []model.ModelRoute",
                 "operationId": "listModelRoutes",
+                "x-ragflow-permission": "read:model-route",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -50987,6 +51701,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateModelRoute creates a routing rule under a tenant provider.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 createModelRouteRequest。成功返回 *model.ModelRoute。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createModelRoute",
+                "x-ragflow-permission": "manage:model-route",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -51035,8 +51751,10 @@ const docTemplate = `{
         },
         "/api/v1/model-routes/{id}": {
             "delete": {
-                "description": "DeleteModelRoute removes a routing rule.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteModelRouteResponse",
+                "description": "DeleteModelRoute removes a routing rule.。需要权限 manage:model-route（由 accessRules 强制）。成功返回 DeleteModelRouteResponse",
                 "operationId": "deleteModelRoute",
+                "x-ragflow-permission": "manage:model-route",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51067,12 +51785,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteModelRoute removes a routing rule",
                 "tags": [
-                    "model-routes"
+                    "model-route"
                 ]
             },
             "put": {
-                "description": "UpdateModelRoute edits an existing routing rule.。只要求登录，没有额外的 RBAC 规则。请求体类型 updateModelRouteRequest。成功返回 *model.ModelRoute。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateModelRoute edits an existing routing rule.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 updateModelRouteRequest。成功返回 *model.ModelRoute。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateModelRoute",
+                "x-ragflow-permission": "manage:model-route",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51126,14 +51846,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateModelRoute edits an existing routing rule",
                 "tags": [
-                    "model-routes"
+                    "model-route"
                 ]
             }
         },
         "/api/v1/model-routes/{id}/enterprise-pin": {
             "post": {
-                "description": "PinEnterpriseModelRoute pins a route to exact enterprise runtime versions.。只要求登录，没有额外的 RBAC 规则。请求体类型 pinModelRouteRequest。成功返回 *model.ModelRouteEnterprisePin。声明了 1 个业务错误码：40065(400)（括号内是 HTTP 状态）",
+                "description": "PinEnterpriseModelRoute pins a route to exact enterprise runtime versions.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 pinModelRouteRequest。成功返回 *model.ModelRouteEnterprisePin。声明了 1 个业务错误码：40065(400)（括号内是 HTTP 状态）",
                 "operationId": "pinEnterpriseModelRoute",
+                "x-ragflow-permission": "manage:model-route",
+                "x-error-codes": ["40065"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51187,14 +51909,16 @@ const docTemplate = `{
                 ],
                 "summary": "PinEnterpriseModelRoute pins a route to exact enterprise runtime versions",
                 "tags": [
-                    "model-routes"
+                    "model-route"
                 ]
             }
         },
         "/api/v1/model-routes/{id}/enterprise-pins": {
             "get": {
-                "description": "ListEnterpriseModelRoutePins returns the route's immutable pin history.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.ModelRouteEnterprisePin",
+                "description": "ListEnterpriseModelRoutePins returns the route's immutable pin history.。需要权限 read:model-route（由 accessRules 强制）。成功返回 []model.ModelRouteEnterprisePin",
                 "operationId": "listEnterpriseModelRoutePins",
+                "x-ragflow-permission": "read:model-route",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51225,7 +51949,7 @@ const docTemplate = `{
                 ],
                 "summary": "ListEnterpriseModelRoutePins returns the route's immutable pin history",
                 "tags": [
-                    "model-routes"
+                    "model-route"
                 ]
             }
         },
@@ -51233,6 +51957,8 @@ const docTemplate = `{
             "get": {
                 "description": "onboardingReadiness exposes the derived four-milestone readiness projection (doc/228 §3.1 T7.1′). Read-only and tenant-local.。需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.OnboardingReadiness",
                 "operationId": "onboardingReadiness",
+                "x-ragflow-permission": "read:scenario-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 assistant_id",
@@ -51270,6 +51996,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:outbox-event（由 accessRules 强制）。成功返回分页载荷，items 元素类型 repository.OutboxEventView",
                 "operationId": "listOutboxEvents",
+                "x-ragflow-permission": "read:outbox-event",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -51337,8 +52065,10 @@ const docTemplate = `{
         },
         "/api/v1/outbox-events/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *repository.OutboxEventView",
+                "description": "需要权限 read:outbox-event（由 accessRules 强制）。成功返回 *repository.OutboxEventView",
                 "operationId": "getOutboxEvent",
+                "x-ragflow-permission": "read:outbox-event",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51369,14 +52099,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Outbox Event",
                 "tags": [
-                    "outbox-events"
+                    "outbox-event"
                 ]
             }
         },
         "/api/v1/outbox-events/{id}/retry": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.OutboxEventView",
+                "description": "需要权限 execute:outbox-event（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.OutboxEventView",
                 "operationId": "retryOutboxEvent",
+                "x-ragflow-permission": "execute:outbox-event",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51423,7 +52155,7 @@ const docTemplate = `{
                 ],
                 "summary": "retry Outbox Event",
                 "tags": [
-                    "outbox-events"
+                    "outbox-event"
                 ]
             }
         },
@@ -51431,6 +52163,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:parser-policy（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParserPolicy。声明了 1 个业务错误码：40081(400)（括号内是 HTTP 状态）",
                 "operationId": "listParserPolicies",
+                "x-ragflow-permission": "read:parser-policy",
+                "x-error-codes": ["40081"],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -51524,6 +52258,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy",
                 "operationId": "createParserPolicy",
+                "x-ragflow-permission": "manage:parser-policy",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -51565,8 +52301,10 @@ const docTemplate = `{
         },
         "/api/v1/parser-policies/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteParserPolicyResponse",
+                "description": "需要权限 manage:parser-policy（由 accessRules 强制）。成功返回 DeleteParserPolicyResponse",
                 "operationId": "deleteParserPolicy",
+                "x-ragflow-permission": "manage:parser-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51597,12 +52335,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Parser Policy",
                 "tags": [
-                    "parser-policies"
+                    "parser-policy"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.ParserPolicy。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:parser-policy（由 accessRules 强制）。成功返回 *model.ParserPolicy。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
                 "operationId": "getParserPolicy",
+                "x-ragflow-permission": "read:parser-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51643,12 +52383,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Parser Policy",
                 "tags": [
-                    "parser-policies"
+                    "parser-policy"
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy",
+                "description": "需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy",
                 "operationId": "updateParserPolicy",
+                "x-ragflow-permission": "manage:parser-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51695,12 +52437,14 @@ const docTemplate = `{
                 ],
                 "summary": "update Parser Policy",
                 "tags": [
-                    "parser-policies"
+                    "parser-policy"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy",
+                "description": "需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy",
                 "operationId": "updateParserPolicyPut",
+                "x-ragflow-permission": "manage:parser-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51747,7 +52491,7 @@ const docTemplate = `{
                 ],
                 "summary": "update Parser Policy",
                 "tags": [
-                    "parser-policies"
+                    "parser-policy"
                 ]
             }
         },
@@ -51755,6 +52499,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListProjects lists the tenant's projects.。需要权限 read:project（由 accessRules 强制）。成功返回 []model.Project",
                 "operationId": "listProjects",
+                "x-ragflow-permission": "read:project",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -51780,6 +52526,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateProject creates a tenant project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectRequest。成功返回 *model.Project。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createProject",
+                "x-ragflow-permission": "manage:project",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -51828,8 +52576,10 @@ const docTemplate = `{
         },
         "/api/v1/projects/{id}": {
             "delete": {
-                "description": "DeleteProject deletes a tenant project.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteProjectResponse",
+                "description": "DeleteProject deletes a tenant project.。需要权限 manage:project（由 accessRules 强制）。成功返回 DeleteProjectResponse",
                 "operationId": "deleteProject",
+                "x-ragflow-permission": "manage:project",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51860,12 +52610,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteProject deletes a tenant project",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             },
             "get": {
-                "description": "GetProject returns a single tenant project (visible to project members).。只要求登录，没有额外的 RBAC 规则。成功返回 *model.Project",
+                "description": "GetProject returns a single tenant project (visible to project members).。需要权限 read:project（由 accessRules 强制）。成功返回 *model.Project",
                 "operationId": "getProject",
+                "x-ragflow-permission": "read:project",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51896,12 +52648,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetProject returns a single tenant project (visible to project members)",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             },
             "put": {
-                "description": "UpdateProject updates a tenant project's name and description.。只要求登录，没有额外的 RBAC 规则。请求体类型 projectRequest。成功返回 *model.Project。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateProject updates a tenant project's name and description.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectRequest。成功返回 *model.Project。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateProject",
+                "x-ragflow-permission": "manage:project",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51955,14 +52709,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateProject updates a tenant project's name and description",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             }
         },
         "/api/v1/projects/{id}/datasets": {
             "get": {
-                "description": "GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section).。只要求登录，没有额外的 RBAC 规则。成功返回 []service.ProjectDatasetView",
+                "description": "GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section).。需要权限 read:project（由 accessRules 强制）。成功返回 []service.ProjectDatasetView",
                 "operationId": "getProjectDatasets",
+                "x-ragflow-permission": "read:project",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -51993,12 +52749,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section)",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             },
             "put": {
-                "description": "BindProjectDatasets assigns the selected datasets to the project.。只要求登录，没有额外的 RBAC 规则。请求体类型 projectBindRequest。成功返回 BindProjectDatasetsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "BindProjectDatasets assigns the selected datasets to the project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectBindRequest。成功返回 BindProjectDatasetsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "bindProjectDatasets",
+                "x-ragflow-permission": "manage:project",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52052,14 +52810,16 @@ const docTemplate = `{
                 ],
                 "summary": "BindProjectDatasets assigns the selected datasets to the project",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             }
         },
         "/api/v1/projects/{id}/teams": {
             "get": {
-                "description": "GetProjectTeams lists all tenant teams with their binding to the project.。只要求登录，没有额外的 RBAC 规则。成功返回 []service.ProjectTeamView",
+                "description": "GetProjectTeams lists all tenant teams with their binding to the project.。需要权限 read:project（由 accessRules 强制）。成功返回 []service.ProjectTeamView",
                 "operationId": "getProjectTeams",
+                "x-ragflow-permission": "read:project",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52090,12 +52850,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetProjectTeams lists all tenant teams with their binding to the project",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             },
             "put": {
-                "description": "BindProjectTeams replaces the project's bound teams.。只要求登录，没有额外的 RBAC 规则。请求体类型 projectBindRequest。成功返回 BindProjectTeamsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "BindProjectTeams replaces the project's bound teams.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectBindRequest。成功返回 BindProjectTeamsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "bindProjectTeams",
+                "x-ragflow-permission": "manage:project",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52149,14 +52911,16 @@ const docTemplate = `{
                 ],
                 "summary": "BindProjectTeams replaces the project's bound teams",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             }
         },
         "/api/v1/projects/{id}/users": {
             "get": {
-                "description": "ListProjectUsers lists project members.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.User",
+                "description": "ListProjectUsers lists project members.。需要权限 read:project（由 accessRules 强制）。成功返回 []model.User",
                 "operationId": "listProjectUsers",
+                "x-ragflow-permission": "read:project",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52187,12 +52951,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListProjectUsers lists project members",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             },
             "post": {
-                "description": "AddProjectUser adds a user to a project.。只要求登录，没有额外的 RBAC 规则。请求体类型 AddProjectUserRequest。成功返回 AddProjectUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "AddProjectUser adds a user to a project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 AddProjectUserRequest。成功返回 AddProjectUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "addProjectUser",
+                "x-ragflow-permission": "manage:project",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52246,14 +53012,16 @@ const docTemplate = `{
                 ],
                 "summary": "AddProjectUser adds a user to a project",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             }
         },
         "/api/v1/projects/{id}/users/{userId}": {
             "delete": {
-                "description": "RemoveProjectUser removes a user from a project.。只要求登录，没有额外的 RBAC 规则。成功返回 RemoveProjectUserResponse",
+                "description": "RemoveProjectUser removes a user from a project.。需要权限 manage:project（由 accessRules 强制）。成功返回 RemoveProjectUserResponse",
                 "operationId": "removeProjectUser",
+                "x-ragflow-permission": "manage:project",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52293,7 +53061,7 @@ const docTemplate = `{
                 ],
                 "summary": "RemoveProjectUser removes a user from a project",
                 "tags": [
-                    "projects"
+                    "project"
                 ]
             }
         },
@@ -52301,6 +53069,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:prompt-policy（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.PromptPolicyVersion",
                 "operationId": "listPromptPolicies",
+                "x-ragflow-permission": "read:prompt-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -52360,6 +53130,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:prompt-policy（由 accessRules 强制）。请求体类型 service.PromptPolicyInput。成功返回 *model.PromptPolicyVersion。声明了 1 个业务错误码：40065(400)（括号内是 HTTP 状态）",
                 "operationId": "createPromptPolicy",
+                "x-ragflow-permission": "manage:prompt-policy",
+                "x-error-codes": ["40065"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -52408,8 +53180,10 @@ const docTemplate = `{
         },
         "/api/v1/prompt-policies/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeletePromptPolicyResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:prompt-policy（由 accessRules 强制）。成功返回 DeletePromptPolicyResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
                 "operationId": "deletePromptPolicy",
+                "x-ragflow-permission": "manage:prompt-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52450,12 +53224,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Prompt Policy",
                 "tags": [
-                    "prompt-policies"
+                    "prompt-policy"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.PromptPolicyVersion。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:prompt-policy（由 accessRules 强制）。成功返回 *model.PromptPolicyVersion。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
                 "operationId": "getPromptPolicy",
+                "x-ragflow-permission": "read:prompt-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52496,14 +53272,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Prompt Policy",
                 "tags": [
-                    "prompt-policies"
+                    "prompt-policy"
                 ]
             }
         },
         "/api/v1/prompt-policies/{id}/rollback": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.PromptPolicyVersion",
+                "description": "需要权限 manage:prompt-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.PromptPolicyVersion",
                 "operationId": "rollbackPromptPolicy",
+                "x-ragflow-permission": "manage:prompt-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52550,7 +53328,7 @@ const docTemplate = `{
                 ],
                 "summary": "rollback Prompt Policy",
                 "tags": [
-                    "prompt-policies"
+                    "prompt-policy"
                 ]
             }
         },
@@ -52558,6 +53336,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.QualityIssue",
                 "operationId": "listQualityIssues",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -52609,6 +53389,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue",
                 "operationId": "createQualityIssue",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -52650,8 +53432,10 @@ const docTemplate = `{
         },
         "/api/v1/quality-issues/{id}/state": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue",
                 "operationId": "updateQualityIssue",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52698,14 +53482,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Quality Issue",
                 "tags": [
-                    "quality-issues"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/quality-issues/{id}/verify": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue",
                 "operationId": "verifyQualityIssue",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52752,7 +53538,7 @@ const docTemplate = `{
                 ],
                 "summary": "verify Quality Issue",
                 "tags": [
-                    "quality-issues"
+                    "release-governance"
                 ]
             }
         },
@@ -52760,6 +53546,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:quality-profile（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.QualityProfile。声明了 1 个业务错误码：40082(400)（括号内是 HTTP 状态）",
                 "operationId": "listQualityProfiles",
+                "x-ragflow-permission": "read:quality-profile",
+                "x-error-codes": ["40082"],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -52821,6 +53609,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile",
                 "operationId": "createQualityProfile",
+                "x-ragflow-permission": "manage:quality-profile",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -52862,8 +53652,10 @@ const docTemplate = `{
         },
         "/api/v1/quality-profiles/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteQualityProfileResponse",
+                "description": "需要权限 manage:quality-profile（由 accessRules 强制）。成功返回 DeleteQualityProfileResponse",
                 "operationId": "deleteQualityProfile",
+                "x-ragflow-permission": "manage:quality-profile",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52894,12 +53686,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Quality Profile",
                 "tags": [
-                    "quality-profiles"
+                    "quality-profile"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.QualityProfile。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:quality-profile（由 accessRules 强制）。成功返回 *model.QualityProfile。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）",
                 "operationId": "getQualityProfile",
+                "x-ragflow-permission": "read:quality-profile",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52940,12 +53734,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Quality Profile",
                 "tags": [
-                    "quality-profiles"
+                    "quality-profile"
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile",
+                "description": "需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile",
                 "operationId": "updateQualityProfile",
+                "x-ragflow-permission": "manage:quality-profile",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -52992,12 +53788,14 @@ const docTemplate = `{
                 ],
                 "summary": "update Quality Profile",
                 "tags": [
-                    "quality-profiles"
+                    "quality-profile"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile",
+                "description": "需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile",
                 "operationId": "updateQualityProfilePut",
+                "x-ragflow-permission": "manage:quality-profile",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -53044,7 +53842,7 @@ const docTemplate = `{
                 ],
                 "summary": "update Quality Profile",
                 "tags": [
-                    "quality-profiles"
+                    "quality-profile"
                 ]
             }
         },
@@ -53052,6 +53850,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:query-template（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.QueryTemplate。声明了 1 个业务错误码：40180(400)（括号内是 HTTP 状态）",
                 "operationId": "listQueryTemplates",
+                "x-ragflow-permission": "read:query-template",
+                "x-error-codes": ["40180"],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -53121,6 +53921,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate",
                 "operationId": "createQueryTemplate",
+                "x-ragflow-permission": "manage:query-template",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -53162,8 +53964,10 @@ const docTemplate = `{
         },
         "/api/v1/query-templates/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteQueryTemplateResponse",
+                "description": "需要权限 manage:query-template（由 accessRules 强制）。成功返回 DeleteQueryTemplateResponse",
                 "operationId": "deleteQueryTemplate",
+                "x-ragflow-permission": "manage:query-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -53194,12 +53998,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Query Template",
                 "tags": [
-                    "query-templates"
+                    "query-template"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.QueryTemplate",
+                "description": "需要权限 read:query-template（由 accessRules 强制）。成功返回 *model.QueryTemplate",
                 "operationId": "getQueryTemplate",
+                "x-ragflow-permission": "read:query-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -53230,12 +54036,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Query Template",
                 "tags": [
-                    "query-templates"
+                    "query-template"
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate",
+                "description": "需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate",
                 "operationId": "updateQueryTemplate",
+                "x-ragflow-permission": "manage:query-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -53282,12 +54090,14 @@ const docTemplate = `{
                 ],
                 "summary": "update Query Template",
                 "tags": [
-                    "query-templates"
+                    "query-template"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate",
+                "description": "需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate",
                 "operationId": "updateQueryTemplatePut",
+                "x-ragflow-permission": "manage:query-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -53334,7 +54144,7 @@ const docTemplate = `{
                 ],
                 "summary": "update Query Template",
                 "tags": [
-                    "query-templates"
+                    "query-template"
                 ]
             }
         },
@@ -53342,6 +54152,7 @@ const docTemplate = `{
             "get": {
                 "description": "Ready returns 200 when dependencies are healthy, 503 otherwise (K8s readyz).。只要求登录，没有额外的 RBAC 规则。成功返回 ReadyResponse",
                 "operationId": "ready",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -53364,6 +54175,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ReleaseCandidate",
                 "operationId": "listReleaseCandidates",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -53407,6 +54220,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseCandidate",
                 "operationId": "createReleaseCandidate",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -53448,8 +54263,10 @@ const docTemplate = `{
         },
         "/api/v1/release-candidates/{id}/ready": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkReleaseCandidateReadyResponse",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkReleaseCandidateReadyResponse",
                 "operationId": "markReleaseCandidateReady",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -53496,7 +54313,7 @@ const docTemplate = `{
                 ],
                 "summary": "mark Release Candidate Ready",
                 "tags": [
-                    "release-candidates"
+                    "release-governance"
                 ]
             }
         },
@@ -53504,6 +54321,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ReleaseGateDecision",
                 "operationId": "listReleaseGates",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -53563,6 +54382,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseGateDecision",
                 "operationId": "evaluateReleaseGate",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -53606,6 +54427,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.ReleaseGateEvidenceReport",
                 "operationId": "getReleaseGateEvidence",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 candidate_version",
@@ -53651,6 +54474,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Release",
                 "operationId": "listReleases",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -53702,6 +54527,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release",
                 "operationId": "createRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -53743,8 +54570,10 @@ const docTemplate = `{
         },
         "/api/v1/releases/{id}/complete": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release",
                 "operationId": "completeRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -53791,14 +54620,16 @@ const docTemplate = `{
                 ],
                 "summary": "complete Release",
                 "tags": [
-                    "releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/releases/{id}/rollback": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release",
                 "operationId": "rollbackRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -53845,14 +54676,16 @@ const docTemplate = `{
                 ],
                 "summary": "rollback Release",
                 "tags": [
-                    "releases"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/report-jobs/{jobId}": {
             "get": {
-                "description": "getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the ` + "`" + `event_seq` + "`" + ` cursor to resume the stream from. The job is addressed by its own id rather than \"the report's latest job\" because a client that reconnects is talking about one specific run: inferring it would let a snapshot of run #2 be paired with a cursor from run #1.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportJobSnapshot",
+                "description": "getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the ` + "`" + `event_seq` + "`" + ` cursor to resume the stream from. The job is addressed by its own id rather than \"the report's latest job\" because a client that reconnects is talking about one specific run: inferring it would let a snapshot of run #2 be paired with a cursor from run #1.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportJobSnapshot",
                 "operationId": "getReportJob",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 jobId",
@@ -53883,14 +54716,16 @@ const docTemplate = `{
                 ],
                 "summary": "getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the ` + "`" + `event_seq` + "`" + ` cursor to resume the stream from",
                 "tags": [
-                    "report-jobs"
+                    "report"
                 ]
             }
         },
         "/api/v1/report-jobs/{jobId}/events": {
             "get": {
-                "description": "streamReportJobEvents is the SSE endpoint (§8.3 / T5). The stream reads the event table, never an in-memory bus: a broadcast that only exists in RAM would lose the events a reconnect is asking about, which is the whole point of the sequence. Frames follow §8.8 exactly — ` + "`" + `id: \u003cseq\u003e` + "`" + `, ` + "`" + `event: report.job` + "`" + `, one ` + "`" + `data:` + "`" + ` line carrying ` + "`" + `seq/type/job_id/revision_id/at/payload` + "`" + `. ` + "`" + `seq` + "`" + ` is in the body because the only parser the frontend has reads ` + "`" + `data:` + "`" + ` lines.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型 text/event-stream",
+                "description": "streamReportJobEvents is the SSE endpoint (§8.3 / T5). The stream reads the event table, never an in-memory bus: a broadcast that only exists in RAM would lose the events a reconnect is asking about, which is the whole point of the sequence. Frames follow §8.8 exactly — ` + "`" + `id: \u003cseq\u003e` + "`" + `, ` + "`" + `event: report.job` + "`" + `, one ` + "`" + `data:` + "`" + ` line carrying ` + "`" + `seq/type/job_id/revision_id/at/payload` + "`" + `. ` + "`" + `seq` + "`" + ` is in the body because the only parser the frontend has reads ` + "`" + `data:` + "`" + ` lines.。需要权限 read:report（由 accessRules 强制）。成功返回原始字节，媒体类型 text/event-stream",
                 "operationId": "streamReportJobEvents",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 jobId",
@@ -53929,14 +54764,16 @@ const docTemplate = `{
                 ],
                 "summary": "streamReportJobEvents is the SSE endpoint (§8.3 / T5)",
                 "tags": [
-                    "report-jobs"
+                    "report"
                 ]
             }
         },
         "/api/v1/report-jobs/{jobId}/sections/{ord}/retry": {
             "post": {
-                "description": "retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B). The job and ord name one failed section of the current published revision; the service mints a ` + "`" + `section_retry` + "`" + ` job, marks the old row superseded and writes a fresh pending section row. The response body carries both the new job and the new section (with ` + "`" + `job_kind` + "`" + `/` + "`" + `rewrite_reason` + "`" + `) so a client can render in-flight state without a follow-up GET.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RetryReportSectionResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B). The job and ord name one failed section of the current published revision; the service mints a ` + "`" + `section_retry` + "`" + ` job, marks the old row superseded and writes a fresh pending section row. The response body carries both the new job and the new section (with ` + "`" + `job_kind` + "`" + `/` + "`" + `rewrite_reason` + "`" + `) so a client can render in-flight state without a follow-up GET.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RetryReportSectionResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "retryReportSection",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 jobId",
@@ -54002,7 +54839,7 @@ const docTemplate = `{
                 ],
                 "summary": "retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B)",
                 "tags": [
-                    "report-jobs"
+                    "report"
                 ]
             }
         },
@@ -54010,6 +54847,8 @@ const docTemplate = `{
             "get": {
                 "description": "getReportMetricsTrend answers A15: the stored per-revision quality verdicts of a window, rolled up by day or week (doc/288 §14.1). The query is parsed permissively — an absent ` + "`" + `days` + "`" + `/` + "`" + `bucket` + "`" + `/` + "`" + `view` + "`" + ` takes the documented default — but a *present and wrong* value is refused with 44105 instead of being coerced: a caller that asked for 400 days and silently received 180 would chart a window it did not request. 44105 is the report surface's payload code; it is not reused for a model or total failure (§8.7).。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportMetricsTrendView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "getReportMetricsTrend",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "查询参数 bucket",
@@ -54081,6 +54920,8 @@ const docTemplate = `{
             "get": {
                 "description": "getReportRetention reads the effective report TTLs for this workspace (T20b). The tenant is taken from the session, never from the path: a ` + "`" + `:tenantId` + "`" + ` parameter would turn \"which numbers apply to you\" into an enumeration oracle for other workspaces' retention policies, and the caller has exactly one workspace.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportRetentionView",
                 "operationId": "getReportRetention",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -54106,6 +54947,8 @@ const docTemplate = `{
             "put": {
                 "description": "putReportRetention sets the tenant-level overlay. ` + "`" + `manage` + "`" + ` is the right action: retention decides when compliance evidence disappears, which is governance, not a per-user preference (` + "`" + `execute` + "`" + ` is not enough).。需要权限 manage:report（由 accessRules 强制）。请求体类型 service.TenantReportPolicyRequest。成功返回 *service.ReportRetentionView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "putReportRetention",
+                "x-ragflow-permission": "manage:report",
+                "x-error-codes": ["44105"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -54156,6 +54999,8 @@ const docTemplate = `{
             "get": {
                 "description": "listReportTemplates returns one row per template key (workspace fork first, platform baseline otherwise) with its full payload.。需要权限 read:report-template（由 accessRules 强制）。成功返回 []service.ReportTemplateView",
                 "operationId": "listReportTemplates",
+                "x-ragflow-permission": "read:report-template",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -54181,6 +55026,8 @@ const docTemplate = `{
             "post": {
                 "description": "cloneReportTemplate forks the platform baseline into the workspace's private template version sequence (§11.4 / D4). The fork keeps its own version numbers and is never overwritten by a later platform upgrade; re-forking after an upgrade mints the workspace's next version instead. ` + "`" + `created=false` + "`" + ` on the body means the request replayed an already-committed identical fork. publishReportTemplate creates a workspace-authored template version (doc/295 R19). POST is the create form; PUT :key is the edit form, and both land on the same service call because \"edit\" means \"publish version N+1\" — there is no in-place update of a version a report may already have pinned.。需要权限 manage:report-template（由 accessRules 强制）。请求体类型 service.ReportTemplatePublishRequest。成功返回 *service.ReportTemplateMutationResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "publishReportTemplate",
+                "x-ragflow-permission": "manage:report-template",
+                "x-error-codes": ["44105"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -54229,8 +55076,10 @@ const docTemplate = `{
         },
         "/api/v1/report-templates/{key}": {
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ReportTemplatePublishRequest。成功返回 *service.ReportTemplateMutationResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:report-template（由 accessRules 强制）。请求体类型 service.ReportTemplatePublishRequest。成功返回 *service.ReportTemplateMutationResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "updateReportTemplate",
+                "x-ragflow-permission": "manage:report-template",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 key",
@@ -54284,14 +55133,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Report Template",
                 "tags": [
-                    "report-templates"
+                    "report-template"
                 ]
             }
         },
         "/api/v1/report-templates/{key}/capability-check": {
             "post": {
-                "description": "capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract. Read-only, mirroring the scenario-wizard check: it discloses verdicts (satisfied / repairable / probe_limited / blocked) and never repairs anything. Only ` + "`" + `blocked` + "`" + ` blocks creation — the create-time recheck re-runs the same evaluation server-side and answers 44102 then.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract. Read-only, mirroring the scenario-wizard check: it discloses verdicts (satisfied / repairable / probe_limited / blocked) and never repairs anything. Only ` + "`" + `blocked` + "`" + ` blocks creation — the create-time recheck re-runs the same evaluation server-side and answers 44102 then.。需要权限 read:report-template（由 accessRules 强制）。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "capabilityCheckReportTemplate",
+                "x-ragflow-permission": "read:report-template",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 key",
@@ -54345,14 +55196,16 @@ const docTemplate = `{
                 ],
                 "summary": "capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract",
                 "tags": [
-                    "report-templates"
+                    "report-template"
                 ]
             }
         },
         "/api/v1/report-templates/{key}/clone": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CloneReportTemplateResult",
+                "description": "需要权限 manage:report-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CloneReportTemplateResult",
                 "operationId": "cloneReportTemplate",
+                "x-ragflow-permission": "manage:report-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 key",
@@ -54399,14 +55252,16 @@ const docTemplate = `{
                 ],
                 "summary": "clone Report Template",
                 "tags": [
-                    "report-templates"
+                    "report-template"
                 ]
             }
         },
         "/api/v1/report-templates/{key}/retire": {
             "post": {
-                "description": "retireReportTemplate takes the newest workspace version out of service. It is not a delete: the row stays so historical reports keep their provenance.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportTemplateMutationResult",
+                "description": "retireReportTemplate takes the newest workspace version out of service. It is not a delete: the row stays so historical reports keep their provenance.。需要权限 manage:report-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportTemplateMutationResult",
                 "operationId": "retireReportTemplate",
+                "x-ragflow-permission": "manage:report-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 key",
@@ -54453,7 +55308,7 @@ const docTemplate = `{
                 ],
                 "summary": "retireReportTemplate takes the newest workspace version out of service",
                 "tags": [
-                    "report-templates"
+                    "report-template"
                 ]
             }
         },
@@ -54461,6 +55316,8 @@ const docTemplate = `{
             "get": {
                 "description": "listReports returns the caller's own live reports. The owner narrowing is the service's decision, not a query parameter: P0-A has no shared reports, so ` + "`" + `?owner_user_id=` + "`" + ` would be an invitation to add one without a policy. ` + "`" + `?status=` + "`" + ` selects the lifecycle view (doc/297 §2.3): absent means ` + "`" + `active` + "`" + `, so an archived report leaves the daily list by default. The value is passed through unvalidated and the service answers 400/44105 for anything outside its closed set — the same split every other report parameter uses (shape is the service's contract).。需要权限 read:report（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.ReportListRow",
                 "operationId": "listReports",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -54512,6 +55369,8 @@ const docTemplate = `{
             "post": {
                 "description": "createReport starts one report run. The ` + "`" + `Idempotency-Key` + "`" + ` header is request identity, not a content fingerprint (doc/288 §7.7): the same key must return the same report and job, a different key must be allowed to ask the same question again. The service owns the validation (44114 for missing/malformed) and the replay, so the handler passes the raw header through and reports whatever the service decided — including ` + "`" + `created=false` + "`" + ` on a replay, which the UI needs to distinguish from a fresh run. 202, not 200: the aggregate exists but the content does not. Answering 200 would claim a finished report and make the first ` + "`" + `GET /reports/:id` + "`" + ` look like a regression.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CreateReportResult",
                 "operationId": "createReport",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -54553,8 +55412,10 @@ const docTemplate = `{
         },
         "/api/v1/reports/{id}": {
             "delete": {
-                "description": "deleteReport closes a report and opens its 7-day recovery window.。只要求登录，没有额外的 RBAC 规则。请求体类型 deleteReportRequest。成功返回 DeleteReportResponse。声明了 2 个业务错误码：40070(400)、44105(400)（括号内是 HTTP 状态）",
+                "description": "deleteReport closes a report and opens its 7-day recovery window.。需要权限 delete:own:report（由 accessRules 强制）。请求体类型 deleteReportRequest。成功返回 DeleteReportResponse。声明了 2 个业务错误码：40070(400)、44105(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteReport",
+                "x-ragflow-permission": "delete:own:report",
+                "x-error-codes": ["40070", "44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -54616,12 +55477,14 @@ const docTemplate = `{
                 ],
                 "summary": "deleteReport closes a report and opens its 7-day recovery window",
                 "tags": [
-                    "reports"
+                    "own:report"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportDetail",
+                "description": "需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportDetail",
                 "operationId": "getReport",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -54652,14 +55515,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Report",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/access": {
             "put": {
-                "description": "putReportAccess replaces one report's sharing policy (doc/296 §2.1). ` + "`" + `execute:report` + "`" + ` is the route's RBAC gate — sharing is an action on a report you own, not a governance decision — and the row-level rule (owner, or platform ` + "`" + `manage` + "`" + `) lives in the service, so a colleague's report answers 44109 rather than an existence oracle. The response is the new sharing view, not 204: the panel must show what the server actually stored (a grantee the server skipped, a policy it normalised) instead of echoing what the client sent.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.SetReportAccessRequest。成功返回 *service.ReportAccessView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "putReportAccess replaces one report's sharing policy (doc/296 §2.1). ` + "`" + `execute:report` + "`" + ` is the route's RBAC gate — sharing is an action on a report you own, not a governance decision — and the row-level rule (owner, or platform ` + "`" + `manage` + "`" + `) lives in the service, so a colleague's report answers 44109 rather than an existence oracle. The response is the new sharing view, not 204: the panel must show what the server actually stored (a grantee the server skipped, a policy it normalised) instead of echoing what the client sent.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.SetReportAccessRequest。成功返回 *service.ReportAccessView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "putReportAccess",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -54713,14 +55578,16 @@ const docTemplate = `{
                 ],
                 "summary": "putReportAccess replaces one report's sharing policy (doc/296 §2.1)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/archive": {
             "post": {
-                "description": "archiveReport puts a finished report away (doc/297 §2). 200 with the detail view: the state changed on a resource that already existed, and the client's next action is to render it — the same answer ` + "`" + `restore` + "`" + ` gives.。只要求登录，没有额外的 RBAC 规则。请求体类型 archiveReportRequest。成功返回 *service.ReportDetail。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）",
+                "description": "archiveReport puts a finished report away (doc/297 §2). 200 with the detail view: the state changed on a resource that already existed, and the client's next action is to render it — the same answer ` + "`" + `restore` + "`" + ` gives.。需要权限 delete:own:report（由 accessRules 强制）。请求体类型 archiveReportRequest。成功返回 *service.ReportDetail。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）",
                 "operationId": "archiveReport",
+                "x-ragflow-permission": "delete:own:report",
+                "x-error-codes": ["40070"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -54774,14 +55641,16 @@ const docTemplate = `{
                 ],
                 "summary": "archiveReport puts a finished report away (doc/297 §2)",
                 "tags": [
-                    "reports"
+                    "own:report"
                 ]
             }
         },
         "/api/v1/reports/{id}/budget-extension": {
             "post": {
-                "description": "postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2). ` + "`" + `execute:report` + "`" + ` is the gate and ownership is the row-level rule, the same union the rest of the surface uses: raising a limit is an action on your own run, not a governance decision. When the workspace has an approval policy the answer is 200 with ` + "`" + `status=pending_approval` + "`" + ` — the request was accepted and nothing has changed yet, which is a different thing from a failure and must not be reported as one.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.ReportBudgetExtensionRequest。成功返回 *service.ReportBudgetExtensionView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2). ` + "`" + `execute:report` + "`" + ` is the gate and ownership is the row-level rule, the same union the rest of the surface uses: raising a limit is an action on your own run, not a governance decision. When the workspace has an approval policy the answer is 200 with ` + "`" + `status=pending_approval` + "`" + ` — the request was accepted and nothing has changed yet, which is a different thing from a failure and must not be reported as one.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.ReportBudgetExtensionRequest。成功返回 *service.ReportBudgetExtensionView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "postReportBudgetExtension",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -54835,14 +55704,16 @@ const docTemplate = `{
                 ],
                 "summary": "postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/cancel": {
             "post": {
-                "description": "cancelReport records the user's cancel intent for the report's current job. 202 rather than 200: the answer is \"your intent is recorded\", not \"the report is cancelled\". The terminal state is derived by finalize (§8.4), so a 200 here would be a promise the server cannot keep yet.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportCancelResult",
+                "description": "cancelReport records the user's cancel intent for the report's current job. 202 rather than 200: the answer is \"your intent is recorded\", not \"the report is cancelled\". The terminal state is derived by finalize (§8.4), so a 200 here would be a promise the server cannot keep yet.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportCancelResult",
                 "operationId": "cancelReport",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -54889,14 +55760,16 @@ const docTemplate = `{
                 ],
                 "summary": "cancelReport records the user's cancel intent for the report's current job",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/follow-ups": {
             "get": {
-                "description": "getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn. ` + "`" + `revision` + "`" + ` absent/0 means \"whatever this report currently shows\", resolved from ` + "`" + `current_revision_id` + "`" + ` by the service — never \"the highest number\". A present but non-positive revision is refused with 44105 instead of being read as \"current\": a client that asked for ` + "`" + `revision=0` + "`" + ` after a regenerate would silently get the published base (or the running draft) and never learn it asked for nothing.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportFollowUpView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn. ` + "`" + `revision` + "`" + ` absent/0 means \"whatever this report currently shows\", resolved from ` + "`" + `current_revision_id` + "`" + ` by the service — never \"the highest number\". A present but non-positive revision is refused with 44105 instead of being read as \"current\": a client that asked for ` + "`" + `revision=0` + "`" + ` after a regenerate would silently get the published base (or the running draft) and never learn it asked for nothing.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportFollowUpView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "getReportFollowUps",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -54953,14 +55826,16 @@ const docTemplate = `{
                 ],
                 "summary": "getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/restore": {
             "post": {
-                "description": "restoreReport re-opens a soft-deleted report inside its recovery window (A47). 200 with the report detail: the restore has already happened by the time this answers, so there is nothing asynchronous to acknowledge. 409/44104 means the window closed (or the row is not deleted), which is a state answer, not a missing route — that is why it is not a 404.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail",
+                "description": "restoreReport re-opens a soft-deleted report inside its recovery window (A47). 200 with the report detail: the restore has already happened by the time this answers, so there is nothing asynchronous to acknowledge. 409/44104 means the window closed (or the row is not deleted), which is a state answer, not a missing route — that is why it is not a 404.。需要权限 delete:own:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail",
                 "operationId": "restoreReport",
+                "x-ragflow-permission": "delete:own:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55007,14 +55882,16 @@ const docTemplate = `{
                 ],
                 "summary": "restoreReport re-opens a soft-deleted report inside its recovery window (A47)",
                 "tags": [
-                    "reports"
+                    "own:report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions": {
             "get": {
-                "description": "listReportRevisions answers the report's version history (doc/288 §7.10). A superseded revision is reachable today only by guessing its number: the detail page resolves ` + "`" + `current_revision_id` + "`" + `, and nothing told a client which other numbers exist. That made A41's \"historical revisions stay readable\" true of the API and false of the product.。只要求登录，没有额外的 RBAC 规则。成功返回 ListReportRevisionsResponse",
+                "description": "listReportRevisions answers the report's version history (doc/288 §7.10). A superseded revision is reachable today only by guessing its number: the detail page resolves ` + "`" + `current_revision_id` + "`" + `, and nothing told a client which other numbers exist. That made A41's \"historical revisions stay readable\" true of the API and false of the product.。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportRevisionsResponse",
                 "operationId": "listReportRevisions",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55045,12 +55922,14 @@ const docTemplate = `{
                 ],
                 "summary": "listReportRevisions answers the report's version history (doc/288 §7.10)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             },
             "post": {
-                "description": "createReportRevision starts one new run on an already-published report. Same conditions, same report: it mints revision ` + "`" + `current+1` + "`" + ` from the published base and a fresh ` + "`" + `report_generate` + "`" + ` job in one transaction (doc/288 §7.10). The ` + "`" + `Idempotency-Key` + "`" + ` header is required (44114) and lives in its OWN namespace — a creation key can never replay here, and a regeneration key can never collide with the key that minted the report (§7.10 \"不受创建幂等键拦截\"). There is no body: P0-A's \"重新生成（同条件）\" has nothing a caller may change.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.RegenerateReportRequest。成功返回 *service.CreateReportResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "createReportRevision starts one new run on an already-published report. Same conditions, same report: it mints revision ` + "`" + `current+1` + "`" + ` from the published base and a fresh ` + "`" + `report_generate` + "`" + ` job in one transaction (doc/288 §7.10). The ` + "`" + `Idempotency-Key` + "`" + ` header is required (44114) and lives in its OWN namespace — a creation key can never replay here, and a regeneration key can never collide with the key that minted the report (§7.10 \"不受创建幂等键拦截\"). There is no body: P0-A's \"重新生成（同条件）\" has nothing a caller may change.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.RegenerateReportRequest。成功返回 *service.CreateReportResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "createReportRevision",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55104,14 +55983,16 @@ const docTemplate = `{
                 ],
                 "summary": "createReportRevision starts one new run on an already-published report",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}": {
             "get": {
-                "description": "getReportRevision reads \"second revision of report X\" by its number, the historical-run view a client refreshes after reconnecting. The report row is carried in the answer (same shape as GET /reports/:id) so a caller paging through a report's revisions never has to fetch the report twice.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportDetail。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "getReportRevision reads \"second revision of report X\" by its number, the historical-run view a client refreshes after reconnecting. The report row is carried in the answer (same shape as GET /reports/:id) so a caller paging through a report's revisions never has to fetch the report twice.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportDetail。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "getReportRevision",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55161,14 +56042,16 @@ const docTemplate = `{
                 ],
                 "summary": "getReportRevision reads \"second revision of report X\" by its number, the historical-run view a client refreshes after reconnecting",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}/artifacts": {
             "post": {
-                "description": "createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12). The format comes from the body; there is deliberately no client-supplied idempotency key here, because the server derives it from the frozen content — the same revision exported twice is the same artifact (§7.7 rule 2), so a duplicate click can never mint two versions.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 CreateReportExportResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12). The format comes from the body; there is deliberately no client-supplied idempotency key here, because the server derives it from the frozen content — the same revision exported twice is the same artifact (§7.7 rule 2), so a duplicate click can never mint two versions.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 CreateReportExportResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "createReportExport",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55234,14 +56117,16 @@ const docTemplate = `{
                 ],
                 "summary": "createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}/artifacts/{artifactId}/download": {
             "get": {
-                "description": "downloadReportExport streams one frozen artifact. The route carries report id + revision + artifact id (§11.4): the id alone would leak through the access layer, and addressing the artifact under its revision means a stale URL fails on the revision, not on a guessable artifact id.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型 。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "downloadReportExport streams one frozen artifact. The route carries report id + revision + artifact id (§11.4): the id alone would leak through the access layer, and addressing the artifact under its revision means a stale URL fails on the revision, not on a guessable artifact id.。需要权限 read:report（由 accessRules 强制）。成功返回原始字节，媒体类型 。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "downloadReportExport",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55300,14 +56185,16 @@ const docTemplate = `{
                 ],
                 "summary": "downloadReportExport streams one frozen artifact",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}/assurance-runs": {
             "get": {
-                "description": "listReportAssuranceRuns is the history read (T06). The limit is a page size with a hard ceiling, not a caller-controlled scan: a revision accumulates runs, and \"give me all of them\" is not a request a dashboard needs.。只要求登录，没有额外的 RBAC 规则。成功返回 ListReportAssuranceRunsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "listReportAssuranceRuns is the history read (T06). The limit is a page size with a hard ceiling, not a caller-controlled scan: a revision accumulates runs, and \"give me all of them\" is not a request a dashboard needs.。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportAssuranceRunsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "listReportAssuranceRuns",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55365,12 +56252,14 @@ const docTemplate = `{
                 ],
                 "summary": "listReportAssuranceRuns is the history read (T06)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             },
             "post": {
-                "description": "postReportAssuranceRun starts one run (T06). The ` + "`" + `Idempotency-Key` + "`" + ` header is required and its absence is 44114, decided in the service so the same rule covers every caller. 202, not 200: the run exists and has not measured anything yet, and a 200 would invite a client to read ` + "`" + `release_eligibility` + "`" + ` from a run that cannot have one (it is ` + "`" + `pending` + "`" + `).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "postReportAssuranceRun starts one run (T06). The ` + "`" + `Idempotency-Key` + "`" + ` header is required and its absence is 44114, decided in the service so the same rule covers every caller. 202, not 200: the run exists and has not measured anything yet, and a 200 would invite a client to read ` + "`" + `release_eligibility` + "`" + ` from a run that cannot have one (it is ` + "`" + `pending` + "`" + `).。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "postReportAssuranceRun",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55446,14 +56335,16 @@ const docTemplate = `{
                 ],
                 "summary": "postReportAssuranceRun starts one run (T06)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}/assurance-runs/{runId}": {
             "get": {
-                "description": "getReportAssuranceRun is the single-run read. It is polled by the workbench while a run is ` + "`" + `queued` + "`" + `/` + "`" + `running` + "`" + `, so it returns the counters as they stand: a progress read that answered \"not ready\" would force the client to invent a poll cadence.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "getReportAssuranceRun is the single-run read. It is polled by the workbench while a run is ` + "`" + `queued` + "`" + `/` + "`" + `running` + "`" + `, so it returns the counters as they stand: a progress read that answered \"not ready\" would force the client to invent a poll cadence.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "getReportAssuranceRun",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55512,14 +56403,16 @@ const docTemplate = `{
                 ],
                 "summary": "getReportAssuranceRun is the single-run read",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}/findings/{findingId}": {
             "patch": {
-                "description": "patchReportReviewFinding adjudicates one finding (T09). Owner-only, decided in the service; the handler's job is only to pass the three body fields through.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportReviewFindingView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "patchReportReviewFinding adjudicates one finding (T09). Owner-only, decided in the service; the handler's job is only to pass the three body fields through.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportReviewFindingView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "patchReportReviewFinding",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55594,14 +56487,16 @@ const docTemplate = `{
                 ],
                 "summary": "patchReportReviewFinding adjudicates one finding (T09)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}/outline/confirm": {
             "post": {
-                "description": "confirmReportOutline records the reviewer's outline and arms the writing attempt. The revision is in the path rather than inferred from \"the latest revision\": a confirmation is addressed to one specific structure, and inferring it would let a client that lagged behind a regeneration approve the wrong outline. 202, not 200: sections exist but no content does. The same reasoning as ` + "`" + `createReport` + "`" + ` — 200 would claim a written report.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConfirmReportOutlineResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "confirmReportOutline records the reviewer's outline and arms the writing attempt. The revision is in the path rather than inferred from \"the latest revision\": a confirmation is addressed to one specific structure, and inferring it would let a client that lagged behind a regeneration approve the wrong outline. 202, not 200: sections exist but no content does. The same reasoning as ` + "`" + `createReport` + "`" + ` — 200 would claim a written report.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConfirmReportOutlineResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "confirmReportOutline",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55667,14 +56562,16 @@ const docTemplate = `{
                 ],
                 "summary": "confirmReportOutline records the reviewer's outline and arms the writing attempt",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}/review": {
             "get": {
-                "description": "getReportReview is the workbench projection (T08/T09). Pagination is by cursor (` + "`" + `section_cursor` + "`" + `, ` + "`" + `finding_cursor` + "`" + `), never by offset: an offset shifts when a partial retry rewrites a section, and the reviewer would silently scroll past claims.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportReviewView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "getReportReview is the workbench projection (T08/T09). Pagination is by cursor (` + "`" + `section_cursor` + "`" + `, ` + "`" + `finding_cursor` + "`" + `), never by offset: an offset shifts when a partial retry rewrites a section, and the reviewer would silently scroll past claims.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportReviewView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "getReportReview",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55748,14 +56645,16 @@ const docTemplate = `{
                 ],
                 "summary": "getReportReview is the workbench projection (T08/T09)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/revisions/{revision}/sections": {
             "get": {
-                "description": "listReportSections is the reading surface: one revision's sections with bodies. Without it a report could only be read as an exported file, which is why the centre had a drawer with statuses and no text (doc/44 「好用」 gap #4).。只要求登录，没有额外的 RBAC 规则。成功返回 ListReportSectionsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "listReportSections is the reading surface: one revision's sections with bodies. Without it a report could only be read as an exported file, which is why the centre had a drawer with statuses and no text (doc/44 「好用」 gap #4).。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportSectionsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "listReportSections",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55805,14 +56704,16 @@ const docTemplate = `{
                 ],
                 "summary": "listReportSections is the reading surface: one revision's sections with bodies",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/schedule": {
             "delete": {
-                "description": "deleteReportSchedule removes the plan. 204 either way: the caller's intent was \"this report does not run on a timer\", and after the call it does not. Deleting twice is therefore not an error, which keeps a retried request harmless.。只要求登录，没有额外的 RBAC 规则",
+                "description": "deleteReportSchedule removes the plan. 204 either way: the caller's intent was \"this report does not run on a timer\", and after the call it does not. Deleting twice is therefore not an error, which keeps a retried request harmless.。需要权限 execute:report（由 accessRules 强制）",
                 "operationId": "deleteReportSchedule",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55836,12 +56737,14 @@ const docTemplate = `{
                 ],
                 "summary": "deleteReportSchedule removes the plan",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             },
             "get": {
-                "description": "getReportSchedule answers the report's recurring plan, or ` + "`" + `{\"schedule\":null}` + "`" + ` when it has none. A null is not a 404: \"this report does not run on a timer\" is a successful answer to \"when does it run\", and a client should not have to catch an error to render an empty card.。只要求登录，没有额外的 RBAC 规则。成功返回 GetReportScheduleResponse",
+                "description": "getReportSchedule answers the report's recurring plan, or ` + "`" + `{\"schedule\":null}` + "`" + ` when it has none. A null is not a 404: \"this report does not run on a timer\" is a successful answer to \"when does it run\", and a client should not have to catch an error to render an empty card.。需要权限 read:report（由 accessRules 强制）。成功返回 GetReportScheduleResponse",
                 "operationId": "getReportSchedule",
+                "x-ragflow-permission": "read:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55872,12 +56775,14 @@ const docTemplate = `{
                 ],
                 "summary": "getReportSchedule answers the report's recurring plan, or ` + "`" + `{\"schedule\":null}` + "`" + ` when it has none",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             },
             "put": {
-                "description": "putReportSchedule creates or replaces the plan (idempotent on the report). 201 on the first arming, 200 afterwards, so a client can tell \"armed\" from \"changed\".。只要求登录，没有额外的 RBAC 规则。请求体类型 service.ReportScheduleRequest。成功返回 *service.ReportScheduleView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
+                "description": "putReportSchedule creates or replaces the plan (idempotent on the report). 201 on the first arming, 200 afterwards, so a client can tell \"armed\" from \"changed\".。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.ReportScheduleRequest。成功返回 *service.ReportScheduleView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）",
                 "operationId": "putReportSchedule",
+                "x-ragflow-permission": "execute:report",
+                "x-error-codes": ["44105"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55941,14 +56846,16 @@ const docTemplate = `{
                 ],
                 "summary": "putReportSchedule creates or replaces the plan (idempotent on the report)",
                 "tags": [
-                    "reports"
+                    "report"
                 ]
             }
         },
         "/api/v1/reports/{id}/unarchive": {
             "post": {
-                "description": "unarchiveReport returns a report to the daily list. No body: the only thing to say is \"not archived any more\".。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail",
+                "description": "unarchiveReport returns a report to the daily list. No body: the only thing to say is \"not archived any more\".。需要权限 delete:own:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail",
                 "operationId": "unarchiveReport",
+                "x-ragflow-permission": "delete:own:report",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -55995,7 +56902,7 @@ const docTemplate = `{
                 ],
                 "summary": "unarchiveReport returns a report to the daily list",
                 "tags": [
-                    "reports"
+                    "own:report"
                 ]
             }
         },
@@ -56003,6 +56910,8 @@ const docTemplate = `{
             "get": {
                 "description": "返回当前调用者可见的角色（含内置角色，builtin=true）。平台级角色只有平台管理员能看到；按 name/scope 过滤。角色列表是「新建用户」与「变更角色」两个页面的数据源。",
                 "operationId": "listRoles",
+                "x-ragflow-permission": "read:role",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "按角色名模糊匹配",
@@ -56066,6 +56975,8 @@ const docTemplate = `{
             "post": {
                 "description": "作用域可为 platform/tenant/project；parent_id 用于角色继承（子角色在授权解析时叠加父角色规则）。新角色默认没有任何权限——必须再调用 PUT /roles/{id}/permissions 授权，否则用它登录后会处处 403。",
                 "operationId": "createRole",
+                "x-ragflow-permission": "manage:role",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -56146,6 +57057,8 @@ const docTemplate = `{
             "get": {
                 "description": "返回全部可用的 (resource, actions) 组合，驱动角色权限编辑页的勾选项。目录由服务端内置矩阵生成：前端不应硬编码资源名，否则新增资源时界面会静默漏掉一整个权限面。",
                 "operationId": "getPermissionCatalog",
+                "x-ragflow-permission": "read:role",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -56193,6 +57106,8 @@ const docTemplate = `{
             "delete": {
                 "description": "拒绝删除的三种情形都是 400（不是 409），各带一个码：40082 内置角色、40083 仍被用户占用、40084 仍被其他角色当作父角色。占用必须先释放——把用户改到别的角色，或删除该用户（删除用户会在同一事务里清掉角色关系）；否则这个角色会被 40083 永久卡住。",
                 "operationId": "deleteRole",
+                "x-ragflow-permission": "manage:role",
+                "x-error-codes": ["40082", "40083", "40084"],
                 "parameters": [
                     {
                         "description": "角色 ID",
@@ -56259,6 +57174,8 @@ const docTemplate = `{
             "put": {
                 "description": "只改元数据，不改权限规则（权限走 PUT /roles/{id}/permissions）。内置角色不允许改名或改作用域，会被拒绝。字段留空表示不修改。",
                 "operationId": "updateRole",
+                "x-ragflow-permission": "manage:role",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "角色 ID",
@@ -56340,6 +57257,8 @@ const docTemplate = `{
             "get": {
                 "description": "返回该角色的全部 allow/deny 规则。这是「这个角色到底能做什么」的唯一机器可读答案，权限审计与客户侧核对都以此为准。",
                 "operationId": "getRolePermissions",
+                "x-ragflow-permission": "read:role",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "角色 ID",
@@ -56406,6 +57325,8 @@ const docTemplate = `{
             "put": {
                 "description": "语义是「替换」而不是「追加」：请求体里没有的规则会被删除，因此前端必须先读再改再写。deny 规则优先于 allow，effect 只接受 allow/deny。对内置角色写入会被拒绝——内置矩阵只能由版本升级变更。",
                 "operationId": "setRolePermissions",
+                "x-ragflow-permission": "manage:role",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "角色 ID",
@@ -56497,6 +57418,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:scenario-template（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ScenarioTemplateAsset",
                 "operationId": "listScenarioTemplates",
+                "x-ragflow-permission": "read:scenario-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -56564,6 +57487,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
                 "operationId": "createScenarioTemplate",
+                "x-ragflow-permission": "manage:scenario-template",
+                "x-error-codes": ["40060"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -56614,6 +57539,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40062(400)（括号内是 HTTP 状态）",
                 "operationId": "importScenarioTemplate",
+                "x-ragflow-permission": "manage:scenario-template",
+                "x-error-codes": ["40062"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -56665,8 +57592,10 @@ const docTemplate = `{
         },
         "/api/v1/scenario-template-assets/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 ArchiveScenarioTemplateResponse",
+                "description": "需要权限 manage:scenario-template（由 accessRules 强制）。成功返回 ArchiveScenarioTemplateResponse",
                 "operationId": "archiveScenarioTemplate",
+                "x-ragflow-permission": "manage:scenario-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -56697,12 +57626,14 @@ const docTemplate = `{
                 ],
                 "summary": "archive Scenario Template",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 GetScenarioTemplateResponse。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:scenario-template（由 accessRules 强制）。成功返回 GetScenarioTemplateResponse。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）",
                 "operationId": "getScenarioTemplate",
+                "x-ragflow-permission": "read:scenario-template",
+                "x-error-codes": ["40061"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -56751,12 +57682,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Scenario Template",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）",
                 "operationId": "updateScenarioTemplate",
+                "x-ragflow-permission": "manage:scenario-template",
+                "x-error-codes": ["40060"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -56810,14 +57743,16 @@ const docTemplate = `{
                 ],
                 "summary": "update Scenario Template",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/capability-check": {
             "post": {
-                "description": "capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract. Read-only: it never repairs anything.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract. Read-only: it never repairs anything.。需要权限 read:scenario-template（由 accessRules 强制）。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "capabilityCheckScenarioTemplate",
+                "x-ragflow-permission": "read:scenario-template",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -56871,14 +57806,16 @@ const docTemplate = `{
                 ],
                 "summary": "capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/copy": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 CopyScenarioTemplateRequest。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40063(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 CopyScenarioTemplateRequest。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40063(400)（括号内是 HTTP 状态）",
                 "operationId": "copyScenarioTemplate",
+                "x-ragflow-permission": "manage:scenario-template",
+                "x-error-codes": ["40063"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -56932,14 +57869,16 @@ const docTemplate = `{
                 ],
                 "summary": "copy Scenario Template",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/eval-set": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 CreateEvalSetFromTemplateRequest。成功返回 *model.EvalSet。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 CreateEvalSetFromTemplateRequest。成功返回 *model.EvalSet。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）",
                 "operationId": "createEvalSetFromTemplate",
+                "x-ragflow-permission": "manage:eval-set",
+                "x-error-codes": ["40064"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -56993,14 +57932,16 @@ const docTemplate = `{
                 ],
                 "summary": "create Eval Set From Template",
                 "tags": [
-                    "scenario-template-assets"
+                    "eval-set"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/export": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.ScenarioTemplateExport。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioTemplateExport。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）",
                 "operationId": "exportScenarioTemplate",
+                "x-ragflow-permission": "read:scenario-template",
+                "x-error-codes": ["40061"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57049,14 +57990,16 @@ const docTemplate = `{
                 ],
                 "summary": "export Scenario Template",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/fork": {
             "post": {
-                "description": "forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1). Forking is explicit: instantiation never forks implicitly.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset",
+                "description": "forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1). Forking is explicit: instantiation never forks implicitly.。需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset",
                 "operationId": "forkScenarioTemplate",
+                "x-ragflow-permission": "manage:scenario-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57103,14 +58046,16 @@ const docTemplate = `{
                 ],
                 "summary": "forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1)",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/health": {
             "get": {
-                "description": "scenarioTemplateHealth serves the five-metric health board (doc/276 §8.6).。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ScenarioTemplateHealth",
+                "description": "scenarioTemplateHealth serves the five-metric health board (doc/276 §8.6).。需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioTemplateHealth",
                 "operationId": "scenarioTemplateHealth",
+                "x-ragflow-permission": "read:scenario-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57141,14 +58086,16 @@ const docTemplate = `{
                 ],
                 "summary": "scenarioTemplateHealth serves the five-metric health board (doc/276 §8.6)",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/instantiate": {
             "post": {
-                "description": "instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3). The idempotency key comes from the header only — never from the body.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.UnifiedInstantiateInput。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3). The idempotency key comes from the header only — never from the body.。需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.UnifiedInstantiateInput。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "instantiateScenarioTemplate",
+                "x-ragflow-permission": "manage:scenario-template",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57202,14 +58149,16 @@ const docTemplate = `{
                 ],
                 "summary": "instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3)",
                 "tags": [
-                    "scenario-template-assets"
+                    "scenario-template"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/instantiate-chat": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ScenarioTemplateInstantiationInput。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、40065(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:chat（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInstantiationInput。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、40065(400)（括号内是 HTTP 状态）",
                 "operationId": "instantiateChatFromScenarioTemplate",
+                "x-ragflow-permission": "manage:chat",
+                "x-error-codes": ["40000", "40065"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57263,14 +58212,16 @@ const docTemplate = `{
                 ],
                 "summary": "instantiate Chat From Scenario Template",
                 "tags": [
-                    "scenario-template-assets"
+                    "chat"
                 ]
             }
         },
         "/api/v1/scenario-template-assets/{id}/release-candidate": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ScenarioTemplateReleaseCandidateInput。成功返回 *service.ScenarioTemplateReleaseCandidateResult。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。请求体类型 service.ScenarioTemplateReleaseCandidateInput。成功返回 *service.ScenarioTemplateReleaseCandidateResult。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）",
                 "operationId": "createTemplateReleaseCandidate",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": ["40070"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57324,7 +58275,7 @@ const docTemplate = `{
                 ],
                 "summary": "create Template Release Candidate",
                 "tags": [
-                    "scenario-template-assets"
+                    "release-governance"
                 ]
             }
         },
@@ -57332,6 +58283,8 @@ const docTemplate = `{
             "get": {
                 "description": "listScenarioTemplateBaselines returns the platform baselines. It is a platform-scoped read: workspaces consume baselines through the catalog.。需要权限 read:scenario-template-baseline（由 accessRules 强制）。成功返回 ListScenarioTemplateBaselinesResponse",
                 "operationId": "listScenarioTemplateBaselines",
+                "x-ragflow-permission": "read:scenario-template-baseline",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -57357,8 +58310,10 @@ const docTemplate = `{
         },
         "/api/v1/scenario-template-baseline/{key}/publish": {
             "post": {
-                "description": "publishScenarioTemplateBaseline appends a version to a platform baseline. It is platform-admin only: workspaces fork instead of publishing.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.BaselinePublishInput。成功返回 PublishScenarioTemplateBaselineResponse。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）",
+                "description": "publishScenarioTemplateBaseline appends a version to a platform baseline. It is platform-admin only: workspaces fork instead of publishing.。需要权限 manage:scenario-template-baseline（由 accessRules 强制）。请求体类型 service.BaselinePublishInput。成功返回 PublishScenarioTemplateBaselineResponse。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）",
                 "operationId": "publishScenarioTemplateBaseline",
+                "x-ragflow-permission": "manage:scenario-template-baseline",
+                "x-error-codes": ["40064"],
                 "parameters": [
                     {
                         "description": "路径参数 key",
@@ -57420,6 +58375,8 @@ const docTemplate = `{
             "get": {
                 "description": "listScenarioTemplateCatalog returns the published template catalog. The frontend wizard renders exclusively from this projection so template copy has one source of truth (doc/228 §3.1 T7.0).。需要权限 read:scenario-template（由 accessRules 强制）。成功返回 []service.ScenarioTemplateCatalogItem",
                 "operationId": "listScenarioTemplateCatalog",
+                "x-ragflow-permission": "read:scenario-template",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -57447,6 +58404,8 @@ const docTemplate = `{
             "get": {
                 "description": "listScenarioTemplateSkeletons mirrors the four upstream catalogues read-only (doc/276 §8.4). Nothing is stored: the wizard previews a skeleton and imports it explicitly.。需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioSkeletonCatalog",
                 "operationId": "listScenarioTemplateSkeletons",
+                "x-ragflow-permission": "read:scenario-template",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -57472,8 +58431,10 @@ const docTemplate = `{
         },
         "/api/v1/scenario-template-skeletons/{id}/import": {
             "post": {
-                "description": "importScenarioTemplateSkeleton materialises one skeleton as a workspace draft. The draft is intentionally incomplete-friendly; publish validation is stricter than create validation, so an unreviewed draft cannot go live.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset",
+                "description": "importScenarioTemplateSkeleton materialises one skeleton as a workspace draft. The draft is intentionally incomplete-friendly; publish validation is stricter than create validation, so an unreviewed draft cannot go live.。需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset",
                 "operationId": "importScenarioTemplateSkeleton",
+                "x-ragflow-permission": "manage:scenario-template",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57520,7 +58481,7 @@ const docTemplate = `{
                 ],
                 "summary": "importScenarioTemplateSkeleton materialises one skeleton as a workspace draft",
                 "tags": [
-                    "scenario-template-skeletons"
+                    "scenario-template"
                 ]
             }
         },
@@ -57528,6 +58489,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:search-app（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.SearchAppShadow",
                 "operationId": "listSearchApps",
+                "x-ragflow-permission": "read:search-app",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -57611,6 +58574,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateSearchApp creates a Search App owned by the caller's tenant.。需要权限 manage:search-app（由 accessRules 强制）。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createSearchApp",
+                "x-ragflow-permission": "manage:search-app",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -57661,6 +58626,8 @@ const docTemplate = `{
             "get": {
                 "description": "SearchAppDatasetOptions returns the datasets that can be bound to a Search App for the current governance scope: linked rgx_dataset_link rows first, raw engine datasets as fallback (doc/252 §向导数据面). The picker keeps engine ids out of the UI by favouring link_id/name references.。需要权限 read:search-app（由 accessRules 强制）。成功返回 []service.SearchAppDatasetOption",
                 "operationId": "searchAppDatasetOptions",
+                "x-ragflow-permission": "read:search-app",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -57706,6 +58673,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListSearchApps returns the caller's Search Apps (platform scope=all for all). SearchAppModelOptions returns the tenant's chat/rerank models and defaults so the Search App config can pick a real LLM (chat_id) and rerank model.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *service.ModelOptions",
                 "operationId": "searchAppModelOptions",
+                "x-ragflow-permission": "read:search-app",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -57731,8 +58700,10 @@ const docTemplate = `{
         },
         "/api/v1/search-apps/{id}": {
             "delete": {
-                "description": "DeleteSearchApp deletes a Search App.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteSearchAppResponse",
+                "description": "DeleteSearchApp deletes a Search App.。需要权限 manage:search-app（由 accessRules 强制）。成功返回 DeleteSearchAppResponse",
                 "operationId": "deleteSearchApp",
+                "x-ragflow-permission": "manage:search-app",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57763,12 +58734,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteSearchApp deletes a Search App",
                 "tags": [
-                    "search-apps"
+                    "search-app"
                 ]
             },
             "get": {
-                "description": "GetSearchApp returns a Search App.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.SearchAppShadow",
+                "description": "GetSearchApp returns a Search App.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *model.SearchAppShadow",
                 "operationId": "getSearchApp",
+                "x-ragflow-permission": "read:search-app",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57815,12 +58788,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetSearchApp returns a Search App",
                 "tags": [
-                    "search-apps"
+                    "search-app"
                 ]
             },
             "put": {
-                "description": "UpdateSearchApp updates a Search App (name and search_config).。只要求登录，没有额外的 RBAC 规则。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateSearchApp updates a Search App (name and search_config).。需要权限 manage:search-app（由 accessRules 强制）。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateSearchApp",
+                "x-ragflow-permission": "manage:search-app",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57874,14 +58849,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateSearchApp updates a Search App (name and search_config)",
                 "tags": [
-                    "search-apps"
+                    "search-app"
                 ]
             }
         },
         "/api/v1/search-apps/{id}/completion": {
             "post": {
-                "description": "SearchAppCompletion runs a retrieval against a Search App for debugging.。只要求登录，没有额外的 RBAC 规则。请求体类型 searchAppCompletePayload。成功返回 *ragflow.SearchAppCompletionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "SearchAppCompletion runs a retrieval against a Search App for debugging.。需要权限 execute:search-app（由 accessRules 强制）。请求体类型 searchAppCompletePayload。成功返回 *ragflow.SearchAppCompletionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "searchAppCompletion",
+                "x-ragflow-permission": "execute:search-app",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57935,14 +58912,16 @@ const docTemplate = `{
                 ],
                 "summary": "SearchAppCompletion runs a retrieval against a Search App for debugging",
                 "tags": [
-                    "search-apps"
+                    "search-app"
                 ]
             }
         },
         "/api/v1/search-apps/{id}/completion/stream": {
             "post": {
-                "description": "StreamSearchAppCompletion proxies the Search App SSE completion to the client.。只要求登录，没有额外的 RBAC 规则。请求体类型 searchAppCompletePayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "StreamSearchAppCompletion proxies the Search App SSE completion to the client.。需要权限 execute:search-app（由 accessRules 强制）。请求体类型 searchAppCompletePayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "streamSearchAppCompletion",
+                "x-ragflow-permission": "execute:search-app",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -57996,14 +58975,16 @@ const docTemplate = `{
                 ],
                 "summary": "StreamSearchAppCompletion proxies the Search App SSE completion to the client",
                 "tags": [
-                    "search-apps"
+                    "search-app"
                 ]
             }
         },
         "/api/v1/search-apps/{id}/config": {
             "get": {
-                "description": "GetSearchAppConfig returns the live RAGFlow-side search_config for prefill.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.SearchApp",
+                "description": "GetSearchAppConfig returns the live RAGFlow-side search_config for prefill.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *ragflow.SearchApp",
                 "operationId": "getSearchAppConfig",
+                "x-ragflow-permission": "read:search-app",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -58050,7 +59031,7 @@ const docTemplate = `{
                 ],
                 "summary": "GetSearchAppConfig returns the live RAGFlow-side search_config for prefill",
                 "tags": [
-                    "search-apps"
+                    "search-app"
                 ]
             }
         },
@@ -58058,6 +59039,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:memory-policy（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.MemoryPolicy",
                 "operationId": "listSelfMemoryPolicies",
+                "x-ragflow-permission": "read:memory-policy",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -58101,6 +59084,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy",
                 "operationId": "createSelfMemoryPolicy",
+                "x-ragflow-permission": "execute:memory-policy",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -58144,6 +59129,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:source-routing-rule（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.SourceRoutingRule。声明了 1 个业务错误码：40161(400)（括号内是 HTTP 状态）",
                 "operationId": "listSourceRoutingRules",
+                "x-ragflow-permission": "read:source-routing-rule",
+                "x-error-codes": ["40161"],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -58221,6 +59208,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule",
                 "operationId": "createSourceRoutingRule",
+                "x-ragflow-permission": "manage:source-routing-rule",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -58262,8 +59251,10 @@ const docTemplate = `{
         },
         "/api/v1/source-routing-rules/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteSourceRoutingRuleResponse",
+                "description": "需要权限 manage:source-routing-rule（由 accessRules 强制）。成功返回 DeleteSourceRoutingRuleResponse",
                 "operationId": "deleteSourceRoutingRule",
+                "x-ragflow-permission": "manage:source-routing-rule",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -58294,12 +59285,14 @@ const docTemplate = `{
                 ],
                 "summary": "delete Source Routing Rule",
                 "tags": [
-                    "source-routing-rules"
+                    "source-routing-rule"
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.SourceRoutingRule",
+                "description": "需要权限 read:source-routing-rule（由 accessRules 强制）。成功返回 *model.SourceRoutingRule",
                 "operationId": "getSourceRoutingRule",
+                "x-ragflow-permission": "read:source-routing-rule",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -58330,12 +59323,14 @@ const docTemplate = `{
                 ],
                 "summary": "get Source Routing Rule",
                 "tags": [
-                    "source-routing-rules"
+                    "source-routing-rule"
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule",
+                "description": "需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule",
                 "operationId": "updateSourceRoutingRule",
+                "x-ragflow-permission": "manage:source-routing-rule",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -58382,12 +59377,14 @@ const docTemplate = `{
                 ],
                 "summary": "update Source Routing Rule",
                 "tags": [
-                    "source-routing-rules"
+                    "source-routing-rule"
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule",
+                "description": "需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule",
                 "operationId": "updateSourceRoutingRulePut",
+                "x-ragflow-permission": "manage:source-routing-rule",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -58434,7 +59431,7 @@ const docTemplate = `{
                 ],
                 "summary": "update Source Routing Rule",
                 "tags": [
-                    "source-routing-rules"
+                    "source-routing-rule"
                 ]
             }
         },
@@ -58442,6 +59439,7 @@ const docTemplate = `{
             "get": {
                 "description": "静态资源：读嵌入二进制的图片字节，媒体类型由扩展名决定。",
                 "operationId": "getStaticLogosFilepath",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "内置图片文件名",
@@ -58473,6 +59471,7 @@ const docTemplate = `{
             "head": {
                 "description": "同 GET，只返回响应头：gin 的 r.Static 用同一个 handler 同时服务 GET 与 HEAD。静态资源：读嵌入二进制的图片字节，媒体类型由扩展名决定。",
                 "operationId": "headStaticLogosFilepath",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "内置图片文件名",
@@ -58506,6 +59505,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:system（由 accessRules 强制）。成功返回 service.RAGFlowCapabilityReport",
                 "operationId": "listSystemCapabilities",
+                "x-ragflow-permission": "read:system",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -58533,6 +59534,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 service.RAGFlowCapabilityReport",
                 "operationId": "verifySystemCapabilities",
+                "x-ragflow-permission": "manage:system",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -58576,6 +59579,8 @@ const docTemplate = `{
             "get": {
                 "description": "SystemConfigView returns the current connection settings with secrets masked. RBAC restricts this to platform admins (system resource).。需要权限 read:system（由 accessRules 强制）。成功返回 docs.FreeFormObject。声明了 1 个业务错误码：500(500)（括号内是 HTTP 状态）",
                 "operationId": "systemConfigView",
+                "x-ragflow-permission": "read:system",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -58613,6 +59618,8 @@ const docTemplate = `{
             "post": {
                 "description": "SystemConfigApply persists the submitted settings and hot-swaps the running engine (in-place reconnect, same as the first-run wizard).。需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SystemConfigApplyResponse。声明了 3 个业务错误码：500(500)、40000(400)、40005(400)（括号内是 HTTP 状态）",
                 "operationId": "systemConfigApply",
+                "x-ragflow-permission": "manage:system",
+                "x-error-codes": ["40000", "40005"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -58676,6 +59683,8 @@ const docTemplate = `{
             "post": {
                 "description": "SystemConfigPreflight validates the proposed database/RAGFlow settings without persisting anything.。需要权限 read:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.FreeFormObject。声明了 3 个业务错误码：500(500)、40000(400)、40005(400)（括号内是 HTTP 状态）",
                 "operationId": "systemConfigPreflight",
+                "x-ragflow-permission": "read:system",
+                "x-error-codes": ["40000", "40005"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -58739,6 +59748,8 @@ const docTemplate = `{
             "get": {
                 "description": "SystemConfigPublicKey returns the RSA public key used to encrypt secrets submitted to the protected config endpoints.。需要权限 read:system（由 accessRules 强制）。成功返回 SystemConfigPublicKeyResponse。声明了 1 个业务错误码：500(500)（括号内是 HTTP 状态）",
                 "operationId": "systemConfigPublicKey",
+                "x-ragflow-permission": "read:system",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -58776,6 +59787,8 @@ const docTemplate = `{
             "get": {
                 "description": "SystemHealth returns engine and dependency health.。需要权限 read:system-health（由 accessRules 强制）。成功返回 map[string]string",
                 "operationId": "systemHealth",
+                "x-ragflow-permission": "read:system-health",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -58801,8 +59814,10 @@ const docTemplate = `{
         },
         "/api/v1/system/ragflow/sync/artifacts/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.ResourceSyncArtifact",
+                "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 *model.ResourceSyncArtifact",
                 "operationId": "getResourceSyncArtifact",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -58833,7 +59848,7 @@ const docTemplate = `{
                 ],
                 "summary": "Get Resource Sync Artifact",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
@@ -58841,6 +59856,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 []model.ResourceSyncTenantMapping",
                 "operationId": "listResourceSyncTenantMappings",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -58866,6 +59883,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncMappingRequest。成功返回 *model.ResourceSyncTenantMapping。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "upsertResourceSyncTenantMapping",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -58914,8 +59933,10 @@ const docTemplate = `{
         },
         "/api/v1/system/ragflow/sync/mappings/{externalTenantId}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteResourceSyncTenantMappingResponse",
+                "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。成功返回 DeleteResourceSyncTenantMappingResponse",
                 "operationId": "deleteResourceSyncTenantMapping",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 externalTenantId",
@@ -58946,7 +59967,7 @@ const docTemplate = `{
                 ],
                 "summary": "Delete Resource Sync Tenant Mapping",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
@@ -58954,6 +59975,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 ReconcileResourceSyncRequest。成功返回 *model.SyncRun",
                 "operationId": "reconcileResourceSync",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -58994,6 +60017,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceSyncRelinkResourceOptionsResponse",
                 "operationId": "listResourceSyncRelinkResourceOptions",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -59071,6 +60096,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceSyncRelinkTenantOptionsResponse",
                 "operationId": "listResourceSyncRelinkTenantOptions",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -59132,6 +60159,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceSyncResourcesResponse",
                 "operationId": "listResourceSyncResources",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -59191,8 +60220,10 @@ const docTemplate = `{
         },
         "/api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/conflicts/resolve": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ResourceSyncConflictRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncConflictRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "resolveResourceSyncConflict",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 type",
@@ -59264,14 +60295,16 @@ const docTemplate = `{
                 ],
                 "summary": "Resolve Resource Sync Conflict",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
         "/api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/relink": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ResourceSyncRelinkRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncRelinkRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "relinkResourceSync",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 type",
@@ -59343,14 +60376,16 @@ const docTemplate = `{
                 ],
                 "summary": "Relink Resource Sync",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
         "/api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/versions": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 ListResourceBindingVersionsResponse",
+                "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceBindingVersionsResponse",
                 "operationId": "listResourceBindingVersions",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 type",
@@ -59415,7 +60450,7 @@ const docTemplate = `{
                 ],
                 "summary": "List Resource Binding Versions",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
@@ -59423,6 +60458,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceSyncRunsResponse",
                 "operationId": "listResourceSyncRuns",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -59474,8 +60511,10 @@ const docTemplate = `{
         },
         "/api/v1/system/ragflow/sync/runs/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.SyncRun",
+                "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 *model.SyncRun",
                 "operationId": "getResourceSyncRun",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -59506,14 +60545,16 @@ const docTemplate = `{
                 ],
                 "summary": "Get Resource Sync Run",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
         "/api/v1/system/ragflow/sync/runs/{id}/assign": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ResourceSyncItemAssignmentRequest。成功返回 *service.ResourceSyncItemAssignmentResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncItemAssignmentRequest。成功返回 *service.ResourceSyncItemAssignmentResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "assignResourceSyncItems",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -59567,14 +60608,16 @@ const docTemplate = `{
                 ],
                 "summary": "Assign Resource Sync Items",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
         "/api/v1/system/ragflow/sync/runs/{id}/import": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.ResourceSyncImportRequest。成功返回 *model.SyncRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncImportRequest。成功返回 *model.SyncRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "importResourceSync",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -59628,14 +60671,16 @@ const docTemplate = `{
                 ],
                 "summary": "Import Resource Sync",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
         "/api/v1/system/ragflow/sync/runs/{id}/items": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 ListResourceSyncRunItemsResponse",
+                "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceSyncRunItemsResponse",
                 "operationId": "listResourceSyncRunItems",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -59682,7 +60727,7 @@ const docTemplate = `{
                 ],
                 "summary": "List Resource Sync Run Items",
                 "tags": [
-                    "system"
+                    "ragflow-sync"
                 ]
             }
         },
@@ -59690,6 +60735,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 ScanResourceSyncRequest。成功返回 *model.SyncRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "scanResourceSync",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -59740,6 +60787,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 *service.ResourceSyncSettingView",
                 "operationId": "resourceSyncSettingView",
+                "x-ragflow-permission": "read:ragflow-sync",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -59765,6 +60814,8 @@ const docTemplate = `{
             "patch": {
                 "description": "需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncSettingUpdate。成功返回 *service.ResourceSyncSettingView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "resourceSyncSettingUpdate",
+                "x-ragflow-permission": "manage:ragflow-sync",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -59815,6 +60866,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:system（由 accessRules 强制）。成功返回 *service.SystemSettingsView",
                 "operationId": "systemSettingsView",
+                "x-ragflow-permission": "read:system",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -59840,6 +60893,8 @@ const docTemplate = `{
             "patch": {
                 "description": "需要权限 manage:system（由 accessRules 强制）。请求体类型 service.SystemSettingsPatchRequest。成功返回 *model.SettingRevision。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）",
                 "operationId": "systemSettingsUpdate",
+                "x-ragflow-permission": "manage:system",
+                "x-error-codes": ["40098"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -59890,6 +60945,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:system（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.SettingRevision",
                 "operationId": "listSystemSettingRevisions",
+                "x-ragflow-permission": "read:system",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -59933,8 +60990,10 @@ const docTemplate = `{
         },
         "/api/v1/system/settings/revisions/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.SettingRevision",
+                "description": "需要权限 read:system（由 accessRules 强制）。成功返回 *model.SettingRevision",
                 "operationId": "getSystemSettingRevision",
+                "x-ragflow-permission": "read:system",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -59971,8 +61030,10 @@ const docTemplate = `{
         },
         "/api/v1/system/settings/revisions/{id}/rollback": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 RollbackSystemSettingRevisionRequest。成功返回 *model.SettingRevision。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:system（由 accessRules 强制）。请求体类型 RollbackSystemSettingRevisionRequest。成功返回 *model.SettingRevision。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）",
                 "operationId": "rollbackSystemSettingRevision",
+                "x-ragflow-permission": "manage:system",
+                "x-error-codes": ["40098"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -60034,6 +61095,7 @@ const docTemplate = `{
             "post": {
                 "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.RuntimeSettingStateReport。成功返回 *model.RuntimeSettingInstanceState。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）",
                 "operationId": "reportRuntimeSettingState",
+                "x-error-codes": ["40098"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -60077,8 +61139,10 @@ const docTemplate = `{
         },
         "/api/v1/system/settings/secrets/{key}": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。请求体类型 service.SystemSettingSecretRequest。成功返回 *model.SettingRevision。声明了 2 个业务错误码：500(500)、40098(400)（括号内是 HTTP 状态）",
+                "description": "需要权限 manage:system（由 accessRules 强制）。请求体类型 service.SystemSettingSecretRequest。成功返回 *model.SettingRevision。声明了 2 个业务错误码：500(500)、40098(400)（括号内是 HTTP 状态）",
                 "operationId": "updateSystemSettingSecret",
+                "x-ragflow-permission": "manage:system",
+                "x-error-codes": ["40098"],
                 "parameters": [
                     {
                         "description": "路径参数 key",
@@ -60150,6 +61214,7 @@ const docTemplate = `{
             "post": {
                 "description": "SetupAdmin creates the first platform admin. It is only effective before the system is initialized.。只要求登录，没有额外的 RBAC 规则。请求体类型 setupAdminRequest。成功返回 SetupAdminResponse。声明了 2 个业务错误码：500(500)、40000(400)（括号内是 HTTP 状态）",
                 "operationId": "setupAdmin",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -60205,6 +61270,7 @@ const docTemplate = `{
             "post": {
                 "description": "SetupApply persists the wizard configuration and hot-swaps the running engine.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetupApplyResponse。声明了 3 个业务错误码：500(500)、40000(400)、40004(400)（括号内是 HTTP 状态）",
                 "operationId": "setupApply",
+                "x-error-codes": ["40000", "40004"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -60263,6 +61329,7 @@ const docTemplate = `{
             "post": {
                 "description": "Preflight validates a proposed RAGFlow connection without persisting any secret, so the operator can confirm the endpoint before finalizing config.。只要求登录，没有额外的 RBAC 规则。请求体类型 preflightRequest。成功返回 *service.PreflightResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "preflight",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -60308,6 +61375,7 @@ const docTemplate = `{
             "get": {
                 "description": "SetupPublicKey returns the RSA public key used by the setup wizard to encrypt secrets submitted to preflight/apply.。只要求登录，没有额外的 RBAC 规则。成功返回 SetupPublicKeyResponse。声明了 1 个业务错误码：500(500)（括号内是 HTTP 状态）",
                 "operationId": "setupPublicKey",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -60340,6 +61408,7 @@ const docTemplate = `{
             "get": {
                 "description": "SetupStatus returns the first-run state of the platform so the setup wizard can decide whether to ask for the first admin.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.SetupStatus",
                 "operationId": "setupStatus",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -60362,6 +61431,8 @@ const docTemplate = `{
             "post": {
                 "description": "ReconcileGatewayBilling runs the daily check on demand for one UTC day (default: the previous completed day). It is ` + "`" + `manage/system` + "`" + ` because it walks every tenant's ledgers, not one tenant's.。需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ReconcileGatewayBillingResponse",
                 "operationId": "reconcileGatewayBilling",
+                "x-ragflow-permission": "manage:system",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 day",
@@ -60415,6 +61486,8 @@ const docTemplate = `{
             "delete": {
                 "description": "DeleteTasks batch-deletes terminal task history records.。需要权限 manage:task（由 accessRules 强制）。请求体类型 DeleteTasksRequest。成功返回 DeleteTasksResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "deleteTasks",
+                "x-ragflow-permission": "manage:task",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -60463,6 +61536,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListTasks returns the tenant's operator task queue.。需要权限 read:task（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Task",
                 "operationId": "listTasks",
+                "x-ragflow-permission": "read:task",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -60508,6 +61583,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListJobs returns a page of the tenant's async job execution records (worker observability; doc/33 A2). kind/status query filters narrow the view.。需要权限 read:task（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Job",
                 "operationId": "listJobs",
+                "x-ragflow-permission": "read:task",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -60569,6 +61646,8 @@ const docTemplate = `{
             "post": {
                 "description": "SyncTasks schedules a RAGFlow progress-sync job on the async worker (A2): the sync runs off the request path and its outcome is observable on GET /tasks/jobs with retry/backoff covered by the worker.。需要权限 execute:task（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncTasksResponse",
                 "operationId": "syncTasks",
+                "x-ragflow-permission": "execute:task",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -60612,6 +61691,8 @@ const docTemplate = `{
             "get": {
                 "description": "ListTeams lists the tenant's teams the caller may see (admin: all; others: teams they own or belong to).。需要权限 read:team（由 accessRules 强制）。成功返回 []service.TeamView",
                 "operationId": "listTeams",
+                "x-ragflow-permission": "read:team",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 name",
@@ -60663,6 +61744,8 @@ const docTemplate = `{
             "post": {
                 "description": "CreateTeam creates a tenant team; the owner (if any) becomes team_admin.。需要权限 manage:team（由 accessRules 强制）。请求体类型 teamRequest。成功返回 *model.Team。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "createTeam",
+                "x-ragflow-permission": "manage:team",
+                "x-error-codes": ["40000"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -60711,8 +61794,10 @@ const docTemplate = `{
         },
         "/api/v1/teams/{id}": {
             "delete": {
-                "description": "DeleteTeam deletes a tenant team.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteTeamResponse",
+                "description": "DeleteTeam deletes a tenant team.。需要权限 manage:team（由 accessRules 强制）。成功返回 DeleteTeamResponse",
                 "operationId": "deleteTeam",
+                "x-ragflow-permission": "manage:team",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -60743,12 +61828,14 @@ const docTemplate = `{
                 ],
                 "summary": "DeleteTeam deletes a tenant team",
                 "tags": [
-                    "teams"
+                    "team"
                 ]
             },
             "get": {
-                "description": "GetTeam returns a single team with tenant/owner names.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.TeamView",
+                "description": "GetTeam returns a single team with tenant/owner names.。需要权限 read:team（由 accessRules 强制）。成功返回 *service.TeamView",
                 "operationId": "getTeam",
+                "x-ragflow-permission": "read:team",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -60779,12 +61866,14 @@ const docTemplate = `{
                 ],
                 "summary": "GetTeam returns a single team with tenant/owner names",
                 "tags": [
-                    "teams"
+                    "team"
                 ]
             },
             "put": {
-                "description": "UpdateTeam updates a tenant team (owner transfer reassigns team_admin).。只要求登录，没有额外的 RBAC 规则。请求体类型 teamRequest。成功返回 *model.Team。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "UpdateTeam updates a tenant team (owner transfer reassigns team_admin).。需要权限 manage:team（由 accessRules 强制）。请求体类型 teamRequest。成功返回 *model.Team。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "updateTeam",
+                "x-ragflow-permission": "manage:team",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -60838,14 +61927,16 @@ const docTemplate = `{
                 ],
                 "summary": "UpdateTeam updates a tenant team (owner transfer reassigns team_admin)",
                 "tags": [
-                    "teams"
+                    "team"
                 ]
             }
         },
         "/api/v1/teams/{id}/projects": {
             "get": {
-                "description": "ListTeamProjects returns the projects authorized to a tenant team.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.Project",
+                "description": "ListTeamProjects returns the projects authorized to a tenant team.。需要权限 read:team（由 accessRules 强制）。成功返回 []model.Project",
                 "operationId": "listTeamProjects",
+                "x-ragflow-permission": "read:team",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -60876,12 +61967,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListTeamProjects returns the projects authorized to a tenant team",
                 "tags": [
-                    "teams"
+                    "team"
                 ]
             },
             "put": {
-                "description": "BindTeamProjects replaces the projects authorized to a tenant team.。只要求登录，没有额外的 RBAC 规则。请求体类型 BindTeamProjectsRequest。成功返回 BindTeamProjectsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "BindTeamProjects replaces the projects authorized to a tenant team.。需要权限 manage:team（由 accessRules 强制）。请求体类型 BindTeamProjectsRequest。成功返回 BindTeamProjectsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "bindTeamProjects",
+                "x-ragflow-permission": "manage:team",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -60935,14 +62028,16 @@ const docTemplate = `{
                 ],
                 "summary": "BindTeamProjects replaces the projects authorized to a tenant team",
                 "tags": [
-                    "teams"
+                    "team"
                 ]
             }
         },
         "/api/v1/teams/{id}/users": {
             "get": {
-                "description": "ListTeamUsers lists the members of a team.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.User",
+                "description": "ListTeamUsers lists the members of a team.。需要权限 read:team（由 accessRules 强制）。成功返回 []model.User",
                 "operationId": "listTeamUsers",
+                "x-ragflow-permission": "read:team",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -60973,12 +62068,14 @@ const docTemplate = `{
                 ],
                 "summary": "ListTeamUsers lists the members of a team",
                 "tags": [
-                    "teams"
+                    "team"
                 ]
             },
             "post": {
-                "description": "AddTeamUser binds a user to a team (owner or tenant admin only).。只要求登录，没有额外的 RBAC 规则。请求体类型 AddTeamUserRequest。成功返回 AddTeamUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
+                "description": "AddTeamUser binds a user to a team (owner or tenant admin only).。需要权限 manage:team（由 accessRules 强制）。请求体类型 AddTeamUserRequest。成功返回 AddTeamUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "addTeamUser",
+                "x-ragflow-permission": "manage:team",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61032,14 +62129,16 @@ const docTemplate = `{
                 ],
                 "summary": "AddTeamUser binds a user to a team (owner or tenant admin only)",
                 "tags": [
-                    "teams"
+                    "team"
                 ]
             }
         },
         "/api/v1/teams/{id}/users/{userId}": {
             "delete": {
-                "description": "RemoveTeamUser unbinds a user from a team (owner or tenant admin only).。只要求登录，没有额外的 RBAC 规则。成功返回 RemoveTeamUserResponse",
+                "description": "RemoveTeamUser unbinds a user from a team (owner or tenant admin only).。需要权限 manage:team（由 accessRules 强制）。成功返回 RemoveTeamUserResponse",
                 "operationId": "removeTeamUser",
+                "x-ragflow-permission": "manage:team",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61079,7 +62178,7 @@ const docTemplate = `{
                 ],
                 "summary": "RemoveTeamUser unbinds a user from a team (owner or tenant admin only)",
                 "tags": [
-                    "teams"
+                    "team"
                 ]
             }
         },
@@ -61087,6 +62186,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.TemplateInstanceView",
                 "operationId": "listTemplateInstances",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -61146,6 +62247,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceView",
                 "operationId": "instantiateTemplateInstance",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -61187,8 +62290,10 @@ const docTemplate = `{
         },
         "/api/v1/template-instances/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.TemplateInstanceView",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.TemplateInstanceView",
                 "operationId": "getTemplateInstance",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61219,14 +62324,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Template Instance",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/template-instances/{id}/dry-run": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceDryRunReport",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceDryRunReport",
                 "operationId": "dryRunTemplateInstance",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61273,14 +62380,16 @@ const docTemplate = `{
                 ],
                 "summary": "dry Run Template Instance",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/template-instances/{id}/evaluate": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ScenarioTemplateReleaseCandidateResult",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ScenarioTemplateReleaseCandidateResult",
                 "operationId": "evaluateTemplateInstance",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61327,14 +62436,16 @@ const docTemplate = `{
                 ],
                 "summary": "evaluate Template Instance",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/template-instances/{id}/health": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.TemplateInstanceHealthView",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.TemplateInstanceHealthView",
                 "operationId": "getTemplateInstanceHealth",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61365,14 +62476,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Template Instance Health",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/template-instances/{id}/release": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
                 "operationId": "releaseTemplateInstance",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61419,14 +62532,16 @@ const docTemplate = `{
                 ],
                 "summary": "release Template Instance",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/template-instances/{id}/releases": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.AssistantRelease",
+                "description": "需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AssistantRelease",
                 "operationId": "listTemplateInstanceReleases",
+                "x-ragflow-permission": "read:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61473,14 +62588,16 @@ const docTemplate = `{
                 ],
                 "summary": "list Template Instance Releases",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/template-instances/{id}/releases/{releaseId}/activate": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
                 "operationId": "activateTemplateInstanceRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61536,14 +62653,16 @@ const docTemplate = `{
                 ],
                 "summary": "activate Template Instance Release",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/template-instances/{id}/releases/{releaseId}/reconcile": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease",
                 "operationId": "reconcileTemplateInstanceRelease",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61599,14 +62718,16 @@ const docTemplate = `{
                 ],
                 "summary": "reconcile Template Instance Release",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
         "/api/v1/template-instances/{id}/rollback": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
+                "description": "需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation",
                 "operationId": "rollbackTemplateInstance",
+                "x-ragflow-permission": "manage:release-governance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -61653,7 +62774,7 @@ const docTemplate = `{
                 ],
                 "summary": "rollback Template Instance",
                 "tags": [
-                    "template-instances"
+                    "release-governance"
                 ]
             }
         },
@@ -61661,6 +62782,8 @@ const docTemplate = `{
             "get": {
                 "description": "平台管理员可看到全部工作区并按 name/status/创建时间过滤；租户管理员只看得到自己那一个——服务端按调用者的治理范围裁剪，不依赖前端隐藏。",
                 "operationId": "listTenants",
+                "x-ragflow-permission": "read:tenant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "页码，从 1 开始（默认 1）",
@@ -61764,6 +62887,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要 tenant 的写权限；创建后可顺带设置状态与品牌（名称/LoGo）。品牌用于该工作区所有页面与导出文件的落款，因此 logo 必须是可长期访问的 URL。",
                 "operationId": "createTenant",
+                "x-ragflow-permission": "manage:tenant",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -61834,6 +62959,8 @@ const docTemplate = `{
             "get": {
                 "description": "按调用者可见范围导出工作区清单（UTF-8 CSV，带表头），用于离线盘点与合规归档。响应是文件流而不是 JSON 信封，客户端应按 Content-Disposition 保存；导出动作本身写审计。缺权限时按标准错误信封返回 401/403（内容类型为 application/json，不是 CSV）。",
                 "operationId": "exportTenants",
+                "x-ragflow-permission": "read:tenant",
+                "x-error-codes": [],
                 "responses": {
                     "200": {
                         "content": {
@@ -61861,6 +62988,8 @@ const docTemplate = `{
             "put": {
                 "description": "一次调用切换多个工作区的状态，ids 为空会被拒绝（避免「什么都没做但返回成功」）。任一工作区不存在或无权操作时整体回滚，不做部分成功。",
                 "operationId": "batchUpdateTenantStatus",
+                "x-ragflow-permission": "manage:tenant",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -61931,6 +63060,8 @@ const docTemplate = `{
             "delete": {
                 "description": "默认拒绝删除仍有子资源的工作区；force=true 会连同子资源一起删除（不可恢复，需平台管理员）。删除写审计，工作区 ID 会进入墓碑记录，避免同名重建后历史审计指向错误的对象。",
                 "operationId": "deleteTenant",
+                "x-ragflow-permission": "manage:tenant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "工作区 ID",
@@ -62005,6 +63136,8 @@ const docTemplate = `{
             "put": {
                 "description": "可改名称、状态、品牌与编译令牌预算。字段未提供表示保持原值，显式传空字符串表示清空该字段——这是「不动」和「清空」能被区分开的唯一方式。停用工作区会立刻阻止其成员登录。",
                 "operationId": "updateTenant",
+                "x-ragflow-permission": "manage:tenant",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "工作区 ID",
@@ -62086,6 +63219,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:tool-registry（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ToolRegistry。声明了 1 个业务错误码：40160(400)（括号内是 HTTP 状态）",
                 "operationId": "listToolRegistries",
+                "x-ragflow-permission": "read:tool-registry",
+                "x-error-codes": ["40160"],
                 "parameters": [
                     {
                         "description": "查询参数 page（默认 1）",
@@ -62155,6 +63290,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry",
                 "operationId": "createToolRegistry",
+                "x-ragflow-permission": "manage:tool-registry",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -62196,8 +63333,10 @@ const docTemplate = `{
         },
         "/api/v1/tool-registry/{id}": {
             "delete": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 DeleteToolRegistryResponse",
+                "description": "需要权限 manage:tool-registry（由 accessRules 强制）。成功返回 DeleteToolRegistryResponse",
                 "operationId": "deleteToolRegistry",
+                "x-ragflow-permission": "manage:tool-registry",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -62232,8 +63371,10 @@ const docTemplate = `{
                 ]
             },
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *model.ToolRegistry",
+                "description": "需要权限 read:tool-registry（由 accessRules 强制）。成功返回 *model.ToolRegistry",
                 "operationId": "getToolRegistry",
+                "x-ragflow-permission": "read:tool-registry",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -62268,8 +63409,10 @@ const docTemplate = `{
                 ]
             },
             "patch": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry",
+                "description": "需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry",
                 "operationId": "updateToolRegistry",
+                "x-ragflow-permission": "manage:tool-registry",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -62320,8 +63463,10 @@ const docTemplate = `{
                 ]
             },
             "put": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry",
+                "description": "需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry",
                 "operationId": "updateToolRegistryPut",
+                "x-ragflow-permission": "manage:tool-registry",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -62374,8 +63519,10 @@ const docTemplate = `{
         },
         "/api/v1/tool-registry/{id}/execute": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ToolExecutionResult",
+                "description": "需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ToolExecutionResult",
                 "operationId": "executeToolRegistry",
+                "x-ragflow-permission": "execute:tool-registry",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -62430,6 +63577,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AnswerRun",
                 "operationId": "createRoutedAnswerRun",
+                "x-ragflow-permission": "execute:tool-registry",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -62471,8 +63620,10 @@ const docTemplate = `{
         },
         "/api/v1/tool-routing/answer-runs/{answerRunId}/evidence-facts": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 ListRoutedEvidenceFactsResponse",
+                "description": "需要权限 read:tool-registry（由 accessRules 强制）。成功返回 ListRoutedEvidenceFactsResponse",
                 "operationId": "listRoutedEvidenceFacts",
+                "x-ragflow-permission": "read:tool-registry",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 answerRunId",
@@ -62503,12 +63654,14 @@ const docTemplate = `{
                 ],
                 "summary": "list Routed Evidence Facts",
                 "tags": [
-                    "tool-routing"
+                    "tool-registry"
                 ]
             },
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EvidenceFactRegistrationResult",
+                "description": "需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EvidenceFactRegistrationResult",
                 "operationId": "registerRoutedEvidenceFacts",
+                "x-ragflow-permission": "execute:tool-registry",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 answerRunId",
@@ -62555,14 +63708,16 @@ const docTemplate = `{
                 ],
                 "summary": "register Routed Evidence Facts",
                 "tags": [
-                    "tool-routing"
+                    "tool-registry"
                 ]
             }
         },
         "/api/v1/tool-routing/answer-runs/{answerRunId}/fact-guard": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.FactGuardOverview",
+                "description": "需要权限 read:tool-registry（由 accessRules 强制）。成功返回 *service.FactGuardOverview",
                 "operationId": "getRoutedFactGuardOverview",
+                "x-ragflow-permission": "read:tool-registry",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 answerRunId",
@@ -62593,7 +63748,7 @@ const docTemplate = `{
                 ],
                 "summary": "get Routed Fact Guard Overview",
                 "tags": [
-                    "tool-routing"
+                    "tool-registry"
                 ]
             }
         },
@@ -62601,6 +63756,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedMixedToolAnswerResult",
                 "operationId": "executePlannedRoutedMixedToolAnswer",
+                "x-ragflow-permission": "execute:tool-registry",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -62644,6 +63801,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedMixedToolAnswerResult",
                 "operationId": "executeRoutedMixedToolAnswer",
+                "x-ragflow-permission": "execute:tool-registry",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -62687,6 +63846,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedSQLToolAnswerResult",
                 "operationId": "executeRoutedSQLToolAnswer",
+                "x-ragflow-permission": "execute:tool-registry",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -62730,6 +63891,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedSQLMultiSubqueryAnswerResult",
                 "operationId": "executeRoutedSQLMultiSubqueryAnswer",
+                "x-ragflow-permission": "execute:tool-registry",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -62773,6 +63936,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:trial-run（由 accessRules 强制）。成功返回 ListTrialRunsResponse",
                 "operationId": "listTrialRuns",
+                "x-ragflow-permission": "read:trial-run",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scenario_template_id",
@@ -62816,6 +63981,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要权限 execute:trial-run（由 accessRules 强制）。请求体类型 service.TrialRunInput。成功返回 *service.TrialRunView。声明了 1 个业务错误码：40123(400)（括号内是 HTTP 状态）",
                 "operationId": "createTrialRun",
+                "x-ragflow-permission": "execute:trial-run",
+                "x-error-codes": ["40123"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -62864,8 +64031,10 @@ const docTemplate = `{
         },
         "/api/v1/trial-runs/{id}": {
             "get": {
-                "description": "只要求登录，没有额外的 RBAC 规则。成功返回 *service.TrialRunView",
+                "description": "需要权限 read:trial-run（由 accessRules 强制）。成功返回 *service.TrialRunView",
                 "operationId": "getTrialRun",
+                "x-ragflow-permission": "read:trial-run",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -62896,14 +64065,16 @@ const docTemplate = `{
                 ],
                 "summary": "get Trial Run",
                 "tags": [
-                    "trial-runs"
+                    "trial-run"
                 ]
             }
         },
         "/api/v1/trial-runs/{id}/cancel": {
             "post": {
-                "description": "只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TrialRunView",
+                "description": "需要权限 execute:trial-run（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TrialRunView",
                 "operationId": "cancelTrialRun",
+                "x-ragflow-permission": "execute:trial-run",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -62950,7 +64121,7 @@ const docTemplate = `{
                 ],
                 "summary": "cancel Trial Run",
                 "tags": [
-                    "trial-runs"
+                    "trial-run"
                 ]
             }
         },
@@ -62958,6 +64129,8 @@ const docTemplate = `{
             "get": {
                 "description": "Usage returns metered usage rows, optionally filtered by date.。需要权限 read:usage（由 accessRules 强制）。成功返回 []model.QuotaUsage",
                 "operationId": "usage",
+                "x-ragflow-permission": "read:usage",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 date",
@@ -62995,6 +64168,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:usage（由 accessRules 强制）。成功返回 []model.OperationalAttributionRow",
                 "operationId": "operationalAttribution",
+                "x-ragflow-permission": "read:usage",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 tenant_id",
@@ -63080,6 +64255,8 @@ const docTemplate = `{
             "get": {
                 "description": "UsageDetail returns a page of per-request metering detail rows (model, scenario, session, dataset). Platform admins may request scope=all.。需要权限 read:usage（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.CostMetric",
                 "operationId": "usageDetail",
+                "x-ragflow-permission": "read:usage",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -63205,6 +64382,8 @@ const docTemplate = `{
             "get": {
                 "description": "ExportUsageReport returns the usage report as CSV.。需要权限 read:usage-export（由 accessRules 强制）。成功返回 []service.UsageReportRow",
                 "operationId": "exportUsageReport",
+                "x-ragflow-permission": "read:usage-export",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -63266,6 +64445,8 @@ const docTemplate = `{
             "get": {
                 "description": "OperationalAttribution returns quality/usage/cost/latency grouped by the governance context attached to each TraceRun. UsageFilterOptions feeds the report dropdowns with the values present in the usage data (models, scenarios, users, keys, chats, tenants, projects, assistants, releases).。需要权限 read:usage（由 accessRules 强制）。成功返回 repository.UsageFilterOptions",
                 "operationId": "usageFilterOptions",
+                "x-ragflow-permission": "read:usage",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 search",
@@ -63303,6 +64484,8 @@ const docTemplate = `{
             "get": {
                 "description": "GatewayMeteringHealth reports the served requests whose metering never landed (doc/304 §4 E147): the counts by state plus the oldest unfinished intents. It lives next to ` + "`" + `/usage` + "`" + ` because \"did our books get written\" is a usage question, and it is guarded by the same ` + "`" + `read usage` + "`" + ` capability. ` + "`" + `scope=all` + "`" + ` widens it across tenants and needs ` + "`" + `governance.read tenant` + "`" + `, exactly like ` + "`" + `/usage/details` + "`" + `: the two scopes are two answers, and a caller that may read one tenant must not read the rest by guessing a query parameter.。需要权限 read:usage（由 accessRules 强制）。成功返回 *service.GatewayMeteringHealth",
                 "operationId": "gatewayMeteringHealth",
+                "x-ragflow-permission": "read:usage",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 scope",
@@ -63340,6 +64523,8 @@ const docTemplate = `{
             "get": {
                 "description": "GatewayBillingReconcileRuns lists the caller's tenant's recent daily runs.。需要权限 read:usage（由 accessRules 强制）。成功返回 GatewayBillingReconcileRunsResponse",
                 "operationId": "gatewayBillingReconcileRuns",
+                "x-ragflow-permission": "read:usage",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "查询参数 limit（默认 14）",
@@ -63375,8 +64560,10 @@ const docTemplate = `{
         },
         "/api/v1/usage/reconcile/{runId}/findings": {
             "get": {
-                "description": "GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind.。只要求登录，没有额外的 RBAC 规则。成功返回 GatewayBillingReconcileFindingsResponse",
+                "description": "GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind.。需要权限 read:usage（由 accessRules 强制）。成功返回 GatewayBillingReconcileFindingsResponse",
                 "operationId": "gatewayBillingReconcileFindings",
+                "x-ragflow-permission": "read:usage",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "路径参数 runId",
@@ -63431,6 +64618,8 @@ const docTemplate = `{
             "get": {
                 "description": "按 username/status/role/创建时间过滤，默认只返回当前工作区的用户。scope=all 只对持有 tenant 的 governance.read 的调用者生效，用于平台管理员跨工作区审计；其余调用者即使传 scope=all 也只会看到本工作区数据。",
                 "operationId": "listUsers",
+                "x-ragflow-permission": "read:user",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "页码，从 1 开始（默认 1）",
@@ -63550,6 +64739,8 @@ const docTemplate = `{
             "post": {
                 "description": "需要 user 的 manage 权限。tenant_id 只有平台管理员（tenant 的 governance.manage）可以指定，普通管理员只能在本工作区建号。密码由服务端哈希存储，返回体不含任何密码字段。",
                 "operationId": "createUser",
+                "x-ragflow-permission": "manage:user",
+                "x-error-codes": [],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -63630,6 +64821,8 @@ const docTemplate = `{
             "delete": {
                 "description": "需要 user 的 manage 权限。三种 409：40908 删除自己、40903 目标是平台管理员（平台永不失去它的管理员）、40905 目标是本工作区最后一个仍然启用的管理员。删除会在同一事务里清掉该用户的角色关系，因此之后可以正常删除其角色——否则角色会被 40083「仍被用户占用」永久卡住。",
                 "operationId": "deleteUser",
+                "x-ragflow-permission": "manage:user",
+                "x-error-codes": ["40903", "40905", "40908"],
                 "parameters": [
                     {
                         "description": "用户 ID",
@@ -63696,6 +64889,8 @@ const docTemplate = `{
             "put": {
                 "description": "需要 user 的 manage 权限；字段留空表示不修改。修改自己的角色会被拒绝（40906）——避免管理员给自己提权，改角色请走 PUT /users/{id}/role 并留下独立审计。",
                 "operationId": "updateUser",
+                "x-ragflow-permission": "manage:user",
+                "x-error-codes": ["40906"],
                 "parameters": [
                     {
                         "description": "用户 ID",
@@ -63777,6 +64972,8 @@ const docTemplate = `{
             "get": {
                 "description": "返回该用户当前的文档访问密级；id 传 me 时读取调用者自己。recorded=false 表示从未显式设置过，返回的是默认密级（internal）——审计时这两种情况必须能区分。",
                 "operationId": "getUserClearance",
+                "x-ragflow-permission": "read:user-clearance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "用户 ID，或 me 表示当前账号",
@@ -63833,6 +65030,8 @@ const docTemplate = `{
             "put": {
                 "description": "仅平台管理员或租户管理员可调用（服务层会二次校验，不依赖中间件）。密级决定该用户能检索到哪些文档，属于治理动作，每次变更都会写入审计。",
                 "operationId": "setUserClearance",
+                "x-ragflow-permission": "manage:user-clearance",
+                "x-error-codes": [],
                 "parameters": [
                     {
                         "description": "用户 ID",
@@ -63914,6 +65113,8 @@ const docTemplate = `{
             "put": {
                 "description": "需要 user 的 manage 权限，且不能修改自己的角色（40906）。角色必须存在且可被当前调用者授予，否则返回 409/400。变更会重建该用户的 rgx_user_role 关系并写独立审计。",
                 "operationId": "setUserRole",
+                "x-ragflow-permission": "manage:user",
+                "x-error-codes": ["40906"],
                 "parameters": [
                     {
                         "description": "用户 ID",
@@ -63995,6 +65196,8 @@ const docTemplate = `{
             "put": {
                 "description": "停用后该用户的现有令牌在下次校验时失效，且无法再登录。不能停用自己（40907）。状态变更写审计，运维排查「为什么某人登不上」时以本接口的记录为准。",
                 "operationId": "setUserStatus",
+                "x-ragflow-permission": "manage:user",
+                "x-error-codes": ["40907"],
                 "parameters": [
                     {
                         "description": "用户 ID",
@@ -64086,6 +65289,8 @@ const docTemplate = `{
             "get": {
                 "description": "需要权限 read:assistant（由 accessRules 强制）。成功返回 []service.RecentConversationSession。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）",
                 "operationId": "recentCrossAppSessions",
+                "x-ragflow-permission": "read:assistant",
+                "x-error-codes": ["40000"],
                 "parameters": [
                     {
                         "description": "查询参数 limit（默认 20）",
@@ -64141,6 +65346,7 @@ const docTemplate = `{
             "post": {
                 "description": "GatewayAgent exposes a controlled Agent completion path for API keys.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
                 "operationId": "gatewayAgent",
+                "x-error-codes": ["40000", "40981", "40982", "50240", "50241"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -64225,6 +65431,7 @@ const docTemplate = `{
             "post": {
                 "description": "GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
                 "operationId": "gatewayChat",
+                "x-error-codes": ["40000", "40981", "40982", "50240", "50241"],
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -64298,6 +65505,7 @@ const docTemplate = `{
             "post": {
                 "description": "GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）",
                 "operationId": "gatewaySearchApp",
+                "x-error-codes": ["40000", "40981", "40982", "50240", "50241"],
                 "parameters": [
                     {
                         "description": "路径参数 id",
@@ -64389,7 +65597,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0.0",
+	Version:          "0.7.0",
 	Title:            "RAGFlow-X API",
 	Description:      "RAGFlow-X backend HTTP API, gateway and control-plane endpoints.",
 	InfoInstanceName: "swagger",

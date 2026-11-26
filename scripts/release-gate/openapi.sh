@@ -13,6 +13,15 @@
 #
 # What this row holds:
 #
+#   ⓪ the artifacts carry the version this tree builds (`openapi_stamp.py`, doc/310 T310-09):
+#     `info.version` used to be the literal `1.0.0`, so two files could not be told apart by
+#     reading them. The stamp reads `CHANGELOG.md` (tracked, so generation stays reproducible
+#     from a clean checkout) and writes all three artifacts; the check re-reads all three.
+#   ⓪a the artifacts carry the two machine-readable fields swag cannot emit (T310-05/06):
+#     `x-ragflow-permission` from `accessRules` (dumped by `cmd/apicontract -extensions`) and
+#     `x-error-codes` from the `@Failure` descriptions. `openapi_extensions.py` adds them to
+#     all three artifacts *and* re-parses the result, so a key at the wrong depth is a failure
+#     here rather than a surprise in a client generator.
 #   ① freshness: `swag init` runs again, into a temp dir, with the *same* flags the Makefile
 #     uses — because the flags and the pinned version live in this file and the Makefile
 #     targets now call it (`gen` / `check`), instead of two copies drifting apart;
@@ -55,6 +64,22 @@ COMMITTED="${OAPI_COMMITTED:-internal/docs}"
 GEN="${OAPI_GEN:-}"
 SKIP_GEN="${OAPI_SKIP_GEN:-}"
 FILES=(docs.go swagger.json swagger.yaml)
+
+# Same trap as docs-ledger.sh: python's stdout is cp936 here while these strings are UTF-8.
+export PYTHONIOENCODING=utf-8
+
+pick_python() {
+  local c
+  for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c pass >/dev/null 2>&1; then
+      printf '%s' "$c"; return 0
+    fi
+  done
+  return 1
+}
+
+STAMP="$ROOT/scripts/release-gate/openapi_stamp.py"
+EXT="$ROOT/scripts/release-gate/openapi_extensions.py"
 
 TMPROOT="${TMPDIR:-${TEMP:-/tmp}}"
 WORK="$(mktemp -d "$TMPROOT/oapi-XXXXXX" 2>/dev/null)" || WORK=""
@@ -100,6 +125,36 @@ gen() {
       return 2
     fi
   done
+  # ⓪ stamp the version *inside staging*, so a copy that lands in $out is already the file a
+  # commit would ship (a stamp applied after the copy would leave a window where $out is
+  # neither the generator's output nor the artifact).
+  local py
+  py="$(pick_python)" || { bad "no python on PATH — the version stamp cannot run (no artifact is not 'fresh')"; return 2; }
+  if ! "$py" "$STAMP" "$stage" >>"$WORK/gen.log" 2>&1; then
+    bad "the version stamp failed — $out was left alone"
+    tail -3 "$WORK/gen.log" | while IFS= read -r l; do printf '      %s\n' "$l"; done
+    return 2
+  fi
+  # ⓪a the two machine-readable fields. The permission map is dumped from accessRules by the
+  # same analyser that writes the contracts, against *this run's* spec — a sidecar checked into
+  # the tree would be a copy that drifts from the table the middleware enforces.
+  local apic="$WORK/apicontract"
+  if [ ! -x "$apic" ]; then
+    if ! ( cd "$ROOT" && go build -o "$apic" ./cmd/apicontract ) >>"$WORK/gen.log" 2>&1; then
+      bad "cannot build ./cmd/apicontract — the permission sidecar cannot be derived"; return 2
+    fi
+  fi
+  if ! ( cd "$ROOT" && "$apic" -report -spec "$stage/swagger.json" -extensions "$stage/permissions.json" ) >>"$WORK/gen.log" 2>&1; then
+    bad "the permission sidecar could not be derived from the freshly generated spec"
+    tail -3 "$WORK/gen.log" | while IFS= read -r l; do printf '      %s\n' "$l"; done
+    return 2
+  fi
+  if ! "$py" "$EXT" apply "$stage" --sidecar "$stage/permissions.json" >>"$WORK/gen.log" 2>&1; then
+    bad "the contract extensions could not be written into $stage"
+    tail -3 "$WORK/gen.log" | while IFS= read -r l; do printf '      %s\n' "$l"; done
+    return 2
+  fi
+  rm -f "$stage/permissions.json"
   mkdir -p "$out" || return 2
   for f in "${FILES[@]}"; do cp "$stage/$f" "$out/$f" || return 2; done
   # `make swagger` used to end with `gofmt -w internal/docs/`; the formatting step belongs to
@@ -182,7 +237,13 @@ reading() {
   # and `grep -c '"operationId"'` read 622 for 616 operations (doc/304 §4 E143). A reading
   # that over-counts is the same defect it is meant to catch.
   ops="$(grep -c '"operationId": *"' "$spec" 2>/dev/null)"
-  say "      spec: openapi ${ver:-unknown}, ${ops:-0} operationId(s)"
+  local prod
+  prod="$(grep -o '"version": *"[^"]*"' "$spec" 2>/dev/null | head -1 | sed 's/.*: *"//; s/"$//')"
+  say "      spec: openapi ${ver:-unknown}, product ${prod:-unknown}, ${ops:-0} operationId(s)"
+  local nperm ncodes
+  nperm="$(grep -c '"x-ragflow-permission":' "$spec" 2>/dev/null)"
+  ncodes="$(grep -c '"x-error-codes":' "$spec" 2>/dev/null)"
+  say "      machine-readable: ${nperm:-0} with x-ragflow-permission, ${ncodes:-0} with x-error-codes"
 }
 
 check_main() {
@@ -221,6 +282,10 @@ check_main() {
     return 1
   fi
   [ "$rc" -eq 0 ] || return 1
+  local py
+  py="$(pick_python)" || { bad "no python on PATH — the version stamp cannot be re-read"; return 1; }
+  "$py" "$STAMP" --check "$out" 2>&1 | while IFS= read -r l; do printf '      %s\n' "$l"; done
+  [ "${PIPESTATUS[0]}" -eq 0 ] || { bad "the generated artifacts do not carry the version CHANGELOG.md names"; return 1; }
   reading "$COMMITTED/swagger.json"
   good "the baseline is $BASELINE_SOURCE"
   good "the worktree was not touched by the check"
@@ -273,7 +338,24 @@ selftest() {
   QUIET=1; fail=0; baseline_from_commit "$ROOT/internal/config"; rc=$?; QUIET=0
   if [ $rc -ne 0 ]; then say "  ok     a baseline that is not in the index is refused (with the git add fix)"; hits=$((hits+1)); else say "  FAIL   an unindexed baseline passed"; fi
 
-  [ "$hits" -eq 6 ] && { say "selftest: OK (6 mutations refused, 1 baseline clean)"; return 0; }
+  # ⑧ the version stamp is a rewrite, so it must be able to disagree: an artifact whose
+  #    info.version is not what CHANGELOG.md names is refused (this is the mutation that
+  #    makes "the file says which release it is" a claim instead of a comment)
+  local py; py="$(pick_python)" || return 1
+  local s1="$WORK/case-version"; rm -rf "$s1"; mkdir -p "$s1"; cp "$out"/* "$s1"/
+  "$py" - "$s1/swagger.json" <<'PYVER'
+import io, json, sys
+p = sys.argv[1]
+d = json.load(io.open(p, encoding='utf-8'))
+d["info"]["version"] = "0.0.1"
+io.open(p, 'w', encoding='utf-8').write(json.dumps(d, ensure_ascii=False))
+PYVER
+  QUIET=1; fail=0
+  if "$py" "$STAMP" --check "$s1" >/dev/null 2>&1; then rc=0; else rc=1; fi
+  QUIET=0
+  if [ $rc -ne 0 ]; then say "  ok     an artifact carrying the wrong version is refused"; hits=$((hits+1)); else say "  FAIL   a wrong info.version passed"; fi
+
+  [ "$hits" -eq 7 ] && { say "selftest: OK (7 mutations refused, 1 baseline clean)"; return 0; }
   say "selftest: FAILED"; return 1
 }
 

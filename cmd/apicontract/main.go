@@ -89,6 +89,7 @@ func main() {
 		apply      = flag.Bool("apply", false, "also rewrite the analysed gin.H call sites in place")
 		specPath   = flag.String("spec", "internal/docs/swagger.json", "spec whose operations must all gain a contract")
 		out        = flag.String("out", outDefault, "generated contract file")
+		extOut     = flag.String("extensions", "", "write the machine-readable permission sidecar here (T310-05)")
 	)
 	flag.Parse()
 
@@ -171,6 +172,11 @@ func main() {
 			len(refusals), len(specOps), strings.Join(refusals, "\n  "))
 	}
 
+	if *extOut != "" {
+		if err := writeExtensions(*extOut, specOps, an); err != nil {
+			fail("extensions: %v", err)
+		}
+	}
 	src, err := render(contracts, an)
 	if err != nil {
 		fail("render: %v", err)
@@ -200,6 +206,33 @@ func main() {
 		fail("write %s: %v", *out, err)
 	}
 	report(contracts, patches, an.objOnly, len(specOps))
+}
+
+// writeExtensions publishes the half of T310-05 that elides prose: the same
+// (method, path) -> (action, resource) table the middleware enforces, keyed by the spec's own
+// path spelling. It cannot be emitted as an annotation: swag v2 files an operation-level
+// `@x-` under `responses` (operationv3.go:163), which is not a legal OpenAPI response, so the
+// key has to be added to the artifacts after generation by
+// scripts/release-gate/openapi_extensions.py. Emitting it here keeps the *source* single.
+//
+// An operation with no rule gets no entry: "no permission" is the middleware's default-deny
+// answer for unregistered routes, but the public routes (login, health, the SPA shell) are
+// mounted before the RBAC group and legitimately carry none. The gate reads the absence.
+func writeExtensions(path string, ops []specOp, an *analyzer) error {
+	ext := struct {
+		Source     string            `json:"source"`
+		Operations map[string]string `json:"operations"`
+	}{Source: "internal/router/access.go accessRules", Operations: map[string]string{}}
+	for _, op := range ops {
+		if p := an.rules[op.Method+" "+op.Path]; p != "" {
+			ext.Operations[op.Method+" "+op.Path] = p
+		}
+	}
+	b, err := json.MarshalIndent(ext, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
 }
 
 func fail(format string, args ...interface{}) {
@@ -549,7 +582,11 @@ func (an *analyzer) loadRules() error {
 		return err
 	}
 	for _, m := range rulePattern.FindAllStringSubmatch(string(src), -1) {
-		an.rules[m[1]+" "+m[2]] = m[3] + ":" + m[4]
+		// accessRules writes `:id`, the spec writes `{id}`; keying the map with the rule's own
+		// spelling meant every parameterised route silently read as "no permission" (215 of
+		// 617 ops matched, and all of them were the parameterless ones). One normalisation,
+		// used by both sides here and in T310-05's sidecar.
+		an.rules[m[1]+" "+normalizePath(m[2])] = m[3] + ":" + m[4]
 	}
 	if len(an.rules) < 100 {
 		return fmt.Errorf("parsed only %d accessRules entries; access.go's shape changed", len(an.rules))

@@ -693,6 +693,32 @@ if tier_selected static; then
     bash scripts/release-gate/migration-window.sh "$BASE"
 
 
+  # doc/310 §22.5 T310-05 / T310-06, doc/304 §4 E176: the spec told a client *that* an
+  # endpoint needs a bearer token, never *which* permission, and never which business codes a
+  # failure carries. A client generator can only see machine-readable fields, and prose
+  # (`@Description` "需要权限 read:agent") is not one.
+  #
+  # swag v2 cannot emit an operation-level `@x-` (it files it under `responses`,
+  # operationv3.go:163), so the fields are added after generation by
+  # `openapi_extensions.py` from two sources that already exist: `accessRules` (the table the
+  # middleware enforces) and the `@Failure` descriptions the generator derives from the
+  # `httperr` return points.
+  #
+  # What is checked is *equality with the source*, not presence:
+  #   · every operation's `x-ragflow-permission` equals what `accessRules` says for its route,
+  #     and an operation with no rule must not carry the key (default-deny is a reading too);
+  #   · every operation's `x-error-codes` equals the codes its own failure descriptions name;
+  #   · and all three artifacts agree — the JSON is parsed, the `docs.go` template is rendered
+  #     and parsed, the YAML is scanned — because "the key is in swagger.json" says nothing
+  #     about what `/docs/openapi.json` serves (`docs.go` is the runtime copy, E164's lesson).
+  # The check reads `access.go` itself (`--rules`) rather than the writer's dump: comparing an
+  # artifact with the tool that produced it is a tautology.
+  #
+  # The mutations run in the same row (1.6 s) rather than in a ritual: a reader that has never
+  # been seen to fail is a reader whose exponent nobody has measured.
+  run_check "s33.openapi-contract-extensions" "static" 1 "each operation carries the permission accessRules enforces and the business codes its failures name, in all three artifacts, and 7 mutations of that claim are refused (doc/310 §22.5 T310-05/T310-06; doc/304 §4 E176)" \
+    bash -c "\"$PYTHON\" scripts/release-gate/openapi_extensions.py check internal/docs --rules internal/router/access.go && \"$PYTHON\" scripts/release-gate/openapi_extensions.py --selftest"
+
   run_check "s08.fe-typecheck" "static" 1 "frontend typecheck" bash -c 'cd web && npx tsc -b'
   run_check "s09.fe-test" "static" 1 "frontend unit tests" bash -c 'cd web && npx vitest run --maxWorkers=2'
 

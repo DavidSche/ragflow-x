@@ -5686,8 +5686,8 @@ func contractValidateAgentDSLEnvelope() {}
 // contractDeleteAgentEnvelope documents DELETE /api/v1/agents/{id}.
 //
 // @Summary DeleteAgent deletes an agent
-// @Description DeleteAgent deletes an agent.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteAgentResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags agents
+// @Description DeleteAgent deletes an agent.。需要权限 manage:agent（由 accessRules 强制）。成功返回 DeleteAgentResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags agent
 // @ID deleteAgent
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5702,8 +5702,8 @@ func contractDeleteAgentEnvelope() {}
 // contractGetAgentEnvelope documents GET /api/v1/agents/{id}.
 //
 // @Summary GetAgent returns an agent shadow
-// @Description GetAgent returns an agent shadow.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.AgentShadow
-// @Tags agents
+// @Description GetAgent returns an agent shadow.。需要权限 read:agent（由 accessRules 强制）。成功返回 *model.AgentShadow
+// @Tags agent
 // @ID getAgent
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5716,8 +5716,8 @@ func contractGetAgentEnvelope() {}
 // contractUpdateAgentEnvelope documents PUT /api/v1/agents/{id}.
 //
 // @Summary UpdateAgent edits an agent (title/dsl/release)
-// @Description UpdateAgent edits an agent (title/dsl/release).。只要求登录，没有额外的 RBAC 规则。请求体类型 agentUpdatePayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags agents
+// @Description UpdateAgent edits an agent (title/dsl/release).。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentUpdatePayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags agent
 // @ID updateAgent
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5734,8 +5734,8 @@ func contractUpdateAgentEnvelope() {}
 // contractAgentChatCompletionEnvelope documents POST /api/v1/agents/{id}/chat/completions.
 //
 // @Summary AgentChatCompletion runs an agent completion (non-streaming + metered)
-// @Description AgentChatCompletion runs an agent completion (non-streaming + metered).。只要求登录，没有额外的 RBAC 规则。请求体类型 agentChatPayload。成功返回 *ragflow.CompletionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags agents
+// @Description AgentChatCompletion runs an agent completion (non-streaming + metered).。需要权限 execute:agent（由 accessRules 强制）。请求体类型 agentChatPayload。成功返回 *ragflow.CompletionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags agent
 // @ID agentChatCompletion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5749,8 +5749,8 @@ func contractAgentChatCompletionEnvelope() {}
 // contractStreamAgentChatCompletionEnvelope documents POST /api/v1/agents/{id}/chat/completions/stream.
 //
 // @Summary StreamAgentChatCompletion proxies an agent completion (SSE)
-// @Description StreamAgentChatCompletion proxies an agent completion (SSE).。只要求登录，没有额外的 RBAC 规则。请求体类型 agentChatPayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags agents
+// @Description StreamAgentChatCompletion proxies an agent completion (SSE).。需要权限 execute:agent（由 accessRules 强制）。请求体类型 agentChatPayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags agent
 // @ID streamAgentChatCompletion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5765,8 +5765,8 @@ func contractStreamAgentChatCompletionEnvelope() {}
 // contractGetAgentDetailEnvelope documents GET /api/v1/agents/{id}/detail.
 //
 // @Summary GetAgentDetail returns the live RAGFlow-side agent canvas
-// @Description GetAgentDetail returns the live RAGFlow-side agent canvas.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.Agent
-// @Tags agents
+// @Description GetAgentDetail returns the live RAGFlow-side agent canvas.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.Agent
+// @Tags agent
 // @ID getAgentDetail
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5779,8 +5779,8 @@ func contractGetAgentDetailEnvelope() {}
 // contractPublishAgentEnvelope documents POST /api/v1/agents/{id}/publish.
 //
 // @Summary PublishAgent toggles an agent's publish/unpublish state
-// @Description PublishAgent toggles an agent's publish/unpublish state.。只要求登录，没有额外的 RBAC 规则。请求体类型 agentPublishPayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags agents
+// @Description PublishAgent toggles an agent's publish/unpublish state.。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentPublishPayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags agent
 // @ID publishAgent
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5797,8 +5797,8 @@ func contractPublishAgentEnvelope() {}
 // contractListAgentSessionsEnvelope documents GET /api/v1/agents/{id}/sessions.
 //
 // @Summary ListAgentSessions lists an agent's sessions
-// @Description ListAgentSessions lists an agent's sessions.。只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 ragflow.AgentSession
-// @Tags agents
+// @Description ListAgentSessions lists an agent's sessions.。需要权限 read:agent（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.AgentSession
+// @Tags agent
 // @ID listAgentSessions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5812,8 +5812,8 @@ func contractListAgentSessionsEnvelope() {}
 // contractCreateAgentSessionEnvelope documents POST /api/v1/agents/{id}/sessions.
 //
 // @Summary CreateAgentSession starts an agent session
-// @Description CreateAgentSession starts an agent session.。只要求登录，没有额外的 RBAC 规则。请求体类型 agentSessionPayload。成功返回 *ragflow.AgentSession
-// @Tags agents
+// @Description CreateAgentSession starts an agent session.。需要权限 session:create:agent（由 accessRules 强制）。请求体类型 agentSessionPayload。成功返回 *ragflow.AgentSession
+// @Tags create:agent
 // @ID createAgentSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5826,8 +5826,8 @@ func contractCreateAgentSessionEnvelope() {}
 // contractDeleteAgentSessionEnvelope documents DELETE /api/v1/agents/{id}/sessions/{sessionId}.
 //
 // @Summary DeleteAgentSession deletes an agent session
-// @Description DeleteAgentSession deletes an agent session.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteAgentSessionResponse
-// @Tags agents
+// @Description DeleteAgentSession deletes an agent session.。需要权限 manage:agent（由 accessRules 强制）。成功返回 DeleteAgentSessionResponse
+// @Tags agent
 // @ID deleteAgentSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5839,8 +5839,8 @@ func contractDeleteAgentSessionEnvelope() {}
 // contractGetAgentSessionEnvelope documents GET /api/v1/agents/{id}/sessions/{sessionId}.
 //
 // @Summary GetAgentSession returns an agent session
-// @Description GetAgentSession returns an agent session.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.AgentSession
-// @Tags agents
+// @Description GetAgentSession returns an agent session.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.AgentSession
+// @Tags agent
 // @ID getAgentSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5852,8 +5852,8 @@ func contractGetAgentSessionEnvelope() {}
 // contractListAgentSessionMessagesEnvelope documents GET /api/v1/agents/{id}/sessions/{sessionId}/messages.
 //
 // @Summary ListAgentSessionMessages returns a bounded page of agent session messages
-// @Description ListAgentSessionMessages returns a bounded page of agent session messages.。只要求登录，没有额外的 RBAC 规则。成功返回 ListAgentSessionMessagesResponse
-// @Tags agents
+// @Description ListAgentSessionMessages returns a bounded page of agent session messages.。需要权限 read:agent（由 accessRules 强制）。成功返回 ListAgentSessionMessagesResponse
+// @Tags agent
 // @ID listAgentSessionMessages
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5867,8 +5867,8 @@ func contractListAgentSessionMessagesEnvelope() {}
 // contractUploadAgentFileEnvelope documents POST /api/v1/agents/{id}/upload.
 //
 // @Summary UploadAgentFile uploads a temporary attachment for an owned Agent
-// @Description UploadAgentFile uploads a temporary attachment for an owned Agent.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags agents
+// @Description UploadAgentFile uploads a temporary attachment for an owned Agent.。需要权限 execute:agent（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags agent
 // @ID uploadAgentFile
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5882,8 +5882,8 @@ func contractUploadAgentFileEnvelope() {}
 // contractAgentValidationEnvelope documents GET /api/v1/agents/{id}/validation.
 //
 // @Summary AgentValidation validates the DSL the engine currently stores for one agent
-// @Description AgentValidation validates the DSL the engine currently stores for one agent. The editor calls it on open, so canvases saved before the validator existed are flagged without being re-saved.。只要求登录，没有额外的 RBAC 规则。请求体类型 agentValidatePayload。成功返回 *service.AgentDslValidation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags agents
+// @Description AgentValidation validates the DSL the engine currently stores for one agent. The editor calls it on open, so canvases saved before the validator existed are flagged without being re-saved.。需要权限 read:agent（由 accessRules 强制）。请求体类型 agentValidatePayload。成功返回 *service.AgentDslValidation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags agent
 // @ID agentValidation
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5899,8 +5899,8 @@ func contractAgentValidationEnvelope() {}
 // contractListAgentVersionsEnvelope documents GET /api/v1/agents/{id}/versions.
 //
 // @Summary ListAgentVersions lists an agent's versions
-// @Description ListAgentVersions lists an agent's versions.。只要求登录，没有额外的 RBAC 规则。成功返回 []ragflow.AgentVersion
-// @Tags agents
+// @Description ListAgentVersions lists an agent's versions.。需要权限 read:agent（由 accessRules 强制）。成功返回 []ragflow.AgentVersion
+// @Tags agent
 // @ID listAgentVersions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5911,8 +5911,8 @@ func contractListAgentVersionsEnvelope() {}
 // contractGetAgentVersionEnvelope documents GET /api/v1/agents/{id}/versions/{versionId}.
 //
 // @Summary GetAgentVersion returns a single version of an agent
-// @Description GetAgentVersion returns a single version of an agent.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.AgentVersion
-// @Tags agents
+// @Description GetAgentVersion returns a single version of an agent.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.AgentVersion
+// @Tags agent
 // @ID getAgentVersion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5924,8 +5924,8 @@ func contractGetAgentVersionEnvelope() {}
 // contractRollbackAgentVersionEnvelope documents POST /api/v1/agents/{id}/versions/{versionId}/rollback.
 //
 // @Summary RollbackAgentVersion restores an agent's DSL from a saved version
-// @Description RollbackAgentVersion restores an agent's DSL from a saved version.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RollbackAgentVersionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags agents
+// @Description RollbackAgentVersion restores an agent's DSL from a saved version.。需要权限 manage:agent（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RollbackAgentVersionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags agent
 // @ID rollbackAgentVersion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5977,8 +5977,8 @@ func contractListAlertDeliveriesEnvelope() {}
 // contractClaimAlertEnvelope documents POST /api/v1/alerts/{id}/claim.
 //
 // @Summary ClaimAlert claims an alert for operations follow-up
-// @Description ClaimAlert claims an alert for operations follow-up.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ClaimAlertResponse
-// @Tags alerts
+// @Description ClaimAlert claims an alert for operations follow-up.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ClaimAlertResponse
+// @Tags alert
 // @ID claimAlert
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -5992,8 +5992,8 @@ func contractClaimAlertEnvelope() {}
 // contractRetryAlertDeliveryEnvelope documents POST /api/v1/alerts/{id}/deliveries/{channel}/retry.
 //
 // @Summary RetryAlertDelivery manually redelivers one pending/failed/abandoned channel
-// @Description RetryAlertDelivery manually redelivers one pending/failed/abandoned channel.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RetryAlertDeliveryResponse
-// @Tags alerts
+// @Description RetryAlertDelivery manually redelivers one pending/failed/abandoned channel.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RetryAlertDeliveryResponse
+// @Tags alert
 // @ID retryAlertDelivery
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6008,8 +6008,8 @@ func contractRetryAlertDeliveryEnvelope() {}
 // contractMarkAlertReadEnvelope documents POST /api/v1/alerts/{id}/read.
 //
 // @Summary MarkAlertRead marks an alert as read
-// @Description MarkAlertRead marks an alert as read.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkAlertReadResponse
-// @Tags alerts
+// @Description MarkAlertRead marks an alert as read.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkAlertReadResponse
+// @Tags alert
 // @ID markAlertRead
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6023,8 +6023,8 @@ func contractMarkAlertReadEnvelope() {}
 // contractDownloadAnswerExportEnvelope documents GET /api/v1/answer-snapshots/artifacts/{artifactId}/download.
 //
 // @Summary Download Answer Export
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型
-// @Tags answer-snapshots
+// @Description 需要权限 read:chat（由 accessRules 强制）。成功返回原始字节，媒体类型
+// @Tags chat
 // @ID downloadAnswerExport
 // @Security BearerAuth
 // @Param artifactId path string true "路径参数 artifactId"
@@ -6036,8 +6036,8 @@ func contractDownloadAnswerExportEnvelope() {}
 // contractGetAnswerSnapshotByRequestEnvelope documents GET /api/v1/answer-snapshots/by-request/{requestId}.
 //
 // @Summary Get Answer Snapshot By Request
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 GetAnswerSnapshotByRequestResponse
-// @Tags answer-snapshots
+// @Description 需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerSnapshotByRequestResponse
+// @Tags chat
 // @ID getAnswerSnapshotByRequest
 // @Security BearerAuth
 // @Param requestId path string true "路径参数 requestId"
@@ -6048,8 +6048,8 @@ func contractGetAnswerSnapshotByRequestEnvelope() {}
 // contractGetAnswerExportJobEnvelope documents GET /api/v1/answer-snapshots/export-jobs/{jobId}.
 //
 // @Summary Get Answer Export Job
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 GetAnswerExportJobResponse
-// @Tags answer-snapshots
+// @Description 需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerExportJobResponse
+// @Tags chat
 // @ID getAnswerExportJob
 // @Security BearerAuth
 // @Param jobId path string true "路径参数 jobId"
@@ -6060,8 +6060,8 @@ func contractGetAnswerExportJobEnvelope() {}
 // contractRetryAnswerExportJobEnvelope documents POST /api/v1/answer-snapshots/export-jobs/{jobId}/retry.
 //
 // @Summary Retry Answer Export Job
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 GetAnswerSnapshotResponse
-// @Tags answer-snapshots
+// @Description 需要权限 read:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 GetAnswerSnapshotResponse
+// @Tags chat
 // @ID retryAnswerExportJob
 // @Security BearerAuth
 // @Param jobId path string true "路径参数 jobId"
@@ -6074,8 +6074,8 @@ func contractRetryAnswerExportJobEnvelope() {}
 // contractGetAnswerSnapshotEnvelope documents GET /api/v1/answer-snapshots/{snapshotId}.
 //
 // @Summary Get Answer Snapshot
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 GetAnswerSnapshotResponse
-// @Tags answer-snapshots
+// @Description 需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerSnapshotResponse
+// @Tags chat
 // @ID getAnswerSnapshot
 // @Security BearerAuth
 // @Param snapshotId path string true "路径参数 snapshotId"
@@ -6086,8 +6086,8 @@ func contractGetAnswerSnapshotEnvelope() {}
 // contractGetAnswerSnapshotAuditExportEnvelope documents GET /api/v1/answer-snapshots/{snapshotId}/audit-export.
 //
 // @Summary GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4)
-// @Description GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4). The middleware gate is audit-export:read; the handler re-checks per doc/11 §6.1 item 3.。只要求登录，没有额外的 RBAC 规则。成功返回 GetAnswerSnapshotAuditExportResponse
-// @Tags answer-snapshots
+// @Description GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4). The middleware gate is audit-export:read; the handler re-checks per doc/11 §6.1 item 3.。需要权限 read:audit-export（由 accessRules 强制）。成功返回 GetAnswerSnapshotAuditExportResponse
+// @Tags audit-export
 // @ID getAnswerSnapshotAuditExport
 // @Security BearerAuth
 // @Param snapshotId path string true "路径参数 snapshotId"
@@ -6099,8 +6099,8 @@ func contractGetAnswerSnapshotAuditExportEnvelope() {}
 // contractCreateAnswerExportEnvelope documents POST /api/v1/answer-snapshots/{snapshotId}/export.
 //
 // @Summary Create Answer Export
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 CreateAnswerExportRequest。成功返回 GetAnswerSnapshotResponse。声明了 1 个业务错误码：40130(400)（括号内是 HTTP 状态）
-// @Tags answer-snapshots
+// @Description 需要权限 read:chat（由 accessRules 强制）。请求体类型 CreateAnswerExportRequest。成功返回 GetAnswerSnapshotResponse。声明了 1 个业务错误码：40130(400)（括号内是 HTTP 状态）
+// @Tags chat
 // @ID createAnswerExport
 // @Security BearerAuth
 // @Param snapshotId path string true "路径参数 snapshotId"
@@ -6139,8 +6139,8 @@ func contractCreateApprovalDelegationEnvelope() {}
 // contractDeleteApprovalDelegationEnvelope documents DELETE /api/v1/approval-delegations/{id}.
 //
 // @Summary Delete Approval Delegation
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteApprovalDelegationResponse。声明了 1 个业务错误码：40400(404)（括号内是 HTTP 状态）
-// @Tags approval-delegations
+// @Description 需要权限 read:approval（由 accessRules 强制）。成功返回 DeleteApprovalDelegationResponse。声明了 1 个业务错误码：40400(404)（括号内是 HTTP 状态）
+// @Tags approval
 // @ID deleteApprovalDelegation
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6177,8 +6177,8 @@ func contractSaveApprovalPolicyEnvelope() {}
 // contractSaveApprovalPolicyPutEnvelope documents PUT /api/v1/approval-policies/{id}.
 //
 // @Summary Save Approval Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags approval-policies
+// @Description 需要权限 manage:approval-policy（由 accessRules 强制）。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags approval-policy
 // @ID saveApprovalPolicyPut
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6284,8 +6284,8 @@ func contractExportApprovalsEnvelope() {}
 // contractGetApprovalEnvelope documents GET /api/v1/approvals/{id}.
 //
 // @Summary Get Approval
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.ApprovalDetail
-// @Tags approvals
+// @Description 需要权限 read:approval（由 accessRules 强制）。成功返回 *service.ApprovalDetail
+// @Tags approval
 // @ID getApproval
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6296,8 +6296,8 @@ func contractGetApprovalEnvelope() {}
 // contractApproveApprovalEnvelope documents POST /api/v1/approvals/{id}/approve.
 //
 // @Summary Approve Approval
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags approvals
+// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags approval
 // @ID approveApproval
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6311,8 +6311,8 @@ func contractApproveApprovalEnvelope() {}
 // contractCancelApprovalEnvelope documents POST /api/v1/approvals/{id}/cancel.
 //
 // @Summary Cancel Approval
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags approvals
+// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags approval
 // @ID cancelApproval
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6326,8 +6326,8 @@ func contractCancelApprovalEnvelope() {}
 // contractRejectApprovalEnvelope documents POST /api/v1/approvals/{id}/reject.
 //
 // @Summary Reject Approval
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags approvals
+// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags approval
 // @ID rejectApproval
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6341,8 +6341,8 @@ func contractRejectApprovalEnvelope() {}
 // contractRetryApprovalEnvelope documents POST /api/v1/approvals/{id}/retry.
 //
 // @Summary Retry Approval
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags approvals
+// @Description 需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags approval
 // @ID retryApproval
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6384,8 +6384,8 @@ func contractCreateAssistantReleaseEnvelope() {}
 // contractGetAssistantReleaseEnvelope documents GET /api/v1/assistant-releases/{id}.
 //
 // @Summary get Assistant Release
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.AssistantRelease
-// @Tags assistant-releases
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.AssistantRelease
+// @Tags release-governance
 // @ID getAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6396,8 +6396,8 @@ func contractGetAssistantReleaseEnvelope() {}
 // contractActivateAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/activate.
 //
 // @Summary activate Assistant Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Tags release-governance
 // @ID activateAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6410,8 +6410,8 @@ func contractActivateAssistantReleaseEnvelope() {}
 // contractApplyAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/apply.
 //
 // @Summary apply Assistant Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Tags release-governance
 // @ID applyAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6424,8 +6424,8 @@ func contractApplyAssistantReleaseEnvelope() {}
 // contractListAssistantAuthorizationSnapshotsEnvelope documents GET /api/v1/assistant-releases/{id}/authorization-snapshots.
 //
 // @Summary list Assistant Authorization Snapshots
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.AuthorizationSnapshot
-// @Tags assistant-releases
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuthorizationSnapshot
+// @Tags release-governance
 // @ID listAssistantAuthorizationSnapshots
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6439,8 +6439,8 @@ func contractListAssistantAuthorizationSnapshotsEnvelope() {}
 // contractCreateAssistantAuthorizationSnapshotEnvelope documents POST /api/v1/assistant-releases/{id}/authorization-snapshots.
 //
 // @Summary create Assistant Authorization Snapshot
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AuthorizationSnapshot
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AuthorizationSnapshot
+// @Tags release-governance
 // @ID createAssistantAuthorizationSnapshot
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6453,8 +6453,8 @@ func contractCreateAssistantAuthorizationSnapshotEnvelope() {}
 // contractCompensateAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/compensate.
 //
 // @Summary compensate Assistant Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Tags release-governance
 // @ID compensateAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6467,8 +6467,8 @@ func contractCompensateAssistantReleaseEnvelope() {}
 // contractGetAssistantReleaseGateSummaryEnvelope documents GET /api/v1/assistant-releases/{id}/gate.
 //
 // @Summary get Assistant Release Gate Summary
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.AssistantReleaseGateSummary
-// @Tags assistant-releases
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.AssistantReleaseGateSummary
+// @Tags release-governance
 // @ID getAssistantReleaseGateSummary
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6479,8 +6479,8 @@ func contractGetAssistantReleaseGateSummaryEnvelope() {}
 // contractGetAssistantReleaseHealthEnvelope documents GET /api/v1/assistant-releases/{id}/health.
 //
 // @Summary get Assistant Release Health
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.RuntimeHealth
-// @Tags assistant-releases
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.RuntimeHealth
+// @Tags release-governance
 // @ID getAssistantReleaseHealth
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6491,8 +6491,8 @@ func contractGetAssistantReleaseHealthEnvelope() {}
 // contractUpdateAssistantReleaseHealthEnvelope documents PUT /api/v1/assistant-releases/{id}/health.
 //
 // @Summary update Assistant Release Health
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RuntimeHealth
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RuntimeHealth
+// @Tags release-governance
 // @ID updateAssistantReleaseHealth
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6505,8 +6505,8 @@ func contractUpdateAssistantReleaseHealthEnvelope() {}
 // contractGetAssistantSnapshotManifestEnvelope documents GET /api/v1/assistant-releases/{id}/manifest.
 //
 // @Summary get Assistant Snapshot Manifest
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.SnapshotManifest
-// @Tags assistant-releases
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.SnapshotManifest
+// @Tags release-governance
 // @ID getAssistantSnapshotManifest
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6517,8 +6517,8 @@ func contractGetAssistantSnapshotManifestEnvelope() {}
 // contractListAssistantReleaseOperationsEnvelope documents GET /api/v1/assistant-releases/{id}/operations.
 //
 // @Summary list Assistant Release Operations
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ReleaseOperation
-// @Tags assistant-releases
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ReleaseOperation
+// @Tags release-governance
 // @ID listAssistantReleaseOperations
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6533,8 +6533,8 @@ func contractListAssistantReleaseOperationsEnvelope() {}
 // contractRecoverAssistantReleaseOperationEnvelope documents POST /api/v1/assistant-releases/{id}/operations/{operationId}/recover.
 //
 // @Summary recover Assistant Release Operation
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Tags release-governance
 // @ID recoverAssistantReleaseOperation
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6548,8 +6548,8 @@ func contractRecoverAssistantReleaseOperationEnvelope() {}
 // contractPromoteCanaryAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/promote-canary.
 //
 // @Summary promote Canary Assistant Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Tags release-governance
 // @ID promoteCanaryAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6562,8 +6562,8 @@ func contractPromoteCanaryAssistantReleaseEnvelope() {}
 // contractReconcileAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/reconcile.
 //
 // @Summary reconcile Assistant Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Tags release-governance
 // @ID reconcileAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6576,8 +6576,8 @@ func contractReconcileAssistantReleaseEnvelope() {}
 // contractRollbackAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/rollback/{targetId}.
 //
 // @Summary rollback Assistant Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Tags release-governance
 // @ID rollbackAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6591,8 +6591,8 @@ func contractRollbackAssistantReleaseEnvelope() {}
 // contractTransitionAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/transition.
 //
 // @Summary transition Assistant Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
-// @Tags assistant-releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Tags release-governance
 // @ID transitionAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6620,8 +6620,8 @@ func contractListAssistantsEnvelope() {}
 // contractGetAssistantRolloutPoliciesEnvelope documents GET /api/v1/assistants/{id}/rollout-policies.
 //
 // @Summary get Assistant Rollout Policies
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 GetAssistantRolloutPoliciesResponse
-// @Tags assistants
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 GetAssistantRolloutPoliciesResponse
+// @Tags release-governance
 // @ID getAssistantRolloutPolicies
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6634,8 +6634,8 @@ func contractGetAssistantRolloutPoliciesEnvelope() {}
 // contractCreateAssistantRolloutPolicyEnvelope documents POST /api/v1/assistants/{id}/rollout-policies.
 //
 // @Summary create Assistant Rollout Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy
-// @Tags assistants
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy
+// @Tags release-governance
 // @ID createAssistantRolloutPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6648,8 +6648,8 @@ func contractCreateAssistantRolloutPolicyEnvelope() {}
 // contractUpdateAssistantRolloutPolicyEnvelope documents PUT /api/v1/assistants/{id}/rollout-policies/{policyId}.
 //
 // @Summary update Assistant Rollout Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy
-// @Tags assistants
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy
+// @Tags release-governance
 // @ID updateAssistantRolloutPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6889,7 +6889,7 @@ func contractUploadChatFileEnvelope() {}
 // contractChatReferencesEnvelope documents GET /api/v1/chat/{id}/references.
 //
 // @Summary ChatReferences returns the citation evidence (with in-document locator positions) for a chat turn so the forward UI can render the citation drawer and highlight the cited span (P2 citation experience, report §13.5.1)
-// @Description ChatReferences returns the citation evidence (with in-document locator positions) for a chat turn so the forward UI can render the citation drawer and highlight the cited span (P2 citation experience, report §13.5.1). The chat is resolved through the tenant-owned scope; a cross-tenant chat reference leaks nothing because execution is authorized per tenant.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.CitationReference
+// @Description ChatReferences returns the citation evidence (with in-document locator positions) for a chat turn so the forward UI can render the citation drawer and highlight the cited span (P2 citation experience, report §13.5.1). The chat is resolved through the tenant-owned scope; a cross-tenant chat reference leaks nothing because execution is authorized per tenant.。需要权限 execute:chat（由 accessRules 强制）。成功返回 []model.CitationReference
 // @Tags chat
 // @ID chatReferences
 // @Security BearerAuth
@@ -6977,8 +6977,8 @@ func contractGetChatModelOptionsEnvelope() {}
 // contractDeleteChatEnvelope documents DELETE /api/v1/chats/{id}.
 //
 // @Summary DeleteChat deletes a chat assistant
-// @Description DeleteChat deletes a chat assistant.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteChatResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags chats
+// @Description DeleteChat deletes a chat assistant.。需要权限 manage:chat（由 accessRules 强制）。成功返回 DeleteChatResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags chat
 // @ID deleteChat
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -6993,8 +6993,8 @@ func contractDeleteChatEnvelope() {}
 // contractGetChatEnvelope documents GET /api/v1/chats/{id}.
 //
 // @Summary GetChat returns a chat assistant
-// @Description GetChat returns a chat assistant.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.ChatShadow
-// @Tags chats
+// @Description GetChat returns a chat assistant.。需要权限 read:chat（由 accessRules 强制）。成功返回 *model.ChatShadow
+// @Tags chat
 // @ID getChat
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7007,8 +7007,8 @@ func contractGetChatEnvelope() {}
 // contractUpdateChatEnvelope documents PUT /api/v1/chats/{id}.
 //
 // @Summary UpdateChat updates a chat assistant (name, scope and authoring config)
-// @Description UpdateChat updates a chat assistant (name, scope and authoring config).。只要求登录，没有额外的 RBAC 规则。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags chats
+// @Description UpdateChat updates a chat assistant (name, scope and authoring config).。需要权限 manage:chat（由 accessRules 强制）。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags chat
 // @ID updateChat
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7025,8 +7025,8 @@ func contractUpdateChatEnvelope() {}
 // contractGetChatConfigEnvelope documents GET /api/v1/chats/{id}/config.
 //
 // @Summary GetChatConfig returns the RAGFlow-side editable config for prefill
-// @Description GetChatConfig returns the RAGFlow-side editable config for prefill.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ChatConfig
-// @Tags chats
+// @Description GetChatConfig returns the RAGFlow-side editable config for prefill.。需要权限 read:chat（由 accessRules 强制）。成功返回 *service.ChatConfig
+// @Tags chat
 // @ID getChatConfig
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7039,8 +7039,8 @@ func contractGetChatConfigEnvelope() {}
 // contractDeleteChatSessionsEnvelope documents DELETE /api/v1/chats/{id}/sessions.
 //
 // @Summary DeleteChatSessions deletes sessions of a chat assistant (batch)
-// @Description DeleteChatSessions deletes sessions of a chat assistant (batch).。只要求登录，没有额外的 RBAC 规则。请求体类型 deleteSessionPayload。成功返回 DeleteChatSessionsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags chats
+// @Description DeleteChatSessions deletes sessions of a chat assistant (batch).。需要权限 manage:chat（由 accessRules 强制）。请求体类型 deleteSessionPayload。成功返回 DeleteChatSessionsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags chat
 // @ID deleteChatSessions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7054,8 +7054,8 @@ func contractDeleteChatSessionsEnvelope() {}
 // contractListChatSessionsEnvelope documents GET /api/v1/chats/{id}/sessions.
 //
 // @Summary ListChatSessions lists the sessions of a chat assistant
-// @Description ListChatSessions lists the sessions of a chat assistant.。只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 ragflow.Session
-// @Tags chats
+// @Description ListChatSessions lists the sessions of a chat assistant.。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.Session
+// @Tags chat
 // @ID listChatSessions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7069,8 +7069,8 @@ func contractListChatSessionsEnvelope() {}
 // contractCreateChatSessionEnvelope documents POST /api/v1/chats/{id}/sessions.
 //
 // @Summary CreateChatSession creates a session on a chat assistant
-// @Description CreateChatSession creates a session on a chat assistant.。只要求登录，没有额外的 RBAC 规则。请求体类型 createSessionPayload。成功返回 *ragflow.Session
-// @Tags chats
+// @Description CreateChatSession creates a session on a chat assistant.。需要权限 session:create:chat（由 accessRules 强制）。请求体类型 createSessionPayload。成功返回 *ragflow.Session
+// @Tags create:chat
 // @ID createChatSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7083,8 +7083,8 @@ func contractCreateChatSessionEnvelope() {}
 // contractDeleteChatSessionEnvelope documents DELETE /api/v1/chats/{id}/sessions/{sessionId}.
 //
 // @Summary DeleteChatSession deletes a single session
-// @Description DeleteChatSession deletes a single session.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteChatSessionResponse
-// @Tags chats
+// @Description DeleteChatSession deletes a single session.。需要权限 manage:chat（由 accessRules 强制）。成功返回 DeleteChatSessionResponse
+// @Tags chat
 // @ID deleteChatSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7096,8 +7096,8 @@ func contractDeleteChatSessionEnvelope() {}
 // contractGetChatSessionEnvelope documents GET /api/v1/chats/{id}/sessions/{sessionId}.
 //
 // @Summary GetChatSession returns a session with its messages
-// @Description GetChatSession returns a session with its messages.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.Session
-// @Tags chats
+// @Description GetChatSession returns a session with its messages.。需要权限 read:chat（由 accessRules 强制）。成功返回 *ragflow.Session
+// @Tags chat
 // @ID getChatSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7109,8 +7109,8 @@ func contractGetChatSessionEnvelope() {}
 // contractUpdateChatSessionEnvelope documents PATCH /api/v1/chats/{id}/sessions/{sessionId}.
 //
 // @Summary UpdateChatSession renames a session
-// @Description UpdateChatSession renames a session.。只要求登录，没有额外的 RBAC 规则。请求体类型 createSessionPayload。成功返回 *ragflow.Session。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags chats
+// @Description UpdateChatSession renames a session.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 createSessionPayload。成功返回 *ragflow.Session。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags chat
 // @ID updateChatSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7125,8 +7125,8 @@ func contractUpdateChatSessionEnvelope() {}
 // contractListChatSessionMessagesEnvelope documents GET /api/v1/chats/{id}/sessions/{sessionId}/messages.
 //
 // @Summary ListChatSessionMessages returns a bounded page of session messages
-// @Description ListChatSessionMessages returns a bounded page of session messages.。只要求登录，没有额外的 RBAC 规则。成功返回 ListChatSessionMessagesResponse
-// @Tags chats
+// @Description ListChatSessionMessages returns a bounded page of session messages.。需要权限 read:chat（由 accessRules 强制）。成功返回 ListChatSessionMessagesResponse
+// @Tags chat
 // @ID listChatSessionMessages
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7140,8 +7140,8 @@ func contractListChatSessionMessagesEnvelope() {}
 // contractChatUsageEnvelope documents GET /api/v1/chats/{id}/usage.
 //
 // @Summary ChatUsage returns the metered usage/cost of a chat
-// @Description ChatUsage returns the metered usage/cost of a chat.。只要求登录，没有额外的 RBAC 规则。成功返回 *repository.ChatUsageAgg
-// @Tags chats
+// @Description ChatUsage returns the metered usage/cost of a chat.。需要权限 read:chat（由 accessRules 强制）。成功返回 *repository.ChatUsageAgg
+// @Tags chat
 // @ID chatUsage
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7209,8 +7209,8 @@ func contractTestConnectorEnvelope() {}
 // contractDeleteConnectorEnvelope documents DELETE /api/v1/connectors/{id}.
 //
 // @Summary Delete Connector
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteConnectorResponse
-// @Tags connectors
+// @Description 需要权限 manage:connector（由 accessRules 强制）。成功返回 DeleteConnectorResponse
+// @Tags connector
 // @ID deleteConnector
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7222,8 +7222,8 @@ func contractDeleteConnectorEnvelope() {}
 // contractGetConnectorEnvelope documents GET /api/v1/connectors/{id}.
 //
 // @Summary Get Connector
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.Connector
-// @Tags connectors
+// @Description 需要权限 read:connector（由 accessRules 强制）。成功返回 *model.Connector
+// @Tags connector
 // @ID getConnector
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7236,8 +7236,8 @@ func contractGetConnectorEnvelope() {}
 // contractUpdateConnectorEnvelope documents PUT /api/v1/connectors/{id}.
 //
 // @Summary Update Connector
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
-// @Tags connectors
+// @Description 需要权限 manage:connector（由 accessRules 强制）。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Tags connector
 // @ID updateConnector
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7252,8 +7252,8 @@ func contractUpdateConnectorEnvelope() {}
 // contractSetConnectorEnabledEnvelope documents POST /api/v1/connectors/{id}/disable.
 //
 // @Summary SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths
-// @Description SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse
-// @Tags connectors
+// @Description SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse
+// @Tags connector
 // @ID setConnectorEnabled
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7267,8 +7267,8 @@ func contractSetConnectorEnabledEnvelope() {}
 // contractSetConnectorEnabledPostEnvelope documents POST /api/v1/connectors/{id}/enable.
 //
 // @Summary SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths
-// @Description SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse
-// @Tags connectors
+// @Description SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse
+// @Tags connector
 // @ID setConnectorEnabledPost
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7282,8 +7282,8 @@ func contractSetConnectorEnabledPostEnvelope() {}
 // contractPreviewConnectorEnvelope documents POST /api/v1/connectors/{id}/preview.
 //
 // @Summary PreviewConnector dry-runs one scan page and reports the diff (read-only)
-// @Description PreviewConnector dry-runs one scan page and reports the diff (read-only).。只要求登录，没有额外的 RBAC 规则。请求体类型 PreviewConnectorRequest。成功返回 *service.ConnectorPreview
-// @Tags connectors
+// @Description PreviewConnector dry-runs one scan page and reports the diff (read-only).。需要权限 manage:connector（由 accessRules 强制）。请求体类型 PreviewConnectorRequest。成功返回 *service.ConnectorPreview
+// @Tags connector
 // @ID previewConnector
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7298,8 +7298,8 @@ func contractPreviewConnectorEnvelope() {}
 // contractListConnectorRunsEnvelope documents GET /api/v1/connectors/{id}/runs.
 //
 // @Summary List Connector Runs
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ConnectorRun
-// @Tags connectors
+// @Description 需要权限 read:connector（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ConnectorRun
+// @Tags connector
 // @ID listConnectorRuns
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7314,8 +7314,8 @@ func contractListConnectorRunsEnvelope() {}
 // contractGetConnectorRunEnvelope documents GET /api/v1/connectors/{id}/runs/{runID}.
 //
 // @Summary GetConnectorRun returns one run row (doc/225 §7.2 run detail)
-// @Description GetConnectorRun returns one run row (doc/225 §7.2 run detail).。只要求登录，没有额外的 RBAC 规则。成功返回 struct{*model.ConnectorRun; Detail map[string]any "json:\"detail\""}
-// @Tags connectors
+// @Description GetConnectorRun returns one run row (doc/225 §7.2 run detail).。需要权限 read:connector（由 accessRules 强制）。成功返回 struct{*model.ConnectorRun; Detail map[string]any "json:\"detail\""}
+// @Tags connector
 // @ID getConnectorRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7329,8 +7329,8 @@ func contractGetConnectorRunEnvelope() {}
 // contractSetConnectorScheduleEnvelope documents PUT /api/v1/connectors/{id}/schedule.
 //
 // @Summary SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule)
-// @Description SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule).。只要求登录，没有额外的 RBAC 规则。请求体类型 SetConnectorScheduleRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40335(400)（括号内是 HTTP 状态）
-// @Tags connectors
+// @Description SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule).。需要权限 manage:connector（由 accessRules 强制）。请求体类型 SetConnectorScheduleRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40335(400)（括号内是 HTTP 状态）
+// @Tags connector
 // @ID setConnectorSchedule
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7345,8 +7345,8 @@ func contractSetConnectorScheduleEnvelope() {}
 // contractSyncConnectorNowEnvelope documents POST /api/v1/connectors/{id}/sync.
 //
 // @Summary SyncConnectorNow enqueues a durable manual sync job
-// @Description SyncConnectorNow enqueues a durable manual sync job.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncConnectorNowResponse
-// @Tags connectors
+// @Description SyncConnectorNow enqueues a durable manual sync job.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncConnectorNowResponse
+// @Tags connector
 // @ID syncConnectorNow
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7359,8 +7359,8 @@ func contractSyncConnectorNowEnvelope() {}
 // contractTestConnectorByIDEnvelope documents POST /api/v1/connectors/{id}/test.
 //
 // @Summary TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2)
-// @Description TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConnectorHealth
-// @Tags connectors
+// @Description TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2).。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConnectorHealth
+// @Tags connector
 // @ID testConnectorByID
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7393,8 +7393,8 @@ func contractListConversationContextDecisionsEnvelope() {}
 // contractGetConversationContextDecisionByRequestEnvelope documents GET /api/v1/conversation-context/decisions/by-request/{requestId}.
 //
 // @Summary get Conversation Context Decision By Request
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.ContextDecision
-// @Tags conversation-context
+// @Description 需要权限 read:context-decision（由 accessRules 强制）。成功返回 *model.ContextDecision
+// @Tags context-decision
 // @ID getConversationContextDecisionByRequest
 // @Security BearerAuth
 // @Param requestId path string true "路径参数 requestId"
@@ -7405,8 +7405,8 @@ func contractGetConversationContextDecisionByRequestEnvelope() {}
 // contractGetConversationContextDecisionEnvelope documents GET /api/v1/conversation-context/decisions/{decisionId}.
 //
 // @Summary get Conversation Context Decision
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.ContextDecision
-// @Tags conversation-context
+// @Description 需要权限 read:context-decision（由 accessRules 强制）。成功返回 *model.ContextDecision
+// @Tags context-decision
 // @ID getConversationContextDecision
 // @Security BearerAuth
 // @Param decisionId path string true "路径参数 decisionId"
@@ -7445,8 +7445,8 @@ func contractListConversationAssistantsEnvelope() {}
 // contractUpdateConversationAssistantEnvelope documents PUT /api/v1/conversation/assistants/{kind}/{targetId}.
 //
 // @Summary UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in
-// @Description UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.UpdateConversationAssistantRequest。成功返回 *service.ConversationAssistant
-// @Tags conversation
+// @Description UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateConversationAssistantRequest。成功返回 *service.ConversationAssistant
+// @Tags assistant
 // @ID updateConversationAssistant
 // @Security BearerAuth
 // @Param kind path string true "路径参数 kind"
@@ -7460,8 +7460,8 @@ func contractUpdateConversationAssistantEnvelope() {}
 // contractUpdateConversationAssistantGovernanceEnvelope documents PUT /api/v1/conversation/assistants/{kind}/{targetId}/governance.
 //
 // @Summary UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk)
-// @Description UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk).。只要求登录，没有额外的 RBAC 规则。请求体类型 service.UpdateConversationAssistantGovernanceRequest。成功返回 *service.ConversationAssistant
-// @Tags conversation
+// @Description UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk).。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateConversationAssistantGovernanceRequest。成功返回 *service.ConversationAssistant
+// @Tags assistant
 // @ID updateConversationAssistantGovernance
 // @Security BearerAuth
 // @Param kind path string true "路径参数 kind"
@@ -7488,8 +7488,8 @@ func contractRouteConversationEnvelope() {}
 // contractBootstrapRouteSelectionEnvelope documents POST /api/v1/conversation/route-selections/{routeSelectionId}/bootstrap.
 //
 // @Summary BootstrapRouteSelection creates the target session after real-time checks
-// @Description BootstrapRouteSelection creates the target session after real-time checks.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationBootstrapResponse
-// @Tags conversation
+// @Description BootstrapRouteSelection creates the target session after real-time checks.。需要权限 execute:assistant（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationBootstrapResponse
+// @Tags assistant
 // @ID bootstrapRouteSelection
 // @Security BearerAuth
 // @Param routeSelectionId path string true "路径参数 routeSelectionId"
@@ -7502,8 +7502,8 @@ func contractBootstrapRouteSelectionEnvelope() {}
 // contractSelectRouteCandidateEnvelope documents POST /api/v1/conversation/route/{routeId}/select.
 //
 // @Summary SelectRouteCandidate creates a one-time selection binding
-// @Description SelectRouteCandidate creates a one-time selection binding.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.SelectRouteCandidateRequest。成功返回 *service.RouteSelectionResponse
-// @Tags conversation
+// @Description SelectRouteCandidate creates a one-time selection binding.。需要权限 execute:assistant（由 accessRules 强制）。请求体类型 service.SelectRouteCandidateRequest。成功返回 *service.RouteSelectionResponse
+// @Tags assistant
 // @ID selectRouteCandidate
 // @Security BearerAuth
 // @Param routeId path string true "路径参数 routeId"
@@ -7542,8 +7542,8 @@ func contractRunRouteEvaluationEnvelope() {}
 // contractGetRouteEvaluationRunEnvelope documents GET /api/v1/conversation/routing/evaluations/{runId}.
 //
 // @Summary GetRouteEvaluationRun returns one immutable M2.5 report
-// @Description GetRouteEvaluationRun returns one immutable M2.5 report.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.RouteEvaluationRun
-// @Tags conversation
+// @Description GetRouteEvaluationRun returns one immutable M2.5 report.。需要权限 read:assistant（由 accessRules 强制）。成功返回 *model.RouteEvaluationRun
+// @Tags assistant
 // @ID getRouteEvaluationRun
 // @Security BearerAuth
 // @Param runId path string true "路径参数 runId"
@@ -7663,8 +7663,8 @@ func contractGetDatasetModelOptionsEnvelope() {}
 // contractDeleteDatasetEnvelope documents DELETE /api/v1/datasets/{id}.
 //
 // @Summary DeleteDataset deletes a dataset and its RAGFlow backing knowledge base
-// @Description DeleteDataset deletes a dataset and its RAGFlow backing knowledge base.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteDatasetResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description DeleteDataset deletes a dataset and its RAGFlow backing knowledge base.。需要权限 manage:dataset（由 accessRules 强制）。成功返回 DeleteDatasetResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags dataset
 // @ID deleteDataset
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7679,8 +7679,8 @@ func contractDeleteDatasetEnvelope() {}
 // contractGetDatasetEnvelope documents GET /api/v1/datasets/{id}.
 //
 // @Summary GetDataset returns a single dataset bound to the authenticated tenant
-// @Description GetDataset returns a single dataset bound to the authenticated tenant.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.DatasetSummary
-// @Tags datasets
+// @Description GetDataset returns a single dataset bound to the authenticated tenant.。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.DatasetSummary
+// @Tags dataset
 // @ID getDataset
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7693,8 +7693,8 @@ func contractGetDatasetEnvelope() {}
 // contractUpdateDatasetEnvelope documents PUT /api/v1/datasets/{id}.
 //
 // @Summary Update Dataset
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 updateDatasetRequest。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、41122(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description 需要权限 manage:dataset（由 accessRules 强制）。请求体类型 updateDatasetRequest。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、41122(400)（括号内是 HTTP 状态）
+// @Tags dataset
 // @ID updateDataset
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7711,8 +7711,8 @@ func contractUpdateDatasetEnvelope() {}
 // contractListArtifactProjectionsEnvelope documents GET /api/v1/datasets/{id}/artifacts.
 //
 // @Summary list Artifact Projections
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ArtifactProjection
-// @Tags datasets
+// @Description 需要权限 read:compilation（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ArtifactProjection
+// @Tags compilation
 // @ID listArtifactProjections
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7726,8 +7726,8 @@ func contractListArtifactProjectionsEnvelope() {}
 // contractReconcileCompilationRunsEnvelope documents POST /api/v1/datasets/{id}/compilation/reconcile.
 //
 // @Summary reconcile Compilation Runs
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 []model.CompilationRun
-// @Tags datasets
+// @Description 需要权限 execute:compilation（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 []model.CompilationRun
+// @Tags compilation
 // @ID reconcileCompilationRuns
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7740,8 +7740,8 @@ func contractReconcileCompilationRunsEnvelope() {}
 // contractListCompilationRunsEnvelope documents GET /api/v1/datasets/{id}/compilation/runs.
 //
 // @Summary list Compilation Runs
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.CompilationRun
-// @Tags datasets
+// @Description 需要权限 read:compilation（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.CompilationRun
+// @Tags compilation
 // @ID listCompilationRuns
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7756,8 +7756,8 @@ func contractListCompilationRunsEnvelope() {}
 // contractTriggerCompilationRunEnvelope documents POST /api/v1/datasets/{id}/compilation/runs.
 //
 // @Summary trigger Compilation Run
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun
-// @Tags datasets
+// @Description 需要权限 manage:compilation（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun
+// @Tags compilation
 // @ID triggerCompilationRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7770,8 +7770,8 @@ func contractTriggerCompilationRunEnvelope() {}
 // contractCancelCompilationRunEnvelope documents POST /api/v1/datasets/{id}/compilation/runs/{runId}/cancel.
 //
 // @Summary cancel Compilation Run
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 CancelCompilationRunRequest。成功返回 *model.CompilationRun
-// @Tags datasets
+// @Description 需要权限 manage:compilation（由 accessRules 强制）。请求体类型 CancelCompilationRunRequest。成功返回 *model.CompilationRun
+// @Tags compilation
 // @ID cancelCompilationRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7785,8 +7785,8 @@ func contractCancelCompilationRunEnvelope() {}
 // contractGetDatasetConfigEnvelope documents GET /api/v1/datasets/{id}/config.
 //
 // @Summary GetDatasetConfig returns a dataset's parsing/embedding/permission config
-// @Description GetDatasetConfig returns a dataset's parsing/embedding/permission config.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.DatasetConfig
-// @Tags datasets
+// @Description GetDatasetConfig returns a dataset's parsing/embedding/permission config.。需要权限 read:dataset（由 accessRules 强制）。成功返回 *ragflow.DatasetConfig
+// @Tags dataset
 // @ID getDatasetConfig
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7799,8 +7799,8 @@ func contractGetDatasetConfigEnvelope() {}
 // contractUpdateDatasetConfigEnvelope documents PUT /api/v1/datasets/{id}/config.
 //
 // @Summary UpdateDatasetConfig updates a dataset's config (parser, embedding, permission)
-// @Description UpdateDatasetConfig updates a dataset's config (parser, embedding, permission).。只要求登录，没有额外的 RBAC 规则。请求体类型 ragflow.DatasetConfigUpdate。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description UpdateDatasetConfig updates a dataset's config (parser, embedding, permission).。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 ragflow.DatasetConfigUpdate。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags dataset
 // @ID updateDatasetConfig
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7817,8 +7817,8 @@ func contractUpdateDatasetConfigEnvelope() {}
 // contractDeleteDocumentsEnvelope documents DELETE /api/v1/datasets/{id}/documents.
 //
 // @Summary DeleteDocuments removes documents from a dataset
-// @Description DeleteDocuments removes documents from a dataset.。只要求登录，没有额外的 RBAC 规则。请求体类型 parseRequest。成功返回 DeleteDocumentsResponse。声明了 2 个业务错误码：40000(400)、40300(403)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description DeleteDocuments removes documents from a dataset.。需要权限 delete:own:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 DeleteDocumentsResponse。声明了 2 个业务错误码：40000(400)、40300(403)（括号内是 HTTP 状态）
+// @Tags own:document
 // @ID deleteDocuments
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7836,8 +7836,8 @@ func contractDeleteDocumentsEnvelope() {}
 // contractListDocumentsEnvelope documents GET /api/v1/datasets/{id}/documents.
 //
 // @Summary ListDocuments lists documents of a dataset
-// @Description ListDocuments lists documents of a dataset.。只要求登录，没有额外的 RBAC 规则。成功返回 []service.DocumentSummary
-// @Tags datasets
+// @Description ListDocuments lists documents of a dataset.。需要权限 read:document（由 accessRules 强制）。成功返回 []service.DocumentSummary
+// @Tags document
 // @ID listDocuments
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7850,8 +7850,8 @@ func contractListDocumentsEnvelope() {}
 // contractUploadDocumentEnvelope documents POST /api/v1/datasets/{id}/documents.
 //
 // @Summary UploadDocument uploads a document into a dataset via multipart form
-// @Description UploadDocument uploads a document into a dataset via multipart form.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DocumentSummary。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description UploadDocument uploads a document into a dataset via multipart form.。需要权限 append:document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DocumentSummary。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID uploadDocument
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7867,8 +7867,8 @@ func contractUploadDocumentEnvelope() {}
 // contractSetDocumentsStatusEnvelope documents POST /api/v1/datasets/{id}/documents/status.
 //
 // @Summary UpdateDataset renames a dataset
-// @Description UpdateDataset renames a dataset. SetDocumentsStatus enables or disables the selected documents of a dataset.。只要求登录，没有额外的 RBAC 规则。请求体类型 SetDocumentsStatusRequest。成功返回 SetDocumentsStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description UpdateDataset renames a dataset. SetDocumentsStatus enables or disables the selected documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 SetDocumentsStatusRequest。成功返回 SetDocumentsStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID setDocumentsStatus
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7885,8 +7885,8 @@ func contractSetDocumentsStatusEnvelope() {}
 // contractStopDocumentsEnvelope documents POST /api/v1/datasets/{id}/documents/stop.
 //
 // @Summary StopDocuments stops parsing for documents of a dataset
-// @Description StopDocuments stops parsing for documents of a dataset.。只要求登录，没有额外的 RBAC 规则。请求体类型 parseRequest。成功返回 StopDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description StopDocuments stops parsing for documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 StopDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID stopDocuments
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7903,8 +7903,8 @@ func contractStopDocumentsEnvelope() {}
 // contractDeleteDocumentChunksEnvelope documents DELETE /api/v1/datasets/{id}/documents/{docId}/chunks.
 //
 // @Summary DeleteDocumentChunks deletes the selected chunks of a document
-// @Description DeleteDocumentChunks deletes the selected chunks of a document.。只要求登录，没有额外的 RBAC 规则。请求体类型 DeleteDocumentChunksRequest。成功返回 DeleteDocumentChunksResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description DeleteDocumentChunks deletes the selected chunks of a document.。需要权限 execute:document（由 accessRules 强制）。请求体类型 DeleteDocumentChunksRequest。成功返回 DeleteDocumentChunksResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID deleteDocumentChunks
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7922,8 +7922,8 @@ func contractDeleteDocumentChunksEnvelope() {}
 // contractListDocumentChunksEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/chunks.
 //
 // @Summary ListDocumentChunks returns a document's parsed chunks for verification
-// @Description ListDocumentChunks returns a document's parsed chunks for verification.。只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 service.ChunkSummary
-// @Tags datasets
+// @Description ListDocumentChunks returns a document's parsed chunks for verification.。需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.ChunkSummary
+// @Tags document
 // @ID listDocumentChunks
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7939,8 +7939,8 @@ func contractListDocumentChunksEnvelope() {}
 // contractSetDocumentChunksAvailableEnvelope documents PATCH /api/v1/datasets/{id}/documents/{docId}/chunks.
 //
 // @Summary SetDocumentChunksAvailable enables or disables the selected chunks
-// @Description SetDocumentChunksAvailable enables or disables the selected chunks.。只要求登录，没有额外的 RBAC 规则。请求体类型 SetDocumentChunksAvailableRequest。成功返回 SetDocumentChunksAvailableResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description SetDocumentChunksAvailable enables or disables the selected chunks.。需要权限 execute:document（由 accessRules 强制）。请求体类型 SetDocumentChunksAvailableRequest。成功返回 SetDocumentChunksAvailableResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID setDocumentChunksAvailable
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7958,8 +7958,8 @@ func contractSetDocumentChunksAvailableEnvelope() {}
 // contractAddDocumentChunkEnvelope documents POST /api/v1/datasets/{id}/documents/{docId}/chunks.
 //
 // @Summary AddDocumentChunk appends a manually authored chunk to a parsed document
-// @Description AddDocumentChunk appends a manually authored chunk to a parsed document.。只要求登录，没有额外的 RBAC 规则。请求体类型 AddDocumentChunkRequest。成功返回 AddDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description AddDocumentChunk appends a manually authored chunk to a parsed document.。需要权限 execute:document（由 accessRules 强制）。请求体类型 AddDocumentChunkRequest。成功返回 AddDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID addDocumentChunk
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7977,8 +7977,8 @@ func contractAddDocumentChunkEnvelope() {}
 // contractUpdateDocumentChunkEnvelope documents PUT /api/v1/datasets/{id}/documents/{docId}/chunks/{chunkId}.
 //
 // @Summary UpdateDocumentChunk rewrites an existing chunk's editable fields
-// @Description UpdateDocumentChunk rewrites an existing chunk's editable fields.。只要求登录，没有额外的 RBAC 规则。请求体类型 UpdateDocumentChunkRequest。成功返回 UpdateDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description UpdateDocumentChunk rewrites an existing chunk's editable fields.。需要权限 execute:document（由 accessRules 强制）。请求体类型 UpdateDocumentChunkRequest。成功返回 UpdateDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID updateDocumentChunk
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -7997,8 +7997,8 @@ func contractUpdateDocumentChunkEnvelope() {}
 // contractDeleteDocumentGovernanceEnvelope documents DELETE /api/v1/datasets/{id}/documents/{docId}/governance.
 //
 // @Summary DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance
-// @Description DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteDocumentGovernanceResponse
-// @Tags datasets
+// @Description DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance.。需要权限 manage:document-governance（由 accessRules 强制）。成功返回 DeleteDocumentGovernanceResponse
+// @Tags document-governance
 // @ID deleteDocumentGovernance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8010,8 +8010,8 @@ func contractDeleteDocumentGovernanceEnvelope() {}
 // contractGetDocumentGovernanceEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/governance.
 //
 // @Summary GetDocumentGovernance handles GET /api/v1/datasets/:id/documents/:docId/governance
-// @Description GetDocumentGovernance handles GET /api/v1/datasets/:id/documents/:docId/governance.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40421(404)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description GetDocumentGovernance handles GET /api/v1/datasets/:id/documents/:docId/governance.。需要权限 read:document-governance（由 accessRules 强制）。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40421(404)（括号内是 HTTP 状态）
+// @Tags document-governance
 // @ID getDocumentGovernance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8024,8 +8024,8 @@ func contractGetDocumentGovernanceEnvelope() {}
 // contractSetDocumentGovernanceEnvelope documents PUT /api/v1/datasets/{id}/documents/{docId}/governance.
 //
 // @Summary SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)
-// @Description SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)。只要求登录，没有额外的 RBAC 规则。请求体类型 service.DocumentGovernanceInput。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.DocumentGovernanceInput。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document-governance
 // @ID setDocumentGovernance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8040,8 +8040,8 @@ func contractSetDocumentGovernanceEnvelope() {}
 // contractApproveDocumentGovernanceEnvelope documents POST /api/v1/datasets/{id}/documents/{docId}/governance/{decision}.
 //
 // @Summary ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}
-// @Description ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DocumentGovernance
-// @Tags datasets
+// @Description ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}.。需要权限 manage:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DocumentGovernance
+// @Tags document-governance
 // @ID approveDocumentGovernance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8056,8 +8056,8 @@ func contractApproveDocumentGovernanceEnvelope() {}
 // contractUpdateDocumentMetadataEnvelope documents PUT /api/v1/datasets/{id}/documents/{docId}/metadata.
 //
 // @Summary UpdateDocumentMetadata replaces a document's metadata configuration
-// @Description UpdateDocumentMetadata replaces a document's metadata configuration.。只要求登录，没有额外的 RBAC 规则。请求体类型 UpdateDocumentMetadataRequest。成功返回 UpdateDocumentMetadataResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description UpdateDocumentMetadata replaces a document's metadata configuration.。需要权限 execute:document（由 accessRules 强制）。请求体类型 UpdateDocumentMetadataRequest。成功返回 UpdateDocumentMetadataResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID updateDocumentMetadata
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8075,8 +8075,8 @@ func contractUpdateDocumentMetadataEnvelope() {}
 // contractListDocumentParseAttemptsEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/parse-attempts.
 //
 // @Summary list Document Parse Attempts
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ParseAttempt
-// @Tags datasets
+// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseAttempt
+// @Tags document
 // @ID listDocumentParseAttempts
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8090,8 +8090,8 @@ func contractListDocumentParseAttemptsEnvelope() {}
 // contractGetLatestDocumentParseQualityReportEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/parse-quality-report.
 //
 // @Summary get Latest Document Parse Quality Report
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.ParseQualityReport。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description 需要权限 read:document（由 accessRules 强制）。成功返回 *model.ParseQualityReport。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Tags document
 // @ID getLatestDocumentParseQualityReport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8104,8 +8104,8 @@ func contractGetLatestDocumentParseQualityReportEnvelope() {}
 // contractListDocumentParseQualityReportsEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/parse-quality-reports.
 //
 // @Summary list Document Parse Quality Reports
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ParseQualityReport
-// @Tags datasets
+// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseQualityReport
+// @Tags document
 // @ID listDocumentParseQualityReports
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8119,8 +8119,8 @@ func contractListDocumentParseQualityReportsEnvelope() {}
 // contractPreviewDocumentEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/preview.
 //
 // @Summary PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks
-// @Description PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型
-// @Tags datasets
+// @Description PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks.。需要权限 read:document（由 accessRules 强制）。成功返回原始字节，媒体类型
+// @Tags document
 // @ID previewDocument
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8135,8 +8135,8 @@ func contractPreviewDocumentEnvelope() {}
 // contractAutoProjectGovernanceEnvelope documents POST /api/v1/datasets/{id}/governance/auto-project.
 //
 // @Summary AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project
-// @Description AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project. governor only (execute:document-governance).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.GovernanceAutoProjectionResult
-// @Tags datasets
+// @Description AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project. governor only (execute:document-governance).。需要权限 execute:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.GovernanceAutoProjectionResult
+// @Tags document-governance
 // @ID autoProjectGovernance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8149,8 +8149,8 @@ func contractAutoProjectGovernanceEnvelope() {}
 // contractGetDatasetGraphEnvelope documents GET /api/v1/datasets/{id}/graph.
 //
 // @Summary GetDatasetGraph returns the read-only knowledge graph for one dataset (C6)
-// @Description GetDatasetGraph returns the read-only knowledge graph for one dataset (C6).。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.DatasetKnowledgeGraph
-// @Tags datasets
+// @Description GetDatasetGraph returns the read-only knowledge graph for one dataset (C6).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *ragflow.DatasetKnowledgeGraph
+// @Tags dataset
 // @ID getDatasetGraph
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8163,8 +8163,8 @@ func contractGetDatasetGraphEnvelope() {}
 // contractListIncrementalLedgerEnvelope documents GET /api/v1/datasets/{id}/incremental.
 //
 // @Summary ListIncrementalLedger exposes the tenant's logical revision projection
-// @Description ListIncrementalLedger exposes the tenant's logical revision projection.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.IncrementalLedger
-// @Tags datasets
+// @Description ListIncrementalLedger exposes the tenant's logical revision projection.。需要权限 read:document（由 accessRules 强制）。成功返回 []model.IncrementalLedger
+// @Tags document
 // @ID listIncrementalLedger
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8177,8 +8177,8 @@ func contractListIncrementalLedgerEnvelope() {}
 // contractApplyIncrementalSourceBatchEnvelope documents POST /api/v1/datasets/{id}/incremental/scan.
 //
 // @Summary ApplyIncrementalSourceBatch accepts a bounded connector snapshot
-// @Description ApplyIncrementalSourceBatch accepts a bounded connector snapshot. The batch can add/change documents and tombstone sources absent from the snapshot.。只要求登录，没有额外的 RBAC 规则。请求体类型 incrementalScanRequest。成功返回 *service.IncrementalSourceBatch。声明了 2 个业务错误码：40000(400)、40295(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description ApplyIncrementalSourceBatch accepts a bounded connector snapshot. The batch can add/change documents and tombstone sources absent from the snapshot.。需要权限 execute:document（由 accessRules 强制）。请求体类型 incrementalScanRequest。成功返回 *service.IncrementalSourceBatch。声明了 2 个业务错误码：40000(400)、40295(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID applyIncrementalSourceBatch
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8194,8 +8194,8 @@ func contractApplyIncrementalSourceBatchEnvelope() {}
 // contractUpdateDatasetLifecycleEnvelope documents PUT /api/v1/datasets/{id}/lifecycle.
 //
 // @Summary update Dataset Lifecycle
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.DatasetLifecycleInput。成功返回 *service.DatasetLifecycleView。声明了 1 个业务错误码：40066(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description 需要权限 manage:knowledge-lifecycle（由 accessRules 强制）。请求体类型 service.DatasetLifecycleInput。成功返回 *service.DatasetLifecycleView。声明了 1 个业务错误码：40066(400)（括号内是 HTTP 状态）
+// @Tags knowledge-lifecycle
 // @ID updateDatasetLifecycle
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8209,8 +8209,8 @@ func contractUpdateDatasetLifecycleEnvelope() {}
 // contractParseDocumentsEnvelope documents POST /api/v1/datasets/{id}/parse.
 //
 // @Summary ParseDocuments triggers parsing for documents of a dataset
-// @Description ParseDocuments triggers parsing for documents of a dataset.。只要求登录，没有额外的 RBAC 规则。请求体类型 parseRequest。成功返回 ParseDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description ParseDocuments triggers parsing for documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 ParseDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document
 // @ID parseDocuments
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8227,8 +8227,8 @@ func contractParseDocumentsEnvelope() {}
 // contractGetDatasetParseProfileEnvelope documents GET /api/v1/datasets/{id}/parse-profile.
 //
 // @Summary GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4)
-// @Description GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4).。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ParseProfileView
-// @Tags datasets
+// @Description GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.ParseProfileView
+// @Tags dataset
 // @ID getDatasetParseProfile
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8241,8 +8241,8 @@ func contractGetDatasetParseProfileEnvelope() {}
 // contractApplyDatasetParseProfileEnvelope documents POST /api/v1/datasets/{id}/parse-profile.
 //
 // @Summary ApplyDatasetParseProfile is the single protected channel for the `apply_parse_profile` repair action (doc/276 §7.4 / R4)
-// @Description ApplyDatasetParseProfile is the single protected channel for the `apply_parse_profile` repair action (doc/276 §7.4 / R4). It refuses to rewrite already-parsed content and refuses to touch a shared dataset without an explicit acknowledgement.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.ParseProfileInput。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description ApplyDatasetParseProfile is the single protected channel for the `apply_parse_profile` repair action (doc/276 §7.4 / R4). It refuses to rewrite already-parsed content and refuses to touch a shared dataset without an explicit acknowledgement.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 service.ParseProfileInput。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags dataset
 // @ID applyDatasetParseProfile
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8259,8 +8259,8 @@ func contractApplyDatasetParseProfileEnvelope() {}
 // contractListDatasetParseQualityReportsEnvelope documents GET /api/v1/datasets/{id}/parse-quality-reports.
 //
 // @Summary list Dataset Parse Quality Reports
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.ParseQualityReport
-// @Tags datasets
+// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseQualityReport
+// @Tags document
 // @ID listDatasetParseQualityReports
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8273,8 +8273,8 @@ func contractListDatasetParseQualityReportsEnvelope() {}
 // contractBindDatasetProjectEnvelope documents PUT /api/v1/datasets/{id}/project.
 //
 // @Summary BindDatasetProject assigns a dataset to a tenant project
-// @Description BindDatasetProject assigns a dataset to a tenant project.。只要求登录，没有额外的 RBAC 规则。请求体类型 BindDatasetProjectRequest。成功返回 BindDatasetProjectResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description BindDatasetProject assigns a dataset to a tenant project.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 BindDatasetProjectRequest。成功返回 BindDatasetProjectResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags dataset
 // @ID bindDatasetProject
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8291,8 +8291,8 @@ func contractBindDatasetProjectEnvelope() {}
 // contractTestDatasetRetrievalEnvelope documents POST /api/v1/datasets/{id}/retrieval-test.
 //
 // @Summary TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4)
-// @Description TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4). Read-path: read dataset + resolved tenant scope; every execution is recorded as a knowledge-ops event inside the service layer.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.DatasetRetrievalTestInput。成功返回 *service.DatasetRetrievalTestResult。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）
-// @Tags datasets
+// @Description TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4). Read-path: read dataset + resolved tenant scope; every execution is recorded as a knowledge-ops event inside the service layer.。需要权限 read:dataset（由 accessRules 强制）。请求体类型 service.DatasetRetrievalTestInput。成功返回 *service.DatasetRetrievalTestResult。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）
+// @Tags dataset
 // @ID testDatasetRetrieval
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8336,8 +8336,8 @@ func contractCreateDBConnectionEnvelope() {}
 // contractDeleteDBConnectionEnvelope documents DELETE /api/v1/db-connections/{id}.
 //
 // @Summary delete D B Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteDBConnectionResponse
-// @Tags db-connections
+// @Description 需要权限 manage:db-connection（由 accessRules 强制）。成功返回 DeleteDBConnectionResponse
+// @Tags db-connection
 // @ID deleteDBConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8348,8 +8348,8 @@ func contractDeleteDBConnectionEnvelope() {}
 // contractGetDBConnectionEnvelope documents GET /api/v1/db-connections/{id}.
 //
 // @Summary get D B Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.DBConnection
-// @Tags db-connections
+// @Description 需要权限 read:db-connection（由 accessRules 强制）。成功返回 *model.DBConnection
+// @Tags db-connection
 // @ID getDBConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8360,8 +8360,8 @@ func contractGetDBConnectionEnvelope() {}
 // contractUpdateDBConnectionEnvelope documents PATCH /api/v1/db-connections/{id}.
 //
 // @Summary update D B Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection
-// @Tags db-connections
+// @Description 需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection
+// @Tags db-connection
 // @ID updateDBConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8374,8 +8374,8 @@ func contractUpdateDBConnectionEnvelope() {}
 // contractUpdateDBConnectionPutEnvelope documents PUT /api/v1/db-connections/{id}.
 //
 // @Summary update D B Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection
-// @Tags db-connections
+// @Description 需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection
+// @Tags db-connection
 // @ID updateDBConnectionPut
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8388,8 +8388,8 @@ func contractUpdateDBConnectionPutEnvelope() {}
 // contractTestDBConnectionEnvelope documents POST /api/v1/db-connections/{id}/test.
 //
 // @Summary test D B Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DBConnectionTestResult
-// @Tags db-connections
+// @Description 需要权限 test:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DBConnectionTestResult
+// @Tags db-connection
 // @ID testDBConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8453,8 +8453,8 @@ func contractCreateEnterpriseConnectionEnvelope() {}
 // contractGetEnterpriseConnectionEnvelope documents GET /api/v1/enterprise-connections/{id}.
 //
 // @Summary Get Enterprise Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseConnectionView
-// @Tags enterprise-connections
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionView
+// @Tags enterprise-connection
 // @ID getEnterpriseConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8467,8 +8467,8 @@ func contractGetEnterpriseConnectionEnvelope() {}
 // contractUpdateEnterpriseConnectionEnvelope documents PUT /api/v1/enterprise-connections/{id}.
 //
 // @Summary Update Enterprise Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.UpdateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
-// @Tags enterprise-connections
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.UpdateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Tags enterprise-connection
 // @ID updateEnterpriseConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8482,8 +8482,8 @@ func contractUpdateEnterpriseConnectionEnvelope() {}
 // contractGetEnterpriseConnectionAvailabilityEnvelope documents GET /api/v1/enterprise-connections/{id}/availability.
 //
 // @Summary Get Enterprise Connection Availability
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseAvailabilityView
-// @Tags enterprise-connections
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseAvailabilityView
+// @Tags enterprise-connection
 // @ID getEnterpriseConnectionAvailability
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8496,8 +8496,8 @@ func contractGetEnterpriseConnectionAvailabilityEnvelope() {}
 // contractListEnterpriseBindingsEnvelope documents GET /api/v1/enterprise-connections/{id}/bindings.
 //
 // @Summary List Enterprise Bindings
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 service.EnterpriseBindingView
-// @Tags enterprise-connections
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.EnterpriseBindingView
+// @Tags enterprise-connection
 // @ID listEnterpriseBindings
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8513,8 +8513,8 @@ func contractListEnterpriseBindingsEnvelope() {}
 // contractCreateEnterpriseBindingEnvelope documents POST /api/v1/enterprise-connections/{id}/bindings.
 //
 // @Summary Create Enterprise Binding
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.CreateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
-// @Tags enterprise-connections
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.CreateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
+// @Tags enterprise-connection
 // @ID createEnterpriseBinding
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8528,8 +8528,8 @@ func contractCreateEnterpriseBindingEnvelope() {}
 // contractGetEnterpriseBindingEnvelope documents GET /api/v1/enterprise-connections/{id}/bindings/{bindingId}.
 //
 // @Summary Get Enterprise Binding
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseBindingView
-// @Tags enterprise-connections
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseBindingView
+// @Tags enterprise-connection
 // @ID getEnterpriseBinding
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8543,8 +8543,8 @@ func contractGetEnterpriseBindingEnvelope() {}
 // contractUpdateEnterpriseBindingEnvelope documents PUT /api/v1/enterprise-connections/{id}/bindings/{bindingId}.
 //
 // @Summary Update Enterprise Binding
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.UpdateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
-// @Tags enterprise-connections
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.UpdateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
+// @Tags enterprise-connection
 // @ID updateEnterpriseBinding
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8559,8 +8559,8 @@ func contractUpdateEnterpriseBindingEnvelope() {}
 // contractRevokeEnterpriseBindingEnvelope documents POST /api/v1/enterprise-connections/{id}/bindings/{bindingId}/revoke.
 //
 // @Summary Revoke Enterprise Binding
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseBindingView
-// @Tags enterprise-connections
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseBindingView
+// @Tags enterprise-connection
 // @ID revokeEnterpriseBinding
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8574,8 +8574,8 @@ func contractRevokeEnterpriseBindingEnvelope() {}
 // contractListEnterpriseBindingVersionsEnvelope documents GET /api/v1/enterprise-connections/{id}/bindings/{bindingId}/versions.
 //
 // @Summary List Enterprise Binding Versions
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseBindingView
-// @Tags enterprise-connections
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseBindingView
+// @Tags enterprise-connection
 // @ID listEnterpriseBindingVersions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8589,8 +8589,8 @@ func contractListEnterpriseBindingVersionsEnvelope() {}
 // contractDeprecateEnterpriseConnectionEnvelope documents POST /api/v1/enterprise-connections/{id}/deprecate.
 //
 // @Summary Deprecate Enterprise Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView
-// @Tags enterprise-connections
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView
+// @Tags enterprise-connection
 // @ID deprecateEnterpriseConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8603,8 +8603,8 @@ func contractDeprecateEnterpriseConnectionEnvelope() {}
 // contractGetEnterpriseConnectionHealthEnvelope documents GET /api/v1/enterprise-connections/{id}/health.
 //
 // @Summary Get Enterprise Connection Health
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseConnectionHealthView
-// @Tags enterprise-connections
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionHealthView
+// @Tags enterprise-connection
 // @ID getEnterpriseConnectionHealth
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8617,8 +8617,8 @@ func contractGetEnterpriseConnectionHealthEnvelope() {}
 // contractRetireEnterpriseConnectionEnvelope documents POST /api/v1/enterprise-connections/{id}/retire.
 //
 // @Summary Retire Enterprise Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView
-// @Tags enterprise-connections
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView
+// @Tags enterprise-connection
 // @ID retireEnterpriseConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8631,8 +8631,8 @@ func contractRetireEnterpriseConnectionEnvelope() {}
 // contractRotateEnterpriseConnectionCredentialEnvelope documents POST /api/v1/enterprise-connections/{id}/rotate-credential.
 //
 // @Summary Rotate Enterprise Connection Credential
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.RotateEnterpriseConnectionCredentialRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）
-// @Tags enterprise-connections
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.RotateEnterpriseConnectionCredentialRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）
+// @Tags enterprise-connection
 // @ID rotateEnterpriseConnectionCredential
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8646,8 +8646,8 @@ func contractRotateEnterpriseConnectionCredentialEnvelope() {}
 // contractTestEnterpriseConnectionEnvelope documents POST /api/v1/enterprise-connections/{id}/test.
 //
 // @Summary Test Enterprise Connection
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionHealthView
-// @Tags enterprise-connections
+// @Description 需要权限 test:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionHealthView
+// @Tags enterprise-connection
 // @ID testEnterpriseConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8662,8 +8662,8 @@ func contractTestEnterpriseConnectionEnvelope() {}
 // contractListEnterpriseConnectionVersionsEnvelope documents GET /api/v1/enterprise-connections/{id}/versions.
 //
 // @Summary List Enterprise Connection Versions
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.EnterpriseConnectionView
-// @Tags enterprise-connections
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionView
+// @Tags enterprise-connection
 // @ID listEnterpriseConnectionVersions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8676,8 +8676,8 @@ func contractListEnterpriseConnectionVersionsEnvelope() {}
 // contractGetEvalCaseEvidenceEnvelope documents GET /api/v1/eval-cases/{id}/evidence.
 //
 // @Summary get Eval Case Evidence
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *repository.EvidenceSnapshotBundle
-// @Tags eval-cases
+// @Description 需要权限 read:eval-set（由 accessRules 强制）。成功返回 *repository.EvidenceSnapshotBundle
+// @Tags eval-set
 // @ID getEvalCaseEvidence
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8688,8 +8688,8 @@ func contractGetEvalCaseEvidenceEnvelope() {}
 // contractUpdateEvalCaseEvidenceEnvelope documents PUT /api/v1/eval-cases/{id}/evidence.
 //
 // @Summary update Eval Case Evidence
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.EvidenceSnapshotInput。成功返回 *repository.EvidenceSnapshotBundle。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）
-// @Tags eval-cases
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvidenceSnapshotInput。成功返回 *repository.EvidenceSnapshotBundle。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）
+// @Tags eval-set
 // @ID updateEvalCaseEvidence
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8703,8 +8703,8 @@ func contractUpdateEvalCaseEvidenceEnvelope() {}
 // contractRevalidateEvalCaseEvidenceEnvelope documents POST /api/v1/eval-cases/{id}/revalidate.
 //
 // @Summary revalidate Eval Case Evidence
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.EvidenceSnapshotBundle
-// @Tags eval-cases
+// @Description 需要权限 execute:eval-set（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.EvidenceSnapshotBundle
+// @Tags eval-set
 // @ID revalidateEvalCaseEvidence
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8760,8 +8760,8 @@ func contractGenerateMissingTemplateEvalSetsEnvelope() {}
 // contractDeleteEvalSetEnvelope documents DELETE /api/v1/eval-sets/{id}.
 //
 // @Summary delete Eval Set
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteEvalSetResponse
-// @Tags eval-sets
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。成功返回 DeleteEvalSetResponse
+// @Tags eval-set
 // @ID deleteEvalSet
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8772,8 +8772,8 @@ func contractDeleteEvalSetEnvelope() {}
 // contractGetEvalSetEnvelope documents GET /api/v1/eval-sets/{id}.
 //
 // @Summary get Eval Set
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 GetEvalSetResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
-// @Tags eval-sets
+// @Description 需要权限 read:eval-set（由 accessRules 强制）。成功返回 GetEvalSetResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Tags eval-set
 // @ID getEvalSet
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8785,8 +8785,8 @@ func contractGetEvalSetEnvelope() {}
 // contractUpdateEvalSetEnvelope documents PUT /api/v1/eval-sets/{id}.
 //
 // @Summary update Eval Set
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 1 个业务错误码：40068(400)（括号内是 HTTP 状态）
-// @Tags eval-sets
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 1 个业务错误码：40068(400)（括号内是 HTTP 状态）
+// @Tags eval-set
 // @ID updateEvalSet
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8842,8 +8842,8 @@ func contractRegisterEvaluationProtocolEnvelope() {}
 // contractRevokeEvaluationProtocolRegistrationEnvelope documents POST /api/v1/evaluation-protocol-registrations/{id}/revoke.
 //
 // @Summary revoke Evaluation Protocol Registration
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration
-// @Tags evaluation-protocol-registrations
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration
+// @Tags release-governance
 // @ID revokeEvaluationProtocolRegistration
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8888,8 +8888,8 @@ func contractCreateEvaluationRunEnvelope() {}
 // contractAddEvaluationCaseResultEnvelope documents POST /api/v1/evaluation-runs/{id}/case-results.
 //
 // @Summary add Evaluation Case Result
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseResult
-// @Tags evaluation-runs
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseResult
+// @Tags release-governance
 // @ID addEvaluationCaseResult
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8902,8 +8902,8 @@ func contractAddEvaluationCaseResultEnvelope() {}
 // contractCompleteEvaluationRunEnvelope documents POST /api/v1/evaluation-runs/{id}/complete.
 //
 // @Summary complete Evaluation Run
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun
-// @Tags evaluation-runs
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun
+// @Tags release-governance
 // @ID completeEvaluationRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8916,8 +8916,8 @@ func contractCompleteEvaluationRunEnvelope() {}
 // contractExecuteScopedEvaluationRunEnvelope documents POST /api/v1/evaluation-runs/{id}/execute.
 //
 // @Summary execute Scoped Evaluation Run
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun
-// @Tags evaluation-runs
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun
+// @Tags release-governance
 // @ID executeScopedEvaluationRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -8991,8 +8991,8 @@ func contractListEvidenceSnapshotsEnvelope() {}
 // contractGetEvidenceSnapshotEnvelope documents GET /api/v1/evidence-snapshots/{id}.
 //
 // @Summary get Evidence Snapshot
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *repository.EvidenceSnapshotBundle
-// @Tags evidence-snapshots
+// @Description 需要权限 read:evidence-snapshot（由 accessRules 强制）。成功返回 *repository.EvidenceSnapshotBundle
+// @Tags evidence-snapshot
 // @ID getEvidenceSnapshot
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9055,8 +9055,8 @@ func contractCreateGovernanceDictionaryEntryEnvelope() {}
 // contractDeleteGovernanceDictionaryEntryEnvelope documents DELETE /api/v1/governance/dictionary/{id}.
 //
 // @Summary DeleteGovernanceDictionaryEntry handles DELETE /api/v1/governance/dictionary/:id
-// @Description DeleteGovernanceDictionaryEntry handles DELETE /api/v1/governance/dictionary/:id. Removes a tenant extension; platform terms are immutable (404).。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteGovernanceDictionaryEntryResponse
-// @Tags governance
+// @Description DeleteGovernanceDictionaryEntry handles DELETE /api/v1/governance/dictionary/:id. Removes a tenant extension; platform terms are immutable (404).。需要权限 manage:document-governance（由 accessRules 强制）。成功返回 DeleteGovernanceDictionaryEntryResponse
+// @Tags document-governance
 // @ID deleteGovernanceDictionaryEntry
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9067,8 +9067,8 @@ func contractDeleteGovernanceDictionaryEntryEnvelope() {}
 // contractDecideGovernanceDictionaryEntryEnvelope documents POST /api/v1/governance/dictionary/{id}/{decision}.
 //
 // @Summary DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision
-// @Description DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision. :decision ∈ {approve, reject}; governor only.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.GovernanceDictionaryEntry。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags governance
+// @Description DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision. :decision ∈ {approve, reject}; governor only.。需要权限 manage:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.GovernanceDictionaryEntry。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document-governance
 // @ID decideGovernanceDictionaryEntry
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9120,8 +9120,8 @@ func contractCreateGovernanceSchemaEnvelope() {}
 // contractDeleteGovernanceSchemaEnvelope documents DELETE /api/v1/governance/schemas/{id}.
 //
 // @Summary DeleteGovernanceSchema handles DELETE /api/v1/governance/schemas/:id
-// @Description DeleteGovernanceSchema handles DELETE /api/v1/governance/schemas/:id.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteGovernanceSchemaResponse
-// @Tags governance
+// @Description DeleteGovernanceSchema handles DELETE /api/v1/governance/schemas/:id.。需要权限 manage:document-governance（由 accessRules 强制）。成功返回 DeleteGovernanceSchemaResponse
+// @Tags document-governance
 // @ID deleteGovernanceSchema
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9132,8 +9132,8 @@ func contractDeleteGovernanceSchemaEnvelope() {}
 // contractGetGovernanceSchemaEnvelope documents GET /api/v1/governance/schemas/{id}.
 //
 // @Summary GetGovernanceSchema handles GET /api/v1/governance/schemas/:id
-// @Description GetGovernanceSchema handles GET /api/v1/governance/schemas/:id.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40441(404)（括号内是 HTTP 状态）
-// @Tags governance
+// @Description GetGovernanceSchema handles GET /api/v1/governance/schemas/:id.。需要权限 read:document-governance（由 accessRules 强制）。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40441(404)（括号内是 HTTP 状态）
+// @Tags document-governance
 // @ID getGovernanceSchema
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9145,8 +9145,8 @@ func contractGetGovernanceSchemaEnvelope() {}
 // contractUpdateGovernanceSchemaEnvelope documents PUT /api/v1/governance/schemas/{id}.
 //
 // @Summary UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id
-// @Description UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags governance
+// @Description UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id.。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags document-governance
 // @ID updateGovernanceSchema
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9263,8 +9263,8 @@ func contractCreateAPIKeyEnvelope() {}
 // contractRevokeAPIKeyEnvelope documents POST /api/v1/keys/{id}/revoke.
 //
 // @Summary RevokeAPIKey disables a tenant's gateway key
-// @Description RevokeAPIKey disables a tenant's gateway key.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RevokeAPIKeyResponse
-// @Tags keys
+// @Description RevokeAPIKey disables a tenant's gateway key.。需要权限 manage:api-key（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RevokeAPIKeyResponse
+// @Tags api-key
 // @ID revokeAPIKey
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9277,8 +9277,8 @@ func contractRevokeAPIKeyEnvelope() {}
 // contractRotateAPIKeyEnvelope documents POST /api/v1/keys/{id}/rotate.
 //
 // @Summary RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4)
-// @Description RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4). The raw secret is returned exactly once, like create.。只要求登录，没有额外的 RBAC 规则。请求体类型 rotateAPIKeyRequest。成功返回 RotateAPIKeyResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags keys
+// @Description RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4). The raw secret is returned exactly once, like create.。需要权限 manage:api-key（由 accessRules 强制）。请求体类型 rotateAPIKeyRequest。成功返回 RotateAPIKeyResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags api-key
 // @ID rotateAPIKey
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9326,8 +9326,8 @@ func contractCreateDuplicateCandidateEnvelope() {}
 // contractDecideDuplicateCandidateEnvelope documents POST /api/v1/knowledge-duplicate-candidates/{id}/decision.
 //
 // @Summary Decide Duplicate Candidate
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.DuplicateCandidateDecision。成功返回 *model.DuplicateCandidate。声明了 1 个业务错误码：40142(400)（括号内是 HTTP 状态）
-// @Tags knowledge-duplicate-candidates
+// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.DuplicateCandidateDecision。成功返回 *model.DuplicateCandidate。声明了 1 个业务错误码：40142(400)（括号内是 HTTP 状态）
+// @Tags knowledge-ops
 // @ID decideDuplicateCandidate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9464,7 +9464,7 @@ func contractChatCitationAuditRunsEnvelope() {}
 // contractChatCitationAuditFindingsEnvelope documents GET /api/v1/knowledge-ops/citation-audit/runs/{runId}/findings.
 //
 // @Summary ChatCitationAuditFindings pages one run's per-citation verdicts
-// @Description ChatCitationAuditFindings pages one run's per-citation verdicts.。只要求登录，没有额外的 RBAC 规则。成功返回 ChatCitationAuditFindingsResponse
+// @Description ChatCitationAuditFindings pages one run's per-citation verdicts.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 ChatCitationAuditFindingsResponse
 // @Tags knowledge-ops
 // @ID chatCitationAuditFindings
 // @Security BearerAuth
@@ -9492,8 +9492,8 @@ func contractListCompilationRecoveryEnvelope() {}
 // contractRequestCompilationRecoveryApprovalEnvelope documents POST /api/v1/knowledge-ops/compilation/runs/{runId}/recovery-approval.
 //
 // @Summary RequestCompilationRecoveryApproval submits the governed recovery action
-// @Description RequestCompilationRecoveryApproval submits the governed recovery action.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.CompilationRecoveryApprovalRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags knowledge-ops
+// @Description RequestCompilationRecoveryApproval submits the governed recovery action.。需要权限 execute:compilation（由 accessRules 强制）。请求体类型 service.CompilationRecoveryApprovalRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags compilation
 // @ID requestCompilationRecoveryApproval
 // @Security BearerAuth
 // @Param runId path string true "路径参数 runId"
@@ -9507,8 +9507,8 @@ func contractRequestCompilationRecoveryApprovalEnvelope() {}
 // contractProbeCompilationRecoveryRunEnvelope documents POST /api/v1/knowledge-ops/compilation/runs/{runId}/recovery-probe.
 //
 // @Summary ProbeCompilationRecoveryRun performs one read-only downstream probe
-// @Description ProbeCompilationRecoveryRun performs one read-only downstream probe.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun
-// @Tags knowledge-ops
+// @Description ProbeCompilationRecoveryRun performs one read-only downstream probe.。需要权限 execute:compilation（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun
+// @Tags compilation
 // @ID probeCompilationRecoveryRun
 // @Security BearerAuth
 // @Param runId path string true "路径参数 runId"
@@ -9543,7 +9543,7 @@ func contractKnowledgeOpsEventsEnvelope() {}
 // contractReviewKnowledgeOpsEventEnvelope documents PATCH /api/v1/knowledge-ops/events/{id}/review.
 //
 // @Summary ReviewKnowledgeOpsEvent closes a badcase candidate
-// @Description ReviewKnowledgeOpsEvent closes a badcase candidate.。只要求登录，没有额外的 RBAC 规则。请求体类型 knowledgeOpsReviewPayload。成功返回 ReviewKnowledgeOpsEventResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ReviewKnowledgeOpsEvent closes a badcase candidate.。需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 knowledgeOpsReviewPayload。成功返回 ReviewKnowledgeOpsEventResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID reviewKnowledgeOpsEvent
 // @Security BearerAuth
@@ -9558,8 +9558,8 @@ func contractReviewKnowledgeOpsEventEnvelope() {}
 // contractConvertBadcaseToEvalCaseEnvelope documents POST /api/v1/knowledge-ops/events/{id}/to-eval-case.
 //
 // @Summary convert Badcase To Eval Case
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 ConvertBadcaseToEvalCaseRequest。成功返回 *model.EvalCase。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）
-// @Tags knowledge-ops
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 ConvertBadcaseToEvalCaseRequest。成功返回 *model.EvalCase。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）
+// @Tags eval-set
 // @ID convertBadcaseToEvalCase
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9631,7 +9631,7 @@ func contractCreateTraceRunEnvelope() {}
 // contractGetTraceRunEnvelope documents GET /api/v1/knowledge-ops/trace-runs/{id}.
 //
 // @Summary Get Trace Run
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.TraceRun
+// @Description 需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.TraceRun
 // @Tags knowledge-ops
 // @ID getTraceRun
 // @Security BearerAuth
@@ -9672,8 +9672,8 @@ func contractCreateKnowledgeProfileEnvelope() {}
 // contractDeleteKnowledgeProfileEnvelope documents DELETE /api/v1/knowledge-profiles/{profileId}.
 //
 // @Summary delete Knowledge Profile
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteKnowledgeProfileResponse
-// @Tags knowledge-profiles
+// @Description 需要权限 manage:knowledge-profile（由 accessRules 强制）。成功返回 DeleteKnowledgeProfileResponse
+// @Tags knowledge-profile
 // @ID deleteKnowledgeProfile
 // @Security BearerAuth
 // @Param profileId path string true "路径参数 profileId"
@@ -9684,8 +9684,8 @@ func contractDeleteKnowledgeProfileEnvelope() {}
 // contractGetKnowledgeProfileEnvelope documents GET /api/v1/knowledge-profiles/{profileId}.
 //
 // @Summary get Knowledge Profile
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.KnowledgeProfile
-// @Tags knowledge-profiles
+// @Description 需要权限 read:knowledge-profile（由 accessRules 强制）。成功返回 *model.KnowledgeProfile
+// @Tags knowledge-profile
 // @ID getKnowledgeProfile
 // @Security BearerAuth
 // @Param profileId path string true "路径参数 profileId"
@@ -9696,8 +9696,8 @@ func contractGetKnowledgeProfileEnvelope() {}
 // contractUpdateKnowledgeProfileEnvelope documents PUT /api/v1/knowledge-profiles/{profileId}.
 //
 // @Summary update Knowledge Profile
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile
-// @Tags knowledge-profiles
+// @Description 需要权限 manage:knowledge-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile
+// @Tags knowledge-profile
 // @ID updateKnowledgeProfile
 // @Security BearerAuth
 // @Param profileId path string true "路径参数 profileId"
@@ -9741,8 +9741,8 @@ func contractCreateKnowledgeStrategyEnvelope() {}
 // contractDeleteKnowledgeStrategyEnvelope documents DELETE /api/v1/knowledge-strategies/{id}.
 //
 // @Summary delete Knowledge Strategy
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteKnowledgeStrategyResponse
-// @Tags knowledge-strategies
+// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。成功返回 DeleteKnowledgeStrategyResponse
+// @Tags knowledge-strategy
 // @ID deleteKnowledgeStrategy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9753,8 +9753,8 @@ func contractDeleteKnowledgeStrategyEnvelope() {}
 // contractGetKnowledgeStrategyEnvelope documents GET /api/v1/knowledge-strategies/{id}.
 //
 // @Summary get Knowledge Strategy
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.KnowledgeStrategy
-// @Tags knowledge-strategies
+// @Description 需要权限 read:knowledge-strategy（由 accessRules 强制）。成功返回 *model.KnowledgeStrategy
+// @Tags knowledge-strategy
 // @ID getKnowledgeStrategy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9765,8 +9765,8 @@ func contractGetKnowledgeStrategyEnvelope() {}
 // contractUpdateKnowledgeStrategyEnvelope documents PATCH /api/v1/knowledge-strategies/{id}.
 //
 // @Summary update Knowledge Strategy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy
-// @Tags knowledge-strategies
+// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy
+// @Tags knowledge-strategy
 // @ID updateKnowledgeStrategy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9779,8 +9779,8 @@ func contractUpdateKnowledgeStrategyEnvelope() {}
 // contractUpdateKnowledgeStrategyPutEnvelope documents PUT /api/v1/knowledge-strategies/{id}.
 //
 // @Summary update Knowledge Strategy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy
-// @Tags knowledge-strategies
+// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy
+// @Tags knowledge-strategy
 // @ID updateKnowledgeStrategyPut
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9793,8 +9793,8 @@ func contractUpdateKnowledgeStrategyPutEnvelope() {}
 // contractProbeKnowledgeStrategyEnvelope documents POST /api/v1/knowledge-strategies/{id}/probe.
 //
 // @Summary probe Knowledge Strategy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeCapabilityProbe
-// @Tags knowledge-strategies
+// @Description 需要权限 execute:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeCapabilityProbe
+// @Tags knowledge-strategy
 // @ID probeKnowledgeStrategy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9807,8 +9807,8 @@ func contractProbeKnowledgeStrategyEnvelope() {}
 // contractGetKnowledgeStrategyQualityGateEnvelope documents GET /api/v1/knowledge-strategies/{id}/quality-gate.
 //
 // @Summary get Knowledge Strategy Quality Gate
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.KnowledgeStrategyQualityGateSummary
-// @Tags knowledge-strategies
+// @Description 需要权限 read:knowledge-strategy（由 accessRules 强制）。成功返回 *service.KnowledgeStrategyQualityGateSummary
+// @Tags knowledge-strategy
 // @ID getKnowledgeStrategyQualityGate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9819,8 +9819,8 @@ func contractGetKnowledgeStrategyQualityGateEnvelope() {}
 // contractExecuteKnowledgeStrategyEnvelope documents POST /api/v1/knowledge-strategies/{id}/retrieve.
 //
 // @Summary execute Knowledge Strategy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.KnowledgeStrategyExecution
-// @Tags knowledge-strategies
+// @Description 需要权限 execute:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.KnowledgeStrategyExecution
+// @Tags knowledge-strategy
 // @ID executeKnowledgeStrategy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9878,8 +9878,8 @@ func contractKnowledgeTaskSummaryEnvelope() {}
 // contractGetKnowledgeTaskEnvelope documents GET /api/v1/knowledge-tasks/{id}.
 //
 // @Summary Get Knowledge Task
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.KnowledgeTask
-// @Tags knowledge-tasks
+// @Description 需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.KnowledgeTask
+// @Tags knowledge-ops
 // @ID getKnowledgeTask
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9890,8 +9890,8 @@ func contractGetKnowledgeTaskEnvelope() {}
 // contractUpdateKnowledgeTaskEnvelope documents PATCH /api/v1/knowledge-tasks/{id}.
 //
 // @Summary Update Knowledge Task
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.KnowledgeTaskUpdateInput。成功返回 *model.KnowledgeTask。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags knowledge-tasks
+// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.KnowledgeTaskUpdateInput。成功返回 *model.KnowledgeTask。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags knowledge-ops
 // @ID updateKnowledgeTask
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9932,8 +9932,8 @@ func contractCreateLogicalDocumentEnvelope() {}
 // contractDeleteLogicalDocumentEnvelope documents DELETE /api/v1/logical-documents/{id}.
 //
 // @Summary delete Logical Document
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteLogicalDocumentResponse
-// @Tags logical-documents
+// @Description 需要权限 manage:logical-document（由 accessRules 强制）。成功返回 DeleteLogicalDocumentResponse
+// @Tags logical-document
 // @ID deleteLogicalDocument
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9944,8 +9944,8 @@ func contractDeleteLogicalDocumentEnvelope() {}
 // contractGetLogicalDocumentEnvelope documents GET /api/v1/logical-documents/{id}.
 //
 // @Summary get Logical Document
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.LogicalDocument
-// @Tags logical-documents
+// @Description 需要权限 read:logical-document（由 accessRules 强制）。成功返回 *model.LogicalDocument
+// @Tags logical-document
 // @ID getLogicalDocument
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9956,8 +9956,8 @@ func contractGetLogicalDocumentEnvelope() {}
 // contractUpdateLogicalDocumentEnvelope documents PATCH /api/v1/logical-documents/{id}.
 //
 // @Summary update Logical Document
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument
-// @Tags logical-documents
+// @Description 需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument
+// @Tags logical-document
 // @ID updateLogicalDocument
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9970,8 +9970,8 @@ func contractUpdateLogicalDocumentEnvelope() {}
 // contractUpdateLogicalDocumentPutEnvelope documents PUT /api/v1/logical-documents/{id}.
 //
 // @Summary update Logical Document
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument
-// @Tags logical-documents
+// @Description 需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument
+// @Tags logical-document
 // @ID updateLogicalDocumentPut
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9984,8 +9984,8 @@ func contractUpdateLogicalDocumentPutEnvelope() {}
 // contractListLogicalDocumentPublishAttemptsEnvelope documents GET /api/v1/logical-documents/{id}/publish-attempts.
 //
 // @Summary list Logical Document Publish Attempts
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.VersionPublishAttempt
-// @Tags logical-documents
+// @Description 需要权限 read:logical-document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.VersionPublishAttempt
+// @Tags logical-document
 // @ID listLogicalDocumentPublishAttempts
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -9998,8 +9998,8 @@ func contractListLogicalDocumentPublishAttemptsEnvelope() {}
 // contractRestoreLogicalDocumentVersionEnvelope documents POST /api/v1/logical-documents/{id}/restore.
 //
 // @Summary restore Logical Document Version
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult
-// @Tags logical-documents
+// @Description 需要权限 execute:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult
+// @Tags logical-document
 // @ID restoreLogicalDocumentVersion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10012,8 +10012,8 @@ func contractRestoreLogicalDocumentVersionEnvelope() {}
 // contractSupersedeLogicalDocumentVersionEnvelope documents POST /api/v1/logical-documents/{id}/supersede.
 //
 // @Summary supersede Logical Document Version
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult
-// @Tags logical-documents
+// @Description 需要权限 execute:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult
+// @Tags logical-document
 // @ID supersedeLogicalDocumentVersion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10026,8 +10026,8 @@ func contractSupersedeLogicalDocumentVersionEnvelope() {}
 // contractListLogicalDocumentVersionsEnvelope documents GET /api/v1/logical-documents/{id}/versions.
 //
 // @Summary list Logical Document Versions
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.DocumentVersion
-// @Tags logical-documents
+// @Description 需要权限 read:logical-document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.DocumentVersion
+// @Tags logical-document
 // @ID listLogicalDocumentVersions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10082,8 +10082,8 @@ func contractMemoryModelOptionsEnvelope() {}
 // contractDeleteMemoryEnvelope documents DELETE /api/v1/memories/{id}.
 //
 // @Summary DeleteMemory deletes a memory
-// @Description DeleteMemory deletes a memory.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteMemoryResponse
-// @Tags memories
+// @Description DeleteMemory deletes a memory.。需要权限 manage:memory（由 accessRules 强制）。成功返回 DeleteMemoryResponse
+// @Tags memory
 // @ID deleteMemory
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10095,8 +10095,8 @@ func contractDeleteMemoryEnvelope() {}
 // contractGetMemoryEnvelope documents GET /api/v1/memories/{id}.
 //
 // @Summary GetMemory returns a memory
-// @Description GetMemory returns a memory.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.MemoryShadow
-// @Tags memories
+// @Description GetMemory returns a memory.。需要权限 read:memory（由 accessRules 强制）。成功返回 *model.MemoryShadow
+// @Tags memory
 // @ID getMemory
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10108,8 +10108,8 @@ func contractGetMemoryEnvelope() {}
 // contractUpdateMemoryEnvelope documents PUT /api/v1/memories/{id}.
 //
 // @Summary UpdateMemory updates a memory
-// @Description UpdateMemory updates a memory.。只要求登录，没有额外的 RBAC 规则。请求体类型 memoryUpdatePayload。成功返回 *model.MemoryShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags memories
+// @Description UpdateMemory updates a memory.。需要权限 manage:memory（由 accessRules 强制）。请求体类型 memoryUpdatePayload。成功返回 *model.MemoryShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags memory
 // @ID updateMemory
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10124,8 +10124,8 @@ func contractUpdateMemoryEnvelope() {}
 // contractGetMemoryConfigEnvelope documents GET /api/v1/memories/{id}/config.
 //
 // @Summary GetMemoryConfig returns the live memory config for the editor
-// @Description GetMemoryConfig returns the live memory config for the editor.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.Memory
-// @Tags memories
+// @Description GetMemoryConfig returns the live memory config for the editor.。需要权限 read:memory（由 accessRules 强制）。成功返回 *ragflow.Memory
+// @Tags memory
 // @ID getMemoryConfig
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10137,8 +10137,8 @@ func contractGetMemoryConfigEnvelope() {}
 // contractSearchGovernedMemoryEnvelope documents POST /api/v1/memories/{id}/governed-search.
 //
 // @Summary SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read
-// @Description SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read.。只要求登录，没有额外的 RBAC 规则。请求体类型 memoryGovernedSearchPayload。成功返回 *service.GovernedMemorySearchResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags memories
+// @Description SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read.。需要权限 execute:memory-policy（由 accessRules 强制）。请求体类型 memoryGovernedSearchPayload。成功返回 *service.GovernedMemorySearchResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags memory-policy
 // @ID searchGovernedMemory
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10152,8 +10152,8 @@ func contractSearchGovernedMemoryEnvelope() {}
 // contractListMemoryMessagesEnvelope documents GET /api/v1/memories/{id}/messages.
 //
 // @Summary ListMemoryMessages lists the messages of a memory
-// @Description ListMemoryMessages lists the messages of a memory.。只要求登录，没有额外的 RBAC 规则。成功返回 []ragflow.MemoryMessage
-// @Tags memories
+// @Description ListMemoryMessages lists the messages of a memory.。需要权限 read:memory-content（由 accessRules 强制）。成功返回 []ragflow.MemoryMessage
+// @Tags memory-content
 // @ID listMemoryMessages
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10165,8 +10165,8 @@ func contractListMemoryMessagesEnvelope() {}
 // contractAddMemoryMessageEnvelope documents POST /api/v1/memories/{id}/messages.
 //
 // @Summary AddMemoryMessage stores a message into a memory
-// @Description AddMemoryMessage stores a message into a memory.。只要求登录，没有额外的 RBAC 规则。请求体类型 memoryMessagePayload。成功返回 AddMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags memories
+// @Description AddMemoryMessage stores a message into a memory.。需要权限 execute:memory-write（由 accessRules 强制）。请求体类型 memoryMessagePayload。成功返回 AddMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags memory-write
 // @ID addMemoryMessage
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10181,8 +10181,8 @@ func contractAddMemoryMessageEnvelope() {}
 // contractSearchMemoryMessagesEnvelope documents GET /api/v1/memories/{id}/messages/search.
 //
 // @Summary SearchMemoryMessages runs a semantic retrieval against a memory
-// @Description SearchMemoryMessages runs a semantic retrieval against a memory.。只要求登录，没有额外的 RBAC 规则。成功返回 []ragflow.MemoryMessage。声明了 5 个业务错误码：40096(400)、40143(400)、40144(400)、40145(400)、40146(400)（括号内是 HTTP 状态）
-// @Tags memories
+// @Description SearchMemoryMessages runs a semantic retrieval against a memory.。需要权限 execute:memory-content（由 accessRules 强制）。成功返回 []ragflow.MemoryMessage。声明了 5 个业务错误码：40096(400)、40143(400)、40144(400)、40145(400)、40146(400)（括号内是 HTTP 状态）
+// @Tags memory-content
 // @ID searchMemoryMessages
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10202,8 +10202,8 @@ func contractSearchMemoryMessagesEnvelope() {}
 // contractDeleteMemoryMessageEnvelope documents DELETE /api/v1/memories/{id}/messages/{messageId}.
 //
 // @Summary DeleteMemoryMessage forgets a memory message
-// @Description DeleteMemoryMessage forgets a memory message.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags memories
+// @Description DeleteMemoryMessage forgets a memory message.。需要权限 execute:memory-forget（由 accessRules 强制）。成功返回 DeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags memory-forget
 // @ID deleteMemoryMessage
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10217,8 +10217,8 @@ func contractDeleteMemoryMessageEnvelope() {}
 // contractUpdateMemoryMessageStatusEnvelope documents PUT /api/v1/memories/{id}/messages/{messageId}.
 //
 // @Summary UpdateMemoryMessageStatus sets a message's status
-// @Description UpdateMemoryMessageStatus sets a message's status.。只要求登录，没有额外的 RBAC 规则。请求体类型 memoryMessageStatusPayload。成功返回 UpdateMemoryMessageStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags memories
+// @Description UpdateMemoryMessageStatus sets a message's status.。需要权限 manage:memory-content（由 accessRules 强制）。请求体类型 memoryMessageStatusPayload。成功返回 UpdateMemoryMessageStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags memory-content
 // @ID updateMemoryMessageStatus
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10234,8 +10234,8 @@ func contractUpdateMemoryMessageStatusEnvelope() {}
 // contractComplianceDeleteMemoryMessageEnvelope documents POST /api/v1/memories/{id}/messages/{messageId}/compliance-delete.
 //
 // @Summary ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2)
-// @Description ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2). The reason is required in the audit entry but optional in the payload; it never carries memory content.。只要求登录，没有额外的 RBAC 规则。请求体类型 ComplianceDeleteMemoryMessageRequest。成功返回 ComplianceDeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags memories
+// @Description ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2). The reason is required in the audit entry but optional in the payload; it never carries memory content.。需要权限 manage:memory-forget（由 accessRules 强制）。请求体类型 ComplianceDeleteMemoryMessageRequest。成功返回 ComplianceDeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags memory-forget
 // @ID complianceDeleteMemoryMessage
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10251,8 +10251,8 @@ func contractComplianceDeleteMemoryMessageEnvelope() {}
 // contractGetMemoryMessageContentEnvelope documents GET /api/v1/memories/{id}/messages/{messageId}/content.
 //
 // @Summary GetMemoryMessageContent returns a memory message's full content
-// @Description GetMemoryMessageContent returns a memory message's full content.。只要求登录，没有额外的 RBAC 规则。成功返回 json.RawMessage。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags memories
+// @Description GetMemoryMessageContent returns a memory message's full content.。需要权限 read:memory-content（由 accessRules 强制）。成功返回 json.RawMessage。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags memory-content
 // @ID getMemoryMessageContent
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10287,8 +10287,8 @@ func contractListMemoryOperationsEnvelope() {}
 // contractGetMemoryOperationEnvelope documents GET /api/v1/memory-operations/{operationId}.
 //
 // @Summary get Memory Operation
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.MemoryOperation
-// @Tags memory-operations
+// @Description 需要权限 read:memory-operation（由 accessRules 强制）。成功返回 *model.MemoryOperation
+// @Tags memory-operation
 // @ID getMemoryOperation
 // @Security BearerAuth
 // @Param operationId path string true "路径参数 operationId"
@@ -10299,8 +10299,8 @@ func contractGetMemoryOperationEnvelope() {}
 // contractTombstoneMemoryOperationEnvelope documents POST /api/v1/memory-operations/{operationId}/tombstone.
 //
 // @Summary tombstone Memory Operation
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryOperation
-// @Tags memory-operations
+// @Description 需要权限 execute:memory-forget（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryOperation
+// @Tags memory-forget
 // @ID tombstoneMemoryOperation
 // @Security BearerAuth
 // @Param operationId path string true "路径参数 operationId"
@@ -10344,8 +10344,8 @@ func contractCreateMemoryPolicyEnvelope() {}
 // contractDeleteMemoryPolicyEnvelope documents DELETE /api/v1/memory-policies/{policyId}.
 //
 // @Summary delete Memory Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteMemoryPolicyResponse
-// @Tags memory-policies
+// @Description 需要权限 manage:memory-policy（由 accessRules 强制）。成功返回 DeleteMemoryPolicyResponse
+// @Tags memory-policy
 // @ID deleteMemoryPolicy
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
@@ -10356,8 +10356,8 @@ func contractDeleteMemoryPolicyEnvelope() {}
 // contractGetMemoryPolicyEnvelope documents GET /api/v1/memory-policies/{policyId}.
 //
 // @Summary get Memory Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.MemoryPolicy
-// @Tags memory-policies
+// @Description 需要权限 read:memory-policy（由 accessRules 强制）。成功返回 *model.MemoryPolicy
+// @Tags memory-policy
 // @ID getMemoryPolicy
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
@@ -10368,8 +10368,8 @@ func contractGetMemoryPolicyEnvelope() {}
 // contractUpdateMemoryPolicyEnvelope documents PUT /api/v1/memory-policies/{policyId}.
 //
 // @Summary update Memory Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
-// @Tags memory-policies
+// @Description 需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
+// @Tags memory-policy
 // @ID updateMemoryPolicy
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
@@ -10382,8 +10382,8 @@ func contractUpdateMemoryPolicyEnvelope() {}
 // contractListMemoryPolicyConsentsEnvelope documents GET /api/v1/memory-policies/{policyId}/consents.
 //
 // @Summary listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012)
-// @Description listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012). Identity and version only, never content.。只要求登录，没有额外的 RBAC 规则。成功返回 []service.MemoryPolicyConsentView
-// @Tags memory-policies
+// @Description listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012). Identity and version only, never content.。需要权限 read:memory-policy（由 accessRules 强制）。成功返回 []service.MemoryPolicyConsentView
+// @Tags memory-policy
 // @ID listMemoryPolicyConsents
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
@@ -10394,8 +10394,8 @@ func contractListMemoryPolicyConsentsEnvelope() {}
 // contractOptInMemoryPolicyEnvelope documents POST /api/v1/memory-policies/{policyId}/opt-in.
 //
 // @Summary opt In Memory Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
-// @Tags memory-policies
+// @Description 需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
+// @Tags memory-policy
 // @ID optInMemoryPolicy
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
@@ -10408,8 +10408,8 @@ func contractOptInMemoryPolicyEnvelope() {}
 // contractOptOutMemoryPolicyEnvelope documents POST /api/v1/memory-policies/{policyId}/opt-out.
 //
 // @Summary opt Out Memory Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
-// @Tags memory-policies
+// @Description 需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
+// @Tags memory-policy
 // @ID optOutMemoryPolicy
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
@@ -10422,8 +10422,8 @@ func contractOptOutMemoryPolicyEnvelope() {}
 // contractGetMemoryPolicyQualityGateEnvelope documents GET /api/v1/memory-policies/{policyId}/quality-gate.
 //
 // @Summary get Memory Policy Quality Gate
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.MemoryPolicyQualityGateSummary
-// @Tags memory-policies
+// @Description 需要权限 read:memory-policy（由 accessRules 强制）。成功返回 *service.MemoryPolicyQualityGateSummary
+// @Tags memory-policy
 // @ID getMemoryPolicyQualityGate
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
@@ -10458,8 +10458,8 @@ func contractUpsertMemoryPrivacyExemptionsEnvelope() {}
 // contractDeleteMemoryPrivacyExemptionEnvelope documents DELETE /api/v1/memory-privacy/pii-exemptions/{exemptionId}.
 //
 // @Summary DeleteMemoryPrivacyExemption removes one tenant PII exemption row
-// @Description DeleteMemoryPrivacyExemption removes one tenant PII exemption row.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteMemoryPrivacyExemptionResponse
-// @Tags memory-privacy
+// @Description DeleteMemoryPrivacyExemption removes one tenant PII exemption row.。需要权限 manage:memory-policy（由 accessRules 强制）。成功返回 DeleteMemoryPrivacyExemptionResponse
+// @Tags memory-policy
 // @ID deleteMemoryPrivacyExemption
 // @Security BearerAuth
 // @Param exemptionId path string true "路径参数 exemptionId"
@@ -10585,8 +10585,8 @@ func contractGetModelDefaultOptionsEnvelope() {}
 // contractDeleteModelProviderEnvelope documents DELETE /api/v1/model-providers/{id}.
 //
 // @Summary DeleteModelProvider removes a tenant's provider (local + RAGFlow)
-// @Description DeleteModelProvider removes a tenant's provider (local + RAGFlow).。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteModelProviderResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description DeleteModelProvider removes a tenant's provider (local + RAGFlow).。需要权限 manage:model-provider（由 accessRules 强制）。成功返回 DeleteModelProviderResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID deleteModelProvider
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10601,8 +10601,8 @@ func contractDeleteModelProviderEnvelope() {}
 // contractGetModelProviderEnvelope documents GET /api/v1/model-providers/{id}.
 //
 // @Summary GetModelProvider returns a single provider's summary for the detail view
-// @Description GetModelProvider returns a single provider's summary for the detail view.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ProviderView
-// @Tags model-providers
+// @Description GetModelProvider returns a single provider's summary for the detail view.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 *service.ProviderView
+// @Tags model-provider
 // @ID getModelProvider
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10613,8 +10613,8 @@ func contractGetModelProviderEnvelope() {}
 // contractDeleteProviderInstancesEnvelope documents DELETE /api/v1/model-providers/{id}/instances.
 //
 // @Summary DeleteProviderInstances deletes one or more instances of a provider
-// @Description DeleteProviderInstances deletes one or more instances of a provider.。只要求登录，没有额外的 RBAC 规则。请求体类型 deleteInstancesRequest。成功返回 DeleteProviderInstancesResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description DeleteProviderInstances deletes one or more instances of a provider.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 deleteInstancesRequest。成功返回 DeleteProviderInstancesResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID deleteProviderInstances
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10631,8 +10631,8 @@ func contractDeleteProviderInstancesEnvelope() {}
 // contractListProviderInstancesEnvelope documents GET /api/v1/model-providers/{id}/instances.
 //
 // @Summary ListProviderInstances lists a provider's instances
-// @Description ListProviderInstances lists a provider's instances.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description ListProviderInstances lists a provider's instances.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID listProviderInstances
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10646,8 +10646,8 @@ func contractListProviderInstancesEnvelope() {}
 // contractCreateProviderInstanceEnvelope documents POST /api/v1/model-providers/{id}/instances.
 //
 // @Summary CreateProviderInstance creates an instance + models (synced to RAGFlow)
-// @Description CreateProviderInstance creates an instance + models (synced to RAGFlow).。只要求登录，没有额外的 RBAC 规则。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description CreateProviderInstance creates an instance + models (synced to RAGFlow).。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID createProviderInstance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10664,8 +10664,8 @@ func contractCreateProviderInstanceEnvelope() {}
 // contractUpdateProviderInstanceEnvelope documents PUT /api/v1/model-providers/{id}/instances/{instanceId}.
 //
 // @Summary UpdateProviderInstance updates an instance and reconciles its models
-// @Description UpdateProviderInstance updates an instance and reconciles its models.。只要求登录，没有额外的 RBAC 规则。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description UpdateProviderInstance updates an instance and reconciles its models.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID updateProviderInstance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10683,8 +10683,8 @@ func contractUpdateProviderInstanceEnvelope() {}
 // contractDeleteProviderModelsEnvelope documents DELETE /api/v1/model-providers/{id}/instances/{instanceId}/models.
 //
 // @Summary DeleteProviderModels removes models from an instance
-// @Description DeleteProviderModels removes models from an instance.。只要求登录，没有额外的 RBAC 规则。请求体类型 deleteModelsRequest。成功返回 DeleteProviderModelsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description DeleteProviderModels removes models from an instance.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 deleteModelsRequest。成功返回 DeleteProviderModelsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID deleteProviderModels
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10702,8 +10702,8 @@ func contractDeleteProviderModelsEnvelope() {}
 // contractListProviderInstanceModelsEnvelope documents GET /api/v1/model-providers/{id}/instances/{instanceId}/models.
 //
 // @Summary ListProviderInstanceModels lists models on an instance
-// @Description ListProviderInstanceModels lists models on an instance.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description ListProviderInstanceModels lists models on an instance.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID listProviderInstanceModels
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10718,8 +10718,8 @@ func contractListProviderInstanceModelsEnvelope() {}
 // contractAddProviderModelEnvelope documents POST /api/v1/model-providers/{id}/instances/{instanceId}/models.
 //
 // @Summary AddProviderModel adds a model to an instance
-// @Description AddProviderModel adds a model to an instance.。只要求登录，没有额外的 RBAC 规则。请求体类型 modelInfoRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description AddProviderModel adds a model to an instance.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 modelInfoRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID addProviderModel
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10737,8 +10737,8 @@ func contractAddProviderModelEnvelope() {}
 // contractUpdateProviderModelEnvelope documents PATCH /api/v1/model-providers/{id}/instances/{instanceId}/models/{modelId}.
 //
 // @Summary UpdateProviderModel patches a model's status/max_tokens/model_type
-// @Description UpdateProviderModel patches a model's status/max_tokens/model_type.。只要求登录，没有额外的 RBAC 规则。请求体类型 updateModelRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description UpdateProviderModel patches a model's status/max_tokens/model_type.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 updateModelRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID updateProviderModel
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10757,8 +10757,8 @@ func contractUpdateProviderModelEnvelope() {}
 // contractTestProviderModelEnvelope documents POST /api/v1/model-providers/{id}/instances/{instanceId}/models/{modelId}/test.
 //
 // @Summary TestProviderModel sends a chat test message to a configured model
-// @Description TestProviderModel sends a chat test message to a configured model.。只要求登录，没有额外的 RBAC 规则。请求体类型 chatTestRequest。成功返回 string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description TestProviderModel sends a chat test message to a configured model.。需要权限 execute:model-provider（由 accessRules 强制）。请求体类型 chatTestRequest。成功返回 string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID testProviderModel
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10777,8 +10777,8 @@ func contractTestProviderModelEnvelope() {}
 // contractVerifyProviderConnectionEnvelope documents POST /api/v1/model-providers/{id}/verify.
 //
 // @Summary VerifyProviderConnection validates an API key/base URL against RAGFlow
-// @Description VerifyProviderConnection validates an API key/base URL against RAGFlow.。只要求登录，没有额外的 RBAC 规则。请求体类型 createProviderInstanceRequest。成功返回 map[string]string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-providers
+// @Description VerifyProviderConnection validates an API key/base URL against RAGFlow.。需要权限 execute:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 map[string]string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-provider
 // @ID verifyProviderConnection
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10819,8 +10819,8 @@ func contractCreateModelRouteEnvelope() {}
 // contractDeleteModelRouteEnvelope documents DELETE /api/v1/model-routes/{id}.
 //
 // @Summary DeleteModelRoute removes a routing rule
-// @Description DeleteModelRoute removes a routing rule.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteModelRouteResponse
-// @Tags model-routes
+// @Description DeleteModelRoute removes a routing rule.。需要权限 manage:model-route（由 accessRules 强制）。成功返回 DeleteModelRouteResponse
+// @Tags model-route
 // @ID deleteModelRoute
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10831,8 +10831,8 @@ func contractDeleteModelRouteEnvelope() {}
 // contractUpdateModelRouteEnvelope documents PUT /api/v1/model-routes/{id}.
 //
 // @Summary UpdateModelRoute edits an existing routing rule
-// @Description UpdateModelRoute edits an existing routing rule.。只要求登录，没有额外的 RBAC 规则。请求体类型 updateModelRouteRequest。成功返回 *model.ModelRoute。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags model-routes
+// @Description UpdateModelRoute edits an existing routing rule.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 updateModelRouteRequest。成功返回 *model.ModelRoute。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags model-route
 // @ID updateModelRoute
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10846,8 +10846,8 @@ func contractUpdateModelRouteEnvelope() {}
 // contractPinEnterpriseModelRouteEnvelope documents POST /api/v1/model-routes/{id}/enterprise-pin.
 //
 // @Summary PinEnterpriseModelRoute pins a route to exact enterprise runtime versions
-// @Description PinEnterpriseModelRoute pins a route to exact enterprise runtime versions.。只要求登录，没有额外的 RBAC 规则。请求体类型 pinModelRouteRequest。成功返回 *model.ModelRouteEnterprisePin。声明了 1 个业务错误码：40065(400)（括号内是 HTTP 状态）
-// @Tags model-routes
+// @Description PinEnterpriseModelRoute pins a route to exact enterprise runtime versions.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 pinModelRouteRequest。成功返回 *model.ModelRouteEnterprisePin。声明了 1 个业务错误码：40065(400)（括号内是 HTTP 状态）
+// @Tags model-route
 // @ID pinEnterpriseModelRoute
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10861,8 +10861,8 @@ func contractPinEnterpriseModelRouteEnvelope() {}
 // contractListEnterpriseModelRoutePinsEnvelope documents GET /api/v1/model-routes/{id}/enterprise-pins.
 //
 // @Summary ListEnterpriseModelRoutePins returns the route's immutable pin history
-// @Description ListEnterpriseModelRoutePins returns the route's immutable pin history.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.ModelRouteEnterprisePin
-// @Tags model-routes
+// @Description ListEnterpriseModelRoutePins returns the route's immutable pin history.。需要权限 read:model-route（由 accessRules 强制）。成功返回 []model.ModelRouteEnterprisePin
+// @Tags model-route
 // @ID listEnterpriseModelRoutePins
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10901,8 +10901,8 @@ func contractListOutboxEventsEnvelope() {}
 // contractGetOutboxEventEnvelope documents GET /api/v1/outbox-events/{id}.
 //
 // @Summary get Outbox Event
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *repository.OutboxEventView
-// @Tags outbox-events
+// @Description 需要权限 read:outbox-event（由 accessRules 强制）。成功返回 *repository.OutboxEventView
+// @Tags outbox-event
 // @ID getOutboxEvent
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10913,8 +10913,8 @@ func contractGetOutboxEventEnvelope() {}
 // contractRetryOutboxEventEnvelope documents POST /api/v1/outbox-events/{id}/retry.
 //
 // @Summary retry Outbox Event
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.OutboxEventView
-// @Tags outbox-events
+// @Description 需要权限 execute:outbox-event（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.OutboxEventView
+// @Tags outbox-event
 // @ID retryOutboxEvent
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10959,8 +10959,8 @@ func contractCreateParserPolicyEnvelope() {}
 // contractDeleteParserPolicyEnvelope documents DELETE /api/v1/parser-policies/{id}.
 //
 // @Summary delete Parser Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteParserPolicyResponse
-// @Tags parser-policies
+// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。成功返回 DeleteParserPolicyResponse
+// @Tags parser-policy
 // @ID deleteParserPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10971,8 +10971,8 @@ func contractDeleteParserPolicyEnvelope() {}
 // contractGetParserPolicyEnvelope documents GET /api/v1/parser-policies/{id}.
 //
 // @Summary get Parser Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.ParserPolicy。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
-// @Tags parser-policies
+// @Description 需要权限 read:parser-policy（由 accessRules 强制）。成功返回 *model.ParserPolicy。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Tags parser-policy
 // @ID getParserPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10984,8 +10984,8 @@ func contractGetParserPolicyEnvelope() {}
 // contractUpdateParserPolicyEnvelope documents PATCH /api/v1/parser-policies/{id}.
 //
 // @Summary update Parser Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy
-// @Tags parser-policies
+// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy
+// @Tags parser-policy
 // @ID updateParserPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -10998,8 +10998,8 @@ func contractUpdateParserPolicyEnvelope() {}
 // contractUpdateParserPolicyPutEnvelope documents PUT /api/v1/parser-policies/{id}.
 //
 // @Summary update Parser Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy
-// @Tags parser-policies
+// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy
+// @Tags parser-policy
 // @ID updateParserPolicyPut
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11037,8 +11037,8 @@ func contractCreateProjectEnvelope() {}
 // contractDeleteProjectEnvelope documents DELETE /api/v1/projects/{id}.
 //
 // @Summary DeleteProject deletes a tenant project
-// @Description DeleteProject deletes a tenant project.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteProjectResponse
-// @Tags projects
+// @Description DeleteProject deletes a tenant project.。需要权限 manage:project（由 accessRules 强制）。成功返回 DeleteProjectResponse
+// @Tags project
 // @ID deleteProject
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11049,8 +11049,8 @@ func contractDeleteProjectEnvelope() {}
 // contractGetProjectEnvelope documents GET /api/v1/projects/{id}.
 //
 // @Summary GetProject returns a single tenant project (visible to project members)
-// @Description GetProject returns a single tenant project (visible to project members).。只要求登录，没有额外的 RBAC 规则。成功返回 *model.Project
-// @Tags projects
+// @Description GetProject returns a single tenant project (visible to project members).。需要权限 read:project（由 accessRules 强制）。成功返回 *model.Project
+// @Tags project
 // @ID getProject
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11061,8 +11061,8 @@ func contractGetProjectEnvelope() {}
 // contractUpdateProjectEnvelope documents PUT /api/v1/projects/{id}.
 //
 // @Summary UpdateProject updates a tenant project's name and description
-// @Description UpdateProject updates a tenant project's name and description.。只要求登录，没有额外的 RBAC 规则。请求体类型 projectRequest。成功返回 *model.Project。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags projects
+// @Description UpdateProject updates a tenant project's name and description.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectRequest。成功返回 *model.Project。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags project
 // @ID updateProject
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11076,8 +11076,8 @@ func contractUpdateProjectEnvelope() {}
 // contractGetProjectDatasetsEnvelope documents GET /api/v1/projects/{id}/datasets.
 //
 // @Summary GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section)
-// @Description GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section).。只要求登录，没有额外的 RBAC 规则。成功返回 []service.ProjectDatasetView
-// @Tags projects
+// @Description GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section).。需要权限 read:project（由 accessRules 强制）。成功返回 []service.ProjectDatasetView
+// @Tags project
 // @ID getProjectDatasets
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11088,8 +11088,8 @@ func contractGetProjectDatasetsEnvelope() {}
 // contractBindProjectDatasetsEnvelope documents PUT /api/v1/projects/{id}/datasets.
 //
 // @Summary BindProjectDatasets assigns the selected datasets to the project
-// @Description BindProjectDatasets assigns the selected datasets to the project.。只要求登录，没有额外的 RBAC 规则。请求体类型 projectBindRequest。成功返回 BindProjectDatasetsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags projects
+// @Description BindProjectDatasets assigns the selected datasets to the project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectBindRequest。成功返回 BindProjectDatasetsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags project
 // @ID bindProjectDatasets
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11103,8 +11103,8 @@ func contractBindProjectDatasetsEnvelope() {}
 // contractGetProjectTeamsEnvelope documents GET /api/v1/projects/{id}/teams.
 //
 // @Summary GetProjectTeams lists all tenant teams with their binding to the project
-// @Description GetProjectTeams lists all tenant teams with their binding to the project.。只要求登录，没有额外的 RBAC 规则。成功返回 []service.ProjectTeamView
-// @Tags projects
+// @Description GetProjectTeams lists all tenant teams with their binding to the project.。需要权限 read:project（由 accessRules 强制）。成功返回 []service.ProjectTeamView
+// @Tags project
 // @ID getProjectTeams
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11115,8 +11115,8 @@ func contractGetProjectTeamsEnvelope() {}
 // contractBindProjectTeamsEnvelope documents PUT /api/v1/projects/{id}/teams.
 //
 // @Summary BindProjectTeams replaces the project's bound teams
-// @Description BindProjectTeams replaces the project's bound teams.。只要求登录，没有额外的 RBAC 规则。请求体类型 projectBindRequest。成功返回 BindProjectTeamsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags projects
+// @Description BindProjectTeams replaces the project's bound teams.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectBindRequest。成功返回 BindProjectTeamsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags project
 // @ID bindProjectTeams
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11130,8 +11130,8 @@ func contractBindProjectTeamsEnvelope() {}
 // contractListProjectUsersEnvelope documents GET /api/v1/projects/{id}/users.
 //
 // @Summary ListProjectUsers lists project members
-// @Description ListProjectUsers lists project members.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.User
-// @Tags projects
+// @Description ListProjectUsers lists project members.。需要权限 read:project（由 accessRules 强制）。成功返回 []model.User
+// @Tags project
 // @ID listProjectUsers
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11142,8 +11142,8 @@ func contractListProjectUsersEnvelope() {}
 // contractAddProjectUserEnvelope documents POST /api/v1/projects/{id}/users.
 //
 // @Summary AddProjectUser adds a user to a project
-// @Description AddProjectUser adds a user to a project.。只要求登录，没有额外的 RBAC 规则。请求体类型 AddProjectUserRequest。成功返回 AddProjectUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags projects
+// @Description AddProjectUser adds a user to a project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 AddProjectUserRequest。成功返回 AddProjectUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags project
 // @ID addProjectUser
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11157,8 +11157,8 @@ func contractAddProjectUserEnvelope() {}
 // contractRemoveProjectUserEnvelope documents DELETE /api/v1/projects/{id}/users/{userId}.
 //
 // @Summary RemoveProjectUser removes a user from a project
-// @Description RemoveProjectUser removes a user from a project.。只要求登录，没有额外的 RBAC 规则。成功返回 RemoveProjectUserResponse
-// @Tags projects
+// @Description RemoveProjectUser removes a user from a project.。需要权限 manage:project（由 accessRules 强制）。成功返回 RemoveProjectUserResponse
+// @Tags project
 // @ID removeProjectUser
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11199,8 +11199,8 @@ func contractCreatePromptPolicyEnvelope() {}
 // contractDeletePromptPolicyEnvelope documents DELETE /api/v1/prompt-policies/{id}.
 //
 // @Summary delete Prompt Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeletePromptPolicyResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
-// @Tags prompt-policies
+// @Description 需要权限 manage:prompt-policy（由 accessRules 强制）。成功返回 DeletePromptPolicyResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Tags prompt-policy
 // @ID deletePromptPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11212,8 +11212,8 @@ func contractDeletePromptPolicyEnvelope() {}
 // contractGetPromptPolicyEnvelope documents GET /api/v1/prompt-policies/{id}.
 //
 // @Summary get Prompt Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.PromptPolicyVersion。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
-// @Tags prompt-policies
+// @Description 需要权限 read:prompt-policy（由 accessRules 强制）。成功返回 *model.PromptPolicyVersion。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Tags prompt-policy
 // @ID getPromptPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11225,8 +11225,8 @@ func contractGetPromptPolicyEnvelope() {}
 // contractRollbackPromptPolicyEnvelope documents POST /api/v1/prompt-policies/{id}/rollback.
 //
 // @Summary rollback Prompt Policy
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.PromptPolicyVersion
-// @Tags prompt-policies
+// @Description 需要权限 manage:prompt-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.PromptPolicyVersion
+// @Tags prompt-policy
 // @ID rollbackPromptPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11266,8 +11266,8 @@ func contractCreateQualityIssueEnvelope() {}
 // contractUpdateQualityIssueEnvelope documents POST /api/v1/quality-issues/{id}/state.
 //
 // @Summary update Quality Issue
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue
-// @Tags quality-issues
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue
+// @Tags release-governance
 // @ID updateQualityIssue
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11280,8 +11280,8 @@ func contractUpdateQualityIssueEnvelope() {}
 // contractVerifyQualityIssueEnvelope documents POST /api/v1/quality-issues/{id}/verify.
 //
 // @Summary verify Quality Issue
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue
-// @Tags quality-issues
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue
+// @Tags release-governance
 // @ID verifyQualityIssue
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11322,8 +11322,8 @@ func contractCreateQualityProfileEnvelope() {}
 // contractDeleteQualityProfileEnvelope documents DELETE /api/v1/quality-profiles/{id}.
 //
 // @Summary delete Quality Profile
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteQualityProfileResponse
-// @Tags quality-profiles
+// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。成功返回 DeleteQualityProfileResponse
+// @Tags quality-profile
 // @ID deleteQualityProfile
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11334,8 +11334,8 @@ func contractDeleteQualityProfileEnvelope() {}
 // contractGetQualityProfileEnvelope documents GET /api/v1/quality-profiles/{id}.
 //
 // @Summary get Quality Profile
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.QualityProfile。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
-// @Tags quality-profiles
+// @Description 需要权限 read:quality-profile（由 accessRules 强制）。成功返回 *model.QualityProfile。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Tags quality-profile
 // @ID getQualityProfile
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11347,8 +11347,8 @@ func contractGetQualityProfileEnvelope() {}
 // contractUpdateQualityProfileEnvelope documents PATCH /api/v1/quality-profiles/{id}.
 //
 // @Summary update Quality Profile
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile
-// @Tags quality-profiles
+// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile
+// @Tags quality-profile
 // @ID updateQualityProfile
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11361,8 +11361,8 @@ func contractUpdateQualityProfileEnvelope() {}
 // contractUpdateQualityProfilePutEnvelope documents PUT /api/v1/quality-profiles/{id}.
 //
 // @Summary update Quality Profile
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile
-// @Tags quality-profiles
+// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile
+// @Tags quality-profile
 // @ID updateQualityProfilePut
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11404,8 +11404,8 @@ func contractCreateQueryTemplateEnvelope() {}
 // contractDeleteQueryTemplateEnvelope documents DELETE /api/v1/query-templates/{id}.
 //
 // @Summary delete Query Template
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteQueryTemplateResponse
-// @Tags query-templates
+// @Description 需要权限 manage:query-template（由 accessRules 强制）。成功返回 DeleteQueryTemplateResponse
+// @Tags query-template
 // @ID deleteQueryTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11416,8 +11416,8 @@ func contractDeleteQueryTemplateEnvelope() {}
 // contractGetQueryTemplateEnvelope documents GET /api/v1/query-templates/{id}.
 //
 // @Summary get Query Template
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.QueryTemplate
-// @Tags query-templates
+// @Description 需要权限 read:query-template（由 accessRules 强制）。成功返回 *model.QueryTemplate
+// @Tags query-template
 // @ID getQueryTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11428,8 +11428,8 @@ func contractGetQueryTemplateEnvelope() {}
 // contractUpdateQueryTemplateEnvelope documents PATCH /api/v1/query-templates/{id}.
 //
 // @Summary update Query Template
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate
-// @Tags query-templates
+// @Description 需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate
+// @Tags query-template
 // @ID updateQueryTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11442,8 +11442,8 @@ func contractUpdateQueryTemplateEnvelope() {}
 // contractUpdateQueryTemplatePutEnvelope documents PUT /api/v1/query-templates/{id}.
 //
 // @Summary update Query Template
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate
-// @Tags query-templates
+// @Description 需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate
+// @Tags query-template
 // @ID updateQueryTemplatePut
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11492,8 +11492,8 @@ func contractCreateReleaseCandidateEnvelope() {}
 // contractMarkReleaseCandidateReadyEnvelope documents POST /api/v1/release-candidates/{id}/ready.
 //
 // @Summary mark Release Candidate Ready
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkReleaseCandidateReadyResponse
-// @Tags release-candidates
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkReleaseCandidateReadyResponse
+// @Tags release-governance
 // @ID markReleaseCandidateReady
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11574,8 +11574,8 @@ func contractCreateReleaseEnvelope() {}
 // contractCompleteReleaseEnvelope documents POST /api/v1/releases/{id}/complete.
 //
 // @Summary complete Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release
-// @Tags releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release
+// @Tags release-governance
 // @ID completeRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11588,8 +11588,8 @@ func contractCompleteReleaseEnvelope() {}
 // contractRollbackReleaseEnvelope documents POST /api/v1/releases/{id}/rollback.
 //
 // @Summary rollback Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release
-// @Tags releases
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release
+// @Tags release-governance
 // @ID rollbackRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11602,8 +11602,8 @@ func contractRollbackReleaseEnvelope() {}
 // contractGetReportJobEnvelope documents GET /api/v1/report-jobs/{jobId}.
 //
 // @Summary getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the `event_seq` cursor to resume the stream from
-// @Description getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the `event_seq` cursor to resume the stream from. The job is addressed by its own id rather than "the report's latest job" because a client that reconnects is talking about one specific run: inferring it would let a snapshot of run #2 be paired with a cursor from run #1.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportJobSnapshot
-// @Tags report-jobs
+// @Description getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the `event_seq` cursor to resume the stream from. The job is addressed by its own id rather than "the report's latest job" because a client that reconnects is talking about one specific run: inferring it would let a snapshot of run #2 be paired with a cursor from run #1.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportJobSnapshot
+// @Tags report
 // @ID getReportJob
 // @Security BearerAuth
 // @Param jobId path string true "路径参数 jobId"
@@ -11614,8 +11614,8 @@ func contractGetReportJobEnvelope() {}
 // contractStreamReportJobEventsEnvelope documents GET /api/v1/report-jobs/{jobId}/events.
 //
 // @Summary streamReportJobEvents is the SSE endpoint (§8.3 / T5)
-// @Description streamReportJobEvents is the SSE endpoint (§8.3 / T5). The stream reads the event table, never an in-memory bus: a broadcast that only exists in RAM would lose the events a reconnect is asking about, which is the whole point of the sequence. Frames follow §8.8 exactly — `id: <seq>`, `event: report.job`, one `data:` line carrying `seq/type/job_id/revision_id/at/payload`. `seq` is in the body because the only parser the frontend has reads `data:` lines.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型 text/event-stream
-// @Tags report-jobs
+// @Description streamReportJobEvents is the SSE endpoint (§8.3 / T5). The stream reads the event table, never an in-memory bus: a broadcast that only exists in RAM would lose the events a reconnect is asking about, which is the whole point of the sequence. Frames follow §8.8 exactly — `id: <seq>`, `event: report.job`, one `data:` line carrying `seq/type/job_id/revision_id/at/payload`. `seq` is in the body because the only parser the frontend has reads `data:` lines.。需要权限 read:report（由 accessRules 强制）。成功返回原始字节，媒体类型 text/event-stream
+// @Tags report
 // @ID streamReportJobEvents
 // @Security BearerAuth
 // @Param jobId path string true "路径参数 jobId"
@@ -11628,8 +11628,8 @@ func contractStreamReportJobEventsEnvelope() {}
 // contractRetryReportSectionEnvelope documents POST /api/v1/report-jobs/{jobId}/sections/{ord}/retry.
 //
 // @Summary retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B)
-// @Description retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B). The job and ord name one failed section of the current published revision; the service mints a `section_retry` job, marks the old row superseded and writes a fresh pending section row. The response body carries both the new job and the new section (with `job_kind`/`rewrite_reason`) so a client can render in-flight state without a follow-up GET.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RetryReportSectionResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags report-jobs
+// @Description retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B). The job and ord name one failed section of the current published revision; the service mints a `section_retry` job, marks the old row superseded and writes a fresh pending section row. The response body carries both the new job and the new section (with `job_kind`/`rewrite_reason`) so a client can render in-flight state without a follow-up GET.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RetryReportSectionResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID retryReportSection
 // @Security BearerAuth
 // @Param jobId path string true "路径参数 jobId"
@@ -11710,8 +11710,8 @@ func contractPublishReportTemplateEnvelope() {}
 // contractUpdateReportTemplateEnvelope documents PUT /api/v1/report-templates/{key}.
 //
 // @Summary update Report Template
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ReportTemplatePublishRequest。成功返回 *service.ReportTemplateMutationResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags report-templates
+// @Description 需要权限 manage:report-template（由 accessRules 强制）。请求体类型 service.ReportTemplatePublishRequest。成功返回 *service.ReportTemplateMutationResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report-template
 // @ID updateReportTemplate
 // @Security BearerAuth
 // @Param key path string true "路径参数 key"
@@ -11725,8 +11725,8 @@ func contractUpdateReportTemplateEnvelope() {}
 // contractCapabilityCheckReportTemplateEnvelope documents POST /api/v1/report-templates/{key}/capability-check.
 //
 // @Summary capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract
-// @Description capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract. Read-only, mirroring the scenario-wizard check: it discloses verdicts (satisfied / repairable / probe_limited / blocked) and never repairs anything. Only `blocked` blocks creation — the create-time recheck re-runs the same evaluation server-side and answers 44102 then.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags report-templates
+// @Description capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract. Read-only, mirroring the scenario-wizard check: it discloses verdicts (satisfied / repairable / probe_limited / blocked) and never repairs anything. Only `blocked` blocks creation — the create-time recheck re-runs the same evaluation server-side and answers 44102 then.。需要权限 read:report-template（由 accessRules 强制）。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags report-template
 // @ID capabilityCheckReportTemplate
 // @Security BearerAuth
 // @Param key path string true "路径参数 key"
@@ -11740,8 +11740,8 @@ func contractCapabilityCheckReportTemplateEnvelope() {}
 // contractCloneReportTemplateEnvelope documents POST /api/v1/report-templates/{key}/clone.
 //
 // @Summary clone Report Template
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CloneReportTemplateResult
-// @Tags report-templates
+// @Description 需要权限 manage:report-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CloneReportTemplateResult
+// @Tags report-template
 // @ID cloneReportTemplate
 // @Security BearerAuth
 // @Param key path string true "路径参数 key"
@@ -11754,8 +11754,8 @@ func contractCloneReportTemplateEnvelope() {}
 // contractRetireReportTemplateEnvelope documents POST /api/v1/report-templates/{key}/retire.
 //
 // @Summary retireReportTemplate takes the newest workspace version out of service
-// @Description retireReportTemplate takes the newest workspace version out of service. It is not a delete: the row stays so historical reports keep their provenance.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportTemplateMutationResult
-// @Tags report-templates
+// @Description retireReportTemplate takes the newest workspace version out of service. It is not a delete: the row stays so historical reports keep their provenance.。需要权限 manage:report-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportTemplateMutationResult
+// @Tags report-template
 // @ID retireReportTemplate
 // @Security BearerAuth
 // @Param key path string true "路径参数 key"
@@ -11795,8 +11795,8 @@ func contractCreateReportEnvelope() {}
 // contractDeleteReportEnvelope documents DELETE /api/v1/reports/{id}.
 //
 // @Summary deleteReport closes a report and opens its 7-day recovery window
-// @Description deleteReport closes a report and opens its 7-day recovery window.。只要求登录，没有额外的 RBAC 规则。请求体类型 deleteReportRequest。成功返回 DeleteReportResponse。声明了 2 个业务错误码：40070(400)、44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description deleteReport closes a report and opens its 7-day recovery window.。需要权限 delete:own:report（由 accessRules 强制）。请求体类型 deleteReportRequest。成功返回 DeleteReportResponse。声明了 2 个业务错误码：40070(400)、44105(400)（括号内是 HTTP 状态）
+// @Tags own:report
 // @ID deleteReport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11811,8 +11811,8 @@ func contractDeleteReportEnvelope() {}
 // contractGetReportEnvelope documents GET /api/v1/reports/{id}.
 //
 // @Summary get Report
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportDetail
-// @Tags reports
+// @Description 需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportDetail
+// @Tags report
 // @ID getReport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11823,8 +11823,8 @@ func contractGetReportEnvelope() {}
 // contractPutReportAccessEnvelope documents PUT /api/v1/reports/{id}/access.
 //
 // @Summary putReportAccess replaces one report's sharing policy (doc/296 §2.1)
-// @Description putReportAccess replaces one report's sharing policy (doc/296 §2.1). `execute:report` is the route's RBAC gate — sharing is an action on a report you own, not a governance decision — and the row-level rule (owner, or platform `manage`) lives in the service, so a colleague's report answers 44109 rather than an existence oracle. The response is the new sharing view, not 204: the panel must show what the server actually stored (a grantee the server skipped, a policy it normalised) instead of echoing what the client sent.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.SetReportAccessRequest。成功返回 *service.ReportAccessView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description putReportAccess replaces one report's sharing policy (doc/296 §2.1). `execute:report` is the route's RBAC gate — sharing is an action on a report you own, not a governance decision — and the row-level rule (owner, or platform `manage`) lives in the service, so a colleague's report answers 44109 rather than an existence oracle. The response is the new sharing view, not 204: the panel must show what the server actually stored (a grantee the server skipped, a policy it normalised) instead of echoing what the client sent.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.SetReportAccessRequest。成功返回 *service.ReportAccessView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID putReportAccess
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11838,8 +11838,8 @@ func contractPutReportAccessEnvelope() {}
 // contractArchiveReportEnvelope documents POST /api/v1/reports/{id}/archive.
 //
 // @Summary archiveReport puts a finished report away (doc/297 §2)
-// @Description archiveReport puts a finished report away (doc/297 §2). 200 with the detail view: the state changed on a resource that already existed, and the client's next action is to render it — the same answer `restore` gives.。只要求登录，没有额外的 RBAC 规则。请求体类型 archiveReportRequest。成功返回 *service.ReportDetail。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description archiveReport puts a finished report away (doc/297 §2). 200 with the detail view: the state changed on a resource that already existed, and the client's next action is to render it — the same answer `restore` gives.。需要权限 delete:own:report（由 accessRules 强制）。请求体类型 archiveReportRequest。成功返回 *service.ReportDetail。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）
+// @Tags own:report
 // @ID archiveReport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11853,8 +11853,8 @@ func contractArchiveReportEnvelope() {}
 // contractPostReportBudgetExtensionEnvelope documents POST /api/v1/reports/{id}/budget-extension.
 //
 // @Summary postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2)
-// @Description postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2). `execute:report` is the gate and ownership is the row-level rule, the same union the rest of the surface uses: raising a limit is an action on your own run, not a governance decision. When the workspace has an approval policy the answer is 200 with `status=pending_approval` — the request was accepted and nothing has changed yet, which is a different thing from a failure and must not be reported as one.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.ReportBudgetExtensionRequest。成功返回 *service.ReportBudgetExtensionView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2). `execute:report` is the gate and ownership is the row-level rule, the same union the rest of the surface uses: raising a limit is an action on your own run, not a governance decision. When the workspace has an approval policy the answer is 200 with `status=pending_approval` — the request was accepted and nothing has changed yet, which is a different thing from a failure and must not be reported as one.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.ReportBudgetExtensionRequest。成功返回 *service.ReportBudgetExtensionView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID postReportBudgetExtension
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11868,8 +11868,8 @@ func contractPostReportBudgetExtensionEnvelope() {}
 // contractCancelReportEnvelope documents POST /api/v1/reports/{id}/cancel.
 //
 // @Summary cancelReport records the user's cancel intent for the report's current job
-// @Description cancelReport records the user's cancel intent for the report's current job. 202 rather than 200: the answer is "your intent is recorded", not "the report is cancelled". The terminal state is derived by finalize (§8.4), so a 200 here would be a promise the server cannot keep yet.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportCancelResult
-// @Tags reports
+// @Description cancelReport records the user's cancel intent for the report's current job. 202 rather than 200: the answer is "your intent is recorded", not "the report is cancelled". The terminal state is derived by finalize (§8.4), so a 200 here would be a promise the server cannot keep yet.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportCancelResult
+// @Tags report
 // @ID cancelReport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11882,8 +11882,8 @@ func contractCancelReportEnvelope() {}
 // contractGetReportFollowUpsEnvelope documents GET /api/v1/reports/{id}/follow-ups.
 //
 // @Summary getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn
-// @Description getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn. `revision` absent/0 means "whatever this report currently shows", resolved from `current_revision_id` by the service — never "the highest number". A present but non-positive revision is refused with 44105 instead of being read as "current": a client that asked for `revision=0` after a regenerate would silently get the published base (or the running draft) and never learn it asked for nothing.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportFollowUpView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn. `revision` absent/0 means "whatever this report currently shows", resolved from `current_revision_id` by the service — never "the highest number". A present but non-positive revision is refused with 44105 instead of being read as "current": a client that asked for `revision=0` after a regenerate would silently get the published base (or the running draft) and never learn it asked for nothing.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportFollowUpView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID getReportFollowUps
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11897,8 +11897,8 @@ func contractGetReportFollowUpsEnvelope() {}
 // contractRestoreReportEnvelope documents POST /api/v1/reports/{id}/restore.
 //
 // @Summary restoreReport re-opens a soft-deleted report inside its recovery window (A47)
-// @Description restoreReport re-opens a soft-deleted report inside its recovery window (A47). 200 with the report detail: the restore has already happened by the time this answers, so there is nothing asynchronous to acknowledge. 409/44104 means the window closed (or the row is not deleted), which is a state answer, not a missing route — that is why it is not a 404.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail
-// @Tags reports
+// @Description restoreReport re-opens a soft-deleted report inside its recovery window (A47). 200 with the report detail: the restore has already happened by the time this answers, so there is nothing asynchronous to acknowledge. 409/44104 means the window closed (or the row is not deleted), which is a state answer, not a missing route — that is why it is not a 404.。需要权限 delete:own:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail
+// @Tags own:report
 // @ID restoreReport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11911,8 +11911,8 @@ func contractRestoreReportEnvelope() {}
 // contractListReportRevisionsEnvelope documents GET /api/v1/reports/{id}/revisions.
 //
 // @Summary listReportRevisions answers the report's version history (doc/288 §7.10)
-// @Description listReportRevisions answers the report's version history (doc/288 §7.10). A superseded revision is reachable today only by guessing its number: the detail page resolves `current_revision_id`, and nothing told a client which other numbers exist. That made A41's "historical revisions stay readable" true of the API and false of the product.。只要求登录，没有额外的 RBAC 规则。成功返回 ListReportRevisionsResponse
-// @Tags reports
+// @Description listReportRevisions answers the report's version history (doc/288 §7.10). A superseded revision is reachable today only by guessing its number: the detail page resolves `current_revision_id`, and nothing told a client which other numbers exist. That made A41's "historical revisions stay readable" true of the API and false of the product.。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportRevisionsResponse
+// @Tags report
 // @ID listReportRevisions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11923,8 +11923,8 @@ func contractListReportRevisionsEnvelope() {}
 // contractCreateReportRevisionEnvelope documents POST /api/v1/reports/{id}/revisions.
 //
 // @Summary createReportRevision starts one new run on an already-published report
-// @Description createReportRevision starts one new run on an already-published report. Same conditions, same report: it mints revision `current+1` from the published base and a fresh `report_generate` job in one transaction (doc/288 §7.10). The `Idempotency-Key` header is required (44114) and lives in its OWN namespace — a creation key can never replay here, and a regeneration key can never collide with the key that minted the report (§7.10 "不受创建幂等键拦截"). There is no body: P0-A's "重新生成（同条件）" has nothing a caller may change.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.RegenerateReportRequest。成功返回 *service.CreateReportResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description createReportRevision starts one new run on an already-published report. Same conditions, same report: it mints revision `current+1` from the published base and a fresh `report_generate` job in one transaction (doc/288 §7.10). The `Idempotency-Key` header is required (44114) and lives in its OWN namespace — a creation key can never replay here, and a regeneration key can never collide with the key that minted the report (§7.10 "不受创建幂等键拦截"). There is no body: P0-A's "重新生成（同条件）" has nothing a caller may change.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.RegenerateReportRequest。成功返回 *service.CreateReportResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID createReportRevision
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11938,8 +11938,8 @@ func contractCreateReportRevisionEnvelope() {}
 // contractGetReportRevisionEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}.
 //
 // @Summary getReportRevision reads "second revision of report X" by its number, the historical-run view a client refreshes after reconnecting
-// @Description getReportRevision reads "second revision of report X" by its number, the historical-run view a client refreshes after reconnecting. The report row is carried in the answer (same shape as GET /reports/:id) so a caller paging through a report's revisions never has to fetch the report twice.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportDetail。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description getReportRevision reads "second revision of report X" by its number, the historical-run view a client refreshes after reconnecting. The report row is carried in the answer (same shape as GET /reports/:id) so a caller paging through a report's revisions never has to fetch the report twice.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportDetail。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID getReportRevision
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11952,8 +11952,8 @@ func contractGetReportRevisionEnvelope() {}
 // contractCreateReportExportEnvelope documents POST /api/v1/reports/{id}/revisions/{revision}/artifacts.
 //
 // @Summary createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12)
-// @Description createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12). The format comes from the body; there is deliberately no client-supplied idempotency key here, because the server derives it from the frozen content — the same revision exported twice is the same artifact (§7.7 rule 2), so a duplicate click can never mint two versions.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 CreateReportExportResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12). The format comes from the body; there is deliberately no client-supplied idempotency key here, because the server derives it from the frozen content — the same revision exported twice is the same artifact (§7.7 rule 2), so a duplicate click can never mint two versions.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 CreateReportExportResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID createReportExport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11968,8 +11968,8 @@ func contractCreateReportExportEnvelope() {}
 // contractDownloadReportExportEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/artifacts/{artifactId}/download.
 //
 // @Summary downloadReportExport streams one frozen artifact
-// @Description downloadReportExport streams one frozen artifact. The route carries report id + revision + artifact id (§11.4): the id alone would leak through the access layer, and addressing the artifact under its revision means a stale URL fails on the revision, not on a guessable artifact id.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型 。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description downloadReportExport streams one frozen artifact. The route carries report id + revision + artifact id (§11.4): the id alone would leak through the access layer, and addressing the artifact under its revision means a stale URL fails on the revision, not on a guessable artifact id.。需要权限 read:report（由 accessRules 强制）。成功返回原始字节，媒体类型 。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID downloadReportExport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11984,8 +11984,8 @@ func contractDownloadReportExportEnvelope() {}
 // contractListReportAssuranceRunsEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/assurance-runs.
 //
 // @Summary listReportAssuranceRuns is the history read (T06)
-// @Description listReportAssuranceRuns is the history read (T06). The limit is a page size with a hard ceiling, not a caller-controlled scan: a revision accumulates runs, and "give me all of them" is not a request a dashboard needs.。只要求登录，没有额外的 RBAC 规则。成功返回 ListReportAssuranceRunsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description listReportAssuranceRuns is the history read (T06). The limit is a page size with a hard ceiling, not a caller-controlled scan: a revision accumulates runs, and "give me all of them" is not a request a dashboard needs.。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportAssuranceRunsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID listReportAssuranceRuns
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -11999,8 +11999,8 @@ func contractListReportAssuranceRunsEnvelope() {}
 // contractPostReportAssuranceRunEnvelope documents POST /api/v1/reports/{id}/revisions/{revision}/assurance-runs.
 //
 // @Summary postReportAssuranceRun starts one run (T06)
-// @Description postReportAssuranceRun starts one run (T06). The `Idempotency-Key` header is required and its absence is 44114, decided in the service so the same rule covers every caller. 202, not 200: the run exists and has not measured anything yet, and a 200 would invite a client to read `release_eligibility` from a run that cannot have one (it is `pending`).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description postReportAssuranceRun starts one run (T06). The `Idempotency-Key` header is required and its absence is 44114, decided in the service so the same rule covers every caller. 202, not 200: the run exists and has not measured anything yet, and a 200 would invite a client to read `release_eligibility` from a run that cannot have one (it is `pending`).。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID postReportAssuranceRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12016,8 +12016,8 @@ func contractPostReportAssuranceRunEnvelope() {}
 // contractGetReportAssuranceRunEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/assurance-runs/{runId}.
 //
 // @Summary getReportAssuranceRun is the single-run read
-// @Description getReportAssuranceRun is the single-run read. It is polled by the workbench while a run is `queued`/`running`, so it returns the counters as they stand: a progress read that answered "not ready" would force the client to invent a poll cadence.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description getReportAssuranceRun is the single-run read. It is polled by the workbench while a run is `queued`/`running`, so it returns the counters as they stand: a progress read that answered "not ready" would force the client to invent a poll cadence.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID getReportAssuranceRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12031,8 +12031,8 @@ func contractGetReportAssuranceRunEnvelope() {}
 // contractPatchReportReviewFindingEnvelope documents PATCH /api/v1/reports/{id}/revisions/{revision}/findings/{findingId}.
 //
 // @Summary patchReportReviewFinding adjudicates one finding (T09)
-// @Description patchReportReviewFinding adjudicates one finding (T09). Owner-only, decided in the service; the handler's job is only to pass the three body fields through.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportReviewFindingView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description patchReportReviewFinding adjudicates one finding (T09). Owner-only, decided in the service; the handler's job is only to pass the three body fields through.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportReviewFindingView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID patchReportReviewFinding
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12048,8 +12048,8 @@ func contractPatchReportReviewFindingEnvelope() {}
 // contractConfirmReportOutlineEnvelope documents POST /api/v1/reports/{id}/revisions/{revision}/outline/confirm.
 //
 // @Summary confirmReportOutline records the reviewer's outline and arms the writing attempt
-// @Description confirmReportOutline records the reviewer's outline and arms the writing attempt. The revision is in the path rather than inferred from "the latest revision": a confirmation is addressed to one specific structure, and inferring it would let a client that lagged behind a regeneration approve the wrong outline. 202, not 200: sections exist but no content does. The same reasoning as `createReport` — 200 would claim a written report.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConfirmReportOutlineResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description confirmReportOutline records the reviewer's outline and arms the writing attempt. The revision is in the path rather than inferred from "the latest revision": a confirmation is addressed to one specific structure, and inferring it would let a client that lagged behind a regeneration approve the wrong outline. 202, not 200: sections exist but no content does. The same reasoning as `createReport` — 200 would claim a written report.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConfirmReportOutlineResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID confirmReportOutline
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12064,8 +12064,8 @@ func contractConfirmReportOutlineEnvelope() {}
 // contractGetReportReviewEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/review.
 //
 // @Summary getReportReview is the workbench projection (T08/T09)
-// @Description getReportReview is the workbench projection (T08/T09). Pagination is by cursor (`section_cursor`, `finding_cursor`), never by offset: an offset shifts when a partial retry rewrites a section, and the reviewer would silently scroll past claims.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ReportReviewView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description getReportReview is the workbench projection (T08/T09). Pagination is by cursor (`section_cursor`, `finding_cursor`), never by offset: an offset shifts when a partial retry rewrites a section, and the reviewer would silently scroll past claims.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportReviewView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID getReportReview
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12081,8 +12081,8 @@ func contractGetReportReviewEnvelope() {}
 // contractListReportSectionsEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/sections.
 //
 // @Summary listReportSections is the reading surface: one revision's sections with bodies
-// @Description listReportSections is the reading surface: one revision's sections with bodies. Without it a report could only be read as an exported file, which is why the centre had a drawer with statuses and no text (doc/44 「好用」 gap #4).。只要求登录，没有额外的 RBAC 规则。成功返回 ListReportSectionsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description listReportSections is the reading surface: one revision's sections with bodies. Without it a report could only be read as an exported file, which is why the centre had a drawer with statuses and no text (doc/44 「好用」 gap #4).。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportSectionsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID listReportSections
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12095,8 +12095,8 @@ func contractListReportSectionsEnvelope() {}
 // contractDeleteReportScheduleEnvelope documents DELETE /api/v1/reports/{id}/schedule.
 //
 // @Summary deleteReportSchedule removes the plan
-// @Description deleteReportSchedule removes the plan. 204 either way: the caller's intent was "this report does not run on a timer", and after the call it does not. Deleting twice is therefore not an error, which keeps a retried request harmless.。只要求登录，没有额外的 RBAC 规则
-// @Tags reports
+// @Description deleteReportSchedule removes the plan. 204 either way: the caller's intent was "this report does not run on a timer", and after the call it does not. Deleting twice is therefore not an error, which keeps a retried request harmless.。需要权限 execute:report（由 accessRules 强制）
+// @Tags report
 // @ID deleteReportSchedule
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12107,8 +12107,8 @@ func contractDeleteReportScheduleEnvelope() {}
 // contractGetReportScheduleEnvelope documents GET /api/v1/reports/{id}/schedule.
 //
 // @Summary getReportSchedule answers the report's recurring plan, or `{"schedule":null}` when it has none
-// @Description getReportSchedule answers the report's recurring plan, or `{"schedule":null}` when it has none. A null is not a 404: "this report does not run on a timer" is a successful answer to "when does it run", and a client should not have to catch an error to render an empty card.。只要求登录，没有额外的 RBAC 规则。成功返回 GetReportScheduleResponse
-// @Tags reports
+// @Description getReportSchedule answers the report's recurring plan, or `{"schedule":null}` when it has none. A null is not a 404: "this report does not run on a timer" is a successful answer to "when does it run", and a client should not have to catch an error to render an empty card.。需要权限 read:report（由 accessRules 强制）。成功返回 GetReportScheduleResponse
+// @Tags report
 // @ID getReportSchedule
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12119,8 +12119,8 @@ func contractGetReportScheduleEnvelope() {}
 // contractPutReportScheduleEnvelope documents PUT /api/v1/reports/{id}/schedule.
 //
 // @Summary putReportSchedule creates or replaces the plan (idempotent on the report)
-// @Description putReportSchedule creates or replaces the plan (idempotent on the report). 201 on the first arming, 200 afterwards, so a client can tell "armed" from "changed".。只要求登录，没有额外的 RBAC 规则。请求体类型 service.ReportScheduleRequest。成功返回 *service.ReportScheduleView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
-// @Tags reports
+// @Description putReportSchedule creates or replaces the plan (idempotent on the report). 201 on the first arming, 200 afterwards, so a client can tell "armed" from "changed".。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.ReportScheduleRequest。成功返回 *service.ReportScheduleView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Tags report
 // @ID putReportSchedule
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12135,8 +12135,8 @@ func contractPutReportScheduleEnvelope() {}
 // contractUnarchiveReportEnvelope documents POST /api/v1/reports/{id}/unarchive.
 //
 // @Summary unarchiveReport returns a report to the daily list
-// @Description unarchiveReport returns a report to the daily list. No body: the only thing to say is "not archived any more".。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail
-// @Tags reports
+// @Description unarchiveReport returns a report to the daily list. No body: the only thing to say is "not archived any more".。需要权限 delete:own:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail
+// @Tags own:report
 // @ID unarchiveReport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12193,8 +12193,8 @@ func contractImportScenarioTemplateEnvelope() {}
 // contractArchiveScenarioTemplateEnvelope documents DELETE /api/v1/scenario-template-assets/{id}.
 //
 // @Summary archive Scenario Template
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 ArchiveScenarioTemplateResponse
-// @Tags scenario-template-assets
+// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。成功返回 ArchiveScenarioTemplateResponse
+// @Tags scenario-template
 // @ID archiveScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12205,8 +12205,8 @@ func contractArchiveScenarioTemplateEnvelope() {}
 // contractGetScenarioTemplateEnvelope documents GET /api/v1/scenario-template-assets/{id}.
 //
 // @Summary get Scenario Template
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 GetScenarioTemplateResponse。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description 需要权限 read:scenario-template（由 accessRules 强制）。成功返回 GetScenarioTemplateResponse。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）
+// @Tags scenario-template
 // @ID getScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12219,8 +12219,8 @@ func contractGetScenarioTemplateEnvelope() {}
 // contractUpdateScenarioTemplateEnvelope documents PUT /api/v1/scenario-template-assets/{id}.
 //
 // @Summary update Scenario Template
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Tags scenario-template
 // @ID updateScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12234,8 +12234,8 @@ func contractUpdateScenarioTemplateEnvelope() {}
 // contractCapabilityCheckScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/capability-check.
 //
 // @Summary capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract
-// @Description capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract. Read-only: it never repairs anything.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract. Read-only: it never repairs anything.。需要权限 read:scenario-template（由 accessRules 强制）。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags scenario-template
 // @ID capabilityCheckScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12249,8 +12249,8 @@ func contractCapabilityCheckScenarioTemplateEnvelope() {}
 // contractCopyScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/copy.
 //
 // @Summary copy Scenario Template
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 CopyScenarioTemplateRequest。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40063(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 CopyScenarioTemplateRequest。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40063(400)（括号内是 HTTP 状态）
+// @Tags scenario-template
 // @ID copyScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12264,8 +12264,8 @@ func contractCopyScenarioTemplateEnvelope() {}
 // contractCreateEvalSetFromTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/eval-set.
 //
 // @Summary create Eval Set From Template
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 CreateEvalSetFromTemplateRequest。成功返回 *model.EvalSet。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 CreateEvalSetFromTemplateRequest。成功返回 *model.EvalSet。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
+// @Tags eval-set
 // @ID createEvalSetFromTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12279,8 +12279,8 @@ func contractCreateEvalSetFromTemplateEnvelope() {}
 // contractExportScenarioTemplateEnvelope documents GET /api/v1/scenario-template-assets/{id}/export.
 //
 // @Summary export Scenario Template
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.ScenarioTemplateExport。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description 需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioTemplateExport。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）
+// @Tags scenario-template
 // @ID exportScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12293,8 +12293,8 @@ func contractExportScenarioTemplateEnvelope() {}
 // contractForkScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/fork.
 //
 // @Summary forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1)
-// @Description forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1). Forking is explicit: instantiation never forks implicitly.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset
-// @Tags scenario-template-assets
+// @Description forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1). Forking is explicit: instantiation never forks implicitly.。需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset
+// @Tags scenario-template
 // @ID forkScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12307,8 +12307,8 @@ func contractForkScenarioTemplateEnvelope() {}
 // contractScenarioTemplateHealthEnvelope documents GET /api/v1/scenario-template-assets/{id}/health.
 //
 // @Summary scenarioTemplateHealth serves the five-metric health board (doc/276 §8.6)
-// @Description scenarioTemplateHealth serves the five-metric health board (doc/276 §8.6).。只要求登录，没有额外的 RBAC 规则。成功返回 *service.ScenarioTemplateHealth
-// @Tags scenario-template-assets
+// @Description scenarioTemplateHealth serves the five-metric health board (doc/276 §8.6).。需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioTemplateHealth
+// @Tags scenario-template
 // @ID scenarioTemplateHealth
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12319,8 +12319,8 @@ func contractScenarioTemplateHealthEnvelope() {}
 // contractInstantiateScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/instantiate.
 //
 // @Summary instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3)
-// @Description instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3). The idempotency key comes from the header only — never from the body.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.UnifiedInstantiateInput。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3). The idempotency key comes from the header only — never from the body.。需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.UnifiedInstantiateInput。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags scenario-template
 // @ID instantiateScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12334,8 +12334,8 @@ func contractInstantiateScenarioTemplateEnvelope() {}
 // contractInstantiateChatFromScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/instantiate-chat.
 //
 // @Summary instantiate Chat From Scenario Template
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ScenarioTemplateInstantiationInput。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、40065(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description 需要权限 manage:chat（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInstantiationInput。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、40065(400)（括号内是 HTTP 状态）
+// @Tags chat
 // @ID instantiateChatFromScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12349,8 +12349,8 @@ func contractInstantiateChatFromScenarioTemplateEnvelope() {}
 // contractCreateTemplateReleaseCandidateEnvelope documents POST /api/v1/scenario-template-assets/{id}/release-candidate.
 //
 // @Summary create Template Release Candidate
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ScenarioTemplateReleaseCandidateInput。成功返回 *service.ScenarioTemplateReleaseCandidateResult。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）
-// @Tags scenario-template-assets
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。请求体类型 service.ScenarioTemplateReleaseCandidateInput。成功返回 *service.ScenarioTemplateReleaseCandidateResult。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）
+// @Tags release-governance
 // @ID createTemplateReleaseCandidate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12375,7 +12375,7 @@ func contractListScenarioTemplateBaselinesEnvelope() {}
 // contractPublishScenarioTemplateBaselineEnvelope documents POST /api/v1/scenario-template-baseline/{key}/publish.
 //
 // @Summary publishScenarioTemplateBaseline appends a version to a platform baseline
-// @Description publishScenarioTemplateBaseline appends a version to a platform baseline. It is platform-admin only: workspaces fork instead of publishing.。只要求登录，没有额外的 RBAC 规则。请求体类型 service.BaselinePublishInput。成功返回 PublishScenarioTemplateBaselineResponse。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
+// @Description publishScenarioTemplateBaseline appends a version to a platform baseline. It is platform-admin only: workspaces fork instead of publishing.。需要权限 manage:scenario-template-baseline（由 accessRules 强制）。请求体类型 service.BaselinePublishInput。成功返回 PublishScenarioTemplateBaselineResponse。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
 // @Tags scenario-template-baseline
 // @ID publishScenarioTemplateBaseline
 // @Security BearerAuth
@@ -12412,8 +12412,8 @@ func contractListScenarioTemplateSkeletonsEnvelope() {}
 // contractImportScenarioTemplateSkeletonEnvelope documents POST /api/v1/scenario-template-skeletons/{id}/import.
 //
 // @Summary importScenarioTemplateSkeleton materialises one skeleton as a workspace draft
-// @Description importScenarioTemplateSkeleton materialises one skeleton as a workspace draft. The draft is intentionally incomplete-friendly; publish validation is stricter than create validation, so an unreviewed draft cannot go live.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset
-// @Tags scenario-template-skeletons
+// @Description importScenarioTemplateSkeleton materialises one skeleton as a workspace draft. The draft is intentionally incomplete-friendly; publish validation is stricter than create validation, so an unreviewed draft cannot go live.。需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset
+// @Tags scenario-template
 // @ID importScenarioTemplateSkeleton
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12482,8 +12482,8 @@ func contractSearchAppModelOptionsEnvelope() {}
 // contractDeleteSearchAppEnvelope documents DELETE /api/v1/search-apps/{id}.
 //
 // @Summary DeleteSearchApp deletes a Search App
-// @Description DeleteSearchApp deletes a Search App.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteSearchAppResponse
-// @Tags search-apps
+// @Description DeleteSearchApp deletes a Search App.。需要权限 manage:search-app（由 accessRules 强制）。成功返回 DeleteSearchAppResponse
+// @Tags search-app
 // @ID deleteSearchApp
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12494,8 +12494,8 @@ func contractDeleteSearchAppEnvelope() {}
 // contractGetSearchAppEnvelope documents GET /api/v1/search-apps/{id}.
 //
 // @Summary GetSearchApp returns a Search App
-// @Description GetSearchApp returns a Search App.。只要求登录，没有额外的 RBAC 规则。成功返回 *model.SearchAppShadow
-// @Tags search-apps
+// @Description GetSearchApp returns a Search App.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *model.SearchAppShadow
+// @Tags search-app
 // @ID getSearchApp
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12508,8 +12508,8 @@ func contractGetSearchAppEnvelope() {}
 // contractUpdateSearchAppEnvelope documents PUT /api/v1/search-apps/{id}.
 //
 // @Summary UpdateSearchApp updates a Search App (name and search_config)
-// @Description UpdateSearchApp updates a Search App (name and search_config).。只要求登录，没有额外的 RBAC 规则。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags search-apps
+// @Description UpdateSearchApp updates a Search App (name and search_config).。需要权限 manage:search-app（由 accessRules 强制）。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags search-app
 // @ID updateSearchApp
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12523,8 +12523,8 @@ func contractUpdateSearchAppEnvelope() {}
 // contractSearchAppCompletionEnvelope documents POST /api/v1/search-apps/{id}/completion.
 //
 // @Summary SearchAppCompletion runs a retrieval against a Search App for debugging
-// @Description SearchAppCompletion runs a retrieval against a Search App for debugging.。只要求登录，没有额外的 RBAC 规则。请求体类型 searchAppCompletePayload。成功返回 *ragflow.SearchAppCompletionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags search-apps
+// @Description SearchAppCompletion runs a retrieval against a Search App for debugging.。需要权限 execute:search-app（由 accessRules 强制）。请求体类型 searchAppCompletePayload。成功返回 *ragflow.SearchAppCompletionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags search-app
 // @ID searchAppCompletion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12538,8 +12538,8 @@ func contractSearchAppCompletionEnvelope() {}
 // contractStreamSearchAppCompletionEnvelope documents POST /api/v1/search-apps/{id}/completion/stream.
 //
 // @Summary StreamSearchAppCompletion proxies the Search App SSE completion to the client
-// @Description StreamSearchAppCompletion proxies the Search App SSE completion to the client.。只要求登录，没有额外的 RBAC 规则。请求体类型 searchAppCompletePayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags search-apps
+// @Description StreamSearchAppCompletion proxies the Search App SSE completion to the client.。需要权限 execute:search-app（由 accessRules 强制）。请求体类型 searchAppCompletePayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags search-app
 // @ID streamSearchAppCompletion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12554,8 +12554,8 @@ func contractStreamSearchAppCompletionEnvelope() {}
 // contractGetSearchAppConfigEnvelope documents GET /api/v1/search-apps/{id}/config.
 //
 // @Summary GetSearchAppConfig returns the live RAGFlow-side search_config for prefill
-// @Description GetSearchAppConfig returns the live RAGFlow-side search_config for prefill.。只要求登录，没有额外的 RBAC 规则。成功返回 *ragflow.SearchApp
-// @Tags search-apps
+// @Description GetSearchAppConfig returns the live RAGFlow-side search_config for prefill.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *ragflow.SearchApp
+// @Tags search-app
 // @ID getSearchAppConfig
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12624,8 +12624,8 @@ func contractCreateSourceRoutingRuleEnvelope() {}
 // contractDeleteSourceRoutingRuleEnvelope documents DELETE /api/v1/source-routing-rules/{id}.
 //
 // @Summary delete Source Routing Rule
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteSourceRoutingRuleResponse
-// @Tags source-routing-rules
+// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。成功返回 DeleteSourceRoutingRuleResponse
+// @Tags source-routing-rule
 // @ID deleteSourceRoutingRule
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12636,8 +12636,8 @@ func contractDeleteSourceRoutingRuleEnvelope() {}
 // contractGetSourceRoutingRuleEnvelope documents GET /api/v1/source-routing-rules/{id}.
 //
 // @Summary get Source Routing Rule
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.SourceRoutingRule
-// @Tags source-routing-rules
+// @Description 需要权限 read:source-routing-rule（由 accessRules 强制）。成功返回 *model.SourceRoutingRule
+// @Tags source-routing-rule
 // @ID getSourceRoutingRule
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12648,8 +12648,8 @@ func contractGetSourceRoutingRuleEnvelope() {}
 // contractUpdateSourceRoutingRuleEnvelope documents PATCH /api/v1/source-routing-rules/{id}.
 //
 // @Summary update Source Routing Rule
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule
-// @Tags source-routing-rules
+// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule
+// @Tags source-routing-rule
 // @ID updateSourceRoutingRule
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12662,8 +12662,8 @@ func contractUpdateSourceRoutingRuleEnvelope() {}
 // contractUpdateSourceRoutingRulePutEnvelope documents PUT /api/v1/source-routing-rules/{id}.
 //
 // @Summary update Source Routing Rule
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule
-// @Tags source-routing-rules
+// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule
+// @Tags source-routing-rule
 // @ID updateSourceRoutingRulePut
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12789,8 +12789,8 @@ func contractSystemHealthEnvelope() {}
 // contractGetResourceSyncArtifactEnvelope documents GET /api/v1/system/ragflow/sync/artifacts/{id}.
 //
 // @Summary Get Resource Sync Artifact
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.ResourceSyncArtifact
-// @Tags system
+// @Description 需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 *model.ResourceSyncArtifact
+// @Tags ragflow-sync
 // @ID getResourceSyncArtifact
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12826,8 +12826,8 @@ func contractUpsertResourceSyncTenantMappingEnvelope() {}
 // contractDeleteResourceSyncTenantMappingEnvelope documents DELETE /api/v1/system/ragflow/sync/mappings/{externalTenantId}.
 //
 // @Summary Delete Resource Sync Tenant Mapping
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteResourceSyncTenantMappingResponse
-// @Tags system
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。成功返回 DeleteResourceSyncTenantMappingResponse
+// @Tags ragflow-sync
 // @ID deleteResourceSyncTenantMapping
 // @Security BearerAuth
 // @Param externalTenantId path string true "路径参数 externalTenantId"
@@ -12898,8 +12898,8 @@ func contractListResourceSyncResourcesEnvelope() {}
 // contractResolveResourceSyncConflictEnvelope documents POST /api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/conflicts/resolve.
 //
 // @Summary Resolve Resource Sync Conflict
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ResourceSyncConflictRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags system
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncConflictRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags ragflow-sync
 // @ID resolveResourceSyncConflict
 // @Security BearerAuth
 // @Param type path string true "路径参数 type"
@@ -12915,8 +12915,8 @@ func contractResolveResourceSyncConflictEnvelope() {}
 // contractRelinkResourceSyncEnvelope documents POST /api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/relink.
 //
 // @Summary Relink Resource Sync
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ResourceSyncRelinkRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags system
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncRelinkRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags ragflow-sync
 // @ID relinkResourceSync
 // @Security BearerAuth
 // @Param type path string true "路径参数 type"
@@ -12932,8 +12932,8 @@ func contractRelinkResourceSyncEnvelope() {}
 // contractListResourceBindingVersionsEnvelope documents GET /api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/versions.
 //
 // @Summary List Resource Binding Versions
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 ListResourceBindingVersionsResponse
-// @Tags system
+// @Description 需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceBindingVersionsResponse
+// @Tags ragflow-sync
 // @ID listResourceBindingVersions
 // @Security BearerAuth
 // @Param type path string true "路径参数 type"
@@ -12962,8 +12962,8 @@ func contractListResourceSyncRunsEnvelope() {}
 // contractGetResourceSyncRunEnvelope documents GET /api/v1/system/ragflow/sync/runs/{id}.
 //
 // @Summary Get Resource Sync Run
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.SyncRun
-// @Tags system
+// @Description 需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 *model.SyncRun
+// @Tags ragflow-sync
 // @ID getResourceSyncRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12974,8 +12974,8 @@ func contractGetResourceSyncRunEnvelope() {}
 // contractAssignResourceSyncItemsEnvelope documents POST /api/v1/system/ragflow/sync/runs/{id}/assign.
 //
 // @Summary Assign Resource Sync Items
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ResourceSyncItemAssignmentRequest。成功返回 *service.ResourceSyncItemAssignmentResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags system
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncItemAssignmentRequest。成功返回 *service.ResourceSyncItemAssignmentResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags ragflow-sync
 // @ID assignResourceSyncItems
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -12989,8 +12989,8 @@ func contractAssignResourceSyncItemsEnvelope() {}
 // contractImportResourceSyncEnvelope documents POST /api/v1/system/ragflow/sync/runs/{id}/import.
 //
 // @Summary Import Resource Sync
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.ResourceSyncImportRequest。成功返回 *model.SyncRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags system
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncImportRequest。成功返回 *model.SyncRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags ragflow-sync
 // @ID importResourceSync
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13004,8 +13004,8 @@ func contractImportResourceSyncEnvelope() {}
 // contractListResourceSyncRunItemsEnvelope documents GET /api/v1/system/ragflow/sync/runs/{id}/items.
 //
 // @Summary List Resource Sync Run Items
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 ListResourceSyncRunItemsResponse
-// @Tags system
+// @Description 需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceSyncRunItemsResponse
+// @Tags ragflow-sync
 // @ID listResourceSyncRunItems
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13095,7 +13095,7 @@ func contractListSystemSettingRevisionsEnvelope() {}
 // contractGetSystemSettingRevisionEnvelope documents GET /api/v1/system/settings/revisions/{id}.
 //
 // @Summary Get System Setting Revision
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.SettingRevision
+// @Description 需要权限 read:system（由 accessRules 强制）。成功返回 *model.SettingRevision
 // @Tags system
 // @ID getSystemSettingRevision
 // @Security BearerAuth
@@ -13107,7 +13107,7 @@ func contractGetSystemSettingRevisionEnvelope() {}
 // contractRollbackSystemSettingRevisionEnvelope documents POST /api/v1/system/settings/revisions/{id}/rollback.
 //
 // @Summary Rollback System Setting Revision
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 RollbackSystemSettingRevisionRequest。成功返回 *model.SettingRevision。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:system（由 accessRules 强制）。请求体类型 RollbackSystemSettingRevisionRequest。成功返回 *model.SettingRevision。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）
 // @Tags system
 // @ID rollbackSystemSettingRevision
 // @Security BearerAuth
@@ -13135,7 +13135,7 @@ func contractReportRuntimeSettingStateEnvelope() {}
 // contractUpdateSystemSettingSecretEnvelope documents POST /api/v1/system/settings/secrets/{key}.
 //
 // @Summary Update System Setting Secret
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.SystemSettingSecretRequest。成功返回 *model.SettingRevision。声明了 2 个业务错误码：500(500)、40098(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:system（由 accessRules 强制）。请求体类型 service.SystemSettingSecretRequest。成功返回 *model.SettingRevision。声明了 2 个业务错误码：500(500)、40098(400)（括号内是 HTTP 状态）
 // @Tags system
 // @ID updateSystemSettingSecret
 // @Security BearerAuth
@@ -13310,8 +13310,8 @@ func contractCreateTeamEnvelope() {}
 // contractDeleteTeamEnvelope documents DELETE /api/v1/teams/{id}.
 //
 // @Summary DeleteTeam deletes a tenant team
-// @Description DeleteTeam deletes a tenant team.。只要求登录，没有额外的 RBAC 规则。成功返回 DeleteTeamResponse
-// @Tags teams
+// @Description DeleteTeam deletes a tenant team.。需要权限 manage:team（由 accessRules 强制）。成功返回 DeleteTeamResponse
+// @Tags team
 // @ID deleteTeam
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13322,8 +13322,8 @@ func contractDeleteTeamEnvelope() {}
 // contractGetTeamEnvelope documents GET /api/v1/teams/{id}.
 //
 // @Summary GetTeam returns a single team with tenant/owner names
-// @Description GetTeam returns a single team with tenant/owner names.。只要求登录，没有额外的 RBAC 规则。成功返回 *service.TeamView
-// @Tags teams
+// @Description GetTeam returns a single team with tenant/owner names.。需要权限 read:team（由 accessRules 强制）。成功返回 *service.TeamView
+// @Tags team
 // @ID getTeam
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13334,8 +13334,8 @@ func contractGetTeamEnvelope() {}
 // contractUpdateTeamEnvelope documents PUT /api/v1/teams/{id}.
 //
 // @Summary UpdateTeam updates a tenant team (owner transfer reassigns team_admin)
-// @Description UpdateTeam updates a tenant team (owner transfer reassigns team_admin).。只要求登录，没有额外的 RBAC 规则。请求体类型 teamRequest。成功返回 *model.Team。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags teams
+// @Description UpdateTeam updates a tenant team (owner transfer reassigns team_admin).。需要权限 manage:team（由 accessRules 强制）。请求体类型 teamRequest。成功返回 *model.Team。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags team
 // @ID updateTeam
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13349,8 +13349,8 @@ func contractUpdateTeamEnvelope() {}
 // contractListTeamProjectsEnvelope documents GET /api/v1/teams/{id}/projects.
 //
 // @Summary ListTeamProjects returns the projects authorized to a tenant team
-// @Description ListTeamProjects returns the projects authorized to a tenant team.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.Project
-// @Tags teams
+// @Description ListTeamProjects returns the projects authorized to a tenant team.。需要权限 read:team（由 accessRules 强制）。成功返回 []model.Project
+// @Tags team
 // @ID listTeamProjects
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13361,8 +13361,8 @@ func contractListTeamProjectsEnvelope() {}
 // contractBindTeamProjectsEnvelope documents PUT /api/v1/teams/{id}/projects.
 //
 // @Summary BindTeamProjects replaces the projects authorized to a tenant team
-// @Description BindTeamProjects replaces the projects authorized to a tenant team.。只要求登录，没有额外的 RBAC 规则。请求体类型 BindTeamProjectsRequest。成功返回 BindTeamProjectsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags teams
+// @Description BindTeamProjects replaces the projects authorized to a tenant team.。需要权限 manage:team（由 accessRules 强制）。请求体类型 BindTeamProjectsRequest。成功返回 BindTeamProjectsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags team
 // @ID bindTeamProjects
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13376,8 +13376,8 @@ func contractBindTeamProjectsEnvelope() {}
 // contractListTeamUsersEnvelope documents GET /api/v1/teams/{id}/users.
 //
 // @Summary ListTeamUsers lists the members of a team
-// @Description ListTeamUsers lists the members of a team.。只要求登录，没有额外的 RBAC 规则。成功返回 []model.User
-// @Tags teams
+// @Description ListTeamUsers lists the members of a team.。需要权限 read:team（由 accessRules 强制）。成功返回 []model.User
+// @Tags team
 // @ID listTeamUsers
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13388,8 +13388,8 @@ func contractListTeamUsersEnvelope() {}
 // contractAddTeamUserEnvelope documents POST /api/v1/teams/{id}/users.
 //
 // @Summary AddTeamUser binds a user to a team (owner or tenant admin only)
-// @Description AddTeamUser binds a user to a team (owner or tenant admin only).。只要求登录，没有额外的 RBAC 规则。请求体类型 AddTeamUserRequest。成功返回 AddTeamUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
-// @Tags teams
+// @Description AddTeamUser binds a user to a team (owner or tenant admin only).。需要权限 manage:team（由 accessRules 强制）。请求体类型 AddTeamUserRequest。成功返回 AddTeamUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Tags team
 // @ID addTeamUser
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13403,8 +13403,8 @@ func contractAddTeamUserEnvelope() {}
 // contractRemoveTeamUserEnvelope documents DELETE /api/v1/teams/{id}/users/{userId}.
 //
 // @Summary RemoveTeamUser unbinds a user from a team (owner or tenant admin only)
-// @Description RemoveTeamUser unbinds a user from a team (owner or tenant admin only).。只要求登录，没有额外的 RBAC 规则。成功返回 RemoveTeamUserResponse
-// @Tags teams
+// @Description RemoveTeamUser unbinds a user from a team (owner or tenant admin only).。需要权限 manage:team（由 accessRules 强制）。成功返回 RemoveTeamUserResponse
+// @Tags team
 // @ID removeTeamUser
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13444,8 +13444,8 @@ func contractInstantiateTemplateInstanceEnvelope() {}
 // contractGetTemplateInstanceEnvelope documents GET /api/v1/template-instances/{id}.
 //
 // @Summary get Template Instance
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.TemplateInstanceView
-// @Tags template-instances
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.TemplateInstanceView
+// @Tags release-governance
 // @ID getTemplateInstance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13456,8 +13456,8 @@ func contractGetTemplateInstanceEnvelope() {}
 // contractDryRunTemplateInstanceEnvelope documents POST /api/v1/template-instances/{id}/dry-run.
 //
 // @Summary dry Run Template Instance
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceDryRunReport
-// @Tags template-instances
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceDryRunReport
+// @Tags release-governance
 // @ID dryRunTemplateInstance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13470,8 +13470,8 @@ func contractDryRunTemplateInstanceEnvelope() {}
 // contractEvaluateTemplateInstanceEnvelope documents POST /api/v1/template-instances/{id}/evaluate.
 //
 // @Summary evaluate Template Instance
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ScenarioTemplateReleaseCandidateResult
-// @Tags template-instances
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ScenarioTemplateReleaseCandidateResult
+// @Tags release-governance
 // @ID evaluateTemplateInstance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13484,8 +13484,8 @@ func contractEvaluateTemplateInstanceEnvelope() {}
 // contractGetTemplateInstanceHealthEnvelope documents GET /api/v1/template-instances/{id}/health.
 //
 // @Summary get Template Instance Health
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.TemplateInstanceHealthView
-// @Tags template-instances
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.TemplateInstanceHealthView
+// @Tags release-governance
 // @ID getTemplateInstanceHealth
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13496,8 +13496,8 @@ func contractGetTemplateInstanceHealthEnvelope() {}
 // contractReleaseTemplateInstanceEnvelope documents POST /api/v1/template-instances/{id}/release.
 //
 // @Summary release Template Instance
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
-// @Tags template-instances
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Tags release-governance
 // @ID releaseTemplateInstance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13510,8 +13510,8 @@ func contractReleaseTemplateInstanceEnvelope() {}
 // contractListTemplateInstanceReleasesEnvelope documents GET /api/v1/template-instances/{id}/releases.
 //
 // @Summary list Template Instance Releases
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回分页载荷，items 元素类型 model.AssistantRelease
-// @Tags template-instances
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AssistantRelease
+// @Tags release-governance
 // @ID listTemplateInstanceReleases
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13524,8 +13524,8 @@ func contractListTemplateInstanceReleasesEnvelope() {}
 // contractActivateTemplateInstanceReleaseEnvelope documents POST /api/v1/template-instances/{id}/releases/{releaseId}/activate.
 //
 // @Summary activate Template Instance Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
-// @Tags template-instances
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Tags release-governance
 // @ID activateTemplateInstanceRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13539,8 +13539,8 @@ func contractActivateTemplateInstanceReleaseEnvelope() {}
 // contractReconcileTemplateInstanceReleaseEnvelope documents POST /api/v1/template-instances/{id}/releases/{releaseId}/reconcile.
 //
 // @Summary reconcile Template Instance Release
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
-// @Tags template-instances
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Tags release-governance
 // @ID reconcileTemplateInstanceRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13554,8 +13554,8 @@ func contractReconcileTemplateInstanceReleaseEnvelope() {}
 // contractRollbackTemplateInstanceEnvelope documents POST /api/v1/template-instances/{id}/rollback.
 //
 // @Summary rollback Template Instance
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
-// @Tags template-instances
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Tags release-governance
 // @ID rollbackTemplateInstance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13597,7 +13597,7 @@ func contractCreateToolRegistryEnvelope() {}
 // contractDeleteToolRegistryEnvelope documents DELETE /api/v1/tool-registry/{id}.
 //
 // @Summary delete Tool Registry
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 DeleteToolRegistryResponse
+// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。成功返回 DeleteToolRegistryResponse
 // @Tags tool-registry
 // @ID deleteToolRegistry
 // @Security BearerAuth
@@ -13609,7 +13609,7 @@ func contractDeleteToolRegistryEnvelope() {}
 // contractGetToolRegistryEnvelope documents GET /api/v1/tool-registry/{id}.
 //
 // @Summary get Tool Registry
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *model.ToolRegistry
+// @Description 需要权限 read:tool-registry（由 accessRules 强制）。成功返回 *model.ToolRegistry
 // @Tags tool-registry
 // @ID getToolRegistry
 // @Security BearerAuth
@@ -13621,7 +13621,7 @@ func contractGetToolRegistryEnvelope() {}
 // contractUpdateToolRegistryEnvelope documents PATCH /api/v1/tool-registry/{id}.
 //
 // @Summary update Tool Registry
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry
+// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry
 // @Tags tool-registry
 // @ID updateToolRegistry
 // @Security BearerAuth
@@ -13635,7 +13635,7 @@ func contractUpdateToolRegistryEnvelope() {}
 // contractUpdateToolRegistryPutEnvelope documents PUT /api/v1/tool-registry/{id}.
 //
 // @Summary update Tool Registry
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry
+// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry
 // @Tags tool-registry
 // @ID updateToolRegistryPut
 // @Security BearerAuth
@@ -13649,7 +13649,7 @@ func contractUpdateToolRegistryPutEnvelope() {}
 // contractExecuteToolRegistryEnvelope documents POST /api/v1/tool-registry/{id}/execute.
 //
 // @Summary execute Tool Registry
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ToolExecutionResult
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ToolExecutionResult
 // @Tags tool-registry
 // @ID executeToolRegistry
 // @Security BearerAuth
@@ -13676,8 +13676,8 @@ func contractCreateRoutedAnswerRunEnvelope() {}
 // contractListRoutedEvidenceFactsEnvelope documents GET /api/v1/tool-routing/answer-runs/{answerRunId}/evidence-facts.
 //
 // @Summary list Routed Evidence Facts
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 ListRoutedEvidenceFactsResponse
-// @Tags tool-routing
+// @Description 需要权限 read:tool-registry（由 accessRules 强制）。成功返回 ListRoutedEvidenceFactsResponse
+// @Tags tool-registry
 // @ID listRoutedEvidenceFacts
 // @Security BearerAuth
 // @Param answerRunId path string true "路径参数 answerRunId"
@@ -13688,8 +13688,8 @@ func contractListRoutedEvidenceFactsEnvelope() {}
 // contractRegisterRoutedEvidenceFactsEnvelope documents POST /api/v1/tool-routing/answer-runs/{answerRunId}/evidence-facts.
 //
 // @Summary register Routed Evidence Facts
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EvidenceFactRegistrationResult
-// @Tags tool-routing
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EvidenceFactRegistrationResult
+// @Tags tool-registry
 // @ID registerRoutedEvidenceFacts
 // @Security BearerAuth
 // @Param answerRunId path string true "路径参数 answerRunId"
@@ -13702,8 +13702,8 @@ func contractRegisterRoutedEvidenceFactsEnvelope() {}
 // contractGetRoutedFactGuardOverviewEnvelope documents GET /api/v1/tool-routing/answer-runs/{answerRunId}/fact-guard.
 //
 // @Summary get Routed Fact Guard Overview
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.FactGuardOverview
-// @Tags tool-routing
+// @Description 需要权限 read:tool-registry（由 accessRules 强制）。成功返回 *service.FactGuardOverview
+// @Tags tool-registry
 // @ID getRoutedFactGuardOverview
 // @Security BearerAuth
 // @Param answerRunId path string true "路径参数 answerRunId"
@@ -13793,8 +13793,8 @@ func contractCreateTrialRunEnvelope() {}
 // contractGetTrialRunEnvelope documents GET /api/v1/trial-runs/{id}.
 //
 // @Summary get Trial Run
-// @Description 只要求登录，没有额外的 RBAC 规则。成功返回 *service.TrialRunView
-// @Tags trial-runs
+// @Description 需要权限 read:trial-run（由 accessRules 强制）。成功返回 *service.TrialRunView
+// @Tags trial-run
 // @ID getTrialRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13805,8 +13805,8 @@ func contractGetTrialRunEnvelope() {}
 // contractCancelTrialRunEnvelope documents POST /api/v1/trial-runs/{id}/cancel.
 //
 // @Summary cancel Trial Run
-// @Description 只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TrialRunView
-// @Tags trial-runs
+// @Description 需要权限 execute:trial-run（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TrialRunView
+// @Tags trial-run
 // @ID cancelTrialRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
@@ -13923,7 +13923,7 @@ func contractGatewayBillingReconcileRunsEnvelope() {}
 // contractGatewayBillingReconcileFindingsEnvelope documents GET /api/v1/usage/reconcile/{runId}/findings.
 //
 // @Summary GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind
-// @Description GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind.。只要求登录，没有额外的 RBAC 规则。成功返回 GatewayBillingReconcileFindingsResponse
+// @Description GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind.。需要权限 read:usage（由 accessRules 强制）。成功返回 GatewayBillingReconcileFindingsResponse
 // @Tags usage
 // @ID gatewayBillingReconcileFindings
 // @Security BearerAuth
