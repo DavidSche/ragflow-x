@@ -49,6 +49,12 @@ DIR="${PROBES_DIR:-scripts/probes}"
 T16="$DIR/t16_live_drill.py"
 T02="$DIR/t02_seed_gold_pool.py"
 W4="$DIR/w4_artifact_landing.py"
+# The W-4 *reader* driver (doc/318 §十一 D-11). It is not a probe this check runs — it drives a
+# report write — but it is a tracked file that may store a credential, and it did: the default
+# argument of `os.environ.get("RGX_VERIFY_PASS", …)`. It was in none of the lists below, so the
+# shape check stayed green while the drill password sat in the tree. Named here so ① walks it,
+# and mutation ⑳ proves the name is live (a list entry nobody exercises is a comment).
+W4D="$DIR/w4_drill.py"
 # The W-4 *writer* is deliberately not a variable here: this check must never gain a
 # path to it (doc/304 E97 — a gate that can start a compile can lose a dataset). What
 # it runs instead is the writer's pure wait classifier, whose tests cannot write.
@@ -67,8 +73,8 @@ T27="$DIR/t27_chat_only_role.py"
 # T29 (doc/304 §4 E175): the tenant boundary between two workspaces, on a deployed
 # instance. Read-write by design (it provisions two workspaces and deletes them again), so
 # what this row holds for it is what it holds for T27 — in the tree, compiles, refuses
-# before the network, carries no credential — plus its eight-step contract, because a drill
-# that publishes seven of eight steps is a drill whose eighth nobody misses.
+# before the network, carries no credential — plus its nine-step contract, because a drill
+# that publishes eight of nine steps is a drill whose ninth nobody misses.
 T29="$DIR/t29_role_tenant_isolation.py"
 # T30 (doc/304 §4 E176): the front door's Accept-Encoding negotiation. Read-only, no
 # credential at all — and the only probe here with a `--selftest`, because its whole job is
@@ -92,16 +98,30 @@ say()  { printf '%s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 good() { printf 'ok    %s\n' "$*"; }
 
-# ── selftest: nineteen mutations, each of which must be refused ─────────────────
+# ── fixture vocabulary ───────────────────────────────────────────────────────
+# The mutations need a working-*looking* credential. The real drill password lived in four
+# places in this file until doc/318 §十一 D-11, which is the defect the mutations exist to
+# detect: a guard that ships the credential it forbids is the leak, not the guard. The shape is
+# what is under test, so the value is synthetic — and the historical names the checks grep for
+# are assembled from fragments for the same reason.
+SYNTH='Synthetic#NotARealCredential'
+HIST_NEEDLE="Rgx""Test|Rgx""Drill|zhix""iang@|lic""tor|MPZ""MtiIw"
+
+# ── selftest: twenty mutations, each of which must be refused ───────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
   say "selftest: can this check refuse? (a re-added password, a hidden one, a deleted step, a re-coupled pair, a gate that runs the writer, a diagnosis probe that can write, a repair predicate that widens into 'safe')"
-  cp "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" "$README" "$tmp"/ 2>/dev/null
+  # The whole directory, not a list: the wait-state tests read the W-4 writer's AST by name
+  # (doc/304 E97 — they must never *import* it), so a scratch copy that omits it makes two of
+  # their cases fail for a reason that has nothing to do with what they assert. Naming the
+  # writer here would trip `test_probes_sh_never_executes_the_writer` — and it should: this
+  # script has no business holding a path to it. A directory copy hands out nothing runnable.
+  cp -R "$DIR/." "$tmp/" 2>/dev/null || true
 
-  # ① a credential put back: a name that ends in _PASSWORD with a working literal. This is
-  # the exact string v1.28 removed, and nothing about the probe's behaviour changes.
-  printf '\nDEFAULT_PASSWORD = "RgxTest#2026a"\n' >> "$tmp/t16_live_drill.py"
+  # ① a credential put back: a name that ends in _PASSWORD with a working literal. The shape is
+  # the same one v1.28 removed, and nothing about the probe's behaviour changes.
+  printf '\nDEFAULT_PASSWORD = "%s"\n' "$SYNTH" >> "$tmp/t16_live_drill.py"
   out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
   if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'stores a credential'; then
     say "SELFTEST FAIL: a password literal in a tracked probe was accepted"
@@ -137,9 +157,7 @@ if [ "${1:-}" = "--selftest" ]; then
   # ④ the hole this check had on its first day: a literal hidden inside a `${VAR:-literal}`
   # default. Its value contains a `$`, so the direct-assignment shape skips it — a probe
   # could have kept a password and still passed. Re-adding one must be refused.
-  printf '
-DEFAULT_PASS="${RGX_VERIFY_PASS:-RgxTest#2026a}"
-' >> "$tmp/t16_live_drill.py"
+  printf '\nDEFAULT_PASS="${RGX_VERIFY_PASS:-%s}"\n' "$SYNTH" >> "$tmp/t16_live_drill.py"
   out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
   if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'stores a credential'; then
     say "SELFTEST FAIL: a literal hidden in a \${VAR:-literal} default was accepted"
@@ -243,7 +261,7 @@ def _post_that_should_not_exist(client, path):
   # not require editing one); the walk's *scope* is asserted separately in the normal run —
   # by name, for the two files item 24 names. Mutation plus scope assertion, not either alone.
   mkdir -p "$tmp/scan"
-  printf '#!/usr/bin/env bash\nAX_PASS="${RAGRFLOW_X_PASS:-RgxTest#2026a}"\n' > "$tmp/scan/compare.sh"
+  printf '#!/usr/bin/env bash\nAX_PASS="${RAGRFLOW_X_PASS:-%s}"\n' "$SYNTH" > "$tmp/scan/compare.sh"
   out="$(PROBES_SCAN_ROOT="$tmp/scan" bash "$0" 2>&1)"; rc=$?
   if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'a tracked script stores a credential'; then
     say "SELFTEST FAIL: a literal hidden in a \${VAR:-literal} default outside scripts/probes was accepted"
@@ -330,7 +348,7 @@ def _post_that_should_not_exist(client, path):
 
   # ⑰ and the file has to be *inside* the credential walk, not merely next to it: a
   # literal in t27 is the same defect item 12 named, one probe over.
-  { printf '\n'; printf '%s\n' 'DEFAULT_PASSWORD = "RgxTest#2026a"'; } >> "$tmp/t27_chat_only_role.py"
+  { printf '\n'; printf 'DEFAULT_PASSWORD = "%s"\n' "$SYNTH"; } >> "$tmp/t27_chat_only_role.py"
   out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
   if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'stores a credential'; then
     say "SELFTEST FAIL: a credential literal in T27 was accepted (the walk does not cover the new probe)"
@@ -339,13 +357,13 @@ def _post_that_should_not_exist(client, path):
   fi
   say "ok      a credential literal in T27 -> refused"
 
-  # ⑱ T29's contract is eight steps, and each is a different sentence about one boundary.
+  # ⑱ T29's contract is nine steps, and each is a different sentence about one boundary.
   # Losing S7 (the assignment half) would leave a drill that proves a tenant admin cannot
   # *edit* another workspace's role while saying nothing about handing it out — the half that
   # produced E175 in the first place.
   sed '/("S7", "assignment:/d' "$T29" > "$tmp/t29_role_tenant_isolation.py"
   out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
-  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 't29_role_tenant_isolation.py prints 7 steps'; then
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 't29_role_tenant_isolation.py prints 8 steps'; then
     say "SELFTEST FAIL: a step deleted from T29's contract went unnoticed"
     say "$out"
     exit 1
@@ -368,6 +386,19 @@ def _post_that_should_not_exist(client, path):
   say "ok      a T30 selftest that can no longer tell the two doors apart -> refused"
   cp "$T30" "$tmp/t30_webfs_encoding.py"
 
+  # ⑳ D-11, the other half of ⑰. ⑰ proves a *probe* is inside the credential walk; this one
+  # proves the W-4 *driver* is. Its password sat in `os.environ.get(ENV, "…")` — exactly the
+  # shape PYHIDDEN encodes — and the file appeared in no list at all, so the pattern was right
+  # and the walk was short. Re-adding it must be refused, or the name above is decoration.
+  { printf '\n'; printf 'DEFAULT_PASS = os.environ.get("RGX_VERIFY_PASS", "%s")\n' "$SYNTH"; } >> "$tmp/w4_drill.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'stores a credential'; then
+    say "SELFTEST FAIL: a credential default in w4_drill.py was accepted (the driver is outside the walk)"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a credential default in the W-4 driver -> refused"
+
   say "SELFTEST OK"
   exit 0
 fi
@@ -376,7 +407,7 @@ say "live probes (doc/304 §7 item 12) — tracked, hermetic half only"
 
 # ── ⓪ the files exist and compile ───────────────────────────────────────────
 missing=0
-for f in "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" "$README"; do
+for f in "$COMMON" "$T16" "$T02" "$W4" "$W4D" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" "$README"; do
   if [ -f "$f" ]; then
     good "$f is in the tree"
   else
@@ -392,8 +423,8 @@ fi
 if [ -z "$PY" ]; then
   bad "no python on PATH: the probes cannot be compiled, and 'I did not compile' is not 'they compile'"
 else
-  if out="$("$PY" -m py_compile "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>&1)"; then
-    good "all ten compile ($PY -m py_compile)"
+  if out="$("$PY" -m py_compile "$COMMON" "$T16" "$T02" "$W4" "$W4D" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>&1)"; then
+    good "all eleven compile ($PY -m py_compile)"
   else
     bad "a probe does not compile"
     printf '%s\n' "$out" | tail -5
@@ -414,10 +445,10 @@ fi
 # literal is.
 PYHIDDEN='^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN|KEY)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*os\.environ\.get\([[:space:]]*"[^"]+"[[:space:]]*,[[:space:]]*"[^"$]+'
 secret_hits="$(
-  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
-    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
-    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
-    grep -nE "$PYHIDDEN" "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
+  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$W4D" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" "$W4" "$W4D" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$W4D" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
+    grep -nE "$PYHIDDEN" "$COMMON" "$T16" "$T02" "$W4" "$W4D" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
   } | sed '/^$/d')"
 if [ -z "$secret_hits" ]; then
   good "no credential literal is assigned in any probe (the shape check, not a word list)"
@@ -427,9 +458,9 @@ else
 fi
 # The drill's own history, by name: these are the strings v1.28 removed, and a recurrence
 # means someone pasted the old `localenv` copy back in.
-hist_hits="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor|MPZMtiIw' "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" "$README" 2>/dev/null || true)"
+hist_hits="$(grep -nE "$HIST_NEEDLE" "$COMMON" "$T16" "$T02" "$W4" "$W4D" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" "$README" 2>/dev/null || true)"
 if [ -z "$hist_hits" ]; then
-  good "none of the historical drill credentials appear (RgxTest / RgxDrill / zhixiang@)"
+  good "none of the historical drill credentials appear (the names v1.28 removed)"
 else
   bad "a historical drill credential is back in the tree"
   printf '%s\n' "$hist_hits" | head -5
@@ -495,12 +526,12 @@ else
   printf '%s\n' "$tree_hits" | sed '/^$/d' | head -5
 fi
 # The historical names, over the same walk and with no exemption: this is the check that
-# would catch `WS_PASS = "RgxTest#2026a"` even though the shape exemption above allows the
+# would catch a re-added `WS_PASS = "…"` even though the shape exemption above allows the
 # variable name. Two mechanisms, two different questions.
 tree_hist=""
 while IFS= read -r f; do
   [ -n "$f" ] || continue
-  h="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor|MPZMtiIw' "$f" 2>/dev/null || true)"
+  h="$(grep -nE "$HIST_NEEDLE" "$f" 2>/dev/null || true)"
   [ -n "$h" ] && tree_hist="$tree_hist$(printf '%s\n' "$h" | sed "s|^|$f:|")"$'\n'
 done <<< "$SCAN_LIST"
 if [ -z "$tree_hist" ]; then
@@ -607,7 +638,7 @@ check_offline "$T27" 6 "RGX_BASE RGX_VERIFY_PASS"
 # the missing-host case is this check's second reading: exit 2 that names RGX_BASE, before
 # any socket. Its eight steps each ask a different question about one boundary, and a
 # shortened contract is how a drill keeps printing PASS while covering less (mutation ⑱).
-check_offline "$T29" 8 "RGX_BASE RGX_VERIFY_USER RGX_VERIFY_PASS"
+check_offline "$T29" 9 "RGX_BASE RGX_VERIFY_USER RGX_VERIFY_PASS"
 check_offline "$T30" 7 "RGX_BASE"
 
 # ── ④ the pair is decoupled, and both sit on probe_common ───────────────────

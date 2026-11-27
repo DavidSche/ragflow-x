@@ -59,7 +59,7 @@ func (s *Service) EnsureTenantActive(ctx context.Context, tenantID string) error
 // operation whose resource registry declares RequiresApproval.
 func (s *Service) EnsureGovernanceApprovalEnabled(ctx context.Context) error {
 	if !s.currentApprovalConfig().Enabled {
-		return httperr.New(400, 40086, "approval workflow must be enabled for governed operations")
+		return httperr.BadRequest(httperr.CodeApprovalWorkflowDisabled, "approval workflow must be enabled for governed operations")
 	}
 	return nil
 }
@@ -204,7 +204,7 @@ func (s *Service) UpdateTenant(ctx context.Context, actorID, actorTenantID, tena
 	}
 	if req.Status != "" {
 		if req.Status != model.TenantStatusActive && req.Status != model.TenantStatusDisabled {
-			return nil, httperr.BadRequest(40002, "invalid status")
+			return nil, httperr.BadRequest(40025, "invalid status")
 		}
 		t.Status = req.Status
 	}
@@ -234,11 +234,11 @@ func (s *Service) BatchUpdateTenantStatus(ctx context.Context, actorID string, i
 		return ErrForbidden
 	}
 	if status != model.TenantStatusActive && status != model.TenantStatusDisabled {
-		return httperr.BadRequest(40002, "invalid status")
+		return httperr.BadRequest(40025, "invalid status")
 	}
 	for _, tenantID := range ids {
 		if tenantID == SystemTenantID {
-			return httperr.BadRequest(40003, "platform tenant cannot be modified")
+			return httperr.BadRequest(httperr.CodeTenantPlatformImmutable, "platform tenant cannot be modified")
 		}
 		t, err := s.Store.GetTenant(ctx, tenantID)
 		if err != nil {
@@ -292,7 +292,7 @@ func (s *Service) DeleteTenant(ctx context.Context, actorID, actorTenantID, tena
 		}
 	}
 	if tenantID == SystemTenantID {
-		return httperr.BadRequest(40003, "platform tenant cannot be deleted")
+		return httperr.BadRequest(httperr.CodeTenantPlatformImmutable, "platform tenant cannot be deleted")
 	}
 	t, err := s.Store.GetTenant(ctx, tenantID)
 	if err != nil {
@@ -315,7 +315,7 @@ func (s *Service) DeleteTenant(ctx context.Context, actorID, actorTenantID, tena
 	}
 	hasChildren := len(links) > 0 || len(teams) > 0 || userTotal > 0
 	if hasChildren && !force {
-		return httperr.BadRequest(40004, "tenant has users/teams/datasets; delete with force to remove them")
+		return httperr.BadRequest(httperr.CodeTenantNotEmpty, "tenant has users/teams/datasets; delete with force to remove them")
 	}
 	if force {
 		s.deleteTenantChildren(ctx, tenantID)

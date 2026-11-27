@@ -90,6 +90,8 @@ func main() {
 		specPath   = flag.String("spec", "internal/docs/swagger.json", "spec whose operations must all gain a contract")
 		out        = flag.String("out", outDefault, "generated contract file")
 		extOut     = flag.String("extensions", "", "write the machine-readable permission sidecar here (T310-05)")
+		auditHand  = flag.Bool("audit-hand", false, "compare each hand-written @Failure code set with the codes its handler can actually return")
+		handFile   = flag.String("hand-file", "internal/handler/openapi_routes_contracts.go", "file whose @Failure codes -audit-hand reads (a copy is enough; the operation set still comes from @Router lines)")
 	)
 	flag.Parse()
 
@@ -196,6 +198,9 @@ func main() {
 		}
 		fmt.Printf("contract file is fresh: %d operations\n", len(contracts))
 		return
+	}
+	if *auditHand {
+		os.Exit(auditHandAnnotations(an, handlers, specOps, hand, *handFile))
 	}
 	if *apply {
 		if err := applyPatches(patches); err != nil {
@@ -339,6 +344,190 @@ func handAnnotated() (map[string]bool, error) {
 
 type specOp struct{ Method, Path string }
 
+// handCodes is one hand-written annotation block: the operation it documents and the
+// business codes its `@Failure` descriptions name.
+//
+// The codes are the ones `openapi_extensions.py` publishes as `x-error-codes`, so this
+// audit reads the same sentence a client generator reads. Anything else would be auditing
+// a comment about the documentation instead of the documentation.
+type handCodes struct {
+	Method, Path string
+	Codes        []int
+}
+
+// handAnnotations reads the `@Failure` codes out of the hand-written contract file.
+//
+// A block is a run of `//` lines; the operation is whichever block carries `@Router`.
+// Codes are the 5-digit business codes in the failure rows — the HTTP status on the same
+// row is not a business code and is compared separately by `s33`.
+func handAnnotations(file string) ([]handCodes, error) {
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	routerLine := regexp.MustCompile(`@Router\s+(\S+)\s+\[(\w+)\]`)
+	codeLine := regexp.MustCompile(`^//\s*@Failure\s+\d{3}\b`)
+	fiveDigit := regexp.MustCompile(`\b(\d{5})\b`)
+
+	var out []handCodes
+	var block []string
+	flush := func() {
+		defer func() { block = nil }()
+		var hc handCodes
+		seen := map[int]bool{}
+		for _, line := range block {
+			if m := routerLine.FindStringSubmatch(line); m != nil {
+				hc.Path, hc.Method = m[1], strings.ToUpper(m[2])
+			}
+		}
+		if hc.Path == "" {
+			return
+		}
+		for _, line := range block {
+			if !codeLine.MatchString(line) {
+				continue
+			}
+			for _, m := range fiveDigit.FindAllStringSubmatch(line, -1) {
+				n, err := strconv.Atoi(m[1])
+				if err != nil || seen[n] {
+					continue
+				}
+				seen[n] = true
+				hc.Codes = append(hc.Codes, n)
+			}
+		}
+		sort.Ints(hc.Codes)
+		out = append(out, hc)
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
+		if strings.HasPrefix(line, "//") {
+			block = append(block, line)
+			continue
+		}
+		if len(block) > 0 {
+			flush()
+		}
+	}
+	if len(block) > 0 {
+		flush()
+	}
+	return out, nil
+}
+
+// auditHandAnnotations answers a question the ratchet cannot: not "is there a contract"
+// but "does the contract name a code this route can actually return".
+//
+// doc/310 §22.5 recorded P-310-13 as a defect only a human could catch — `deleteRole`
+// advertised three 409xx codes that live in `identity.go` and `approval_action.go`, while
+// the handler returns 400/40082-40084. The fix there was to grep the return points by hand;
+// that is a ritual, not a check, and the same drift came back in v1.4 when role reads moved
+// to 404/403 and the annotations did not.
+//
+// The derivation already exists: `describe` walks the handler and the service methods it
+// calls and records every `httperr` code at a return point. So the audit is a set
+// comparison per operation, and only one direction is a failure:
+//
+//   - a code the annotation names but the derivation cannot reach is a lie a client would
+//     branch on (exit 1);
+//   - a reachable code the annotation omits is an incomplete document (reported, exit 0).
+//     Failing on that would make every `@Failure` row grow with the call graph, which is how
+//     a document stops being read.
+func auditHandAnnotations(an *analyzer, handlers map[string]string, ops []specOp, hand map[string]bool, file string) int {
+	blocks, err := handAnnotations(file)
+	if err != nil {
+		fail("read %s: %v", file, err)
+	}
+	claimed := map[string]handCodes{}
+	for _, b := range blocks {
+		claimed[b.Method+" "+b.Path] = b
+	}
+	var documented int
+	var lies, gaps int
+	for _, op := range ops {
+		key := op.Method + " " + op.Path
+		if !hand[key] {
+			continue
+		}
+		documented++
+		b, ok := claimed[key]
+		if !ok {
+			fmt.Printf("%-6s %-52s no `@Failure` codes named (nothing to audit)\n", op.Method, op.Path)
+			continue
+		}
+		c, why := an.describe(op.Method, op.Path, handlers[key])
+		if len(why) > 0 {
+			fmt.Printf("%-6s %-52s cannot derive the handler: %s\n", op.Method, op.Path, strings.Join(why, "；"))
+			continue
+		}
+		reachable := map[int]bool{}
+		for _, e := range c.Errors {
+			// A five-digit code is a business code; 403/404 with code == status carries no
+			// business identity and is not what `x-error-codes` publishes, so comparing it
+			// would report a gap in every operation that can answer 403.
+			if e.Code >= 10000 {
+				reachable[e.Code] = true
+			}
+		}
+		var extra, missing []int
+		for _, n := range b.Codes {
+			if !reachable[n] {
+				extra = append(extra, n)
+			}
+		}
+		for n := range reachable {
+			if !containsInt(b.Codes, n) {
+				missing = append(missing, n)
+			}
+		}
+		sort.Ints(missing)
+		fmt.Printf("%-6s %-52s claims %s | reaches %s\n", op.Method, op.Path, joinInts(b.Codes), joinInts(sortedKeys(reachable)))
+		if len(extra) > 0 {
+			lies++
+			fmt.Printf("       HOLE  documented but unreachable: %s\n", joinInts(extra))
+		}
+		if len(missing) > 0 {
+			gaps++
+			fmt.Printf("       gap   reachable but undocumented: %s\n", joinInts(missing))
+		}
+	}
+	fmt.Printf("\nhand-annotated operations audited: %d, code sets with an unreachable code: %d, with an undocumented code: %d\n", documented, lies, gaps)
+	if lies > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL  a documented error code cannot be returned by its handler — fix the annotation or the handler (doc/310 §22.5 P-310-13)\n")
+		return 1
+	}
+	fmt.Printf("PASS  no annotation names a code its handler cannot return\n")
+	return 0
+}
+
+func containsInt(xs []int, n int) bool {
+	for _, x := range xs {
+		if x == n {
+			return true
+		}
+	}
+	return false
+}
+
+func sortedKeys(m map[int]bool) []int {
+	out := make([]int, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Ints(out)
+	return out
+}
+
+func joinInts(xs []int) string {
+	if len(xs) == 0 {
+		return "-"
+	}
+	parts := make([]string, 0, len(xs))
+	for _, x := range xs {
+		parts = append(parts, strconv.Itoa(x))
+	}
+	return strings.Join(parts, " ")
+}
+
 func readSpecOps(path string) ([]specOp, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -396,6 +585,11 @@ type funcUnit struct {
 	decl *ast.FuncDecl
 	body *ast.BlockStmt
 	doc  string
+	// info is the type information of the package this function was declared in. The
+	// scanner walks from a handler into service methods, so resolving `httperr` and
+	// `response` identifiers against one package's info would silently miss every code
+	// returned from the other (the same class of loss as the name-keyed visited set).
+	info *types.Info
 }
 
 type param struct {
@@ -518,15 +712,15 @@ func newAnalyzer() (*analyzer, error) {
 	}
 	an.handlerP, an.info = hp, hinfo
 	an.serviceP, an.svcInfo = sp, sinfo
-	an.index(hfiles, an.funcs)
-	an.index(sfiles, an.svcFuncs)
+	an.index(hfiles, an.funcs, hinfo)
+	an.index(sfiles, an.svcFuncs, sinfo)
 	if err := an.loadRules(); err != nil {
 		return nil, err
 	}
 	return an, nil
 }
 
-func (an *analyzer) index(files []*ast.File, into map[string]*funcUnit) {
+func (an *analyzer) index(files []*ast.File, into map[string]*funcUnit, info *types.Info) {
 	for _, file := range files {
 		for _, d := range file.Decls {
 			switch decl := d.(type) {
@@ -535,7 +729,7 @@ func (an *analyzer) index(files []*ast.File, into map[string]*funcUnit) {
 				if decl.Body == nil {
 					continue
 				}
-				unit := &funcUnit{decl: decl, body: decl.Body, doc: docText(decl.Doc)}
+				unit := &funcUnit{decl: decl, body: decl.Body, doc: docText(decl.Doc), info: info}
 				if isHandlerMethod(decl) {
 					// `func (h *Handler) decision(c *gin.Context, …)` is where the body is
 					// bound and the answer written for a whole family of routes; without
@@ -682,7 +876,7 @@ func (an *analyzer) describe(method, specPath, handlerName string) (contract, []
 	c.OperationID = an.allocateID(lowerCamel(handlerName), method)
 	c.Envelope = upperFirst(c.OperationID) + "Envelope"
 
-	found := an.scan(unit, 0, map[string]bool{})
+	found := an.scan(unit, 0, map[*funcUnit]bool{})
 	if len(found.success) == 0 && found.contentType != "" {
 		// A handler that only streams: the media type is set by header and the body is
 		// written through c.Writer, so there is no response helper to observe.
@@ -813,12 +1007,25 @@ func (an *analyzer) allocateID(base, method string) string {
 	return candidate
 }
 
-func (an *analyzer) scan(unit *funcUnit, depth int, visited map[string]bool) scanResult {
+// scan records what one function (and, to depth 3, what the functions it calls) returns.
+//
+// `visited` is keyed by the function *value*, never by its name: `h.DeleteRole` and
+// `Service.DeleteRole` are two different functions with one name, and a name-keyed set
+// silently skipped the second — every service-level httperr code vanished from the
+// documentation of any route whose handler and service method shared a name.
+func (an *analyzer) scan(unit *funcUnit, depth int, visited map[*funcUnit]bool) scanResult {
 	var res scanResult
-	if unit == nil || visited[unit.decl.Name.Name] || depth > 3 {
+	if unit == nil || visited[unit] || depth > 3 {
 		return res
 	}
-	visited[unit.decl.Name.Name] = true
+	visited[unit] = true
+	// Descending crosses a package boundary (handler -> service), and every `pkg ==`
+	// comparison below reads `an.info`. Swap it for the walk and put it back on the way
+	// out; the traversal is synchronous, so a save/restore cannot be observed elsewhere.
+	if prev := an.info; unit.info != nil && prev != unit.info {
+		an.info = unit.info
+		defer func() { an.info = prev }()
+	}
 	seenParam := map[string]bool{}
 	seenSucc := map[int]bool{}
 	seenErr := map[int]bool{}
@@ -877,8 +1084,8 @@ func (an *analyzer) scan(unit *funcUnit, depth int, visited map[string]bool) sca
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok {
 			if id, ok := call.Fun.(*ast.Ident); ok {
-				if u := an.funcs[id.Name]; u != nil && callTakesContext(u) && depth < 2 {
-					mergeInto(&res, an.scan(u, depth+1, visited), addParam, addSuccess, addErr)
+				if u := an.samePkgFunc(unit, id.Name); u != nil && depth < 2 {
+					mergeCall(&res, an.scan(u, depth+1, visited), u, addParam, addSuccess, addErr)
 				}
 			}
 			return true
@@ -888,8 +1095,23 @@ func (an *analyzer) scan(unit *funcUnit, depth int, visited map[string]bool) sca
 			return true
 		}
 		if recv, ok := sel.X.(*ast.Ident); ok && isReceiverName(unit, recv.Name) && depth < 2 {
-			if u := an.methods[sel.Sel.Name]; u != nil && callTakesContext(u) {
-				mergeInto(&res, an.scan(u, depth+1, visited), addParam, addSuccess, addErr)
+			// `h.decision(…)` and `s.validateRole(…)` are the same shape: a method on this
+			// function's own receiver. Looking only in an.methods missed every service->service
+			// call, which is where the role preconditions return 41161-41164 and 40021.
+			//
+			// The lookup is package-scoped and that order matters: `an.methods` is keyed by
+			// name alone and holds *handler* methods, so `s.GetAgentSession(…)` inside the
+			// service resolvable there is the handler `h.GetAgentSession`, which answers with
+			// `response.OK(c, sess)` — and its payload `*ragflow.AgentSession` then won the
+			// envelope of GET …/sessions/{sessionId}/messages. A service unit therefore only
+			// ever looks in the service package: handler -> service is the real call
+			// direction, service -> handler is not.
+			u := an.samePkgFunc(unit, sel.Sel.Name)
+			if u == nil && unit.info != an.svcInfo {
+				u = an.methods[sel.Sel.Name]
+			}
+			if u != nil {
+				mergeCall(&res, an.scan(u, depth+1, visited), u, addParam, addSuccess, addErr)
 			}
 			return true
 		}
@@ -899,12 +1121,30 @@ func (an *analyzer) scan(unit *funcUnit, depth int, visited map[string]bool) sca
 			}
 			return true
 		}
-		if u := an.funcs[sel.Sel.Name]; u != nil && callTakesContext(u) && depth < 2 {
-			mergeInto(&res, an.scan(u, depth+1, visited), addParam, addSuccess, addErr)
+		if u := an.samePkgFunc(unit, sel.Sel.Name); u != nil && depth < 2 {
+			mergeCall(&res, an.scan(u, depth+1, visited), u, addParam, addSuccess, addErr)
 		}
 		return true
 	})
 	return res
+}
+
+// mergeCall merges what a callee contributes. A helper that takes a context can own the
+// request and the response — it is handed the request's lifetime, which is what lets it
+// bind a body or answer the envelope. A helper that does not (a `displayNameConflict`, a
+// `parseScope`, a `boolStr`) cannot: it has no way to reach the ResponseWriter, so all it
+// can hand back is an error. Its codes are still *reachable* from this route, which is the
+// only question the audit asks, so they are merged — and its params/success are dropped,
+// which keeps a shared util from claiming an envelope it never writes.
+func mergeCall(dst *scanResult, src scanResult, callee *funcUnit,
+	addParam func(param), addSuccess func(int, string, string, string, bool), addErr func(int, int)) {
+	if callTakesContext(callee) {
+		mergeInto(dst, src, addParam, addSuccess, addErr)
+		return
+	}
+	for _, e := range src.errs {
+		addErr(e.Status, e.Code)
+	}
 }
 
 func mergeInto(dst *scanResult, src scanResult, addParam func(param), addSuccess func(int, string, string, string, bool), addErr func(int, int)) {
@@ -1359,11 +1599,19 @@ func describeText(c contract, doc string) string {
 		}
 	}
 	if len(c.Errors) > 0 {
+		// Only five-digit codes are business codes; `httperr.Forbidden`/`notFound` answer with
+		// code == status and have no business identity. Counting those here printed
+		// "1 个业务错误码：403(403)", which reads like a contract a client could branch on.
 		codes := make([]string, 0, len(c.Errors))
 		for _, e := range c.Errors {
+			if e.Code < 10000 {
+				continue
+			}
 			codes = append(codes, fmt.Sprintf("%d(%d)", e.Code, e.Status))
 		}
-		add("声明了 " + strconv.Itoa(len(c.Errors)) + " 个业务错误码：" + strings.Join(codes, "、") + "（括号内是 HTTP 状态）")
+		if len(codes) > 0 {
+			add("声明了 " + strconv.Itoa(len(codes)) + " 个业务错误码：" + strings.Join(codes, "、") + "（括号内是 HTTP 状态）")
+		}
 	}
 	return b.String()
 }
@@ -1769,16 +2017,35 @@ func httperrStatus(an *analyzer, name string, call *ast.CallExpr) (int, int) {
 	return 0, 0
 }
 
+// samePkgFunc looks a name up in the map of the package the caller belongs to: a helper
+// called from handler code is in `funcs`, one called from service code is in `svcFuncs`.
+// One lookup table for both would let `s.Store.GetUser` bind to the unrelated
+// `Service.GetUser` and document codes the route cannot return.
+func (an *analyzer) samePkgFunc(unit *funcUnit, name string) *funcUnit {
+	if unit != nil && unit.info == an.svcInfo {
+		return an.svcFuncs[name]
+	}
+	return an.funcs[name]
+}
+
+// callTakesContext reports whether the function's signature takes a context.Context.
+//
+// `context.Context` is an interface, so the ordinary parameter is spelled
+// `ctx context.Context` and never `*context.Context`; the original check demanded a
+// `*ast.StarExpr` and therefore answered "no" for every helper in the tree. The effect
+// was silent: `AssignRole` never descended into `validateRole`, so the 40021 it returns
+// was absent from the contract of `PUT /users/{id}/role` — a documented code set that
+// looked complete because nothing compared it with the code.
 func callTakesContext(u *funcUnit) bool {
 	if u == nil || u.decl.Type == nil || u.decl.Type.Params == nil {
 		return false
 	}
 	for _, f := range u.decl.Type.Params.List {
-		star, ok := f.Type.(*ast.StarExpr)
-		if !ok {
-			continue
+		t := f.Type
+		if star, ok := t.(*ast.StarExpr); ok {
+			t = star.X
 		}
-		sel, ok := star.X.(*ast.SelectorExpr)
+		sel, ok := t.(*ast.SelectorExpr)
 		if ok && sel.Sel.Name == "Context" {
 			return true
 		}

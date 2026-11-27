@@ -67,14 +67,12 @@ var (
 	_ GetAnswerExportJobEnvelope
 	_ GetAnswerExportJobResponse
 	_ RetryAnswerExportJobEnvelope
-	_ GetAnswerSnapshotResponse
 	_ RetryAnswerExportJobResponse
 	_ GetAnswerSnapshotEnvelope
 	_ GetAnswerSnapshotResponse
 	_ GetAnswerSnapshotAuditExportEnvelope
 	_ GetAnswerSnapshotAuditExportResponse
 	_ CreateAnswerExportEnvelope
-	_ GetAnswerSnapshotResponse
 	_ CreateAnswerExportResponse
 	_ ListApprovalDelegationsEnvelope
 	_ CreateApprovalDelegationEnvelope
@@ -294,9 +292,7 @@ var (
 	_ ApprovalAcceptedResponse
 	_ GetDatasetParseProfileEnvelope
 	_ ApplyDatasetParseProfileEnvelope
-	_ UpdateDatasetConfigResponse
 	_ ApprovalAcceptedResponse
-	_ ParseDocumentsResponse
 	_ ListDatasetParseQualityReportsEnvelope
 	_ ListDatasetParseQualityReportsPage
 	_ BindDatasetProjectEnvelope
@@ -680,7 +676,6 @@ var (
 	_ ScenarioTemplateHealthEnvelope
 	_ InstantiateScenarioTemplateEnvelope
 	_ InstantiateChatFromScenarioTemplateEnvelope
-	_ DeleteDatasetsResponse
 	_ CreateTemplateReleaseCandidateEnvelope
 	_ ListScenarioTemplateBaselinesEnvelope
 	_ ListScenarioTemplateBaselinesResponse
@@ -1104,12 +1099,6 @@ type GetAnswerExportJobEnvelope struct {
 	Data GetAnswerExportJobResponse `json:"data"`
 }
 
-// GetAnswerSnapshotResponse is the payload of POST /api/v1/answer-snapshots/export-jobs/{jobId}/retry, derived from the literal map the handler emits.
-type GetAnswerSnapshotResponse struct {
-	AnswerSnapshot          *model.AnswerSnapshot          `json:"answer_snapshot"`
-	AuthorizationProjection *model.AuthorizationProjection `json:"authorization_projection"`
-}
-
 // RetryAnswerExportJobResponse is the payload of POST /api/v1/answer-snapshots/export-jobs/{jobId}/retry, derived from the literal map the handler emits.
 type RetryAnswerExportJobResponse struct {
 	ExportJob      *model.ExportJob      `json:"export_job"`
@@ -1119,7 +1108,13 @@ type RetryAnswerExportJobResponse struct {
 // RetryAnswerExportJobEnvelope is the success envelope of POST /api/v1/answer-snapshots/export-jobs/{jobId}/retry.
 type RetryAnswerExportJobEnvelope struct {
 	EnvelopeMeta
-	Data GetAnswerSnapshotResponse `json:"data"`
+	Data RetryAnswerExportJobResponse `json:"data"`
+}
+
+// GetAnswerSnapshotResponse is the payload of GET /api/v1/answer-snapshots/{snapshotId}, derived from the literal map the handler emits.
+type GetAnswerSnapshotResponse struct {
+	AnswerSnapshot          *model.AnswerSnapshot          `json:"answer_snapshot"`
+	AuthorizationProjection *model.AuthorizationProjection `json:"authorization_projection"`
 }
 
 // GetAnswerSnapshotEnvelope is the success envelope of GET /api/v1/answer-snapshots/{snapshotId}.
@@ -1156,7 +1151,7 @@ type CreateAnswerExportResponse struct {
 // CreateAnswerExportEnvelope is the success envelope of POST /api/v1/answer-snapshots/{snapshotId}/export.
 type CreateAnswerExportEnvelope struct {
 	EnvelopeMeta
-	Data GetAnswerSnapshotResponse `json:"data"`
+	Data CreateAnswerExportResponse `json:"data"`
 }
 
 // ListApprovalDelegationsEnvelope is the success envelope of GET /api/v1/approval-delegations.
@@ -2388,7 +2383,7 @@ type GetDatasetParseProfileEnvelope struct {
 // ApplyDatasetParseProfileEnvelope is the success envelope of POST /api/v1/datasets/{id}/parse-profile.
 type ApplyDatasetParseProfileEnvelope struct {
 	EnvelopeMeta
-	Data UpdateDatasetConfigResponse `json:"data"`
+	Data *service.ParseProfileView `json:"data"`
 }
 
 // ListDatasetParseQualityReportsPage is the paged payload of GET /api/v1/datasets/{id}/parse-quality-reports: response.Page with a typed item list.
@@ -2560,7 +2555,7 @@ type RevokeEnterpriseBindingEnvelope struct {
 // ListEnterpriseBindingVersionsEnvelope is the success envelope of GET /api/v1/enterprise-connections/{id}/bindings/{bindingId}/versions.
 type ListEnterpriseBindingVersionsEnvelope struct {
 	EnvelopeMeta
-	Data *service.EnterpriseBindingView `json:"data"`
+	Data []service.EnterpriseBindingView `json:"data"`
 }
 
 // DeprecateEnterpriseConnectionEnvelope is the success envelope of POST /api/v1/enterprise-connections/{id}/deprecate.
@@ -2596,7 +2591,7 @@ type TestEnterpriseConnectionEnvelope struct {
 // ListEnterpriseConnectionVersionsEnvelope is the success envelope of GET /api/v1/enterprise-connections/{id}/versions.
 type ListEnterpriseConnectionVersionsEnvelope struct {
 	EnvelopeMeta
-	Data *service.EnterpriseConnectionView `json:"data"`
+	Data []model.EnterpriseConnectionVersion `json:"data"`
 }
 
 // GetEvalCaseEvidenceEnvelope is the success envelope of GET /api/v1/eval-cases/{id}/evidence.
@@ -4619,13 +4614,13 @@ type ScenarioTemplateHealthEnvelope struct {
 // InstantiateScenarioTemplateEnvelope is the success envelope of POST /api/v1/scenario-template-assets/{id}/instantiate.
 type InstantiateScenarioTemplateEnvelope struct {
 	EnvelopeMeta
-	Data *model.SearchAppShadow `json:"data"`
+	Data *service.UnifiedInstantiateResult `json:"data"`
 }
 
 // InstantiateChatFromScenarioTemplateEnvelope is the success envelope of POST /api/v1/scenario-template-assets/{id}/instantiate-chat.
 type InstantiateChatFromScenarioTemplateEnvelope struct {
 	EnvelopeMeta
-	Data *service.DatasetSummary `json:"data"`
+	Data *service.ScenarioTemplateInstantiationResult `json:"data"`
 }
 
 // CreateTemplateReleaseCandidateEnvelope is the success envelope of POST /api/v1/scenario-template-assets/{id}/release-candidate.
@@ -5547,7 +5542,6 @@ type UsageDetailEnvelope struct {
 // ExportUsageReportEnvelope is the success envelope of GET /api/v1/usage/export.
 type ExportUsageReportEnvelope struct {
 	EnvelopeMeta
-	Data []service.UsageReportRow `json:"data"`
 }
 
 // UsageFilterOptionsEnvelope is the success envelope of GET /api/v1/usage/filter-options.
@@ -5622,7 +5616,7 @@ func contractGetEnvelope() {}
 // contractListAgentsEnvelope documents GET /api/v1/agents.
 //
 // @Summary ListAgents returns the caller's agents
-// @Description ListAgents returns the caller's agents.。需要权限 read:agent（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AgentShadow
+// @Description ListAgents returns the caller's agents.。需要权限 read:agent（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AgentShadow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID listAgents
 // @Security BearerAuth
@@ -5634,13 +5628,16 @@ func contractGetEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} ListAgentsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/agents [get]
 func contractListAgentsEnvelope() {}
 
 // contractCreateAgentEnvelope documents POST /api/v1/agents.
 //
 // @Summary CreateAgent creates an agent owned by the caller's tenant
-// @Description CreateAgent creates an agent owned by the caller's tenant.。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentCreatePayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateAgent creates an agent owned by the caller's tenant.。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentCreatePayload。成功返回 *model.AgentShadow。声明了 8 个业务错误码：40000(400)、40088(400)、40099(400)、40305(403)、40911(409)、41167(400)、50000(500)、50281(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID createAgent
 // @Security BearerAuth
@@ -5650,27 +5647,37 @@ func contractListAgentsEnvelope() {}
 // @Param body body agentCreatePayload true "请求体（agentCreatePayload）"
 // @Success 200 {object} CreateAgentEnvelope
 // @Success 202 {object} CreateAgentEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40088 / 40099 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40911"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50281"
 // @Router /api/v1/agents [post]
 func contractCreateAgentEnvelope() {}
 
 // contractAgentAuthoringOptionsEnvelope documents GET /api/v1/agents/authoring-options.
 //
 // @Summary AgentAuthoringOptions returns the picker lists the canvas inspector needs (chat/rerank models, governance-scoped datasets, memories) so node parameters that reference a system resource are dropdowns instead of free-text id inputs
-// @Description AgentAuthoringOptions returns the picker lists the canvas inspector needs (chat/rerank models, governance-scoped datasets, memories) so node parameters that reference a system resource are dropdowns instead of free-text id inputs. Read permission on `agent` is enough: the payload is catalog metadata, not resource content.。需要权限 read:agent（由 accessRules 强制）。成功返回 *service.AgentAuthoringOptions
+// @Description AgentAuthoringOptions returns the picker lists the canvas inspector needs (chat/rerank models, governance-scoped datasets, memories) so node parameters that reference a system resource are dropdowns instead of free-text id inputs. Read permission on `agent` is enough: the payload is catalog metadata, not resource content.。需要权限 read:agent（由 accessRules 强制）。成功返回 *service.AgentAuthoringOptions。声明了 9 个业务错误码：40305(403)、50248(502)、50250(502)、50251(502)、50252(502)、50253(502)、50254(502)、50255(502)、50256(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID agentAuthoringOptions
 // @Security BearerAuth
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} AgentAuthoringOptionsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50248 / 50250 / 50251 / 50252 / 50253 / 50254 / 50255 / 50256"
 // @Router /api/v1/agents/authoring-options [get]
 func contractAgentAuthoringOptionsEnvelope() {}
 
 // contractValidateAgentDSLEnvelope documents POST /api/v1/agents/validate.
 //
 // @Summary ValidateAgentDSL checks a canvas without saving it, so the editor can show the blocking items before the author hits save (and before publishing turns them into a 40099)
-// @Description ValidateAgentDSL checks a canvas without saving it, so the editor can show the blocking items before the author hits save (and before publishing turns them into a 40099). Read permission on `agent` is enough: nothing is persisted.。需要权限 read:agent（由 accessRules 强制）。请求体类型 agentValidatePayload。成功返回 *service.AgentDslValidation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ValidateAgentDSL checks a canvas without saving it, so the editor can show the blocking items before the author hits save (and before publishing turns them into a 40099). Read permission on `agent` is enough: nothing is persisted.。需要权限 read:agent（由 accessRules 强制）。请求体类型 agentValidatePayload。成功返回 *service.AgentDslValidation。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID validateAgentDSL
 // @Security BearerAuth
@@ -5679,14 +5686,16 @@ func contractAgentAuthoringOptionsEnvelope() {}
 // @Accept json
 // @Param body body agentValidatePayload true "请求体（agentValidatePayload）"
 // @Success 200 {object} ValidateAgentDSLEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/agents/validate [post]
 func contractValidateAgentDSLEnvelope() {}
 
 // contractDeleteAgentEnvelope documents DELETE /api/v1/agents/{id}.
 //
 // @Summary DeleteAgent deletes an agent
-// @Description DeleteAgent deletes an agent.。需要权限 manage:agent（由 accessRules 强制）。成功返回 DeleteAgentResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteAgent deletes an agent.。需要权限 manage:agent（由 accessRules 强制）。成功返回 DeleteAgentResponse。声明了 3 个业务错误码：40000(400)、40305(403)、41167(400)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID deleteAgent
 // @Security BearerAuth
@@ -5695,14 +5704,17 @@ func contractValidateAgentDSLEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} DeleteAgentEnvelope
 // @Success 202 {object} DeleteAgentEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id} [delete]
 func contractDeleteAgentEnvelope() {}
 
 // contractGetAgentEnvelope documents GET /api/v1/agents/{id}.
 //
 // @Summary GetAgent returns an agent shadow
-// @Description GetAgent returns an agent shadow.。需要权限 read:agent（由 accessRules 强制）。成功返回 *model.AgentShadow
+// @Description GetAgent returns an agent shadow.。需要权限 read:agent（由 accessRules 强制）。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID getAgent
 // @Security BearerAuth
@@ -5710,13 +5722,17 @@ func contractDeleteAgentEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetAgentEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id} [get]
 func contractGetAgentEnvelope() {}
 
 // contractUpdateAgentEnvelope documents PUT /api/v1/agents/{id}.
 //
 // @Summary UpdateAgent edits an agent (title/dsl/release)
-// @Description UpdateAgent edits an agent (title/dsl/release).。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentUpdatePayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateAgent edits an agent (title/dsl/release).。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentUpdatePayload。成功返回 *model.AgentShadow。声明了 7 个业务错误码：40000(400)、40099(400)、40305(403)、40911(409)、41167(400)、50000(500)、50282(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID updateAgent
 // @Security BearerAuth
@@ -5727,14 +5743,20 @@ func contractGetAgentEnvelope() {}
 // @Param body body agentUpdatePayload true "请求体（agentUpdatePayload）"
 // @Success 200 {object} UpdateAgentEnvelope
 // @Success 202 {object} UpdateAgentEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40911"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50282"
 // @Router /api/v1/agents/{id} [put]
 func contractUpdateAgentEnvelope() {}
 
 // contractAgentChatCompletionEnvelope documents POST /api/v1/agents/{id}/chat/completions.
 //
 // @Summary AgentChatCompletion runs an agent completion (non-streaming + metered)
-// @Description AgentChatCompletion runs an agent completion (non-streaming + metered).。需要权限 execute:agent（由 accessRules 强制）。请求体类型 agentChatPayload。成功返回 *ragflow.CompletionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description AgentChatCompletion runs an agent completion (non-streaming + metered).。需要权限 execute:agent（由 accessRules 强制）。请求体类型 agentChatPayload。成功返回 *ragflow.CompletionResponse。声明了 8 个业务错误码：40000(400)、40075(400)、40159(400)、40162(400)、40305(403)、40960(409)、50278(502)、50289(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID agentChatCompletion
 // @Security BearerAuth
@@ -5742,14 +5764,19 @@ func contractUpdateAgentEnvelope() {}
 // @Accept json
 // @Param body body agentChatPayload true "请求体（agentChatPayload）"
 // @Success 200 {object} AgentChatCompletionEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40075 / 40159 / 40162"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40960"
+// @Failure 502 {object} docs.Envelope "错误码 50278 / 50289"
 // @Router /api/v1/agents/{id}/chat/completions [post]
 func contractAgentChatCompletionEnvelope() {}
 
 // contractStreamAgentChatCompletionEnvelope documents POST /api/v1/agents/{id}/chat/completions/stream.
 //
 // @Summary StreamAgentChatCompletion proxies an agent completion (SSE)
-// @Description StreamAgentChatCompletion proxies an agent completion (SSE).。需要权限 execute:agent（由 accessRules 强制）。请求体类型 agentChatPayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description StreamAgentChatCompletion proxies an agent completion (SSE).。需要权限 execute:agent（由 accessRules 强制）。请求体类型 agentChatPayload。成功返回原始字节，媒体类型 text/event-stream。声明了 7 个业务错误码：40000(400)、40075(400)、40159(400)、40162(400)、40305(403)、40960(409)、50278(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID streamAgentChatCompletion
 // @Security BearerAuth
@@ -5758,14 +5785,19 @@ func contractAgentChatCompletionEnvelope() {}
 // @Param body body agentChatPayload true "请求体（agentChatPayload）"
 // @Produce plain
 // @Success 200 {string} string "原始字节；媒体类型即载荷：text/event-stream"
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40075 / 40159 / 40162"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40960"
+// @Failure 502 {object} docs.Envelope "错误码 50278"
 // @Router /api/v1/agents/{id}/chat/completions/stream [post]
 func contractStreamAgentChatCompletionEnvelope() {}
 
 // contractGetAgentDetailEnvelope documents GET /api/v1/agents/{id}/detail.
 //
 // @Summary GetAgentDetail returns the live RAGFlow-side agent canvas
-// @Description GetAgentDetail returns the live RAGFlow-side agent canvas.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.Agent
+// @Description GetAgentDetail returns the live RAGFlow-side agent canvas.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.Agent。声明了 2 个业务错误码：40305(403)、50280(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID getAgentDetail
 // @Security BearerAuth
@@ -5773,13 +5805,18 @@ func contractStreamAgentChatCompletionEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetAgentDetailEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50280"
 // @Router /api/v1/agents/{id}/detail [get]
 func contractGetAgentDetailEnvelope() {}
 
 // contractPublishAgentEnvelope documents POST /api/v1/agents/{id}/publish.
 //
 // @Summary PublishAgent toggles an agent's publish/unpublish state
-// @Description PublishAgent toggles an agent's publish/unpublish state.。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentPublishPayload。成功返回 *model.AgentShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description PublishAgent toggles an agent's publish/unpublish state.。需要权限 manage:agent（由 accessRules 强制）。请求体类型 agentPublishPayload。成功返回 *model.AgentShadow。声明了 6 个业务错误码：40000(400)、40099(400)、40305(403)、41167(400)、50280(502)、50282(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID publishAgent
 // @Security BearerAuth
@@ -5790,14 +5827,18 @@ func contractGetAgentDetailEnvelope() {}
 // @Param body body agentPublishPayload true "请求体（agentPublishPayload）"
 // @Success 200 {object} PublishAgentEnvelope
 // @Success 202 {object} PublishAgentEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50280 / 50282"
 // @Router /api/v1/agents/{id}/publish [post]
 func contractPublishAgentEnvelope() {}
 
 // contractListAgentSessionsEnvelope documents GET /api/v1/agents/{id}/sessions.
 //
 // @Summary ListAgentSessions lists an agent's sessions
-// @Description ListAgentSessions lists an agent's sessions.。需要权限 read:agent（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.AgentSession
+// @Description ListAgentSessions lists an agent's sessions.。需要权限 read:agent（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.AgentSession。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID listAgentSessions
 // @Security BearerAuth
@@ -5806,13 +5847,16 @@ func contractPublishAgentEnvelope() {}
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Param keywords query string false "查询参数 keywords"
 // @Success 200 {object} ListAgentSessionsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id}/sessions [get]
 func contractListAgentSessionsEnvelope() {}
 
 // contractCreateAgentSessionEnvelope documents POST /api/v1/agents/{id}/sessions.
 //
 // @Summary CreateAgentSession starts an agent session
-// @Description CreateAgentSession starts an agent session.。需要权限 session:create:agent（由 accessRules 强制）。请求体类型 agentSessionPayload。成功返回 *ragflow.AgentSession
+// @Description CreateAgentSession starts an agent session.。需要权限 session:create:agent（由 accessRules 强制）。请求体类型 agentSessionPayload。成功返回 *ragflow.AgentSession。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags create:agent
 // @ID createAgentSession
 // @Security BearerAuth
@@ -5820,39 +5864,48 @@ func contractListAgentSessionsEnvelope() {}
 // @Accept json
 // @Param body body agentSessionPayload true "请求体（agentSessionPayload）"
 // @Success 200 {object} CreateAgentSessionEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id}/sessions [post]
 func contractCreateAgentSessionEnvelope() {}
 
 // contractDeleteAgentSessionEnvelope documents DELETE /api/v1/agents/{id}/sessions/{sessionId}.
 //
 // @Summary DeleteAgentSession deletes an agent session
-// @Description DeleteAgentSession deletes an agent session.。需要权限 manage:agent（由 accessRules 强制）。成功返回 DeleteAgentSessionResponse
+// @Description DeleteAgentSession deletes an agent session.。需要权限 manage:agent（由 accessRules 强制）。成功返回 DeleteAgentSessionResponse。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID deleteAgentSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param sessionId path string true "路径参数 sessionId"
 // @Success 200 {object} DeleteAgentSessionEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id}/sessions/{sessionId} [delete]
 func contractDeleteAgentSessionEnvelope() {}
 
 // contractGetAgentSessionEnvelope documents GET /api/v1/agents/{id}/sessions/{sessionId}.
 //
 // @Summary GetAgentSession returns an agent session
-// @Description GetAgentSession returns an agent session.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.AgentSession
+// @Description GetAgentSession returns an agent session.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.AgentSession。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID getAgentSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param sessionId path string true "路径参数 sessionId"
 // @Success 200 {object} GetAgentSessionEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id}/sessions/{sessionId} [get]
 func contractGetAgentSessionEnvelope() {}
 
 // contractListAgentSessionMessagesEnvelope documents GET /api/v1/agents/{id}/sessions/{sessionId}/messages.
 //
 // @Summary ListAgentSessionMessages returns a bounded page of agent session messages
-// @Description ListAgentSessionMessages returns a bounded page of agent session messages.。需要权限 read:agent（由 accessRules 强制）。成功返回 ListAgentSessionMessagesResponse
+// @Description ListAgentSessionMessages returns a bounded page of agent session messages.。需要权限 read:agent（由 accessRules 强制）。成功返回 ListAgentSessionMessagesResponse。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID listAgentSessionMessages
 // @Security BearerAuth
@@ -5861,13 +5914,16 @@ func contractGetAgentSessionEnvelope() {}
 // @Param limit query string false "查询参数 limit（默认 50）"
 // @Param cursor query string false "查询参数 cursor"
 // @Success 200 {object} ListAgentSessionMessagesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id}/sessions/{sessionId}/messages [get]
 func contractListAgentSessionMessagesEnvelope() {}
 
 // contractUploadAgentFileEnvelope documents POST /api/v1/agents/{id}/upload.
 //
 // @Summary UploadAgentFile uploads a temporary attachment for an owned Agent
-// @Description UploadAgentFile uploads a temporary attachment for an owned Agent.。需要权限 execute:agent（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UploadAgentFile uploads a temporary attachment for an owned Agent.。需要权限 execute:agent（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 7 个业务错误码：40000(400)、40071(400)、40072(400)、40073(400)、40074(400)、40305(403)、50292(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID uploadAgentFile
 // @Security BearerAuth
@@ -5875,56 +5931,68 @@ func contractListAgentSessionMessagesEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UploadAgentFileEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40071 / 40072 / 40073 / 40074"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50292"
 // @Router /api/v1/agents/{id}/upload [post]
 func contractUploadAgentFileEnvelope() {}
 
 // contractAgentValidationEnvelope documents GET /api/v1/agents/{id}/validation.
 //
 // @Summary AgentValidation validates the DSL the engine currently stores for one agent
-// @Description AgentValidation validates the DSL the engine currently stores for one agent. The editor calls it on open, so canvases saved before the validator existed are flagged without being re-saved.。需要权限 read:agent（由 accessRules 强制）。请求体类型 agentValidatePayload。成功返回 *service.AgentDslValidation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description AgentValidation validates the DSL the engine currently stores for one agent. The editor calls it on open, so canvases saved before the validator existed are flagged without being re-saved.。需要权限 read:agent（由 accessRules 强制）。成功返回 *service.AgentDslValidation。声明了 2 个业务错误码：40305(403)、50280(502)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID agentValidation
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
-// @Accept json
-// @Param body body agentValidatePayload true "请求体（agentValidatePayload）"
 // @Success 200 {object} AgentValidationEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50280"
 // @Router /api/v1/agents/{id}/validation [get]
 func contractAgentValidationEnvelope() {}
 
 // contractListAgentVersionsEnvelope documents GET /api/v1/agents/{id}/versions.
 //
 // @Summary ListAgentVersions lists an agent's versions
-// @Description ListAgentVersions lists an agent's versions.。需要权限 read:agent（由 accessRules 强制）。成功返回 []ragflow.AgentVersion
+// @Description ListAgentVersions lists an agent's versions.。需要权限 read:agent（由 accessRules 强制）。成功返回 []ragflow.AgentVersion。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID listAgentVersions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ListAgentVersionsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id}/versions [get]
 func contractListAgentVersionsEnvelope() {}
 
 // contractGetAgentVersionEnvelope documents GET /api/v1/agents/{id}/versions/{versionId}.
 //
 // @Summary GetAgentVersion returns a single version of an agent
-// @Description GetAgentVersion returns a single version of an agent.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.AgentVersion
+// @Description GetAgentVersion returns a single version of an agent.。需要权限 read:agent（由 accessRules 强制）。成功返回 *ragflow.AgentVersion。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID getAgentVersion
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param versionId path string true "路径参数 versionId"
 // @Success 200 {object} GetAgentVersionEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id}/versions/{versionId} [get]
 func contractGetAgentVersionEnvelope() {}
 
 // contractRollbackAgentVersionEnvelope documents POST /api/v1/agents/{id}/versions/{versionId}/rollback.
 //
 // @Summary RollbackAgentVersion restores an agent's DSL from a saved version
-// @Description RollbackAgentVersion restores an agent's DSL from a saved version.。需要权限 manage:agent（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RollbackAgentVersionResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description RollbackAgentVersion restores an agent's DSL from a saved version.。需要权限 manage:agent（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RollbackAgentVersionResponse。声明了 3 个业务错误码：40000(400)、40305(403)、41167(400)（括号内是 HTTP 状态）
 // @Tags agent
 // @ID rollbackAgentVersion
 // @Security BearerAuth
@@ -5936,14 +6004,17 @@ func contractGetAgentVersionEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RollbackAgentVersionEnvelope
 // @Success 202 {object} RollbackAgentVersionEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/agents/{id}/versions/{versionId}/rollback [post]
 func contractRollbackAgentVersionEnvelope() {}
 
 // contractListAlertsEnvelope documents GET /api/v1/alerts.
 //
 // @Summary ListAlerts returns the persisted operational alert worklist
-// @Description ListAlerts returns the persisted operational alert worklist.。需要权限 read:alert（由 accessRules 强制）。成功返回分页载荷，items 元素类型 alertRow
+// @Description ListAlerts returns the persisted operational alert worklist.。需要权限 read:alert（由 accessRules 强制）。成功返回分页载荷，items 元素类型 alertRow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags alert
 // @ID listAlerts
 // @Security BearerAuth
@@ -5955,13 +6026,15 @@ func contractRollbackAgentVersionEnvelope() {}
 // @Param status query string false "查询参数 status"
 // @Param search query string false "查询参数 search"
 // @Success 200 {object} ListAlertsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/alerts [get]
 func contractListAlertsEnvelope() {}
 
 // contractListAlertDeliveriesEnvelope documents GET /api/v1/alerts/deliveries.
 //
 // @Summary ListAlertDeliveries returns the restartable outbound delivery lifecycle
-// @Description ListAlertDeliveries returns the restartable outbound delivery lifecycle.。需要权限 read:alert（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AlertDelivery
+// @Description ListAlertDeliveries returns the restartable outbound delivery lifecycle.。需要权限 read:alert（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AlertDelivery。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags alert
 // @ID listAlertDeliveries
 // @Security BearerAuth
@@ -5971,13 +6044,15 @@ func contractListAlertsEnvelope() {}
 // @Param channel query string false "查询参数 channel"
 // @Param status query string false "查询参数 status"
 // @Success 200 {object} ListAlertDeliveriesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/alerts/deliveries [get]
 func contractListAlertDeliveriesEnvelope() {}
 
 // contractClaimAlertEnvelope documents POST /api/v1/alerts/{id}/claim.
 //
 // @Summary ClaimAlert claims an alert for operations follow-up
-// @Description ClaimAlert claims an alert for operations follow-up.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ClaimAlertResponse
+// @Description ClaimAlert claims an alert for operations follow-up.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ClaimAlertResponse。声明了 2 个业务错误码：40305(403)、42970(400)（括号内是 HTTP 状态）
 // @Tags alert
 // @ID claimAlert
 // @Security BearerAuth
@@ -5986,13 +6061,17 @@ func contractListAlertDeliveriesEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ClaimAlertEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 42970"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/alerts/{id}/claim [post]
 func contractClaimAlertEnvelope() {}
 
 // contractRetryAlertDeliveryEnvelope documents POST /api/v1/alerts/{id}/deliveries/{channel}/retry.
 //
 // @Summary RetryAlertDelivery manually redelivers one pending/failed/abandoned channel
-// @Description RetryAlertDelivery manually redelivers one pending/failed/abandoned channel.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RetryAlertDeliveryResponse
+// @Description RetryAlertDelivery manually redelivers one pending/failed/abandoned channel.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RetryAlertDeliveryResponse。声明了 5 个业务错误码：40305(403)、42971(400)、42972(400)、42973(400)、42974(409)（括号内是 HTTP 状态）
 // @Tags alert
 // @ID retryAlertDelivery
 // @Security BearerAuth
@@ -6002,13 +6081,18 @@ func contractClaimAlertEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RetryAlertDeliveryEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 42971 / 42972 / 42973"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403 / 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 42974"
 // @Router /api/v1/alerts/{id}/deliveries/{channel}/retry [post]
 func contractRetryAlertDeliveryEnvelope() {}
 
 // contractMarkAlertReadEnvelope documents POST /api/v1/alerts/{id}/read.
 //
 // @Summary MarkAlertRead marks an alert as read
-// @Description MarkAlertRead marks an alert as read.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkAlertReadResponse
+// @Description MarkAlertRead marks an alert as read.。需要权限 manage:alert（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 MarkAlertReadResponse。声明了 2 个业务错误码：40305(403)、42970(400)（括号内是 HTTP 状态）
 // @Tags alert
 // @ID markAlertRead
 // @Security BearerAuth
@@ -6017,6 +6101,10 @@ func contractRetryAlertDeliveryEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} MarkAlertReadEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 42970"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/alerts/{id}/read [post]
 func contractMarkAlertReadEnvelope() {}
 
@@ -6030,18 +6118,21 @@ func contractMarkAlertReadEnvelope() {}
 // @Param artifactId path string true "路径参数 artifactId"
 // @Produce octet-stream
 // @Success 200 {string} string "原始字节；媒体类型即载荷："
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/answer-snapshots/artifacts/{artifactId}/download [get]
 func contractDownloadAnswerExportEnvelope() {}
 
 // contractGetAnswerSnapshotByRequestEnvelope documents GET /api/v1/answer-snapshots/by-request/{requestId}.
 //
 // @Summary Get Answer Snapshot By Request
-// @Description 需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerSnapshotByRequestResponse
+// @Description 需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerSnapshotByRequestResponse。声明了 1 个业务错误码：40134(400)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID getAnswerSnapshotByRequest
 // @Security BearerAuth
 // @Param requestId path string true "路径参数 requestId"
 // @Success 200 {object} GetAnswerSnapshotByRequestEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40134"
 // @Router /api/v1/answer-snapshots/by-request/{requestId} [get]
 func contractGetAnswerSnapshotByRequestEnvelope() {}
 
@@ -6054,13 +6145,14 @@ func contractGetAnswerSnapshotByRequestEnvelope() {}
 // @Security BearerAuth
 // @Param jobId path string true "路径参数 jobId"
 // @Success 200 {object} GetAnswerExportJobEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 403"
 // @Router /api/v1/answer-snapshots/export-jobs/{jobId} [get]
 func contractGetAnswerExportJobEnvelope() {}
 
 // contractRetryAnswerExportJobEnvelope documents POST /api/v1/answer-snapshots/export-jobs/{jobId}/retry.
 //
 // @Summary Retry Answer Export Job
-// @Description 需要权限 read:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 GetAnswerSnapshotResponse
+// @Description 需要权限 read:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RetryAnswerExportJobResponse。声明了 2 个业务错误码：40134(400)、40933(409)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID retryAnswerExportJob
 // @Security BearerAuth
@@ -6068,38 +6160,46 @@ func contractGetAnswerExportJobEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RetryAnswerExportJobEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40134"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 409 {object} docs.Envelope "错误码 40933"
 // @Router /api/v1/answer-snapshots/export-jobs/{jobId}/retry [post]
 func contractRetryAnswerExportJobEnvelope() {}
 
 // contractGetAnswerSnapshotEnvelope documents GET /api/v1/answer-snapshots/{snapshotId}.
 //
 // @Summary Get Answer Snapshot
-// @Description 需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerSnapshotResponse
+// @Description 需要权限 read:chat（由 accessRules 强制）。成功返回 GetAnswerSnapshotResponse。声明了 1 个业务错误码：40134(400)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID getAnswerSnapshot
 // @Security BearerAuth
 // @Param snapshotId path string true "路径参数 snapshotId"
 // @Success 200 {object} GetAnswerSnapshotEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40134"
 // @Router /api/v1/answer-snapshots/{snapshotId} [get]
 func contractGetAnswerSnapshotEnvelope() {}
 
 // contractGetAnswerSnapshotAuditExportEnvelope documents GET /api/v1/answer-snapshots/{snapshotId}/audit-export.
 //
 // @Summary GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4)
-// @Description GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4). The middleware gate is audit-export:read; the handler re-checks per doc/11 §6.1 item 3.。需要权限 read:audit-export（由 accessRules 强制）。成功返回 GetAnswerSnapshotAuditExportResponse
+// @Description GetAnswerSnapshotAuditExport serves the audit-grade forensic export (doc/100 §7.3 contract 2, doc/124 §4). The middleware gate is audit-export:read; the handler re-checks per doc/11 §6.1 item 3.。需要权限 read:audit-export（由 accessRules 强制）。成功返回 GetAnswerSnapshotAuditExportResponse。声明了 4 个业务错误码：40130(400)、40134(400)、40930(409)、50200(502)（括号内是 HTTP 状态）
 // @Tags audit-export
 // @ID getAnswerSnapshotAuditExport
 // @Security BearerAuth
 // @Param snapshotId path string true "路径参数 snapshotId"
 // @Param idempotency_key query string false "查询参数 idempotency_key"
 // @Success 200 {object} GetAnswerSnapshotAuditExportEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40130 / 40134"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/answer-snapshots/{snapshotId}/audit-export [get]
 func contractGetAnswerSnapshotAuditExportEnvelope() {}
 
 // contractCreateAnswerExportEnvelope documents POST /api/v1/answer-snapshots/{snapshotId}/export.
 //
 // @Summary Create Answer Export
-// @Description 需要权限 read:chat（由 accessRules 强制）。请求体类型 CreateAnswerExportRequest。成功返回 GetAnswerSnapshotResponse。声明了 1 个业务错误码：40130(400)（括号内是 HTTP 状态）
+// @Description 需要权限 read:chat（由 accessRules 强制）。请求体类型 CreateAnswerExportRequest。成功返回 CreateAnswerExportResponse。声明了 3 个业务错误码：40130(400)、40134(400)、40930(409)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID createAnswerExport
 // @Security BearerAuth
@@ -6107,7 +6207,9 @@ func contractGetAnswerSnapshotAuditExportEnvelope() {}
 // @Accept json
 // @Param body body CreateAnswerExportRequest true "请求体（CreateAnswerExportRequest）"
 // @Success 200 {object} CreateAnswerExportEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40130"
+// @Failure 400 {object} docs.Envelope "错误码 40130 / 40134"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
 // @Router /api/v1/answer-snapshots/{snapshotId}/export [post]
 func contractCreateAnswerExportEnvelope() {}
 
@@ -6125,14 +6227,14 @@ func contractListApprovalDelegationsEnvelope() {}
 // contractCreateApprovalDelegationEnvelope documents POST /api/v1/approval-delegations.
 //
 // @Summary Create Approval Delegation
-// @Description 需要权限 read:approval（由 accessRules 强制）。请求体类型 approvalDelegationRequest。成功返回 *model.ApprovalDelegation。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 read:approval（由 accessRules 强制）。请求体类型 approvalDelegationRequest。成功返回 *model.ApprovalDelegation。声明了 2 个业务错误码：40000(400)、40100(400)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID createApprovalDelegation
 // @Security BearerAuth
 // @Accept json
 // @Param body body approvalDelegationRequest true "请求体（approvalDelegationRequest）"
 // @Success 200 {object} CreateApprovalDelegationEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40100"
 // @Router /api/v1/approval-delegations [post]
 func contractCreateApprovalDelegationEnvelope() {}
 
@@ -6152,32 +6254,38 @@ func contractDeleteApprovalDelegationEnvelope() {}
 // contractListApprovalPoliciesEnvelope documents GET /api/v1/approval-policies.
 //
 // @Summary List Approval Policies
-// @Description 需要权限 read:approval-policy（由 accessRules 强制）。成功返回 []model.ApprovalPolicy
+// @Description 需要权限 read:approval-policy（由 accessRules 强制）。成功返回 []model.ApprovalPolicy。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags approval-policy
 // @ID listApprovalPolicies
 // @Security BearerAuth
 // @Success 200 {object} ListApprovalPoliciesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/approval-policies [get]
 func contractListApprovalPoliciesEnvelope() {}
 
 // contractSaveApprovalPolicyEnvelope documents POST /api/v1/approval-policies.
 //
 // @Summary Save Approval Policy
-// @Description 需要权限 manage:approval-policy（由 accessRules 强制）。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:approval-policy（由 accessRules 强制）。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 10 个业务错误码：40000(400)、40080(400)、40081(400)、40082(400)、40083(400)、40084(400)、40102(400)、40305(403)、40910(409)、41130(400)（括号内是 HTTP 状态）
 // @Tags approval-policy
 // @ID saveApprovalPolicy
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.ApprovalPolicyRequest true "请求体（service.ApprovalPolicyRequest）"
 // @Success 200 {object} SaveApprovalPolicyEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40080 / 40081 / 40082 / 40083 / 40084 / 40102 / 41130"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40910"
 // @Router /api/v1/approval-policies [post]
 func contractSaveApprovalPolicyEnvelope() {}
 
 // contractSaveApprovalPolicyPutEnvelope documents PUT /api/v1/approval-policies/{id}.
 //
 // @Summary Save Approval Policy
-// @Description 需要权限 manage:approval-policy（由 accessRules 强制）。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:approval-policy（由 accessRules 强制）。请求体类型 service.ApprovalPolicyRequest。成功返回 *model.ApprovalPolicy。声明了 10 个业务错误码：40000(400)、40080(400)、40081(400)、40082(400)、40083(400)、40084(400)、40102(400)、40305(403)、40910(409)、41130(400)（括号内是 HTTP 状态）
 // @Tags approval-policy
 // @ID saveApprovalPolicyPut
 // @Security BearerAuth
@@ -6185,7 +6293,11 @@ func contractSaveApprovalPolicyEnvelope() {}
 // @Accept json
 // @Param body body service.ApprovalPolicyRequest true "请求体（service.ApprovalPolicyRequest）"
 // @Success 200 {object} SaveApprovalPolicyPutEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40080 / 40081 / 40082 / 40083 / 40084 / 40102 / 41130"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40910"
 // @Router /api/v1/approval-policies/{id} [put]
 func contractSaveApprovalPolicyPutEnvelope() {}
 
@@ -6217,7 +6329,7 @@ func contractListApprovalsEnvelope() {}
 // contractCreateApprovalEnvelope documents POST /api/v1/approvals.
 //
 // @Summary Create Approval
-// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 service.ApprovalSubmitRequest。成功返回 CreateApprovalResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 service.ApprovalSubmitRequest。成功返回 CreateApprovalResponse。声明了 20 个业务错误码：40000(400)、40060(400)、40072(400)、40087(400)、40088(400)、40089(400)、40090(400)、40091(400)、40092(400)、40093(400)、40094(400)、40097(400)、40152(400)、40305(403)、40976(409)、41167(400)、42940(429)、44104(409)、44105(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID createApproval
 // @Security BearerAuth
@@ -6225,42 +6337,48 @@ func contractListApprovalsEnvelope() {}
 // @Param body body service.ApprovalSubmitRequest true "请求体（service.ApprovalSubmitRequest）"
 // @Success 200 {object} CreateApprovalEnvelope
 // @Success 202 {object} CreateApprovalEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40060 / 40072 / 40087 / 40088 / 40089 / 40090 / 40091 / 40092 / 40093 / 40094 / 40097 / 40152 / 41167 / 44105"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40976 / 44104"
+// @Failure 429 {object} docs.Envelope "错误码 42940"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/approvals [post]
 func contractCreateApprovalEnvelope() {}
 
 // contractBatchApproveApprovalsEnvelope documents POST /api/v1/approvals/batch-approve.
 //
 // @Summary Batch Approve Approvals
-// @Description 需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalBatchDecisionRequest。成功返回 []service.ApprovalBatchDecisionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalBatchDecisionRequest。成功返回 []service.ApprovalBatchDecisionResult。声明了 4 个业务错误码：40000(400)、40097(400)、40098(400)、40101(400)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID batchApproveApprovals
 // @Security BearerAuth
 // @Accept json
 // @Param body body approvalBatchDecisionRequest true "请求体（approvalBatchDecisionRequest）"
 // @Success 200 {object} BatchApproveApprovalsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40097 / 40098 / 40101"
 // @Router /api/v1/approvals/batch-approve [post]
 func contractBatchApproveApprovalsEnvelope() {}
 
 // contractBatchRejectApprovalsEnvelope documents POST /api/v1/approvals/batch-reject.
 //
 // @Summary Batch Reject Approvals
-// @Description 需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalBatchDecisionRequest。成功返回 []service.ApprovalBatchDecisionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalBatchDecisionRequest。成功返回 []service.ApprovalBatchDecisionResult。声明了 4 个业务错误码：40000(400)、40097(400)、40098(400)、40101(400)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID batchRejectApprovals
 // @Security BearerAuth
 // @Accept json
 // @Param body body approvalBatchDecisionRequest true "请求体（approvalBatchDecisionRequest）"
 // @Success 200 {object} BatchRejectApprovalsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40097 / 40098 / 40101"
 // @Router /api/v1/approvals/batch-reject [post]
 func contractBatchRejectApprovalsEnvelope() {}
 
 // contractExportApprovalsEnvelope documents GET /api/v1/approvals/export.
 //
 // @Summary Export Approvals
-// @Description 需要权限 read:approval（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv
+// @Description 需要权限 read:approval（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv。声明了 1 个业务错误码：40095(400)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID exportApprovals
 // @Security BearerAuth
@@ -6278,25 +6396,29 @@ func contractBatchRejectApprovalsEnvelope() {}
 // @Param order query string false "查询参数 order"
 // @Produce plain
 // @Success 200 {string} string "原始字节；媒体类型即载荷：text/csv"
+// @Failure 400 {object} docs.Envelope "错误码 40095"
 // @Router /api/v1/approvals/export [get]
 func contractExportApprovalsEnvelope() {}
 
 // contractGetApprovalEnvelope documents GET /api/v1/approvals/{id}.
 //
 // @Summary Get Approval
-// @Description 需要权限 read:approval（由 accessRules 强制）。成功返回 *service.ApprovalDetail
+// @Description 需要权限 read:approval（由 accessRules 强制）。成功返回 *service.ApprovalDetail。声明了 1 个业务错误码：50000(500)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID getApproval
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetApprovalEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/approvals/{id} [get]
 func contractGetApprovalEnvelope() {}
 
 // contractApproveApprovalEnvelope documents POST /api/v1/approvals/{id}/approve.
 //
 // @Summary Approve Approval
-// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 11 个业务错误码：40000(400)、40096(400)、40097(400)、40098(400)、40902(409)、40903(409)、40904(409)、40905(409)、40909(409)、42941(429)、50000(500)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID approveApproval
 // @Security BearerAuth
@@ -6304,14 +6426,18 @@ func contractGetApprovalEnvelope() {}
 // @Accept json
 // @Param body body approvalActionRequest true "请求体（approvalActionRequest）"
 // @Success 200 {object} ApproveApprovalEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40096 / 40097 / 40098"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 409 {object} docs.Envelope "错误码 40902 / 40903 / 40904 / 40905 / 40909"
+// @Failure 429 {object} docs.Envelope "错误码 42941"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/approvals/{id}/approve [post]
 func contractApproveApprovalEnvelope() {}
 
 // contractCancelApprovalEnvelope documents POST /api/v1/approvals/{id}/cancel.
 //
 // @Summary Cancel Approval
-// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 3 个业务错误码：40000(400)、40099(400)、40909(409)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID cancelApproval
 // @Security BearerAuth
@@ -6319,14 +6445,17 @@ func contractApproveApprovalEnvelope() {}
 // @Accept json
 // @Param body body approvalActionRequest true "请求体（approvalActionRequest）"
 // @Success 200 {object} CancelApprovalEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40909"
 // @Router /api/v1/approvals/{id}/cancel [post]
 func contractCancelApprovalEnvelope() {}
 
 // contractRejectApprovalEnvelope documents POST /api/v1/approvals/{id}/reject.
 //
 // @Summary Reject Approval
-// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 execute:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 11 个业务错误码：40000(400)、40096(400)、40097(400)、40098(400)、40902(409)、40903(409)、40904(409)、40905(409)、40909(409)、42941(429)、50000(500)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID rejectApproval
 // @Security BearerAuth
@@ -6334,14 +6463,18 @@ func contractCancelApprovalEnvelope() {}
 // @Accept json
 // @Param body body approvalActionRequest true "请求体（approvalActionRequest）"
 // @Success 200 {object} RejectApprovalEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40096 / 40097 / 40098"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 409 {object} docs.Envelope "错误码 40902 / 40903 / 40904 / 40905 / 40909"
+// @Failure 429 {object} docs.Envelope "错误码 42941"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/approvals/{id}/reject [post]
 func contractRejectApprovalEnvelope() {}
 
 // contractRetryApprovalEnvelope documents POST /api/v1/approvals/{id}/retry.
 //
 // @Summary Retry Approval
-// @Description 需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:approval（由 accessRules 强制）。请求体类型 approvalActionRequest。成功返回 *model.Approval。声明了 3 个业务错误码：40000(400)、40099(400)、40909(409)（括号内是 HTTP 状态）
 // @Tags approval
 // @ID retryApproval
 // @Security BearerAuth
@@ -6349,14 +6482,17 @@ func contractRejectApprovalEnvelope() {}
 // @Accept json
 // @Param body body approvalActionRequest true "请求体（approvalActionRequest）"
 // @Success 200 {object} RetryApprovalEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40909"
 // @Router /api/v1/approvals/{id}/retry [post]
 func contractRetryApprovalEnvelope() {}
 
 // contractListAssistantReleasesEnvelope documents GET /api/v1/assistant-releases.
 //
 // @Summary list Assistant Releases
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AssistantRelease
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AssistantRelease。声明了 1 个业务错误码：50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID listAssistantReleases
 // @Security BearerAuth
@@ -6365,38 +6501,46 @@ func contractRetryApprovalEnvelope() {}
 // @Param assistant_id query string false "查询参数 assistant_id"
 // @Param state query string false "查询参数 state"
 // @Success 200 {object} ListAssistantReleasesEnvelope
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases [get]
 func contractListAssistantReleasesEnvelope() {}
 
 // contractCreateAssistantReleaseEnvelope documents POST /api/v1/assistant-releases.
 //
 // @Summary create Assistant Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease。声明了 7 个业务错误码：40400(404)、40930(409)、42200(422)、42230(422)、42231(422)、42260(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createAssistantRelease
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404 / 40400"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231 / 42260"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases [post]
 func contractCreateAssistantReleaseEnvelope() {}
 
 // contractGetAssistantReleaseEnvelope documents GET /api/v1/assistant-releases/{id}.
 //
 // @Summary get Assistant Release
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.AssistantRelease
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.AssistantRelease。声明了 2 个业务错误码：42200(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID getAssistantRelease
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 422 {object} docs.Envelope "错误码 42200"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id} [get]
 func contractGetAssistantReleaseEnvelope() {}
 
 // contractActivateAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/activate.
 //
 // @Summary activate Assistant Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation。声明了 5 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID activateAssistantRelease
 // @Security BearerAuth
@@ -6404,13 +6548,17 @@ func contractGetAssistantReleaseEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ActivateAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/activate [post]
 func contractActivateAssistantReleaseEnvelope() {}
 
 // contractApplyAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/apply.
 //
 // @Summary apply Assistant Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease。声明了 7 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)、50230(502)、50241(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID applyAssistantRelease
 // @Security BearerAuth
@@ -6418,13 +6566,17 @@ func contractActivateAssistantReleaseEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ApplyAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50230 / 50241"
 // @Router /api/v1/assistant-releases/{id}/apply [post]
 func contractApplyAssistantReleaseEnvelope() {}
 
 // contractListAssistantAuthorizationSnapshotsEnvelope documents GET /api/v1/assistant-releases/{id}/authorization-snapshots.
 //
 // @Summary list Assistant Authorization Snapshots
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuthorizationSnapshot
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuthorizationSnapshot。声明了 1 个业务错误码：50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID listAssistantAuthorizationSnapshots
 // @Security BearerAuth
@@ -6433,13 +6585,14 @@ func contractApplyAssistantReleaseEnvelope() {}
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Param trace_id query string false "查询参数 trace_id"
 // @Success 200 {object} ListAssistantAuthorizationSnapshotsEnvelope
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/authorization-snapshots [get]
 func contractListAssistantAuthorizationSnapshotsEnvelope() {}
 
 // contractCreateAssistantAuthorizationSnapshotEnvelope documents POST /api/v1/assistant-releases/{id}/authorization-snapshots.
 //
 // @Summary create Assistant Authorization Snapshot
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AuthorizationSnapshot
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AuthorizationSnapshot。声明了 3 个业务错误码：40930(409)、42200(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createAssistantAuthorizationSnapshot
 // @Security BearerAuth
@@ -6447,13 +6600,17 @@ func contractListAssistantAuthorizationSnapshotsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateAssistantAuthorizationSnapshotEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/authorization-snapshots [post]
 func contractCreateAssistantAuthorizationSnapshotEnvelope() {}
 
 // contractCompensateAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/compensate.
 //
 // @Summary compensate Assistant Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease。声明了 7 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)、50230(502)、50241(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID compensateAssistantRelease
 // @Security BearerAuth
@@ -6461,37 +6618,46 @@ func contractCreateAssistantAuthorizationSnapshotEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CompensateAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50230 / 50241"
 // @Router /api/v1/assistant-releases/{id}/compensate [post]
 func contractCompensateAssistantReleaseEnvelope() {}
 
 // contractGetAssistantReleaseGateSummaryEnvelope documents GET /api/v1/assistant-releases/{id}/gate.
 //
 // @Summary get Assistant Release Gate Summary
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.AssistantReleaseGateSummary
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.AssistantReleaseGateSummary。声明了 5 个业务错误码：40075(400)、42200(422)、42230(422)、50200(502)、50230(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID getAssistantReleaseGateSummary
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetAssistantReleaseGateSummaryEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40075"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50230"
 // @Router /api/v1/assistant-releases/{id}/gate [get]
 func contractGetAssistantReleaseGateSummaryEnvelope() {}
 
 // contractGetAssistantReleaseHealthEnvelope documents GET /api/v1/assistant-releases/{id}/health.
 //
 // @Summary get Assistant Release Health
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.RuntimeHealth
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.RuntimeHealth。声明了 1 个业务错误码：50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID getAssistantReleaseHealth
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetAssistantReleaseHealthEnvelope
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/health [get]
 func contractGetAssistantReleaseHealthEnvelope() {}
 
 // contractUpdateAssistantReleaseHealthEnvelope documents PUT /api/v1/assistant-releases/{id}/health.
 //
 // @Summary update Assistant Release Health
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RuntimeHealth
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RuntimeHealth。声明了 4 个业务错误码：42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID updateAssistantReleaseHealth
 // @Security BearerAuth
@@ -6499,25 +6665,31 @@ func contractGetAssistantReleaseHealthEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateAssistantReleaseHealthEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/health [put]
 func contractUpdateAssistantReleaseHealthEnvelope() {}
 
 // contractGetAssistantSnapshotManifestEnvelope documents GET /api/v1/assistant-releases/{id}/manifest.
 //
 // @Summary get Assistant Snapshot Manifest
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.SnapshotManifest
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *model.SnapshotManifest。声明了 2 个业务错误码：42200(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID getAssistantSnapshotManifest
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetAssistantSnapshotManifestEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 422 {object} docs.Envelope "错误码 42200"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/manifest [get]
 func contractGetAssistantSnapshotManifestEnvelope() {}
 
 // contractListAssistantReleaseOperationsEnvelope documents GET /api/v1/assistant-releases/{id}/operations.
 //
 // @Summary list Assistant Release Operations
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ReleaseOperation
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ReleaseOperation。声明了 1 个业务错误码：50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID listAssistantReleaseOperations
 // @Security BearerAuth
@@ -6527,13 +6699,14 @@ func contractGetAssistantSnapshotManifestEnvelope() {}
 // @Param operation_type query string false "查询参数 operation_type"
 // @Param state query string false "查询参数 state"
 // @Success 200 {object} ListAssistantReleaseOperationsEnvelope
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/operations [get]
 func contractListAssistantReleaseOperationsEnvelope() {}
 
 // contractRecoverAssistantReleaseOperationEnvelope documents POST /api/v1/assistant-releases/{id}/operations/{operationId}/recover.
 //
 // @Summary recover Assistant Release Operation
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation。声明了 6 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)、50230(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID recoverAssistantReleaseOperation
 // @Security BearerAuth
@@ -6542,13 +6715,17 @@ func contractListAssistantReleaseOperationsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RecoverAssistantReleaseOperationEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50230"
 // @Router /api/v1/assistant-releases/{id}/operations/{operationId}/recover [post]
 func contractRecoverAssistantReleaseOperationEnvelope() {}
 
 // contractPromoteCanaryAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/promote-canary.
 //
 // @Summary promote Canary Assistant Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation。声明了 5 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID promoteCanaryAssistantRelease
 // @Security BearerAuth
@@ -6556,13 +6733,17 @@ func contractRecoverAssistantReleaseOperationEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} PromoteCanaryAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/promote-canary [post]
 func contractPromoteCanaryAssistantReleaseEnvelope() {}
 
 // contractReconcileAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/reconcile.
 //
 // @Summary reconcile Assistant Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease。声明了 6 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)、50230(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID reconcileAssistantRelease
 // @Security BearerAuth
@@ -6570,13 +6751,17 @@ func contractPromoteCanaryAssistantReleaseEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ReconcileAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50230"
 // @Router /api/v1/assistant-releases/{id}/reconcile [post]
 func contractReconcileAssistantReleaseEnvelope() {}
 
 // contractRollbackAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/rollback/{targetId}.
 //
 // @Summary rollback Assistant Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation。声明了 7 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)、50230(502)、50241(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID rollbackAssistantRelease
 // @Security BearerAuth
@@ -6585,13 +6770,17 @@ func contractReconcileAssistantReleaseEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RollbackAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50230 / 50241"
 // @Router /api/v1/assistant-releases/{id}/rollback/{targetId} [post]
 func contractRollbackAssistantReleaseEnvelope() {}
 
 // contractTransitionAssistantReleaseEnvelope documents POST /api/v1/assistant-releases/{id}/transition.
 //
 // @Summary transition Assistant Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease。声明了 5 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID transitionAssistantRelease
 // @Security BearerAuth
@@ -6599,13 +6788,17 @@ func contractRollbackAssistantReleaseEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} TransitionAssistantReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistant-releases/{id}/transition [post]
 func contractTransitionAssistantReleaseEnvelope() {}
 
 // contractListAssistantsEnvelope documents GET /api/v1/assistants.
 //
 // @Summary list Assistants
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Assistant
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Assistant。声明了 1 个业务错误码：50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID listAssistants
 // @Security BearerAuth
@@ -6614,13 +6807,14 @@ func contractTransitionAssistantReleaseEnvelope() {}
 // @Param project_id query string false "查询参数 project_id"
 // @Param lifecycle query string false "查询参数 lifecycle"
 // @Success 200 {object} ListAssistantsEnvelope
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistants [get]
 func contractListAssistantsEnvelope() {}
 
 // contractGetAssistantRolloutPoliciesEnvelope documents GET /api/v1/assistants/{id}/rollout-policies.
 //
 // @Summary get Assistant Rollout Policies
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 GetAssistantRolloutPoliciesResponse
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 GetAssistantRolloutPoliciesResponse。声明了 2 个业务错误码：42200(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID getAssistantRolloutPolicies
 // @Security BearerAuth
@@ -6628,13 +6822,16 @@ func contractListAssistantsEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} GetAssistantRolloutPoliciesEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 422 {object} docs.Envelope "错误码 42200"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistants/{id}/rollout-policies [get]
 func contractGetAssistantRolloutPoliciesEnvelope() {}
 
 // contractCreateAssistantRolloutPolicyEnvelope documents POST /api/v1/assistants/{id}/rollout-policies.
 //
 // @Summary create Assistant Rollout Policy
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy。声明了 5 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createAssistantRolloutPolicy
 // @Security BearerAuth
@@ -6642,13 +6839,17 @@ func contractGetAssistantRolloutPoliciesEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateAssistantRolloutPolicyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistants/{id}/rollout-policies [post]
 func contractCreateAssistantRolloutPolicyEnvelope() {}
 
 // contractUpdateAssistantRolloutPolicyEnvelope documents PUT /api/v1/assistants/{id}/rollout-policies/{policyId}.
 //
 // @Summary update Assistant Rollout Policy
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.RolloutPolicy。声明了 5 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID updateAssistantRolloutPolicy
 // @Security BearerAuth
@@ -6657,13 +6858,17 @@ func contractCreateAssistantRolloutPolicyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateAssistantRolloutPolicyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/assistants/{id}/rollout-policies/{policyId} [put]
 func contractUpdateAssistantRolloutPolicyEnvelope() {}
 
 // contractListAuditsEnvelope documents GET /api/v1/audit.
 //
 // @Summary ListAudits returns a page of the tenant's audit logs
-// @Description ListAudits returns a page of the tenant's audit logs.。需要权限 read:audit（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuditLog
+// @Description ListAudits returns a page of the tenant's audit logs.。需要权限 read:audit（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuditLog。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags audit
 // @ID listAudits
 // @Security BearerAuth
@@ -6681,26 +6886,31 @@ func contractUpdateAssistantRolloutPolicyEnvelope() {}
 // @Param created_from query string false "查询参数 created_from"
 // @Param created_to query string false "查询参数 created_to"
 // @Success 200 {object} ListAuditsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/audit [get]
 func contractListAuditsEnvelope() {}
 
 // contractListAuditAnchorsEnvelope documents GET /api/v1/audit/anchors.
 //
 // @Summary ListAuditAnchors returns immutable audit-chain tail snapshots
-// @Description ListAuditAnchors returns immutable audit-chain tail snapshots.。需要权限 read:audit-anchor（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuditAnchor
+// @Description ListAuditAnchors returns immutable audit-chain tail snapshots.。需要权限 read:audit-anchor（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AuditAnchor。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags audit-anchor
 // @ID listAuditAnchors
 // @Security BearerAuth
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListAuditAnchorsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/audit/anchors [get]
 func contractListAuditAnchorsEnvelope() {}
 
 // contractExportAuditsEnvelope documents GET /api/v1/audit/export.
 //
 // @Summary ExportAudits streams the audit log as CSV
-// @Description ExportAudits streams the audit log as CSV.。需要权限 read:audit（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv
+// @Description ExportAudits streams the audit log as CSV.。需要权限 read:audit（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv。声明了 2 个业务错误码：40096(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags audit
 // @ID exportAudits
 // @Security BearerAuth
@@ -6708,13 +6918,16 @@ func contractListAuditAnchorsEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Produce plain
 // @Success 200 {string} string "原始字节；媒体类型即载荷：text/csv"
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40096"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/audit/export [get]
 func contractExportAuditsEnvelope() {}
 
 // contractRepairAuditChainEnvelope documents POST /api/v1/audit/repair.
 //
 // @Summary Repair Audit Chain
-// @Description 需要权限 manage:audit（由 accessRules 强制）。请求体类型 RepairAuditChainRequest。成功返回 RepairAuditChainResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:audit（由 accessRules 强制）。请求体类型 RepairAuditChainRequest。成功返回 RepairAuditChainResponse。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags audit
 // @ID repairAuditChain
 // @Security BearerAuth
@@ -6722,49 +6935,58 @@ func contractExportAuditsEnvelope() {}
 // @Param body body RepairAuditChainRequest true "请求体（RepairAuditChainRequest）"
 // @Success 200 {object} RepairAuditChainEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/audit/repair [post]
 func contractRepairAuditChainEnvelope() {}
 
 // contractVerifyAuditChainEnvelope documents GET /api/v1/audit/verify.
 //
 // @Summary VerifyAuditChain checks the audit hash chain integrity
-// @Description VerifyAuditChain checks the audit hash chain integrity.。需要权限 read:audit（由 accessRules 强制）。成功返回 VerifyAuditChainResponse
+// @Description VerifyAuditChain checks the audit hash chain integrity.。需要权限 read:audit（由 accessRules 强制）。成功返回 VerifyAuditChainResponse。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags audit
 // @ID verifyAuditChain
 // @Security BearerAuth
 // @Success 200 {object} VerifyAuditChainEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/audit/verify [get]
 func contractVerifyAuditChainEnvelope() {}
 
 // contractGetBrandingEnvelope documents GET /api/v1/branding.
 //
 // @Summary GetBranding returns the caller's effective tenant branding
-// @Description GetBranding returns the caller's effective tenant branding.。需要权限 read:branding（由 accessRules 强制）。成功返回 service.Branding
+// @Description GetBranding returns the caller's effective tenant branding.。需要权限 read:branding（由 accessRules 强制）。成功返回 service.Branding。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags branding
 // @ID getBranding
 // @Security BearerAuth
 // @Success 200 {object} GetBrandingEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/branding [get]
 func contractGetBrandingEnvelope() {}
 
 // contractSetBrandingEnvelope documents PUT /api/v1/branding.
 //
 // @Summary SetBranding updates the caller tenant's branding
-// @Description SetBranding updates the caller tenant's branding.。需要权限 manage:branding（由 accessRules 强制）。请求体类型 SetBrandingRequest。成功返回 service.Branding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description SetBranding updates the caller tenant's branding.。需要权限 manage:branding（由 accessRules 强制）。请求体类型 SetBrandingRequest。成功返回 service.Branding。声明了 4 个业务错误码：40000(400)、40025(400)、40147(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags branding
 // @ID setBranding
 // @Security BearerAuth
 // @Accept json
 // @Param body body SetBrandingRequest true "请求体（SetBrandingRequest）"
 // @Success 200 {object} SetBrandingEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40025 / 40147"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/branding [put]
 func contractSetBrandingEnvelope() {}
 
 // contractUploadBrandingLogoEnvelope documents POST /api/v1/branding/logo.
 //
 // @Summary UploadBrandingLogo accepts an image upload, stores it under the data dir, and returns the served URL which is then persisted as the tenant logo
-// @Description UploadBrandingLogo accepts an image upload, stores it under the data dir, and returns the served URL which is then persisted as the tenant logo.。需要权限 manage:branding（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 UploadBrandingLogoResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UploadBrandingLogo accepts an image upload, stores it under the data dir, and returns the served URL which is then persisted as the tenant logo.。需要权限 manage:branding（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 UploadBrandingLogoResponse。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags branding
 // @ID uploadBrandingLogo
 // @Security BearerAuth
@@ -6772,6 +6994,8 @@ func contractSetBrandingEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UploadBrandingLogoEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/branding/logo [post]
 func contractUploadBrandingLogoEnvelope() {}
 
@@ -6788,21 +7012,26 @@ func contractPublicBrandingEnvelope() {}
 // contractUserChatCompletionEnvelope documents POST /api/v1/chat/completions.
 //
 // @Summary UserChatCompletion is the JWT-authenticated chat endpoint used by the workbench
-// @Description UserChatCompletion is the JWT-authenticated chat endpoint used by the workbench. Unlike the gateway (/v1/chat/completions), it authenticates with the logged-in user's session and resolves a chat scoped to their tenant, so end users never need to paste an API key.。需要权限 execute:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UserChatCompletion is the JWT-authenticated chat endpoint used by the workbench. Unlike the gateway (/v1/chat/completions), it authenticates with the logged-in user's session and resolves a chat scoped to their tenant, so end users never need to paste an API key.。需要权限 execute:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 12 个业务错误码：40000(400)、40060(400)、40159(400)、40305(403)、40960(409)、50220(502)、50221(502)、50222(502)、50230(502)、50231(502)、50232(502)、50278(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID userChatCompletion
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UserChatCompletionEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40060 / 40159"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40960"
+// @Failure 502 {object} docs.Envelope "错误码 50220 / 50221 / 50222 / 50230 / 50231 / 50232 / 50278"
 // @Router /api/v1/chat/completions [post]
 func contractUserChatCompletionEnvelope() {}
 
 // contractChatDocChunksEnvelope documents GET /api/v1/chat/document/chunks.
 //
 // @Summary ChatDocChunks lists a chat-referenced document's chunks for the full-document viewer
-// @Description ChatDocChunks lists a chat-referenced document's chunks for the full-document viewer.。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.Chunk
+// @Description ChatDocChunks lists a chat-referenced document's chunks for the full-document viewer.。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.Chunk。声明了 4 个业务错误码：40094(400)、40305(403)、50210(502)、50253(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID chatDocChunks
 // @Security BearerAuth
@@ -6811,13 +7040,18 @@ func contractUserChatCompletionEnvelope() {}
 // @Param dataset query string false "查询参数 dataset"
 // @Param doc query string false "查询参数 doc"
 // @Success 200 {object} ChatDocChunksEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40094"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50210 / 50253"
 // @Router /api/v1/chat/document/chunks [get]
 func contractChatDocChunksEnvelope() {}
 
 // contractChatDocPreviewEnvelope documents GET /api/v1/chat/document/preview.
 //
 // @Summary ChatDocPreview streams the original file of a chat-referenced document
-// @Description ChatDocPreview streams the original file of a chat-referenced document.。需要权限 read:chat（由 accessRules 强制）。成功返回原始字节，媒体类型
+// @Description ChatDocPreview streams the original file of a chat-referenced document.。需要权限 read:chat（由 accessRules 强制）。成功返回原始字节，媒体类型 。声明了 4 个业务错误码：40095(400)、40305(403)、50253(502)、50254(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID chatDocPreview
 // @Security BearerAuth
@@ -6825,27 +7059,35 @@ func contractChatDocChunksEnvelope() {}
 // @Param doc query string false "查询参数 doc"
 // @Produce octet-stream
 // @Success 200 {string} string "原始字节；媒体类型即载荷："
+// @Failure 400 {object} docs.Envelope "错误码 40095"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50253 / 50254"
 // @Router /api/v1/chat/document/preview [get]
 func contractChatDocPreviewEnvelope() {}
 
 // contractChatFeedbackEnvelope documents POST /api/v1/chat/feedback.
 //
 // @Summary ChatFeedback records a user's like/dislike on a chat turn
-// @Description ChatFeedback records a user's like/dislike on a chat turn.。需要权限 execute:chat（由 accessRules 强制）。请求体类型 ChatFeedbackRequest。成功返回 *model.MessageFeedback。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ChatFeedback records a user's like/dislike on a chat turn.。需要权限 execute:chat（由 accessRules 强制）。请求体类型 ChatFeedbackRequest。成功返回 *model.MessageFeedback。声明了 5 个业务错误码：40000(400)、40090(400)、40091(400)、40096(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID chatFeedback
 // @Security BearerAuth
 // @Accept json
 // @Param body body ChatFeedbackRequest true "请求体（ChatFeedbackRequest）"
 // @Success 200 {object} ChatFeedbackEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40090 / 40091 / 40096"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/chat/feedback [post]
 func contractChatFeedbackEnvelope() {}
 
 // contractChatImageEnvelope documents GET /api/v1/chat/image.
 //
 // @Summary ChatImage streams a referenced chunk image
-// @Description ChatImage streams a referenced chunk image.。需要权限 read:chat（由 accessRules 强制）。成功返回原始字节，媒体类型
+// @Description ChatImage streams a referenced chunk image.。需要权限 read:chat（由 accessRules 强制）。成功返回原始字节，媒体类型 。声明了 5 个业务错误码：40096(400)、40305(403)、50249(502)、50253(502)、50255(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID chatImage
 // @Security BearerAuth
@@ -6855,13 +7097,18 @@ func contractChatFeedbackEnvelope() {}
 // @Param image query string false "查询参数 image"
 // @Produce octet-stream
 // @Success 200 {string} string "原始字节；媒体类型即载荷："
+// @Failure 400 {object} docs.Envelope "错误码 40096"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403 / 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50249 / 50253 / 50255"
 // @Router /api/v1/chat/image [get]
 func contractChatImageEnvelope() {}
 
 // contractChatChunkEnvelope documents GET /api/v1/chat/reference.
 //
 // @Summary ChatChunk deep-links to a source chunk referenced by a chat answer
-// @Description ChatChunk deep-links to a source chunk referenced by a chat answer. It uses RAGFlow dataset/doc/chunk ids and enforces tenant ownership of the dataset.。需要权限 read:chat（由 accessRules 强制）。成功返回 *ragflow.Chunk
+// @Description ChatChunk deep-links to a source chunk referenced by a chat answer. It uses RAGFlow dataset/doc/chunk ids and enforces tenant ownership of the dataset.。需要权限 read:chat（由 accessRules 强制）。成功返回 *ragflow.Chunk。声明了 3 个业务错误码：40093(400)、40305(403)、50249(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID chatChunk
 // @Security BearerAuth
@@ -6869,40 +7116,51 @@ func contractChatImageEnvelope() {}
 // @Param doc query string false "查询参数 doc"
 // @Param chunk query string false "查询参数 chunk"
 // @Success 200 {object} ChatChunkEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40093"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50249"
 // @Router /api/v1/chat/reference [get]
 func contractChatChunkEnvelope() {}
 
 // contractUploadChatFileEnvelope documents POST /api/v1/chat/upload.
 //
 // @Summary UploadChatFile accepts a multipart chat attachment and uploads it to the engine as a temporary blob, returning its metadata for attaching to messages
-// @Description UploadChatFile accepts a multipart chat attachment and uploads it to the engine as a temporary blob, returning its metadata for attaching to messages.。需要权限 execute:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UploadChatFile accepts a multipart chat attachment and uploads it to the engine as a temporary blob, returning its metadata for attaching to messages.。需要权限 execute:chat（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *ragflow.UploadedFile。声明了 7 个业务错误码：40000(400)、40061(400)、40062(400)、40063(400)、40064(400)、40305(403)、50232(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID uploadChatFile
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UploadChatFileEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40061 / 40062 / 40063 / 40064"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50232"
 // @Router /api/v1/chat/upload [post]
 func contractUploadChatFileEnvelope() {}
 
 // contractChatReferencesEnvelope documents GET /api/v1/chat/{id}/references.
 //
 // @Summary ChatReferences returns the citation evidence (with in-document locator positions) for a chat turn so the forward UI can render the citation drawer and highlight the cited span (P2 citation experience, report §13.5.1)
-// @Description ChatReferences returns the citation evidence (with in-document locator positions) for a chat turn so the forward UI can render the citation drawer and highlight the cited span (P2 citation experience, report §13.5.1). The chat is resolved through the tenant-owned scope; a cross-tenant chat reference leaks nothing because execution is authorized per tenant.。需要权限 execute:chat（由 accessRules 强制）。成功返回 []model.CitationReference
+// @Description ChatReferences returns the citation evidence (with in-document locator positions) for a chat turn so the forward UI can render the citation drawer and highlight the cited span (P2 citation experience, report §13.5.1). The chat is resolved through the tenant-owned scope; a cross-tenant chat reference leaks nothing because execution is authorized per tenant.。需要权限 execute:chat（由 accessRules 强制）。成功返回 []model.CitationReference。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID chatReferences
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param session_id query string false "查询参数 session_id"
 // @Success 200 {object} ChatReferencesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/chat/{id}/references [get]
 func contractChatReferencesEnvelope() {}
 
 // contractBatchDeleteChatsEnvelope documents DELETE /api/v1/chats.
 //
 // @Summary BatchDeleteChats deletes multiple chats
-// @Description BatchDeleteChats deletes multiple chats.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 deleteSessionPayload。成功返回 BatchDeleteChatsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description BatchDeleteChats deletes multiple chats.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 deleteSessionPayload。成功返回 BatchDeleteChatsResponse。声明了 3 个业务错误码：40000(400)、40305(403)、50242(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID batchDeleteChats
 // @Security BearerAuth
@@ -6910,13 +7168,17 @@ func contractChatReferencesEnvelope() {}
 // @Param body body deleteSessionPayload true "请求体（deleteSessionPayload）"
 // @Success 200 {object} BatchDeleteChatsEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50242"
 // @Router /api/v1/chats [delete]
 func contractBatchDeleteChatsEnvelope() {}
 
 // contractListChatsEnvelope documents GET /api/v1/chats.
 //
 // @Summary ListChats returns the caller's chat assistants (platform scope=all to list all)
-// @Description ListChats returns the caller's chat assistants (platform scope=all to list all).。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ChatShadow
+// @Description ListChats returns the caller's chat assistants (platform scope=all to list all).。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ChatShadow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID listChats
 // @Security BearerAuth
@@ -6929,13 +7191,16 @@ func contractBatchDeleteChatsEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} ListChatsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/chats [get]
 func contractListChatsEnvelope() {}
 
 // contractCreateChatEnvelope documents POST /api/v1/chats.
 //
 // @Summary CreateChat creates a chat assistant owned by the caller's tenant
-// @Description CreateChat creates a chat assistant owned by the caller's tenant.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateChat creates a chat assistant owned by the caller's tenant.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 8 个业务错误码：40000(400)、40090(400)、40092(400)、40305(403)、41167(400)、50000(500)、50242(502)、50248(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID createChat
 // @Security BearerAuth
@@ -6945,39 +7210,49 @@ func contractListChatsEnvelope() {}
 // @Param body body chatPayload true "请求体（chatPayload）"
 // @Success 200 {object} CreateChatEnvelope
 // @Success 202 {object} CreateChatEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40090 / 40092 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50242 / 50248"
 // @Router /api/v1/chats [post]
 func contractCreateChatEnvelope() {}
 
 // contractBatchUpdateChatStatusEnvelope documents POST /api/v1/chats/batch-status.
 //
 // @Summary BatchUpdateChatStatus enables/disables multiple chats
-// @Description BatchUpdateChatStatus enables/disables multiple chats.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 batchChatStatusPayload。成功返回 BatchUpdateChatStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description BatchUpdateChatStatus enables/disables multiple chats.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 batchChatStatusPayload。成功返回 BatchUpdateChatStatusResponse。声明了 3 个业务错误码：40000(400)、40025(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID batchUpdateChatStatus
 // @Security BearerAuth
 // @Accept json
 // @Param body body batchChatStatusPayload true "请求体（batchChatStatusPayload）"
 // @Success 200 {object} BatchUpdateChatStatusEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40025"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/chats/batch-status [post]
 func contractBatchUpdateChatStatusEnvelope() {}
 
 // contractGetChatModelOptionsEnvelope documents GET /api/v1/chats/model-options.
 //
 // @Summary GetChatModelOptions returns RAGFlow's concrete model catalog and defaults so the Chat config editor lists real model names for LLM / rerank pickers
-// @Description GetChatModelOptions returns RAGFlow's concrete model catalog and defaults so the Chat config editor lists real model names for LLM / rerank pickers.。需要权限 read:chat（由 accessRules 强制）。成功返回 *service.ModelOptions
+// @Description GetChatModelOptions returns RAGFlow's concrete model catalog and defaults so the Chat config editor lists real model names for LLM / rerank pickers.。需要权限 read:chat（由 accessRules 强制）。成功返回 *service.ModelOptions。声明了 5 个业务错误码：40305(403)、50250(502)、50251(502)、50252(502)、50253(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID getChatModelOptions
 // @Security BearerAuth
 // @Success 200 {object} GetChatModelOptionsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50250 / 50251 / 50252 / 50253"
 // @Router /api/v1/chats/model-options [get]
 func contractGetChatModelOptionsEnvelope() {}
 
 // contractDeleteChatEnvelope documents DELETE /api/v1/chats/{id}.
 //
 // @Summary DeleteChat deletes a chat assistant
-// @Description DeleteChat deletes a chat assistant.。需要权限 manage:chat（由 accessRules 强制）。成功返回 DeleteChatResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteChat deletes a chat assistant.。需要权限 manage:chat（由 accessRules 强制）。成功返回 DeleteChatResponse。声明了 4 个业务错误码：40000(400)、40305(403)、41167(400)、50242(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID deleteChat
 // @Security BearerAuth
@@ -6986,14 +7261,18 @@ func contractGetChatModelOptionsEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} DeleteChatEnvelope
 // @Success 202 {object} DeleteChatEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50242"
 // @Router /api/v1/chats/{id} [delete]
 func contractDeleteChatEnvelope() {}
 
 // contractGetChatEnvelope documents GET /api/v1/chats/{id}.
 //
 // @Summary GetChat returns a chat assistant
-// @Description GetChat returns a chat assistant.。需要权限 read:chat（由 accessRules 强制）。成功返回 *model.ChatShadow
+// @Description GetChat returns a chat assistant.。需要权限 read:chat（由 accessRules 强制）。成功返回 *model.ChatShadow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID getChat
 // @Security BearerAuth
@@ -7001,13 +7280,17 @@ func contractDeleteChatEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetChatEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/chats/{id} [get]
 func contractGetChatEnvelope() {}
 
 // contractUpdateChatEnvelope documents PUT /api/v1/chats/{id}.
 //
 // @Summary UpdateChat updates a chat assistant (name, scope and authoring config)
-// @Description UpdateChat updates a chat assistant (name, scope and authoring config).。需要权限 manage:chat（由 accessRules 强制）。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateChat updates a chat assistant (name, scope and authoring config).。需要权限 manage:chat（由 accessRules 强制）。请求体类型 chatPayload。成功返回 *model.ChatShadow。声明了 5 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)、50241(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID updateChat
 // @Security BearerAuth
@@ -7018,14 +7301,19 @@ func contractGetChatEnvelope() {}
 // @Param body body chatPayload true "请求体（chatPayload）"
 // @Success 200 {object} UpdateChatEnvelope
 // @Success 202 {object} UpdateChatEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50241"
 // @Router /api/v1/chats/{id} [put]
 func contractUpdateChatEnvelope() {}
 
 // contractGetChatConfigEnvelope documents GET /api/v1/chats/{id}/config.
 //
 // @Summary GetChatConfig returns the RAGFlow-side editable config for prefill
-// @Description GetChatConfig returns the RAGFlow-side editable config for prefill.。需要权限 read:chat（由 accessRules 强制）。成功返回 *service.ChatConfig
+// @Description GetChatConfig returns the RAGFlow-side editable config for prefill.。需要权限 read:chat（由 accessRules 强制）。成功返回 *service.ChatConfig。声明了 2 个业务错误码：40305(403)、50249(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID getChatConfig
 // @Security BearerAuth
@@ -7033,13 +7321,18 @@ func contractUpdateChatEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetChatConfigEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50249"
 // @Router /api/v1/chats/{id}/config [get]
 func contractGetChatConfigEnvelope() {}
 
 // contractDeleteChatSessionsEnvelope documents DELETE /api/v1/chats/{id}/sessions.
 //
 // @Summary DeleteChatSessions deletes sessions of a chat assistant (batch)
-// @Description DeleteChatSessions deletes sessions of a chat assistant (batch).。需要权限 manage:chat（由 accessRules 强制）。请求体类型 deleteSessionPayload。成功返回 DeleteChatSessionsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteChatSessions deletes sessions of a chat assistant (batch).。需要权限 manage:chat（由 accessRules 强制）。请求体类型 deleteSessionPayload。成功返回 DeleteChatSessionsResponse。声明了 3 个业务错误码：40000(400)、40305(403)、50246(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID deleteChatSessions
 // @Security BearerAuth
@@ -7048,13 +7341,17 @@ func contractGetChatConfigEnvelope() {}
 // @Param body body deleteSessionPayload true "请求体（deleteSessionPayload）"
 // @Success 200 {object} DeleteChatSessionsEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50246"
 // @Router /api/v1/chats/{id}/sessions [delete]
 func contractDeleteChatSessionsEnvelope() {}
 
 // contractListChatSessionsEnvelope documents GET /api/v1/chats/{id}/sessions.
 //
 // @Summary ListChatSessions lists the sessions of a chat assistant
-// @Description ListChatSessions lists the sessions of a chat assistant.。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.Session
+// @Description ListChatSessions lists the sessions of a chat assistant.。需要权限 read:chat（由 accessRules 强制）。成功返回分页载荷，items 元素类型 ragflow.Session。声明了 2 个业务错误码：40305(403)、50243(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID listChatSessions
 // @Security BearerAuth
@@ -7063,13 +7360,17 @@ func contractDeleteChatSessionsEnvelope() {}
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Param name query string false "查询参数 name"
 // @Success 200 {object} ListChatSessionsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50243"
 // @Router /api/v1/chats/{id}/sessions [get]
 func contractListChatSessionsEnvelope() {}
 
 // contractCreateChatSessionEnvelope documents POST /api/v1/chats/{id}/sessions.
 //
 // @Summary CreateChatSession creates a session on a chat assistant
-// @Description CreateChatSession creates a session on a chat assistant.。需要权限 session:create:chat（由 accessRules 强制）。请求体类型 createSessionPayload。成功返回 *ragflow.Session
+// @Description CreateChatSession creates a session on a chat assistant.。需要权限 session:create:chat（由 accessRules 强制）。请求体类型 createSessionPayload。成功返回 *ragflow.Session。声明了 2 个业务错误码：40305(403)、50245(502)（括号内是 HTTP 状态）
 // @Tags create:chat
 // @ID createChatSession
 // @Security BearerAuth
@@ -7077,39 +7378,51 @@ func contractListChatSessionsEnvelope() {}
 // @Accept json
 // @Param body body createSessionPayload true "请求体（createSessionPayload）"
 // @Success 200 {object} CreateChatSessionEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50245"
 // @Router /api/v1/chats/{id}/sessions [post]
 func contractCreateChatSessionEnvelope() {}
 
 // contractDeleteChatSessionEnvelope documents DELETE /api/v1/chats/{id}/sessions/{sessionId}.
 //
 // @Summary DeleteChatSession deletes a single session
-// @Description DeleteChatSession deletes a single session.。需要权限 manage:chat（由 accessRules 强制）。成功返回 DeleteChatSessionResponse
+// @Description DeleteChatSession deletes a single session.。需要权限 manage:chat（由 accessRules 强制）。成功返回 DeleteChatSessionResponse。声明了 2 个业务错误码：40305(403)、50246(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID deleteChatSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param sessionId path string true "路径参数 sessionId"
 // @Success 200 {object} DeleteChatSessionEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50246"
 // @Router /api/v1/chats/{id}/sessions/{sessionId} [delete]
 func contractDeleteChatSessionEnvelope() {}
 
 // contractGetChatSessionEnvelope documents GET /api/v1/chats/{id}/sessions/{sessionId}.
 //
 // @Summary GetChatSession returns a session with its messages
-// @Description GetChatSession returns a session with its messages.。需要权限 read:chat（由 accessRules 强制）。成功返回 *ragflow.Session
+// @Description GetChatSession returns a session with its messages.。需要权限 read:chat（由 accessRules 强制）。成功返回 *ragflow.Session。声明了 2 个业务错误码：40305(403)、50244(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID getChatSession
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param sessionId path string true "路径参数 sessionId"
 // @Success 200 {object} GetChatSessionEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50244"
 // @Router /api/v1/chats/{id}/sessions/{sessionId} [get]
 func contractGetChatSessionEnvelope() {}
 
 // contractUpdateChatSessionEnvelope documents PATCH /api/v1/chats/{id}/sessions/{sessionId}.
 //
 // @Summary UpdateChatSession renames a session
-// @Description UpdateChatSession renames a session.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 createSessionPayload。成功返回 *ragflow.Session。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateChatSession renames a session.。需要权限 manage:chat（由 accessRules 强制）。请求体类型 createSessionPayload。成功返回 *ragflow.Session。声明了 3 个业务错误码：40000(400)、40305(403)、50247(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID updateChatSession
 // @Security BearerAuth
@@ -7119,13 +7432,17 @@ func contractGetChatSessionEnvelope() {}
 // @Param body body createSessionPayload true "请求体（createSessionPayload）"
 // @Success 200 {object} UpdateChatSessionEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50247"
 // @Router /api/v1/chats/{id}/sessions/{sessionId} [patch]
 func contractUpdateChatSessionEnvelope() {}
 
 // contractListChatSessionMessagesEnvelope documents GET /api/v1/chats/{id}/sessions/{sessionId}/messages.
 //
 // @Summary ListChatSessionMessages returns a bounded page of session messages
-// @Description ListChatSessionMessages returns a bounded page of session messages.。需要权限 read:chat（由 accessRules 强制）。成功返回 ListChatSessionMessagesResponse
+// @Description ListChatSessionMessages returns a bounded page of session messages.。需要权限 read:chat（由 accessRules 强制）。成功返回 ListChatSessionMessagesResponse。声明了 3 个业务错误码：40305(403)、50244(502)、50245(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID listChatSessionMessages
 // @Security BearerAuth
@@ -7134,25 +7451,32 @@ func contractUpdateChatSessionEnvelope() {}
 // @Param limit query string false "查询参数 limit（默认 50）"
 // @Param cursor query string false "查询参数 cursor"
 // @Success 200 {object} ListChatSessionMessagesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50244 / 50245"
 // @Router /api/v1/chats/{id}/sessions/{sessionId}/messages [get]
 func contractListChatSessionMessagesEnvelope() {}
 
 // contractChatUsageEnvelope documents GET /api/v1/chats/{id}/usage.
 //
 // @Summary ChatUsage returns the metered usage/cost of a chat
-// @Description ChatUsage returns the metered usage/cost of a chat.。需要权限 read:chat（由 accessRules 强制）。成功返回 *repository.ChatUsageAgg
+// @Description ChatUsage returns the metered usage/cost of a chat.。需要权限 read:chat（由 accessRules 强制）。成功返回 *repository.ChatUsageAgg。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID chatUsage
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ChatUsageEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/chats/{id}/usage [get]
 func contractChatUsageEnvelope() {}
 
 // contractListConnectorsEnvelope documents GET /api/v1/connectors.
 //
 // @Summary List Connectors
-// @Description 需要权限 read:connector（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Connector
+// @Description 需要权限 read:connector（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Connector。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID listConnectors
 // @Security BearerAuth
@@ -7163,13 +7487,16 @@ func contractChatUsageEnvelope() {}
 // @Param status query string false "查询参数 status"
 // @Param dataset_id query string false "查询参数 dataset_id"
 // @Success 200 {object} ListConnectorsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/connectors [get]
 func contractListConnectorsEnvelope() {}
 
 // contractCreateConnectorEnvelope documents POST /api/v1/connectors.
 //
 // @Summary Create Connector
-// @Description 需要权限 manage:connector（由 accessRules 强制）。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:connector（由 accessRules 强制）。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 9 个业务错误码：40000(400)、40060(400)、40305(403)、40331(409)、40332(502)、40333(400)、40335(400)、40338(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID createConnector
 // @Security BearerAuth
@@ -7177,52 +7504,66 @@ func contractListConnectorsEnvelope() {}
 // @Param body body connectorPayloadFromRequest true "请求体（connectorPayloadFromRequest）"
 // @Success 200 {object} CreateConnectorEnvelope
 // @Success 202 {object} CreateConnectorEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40060"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40060 / 40333 / 40335 / 40338"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 409 {object} docs.Envelope "错误码 40331"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 40332"
 // @Router /api/v1/connectors [post]
 func contractCreateConnectorEnvelope() {}
 
 // contractListConnectorProvidersMetaEnvelope documents GET /api/v1/connectors/providers/meta.
 //
 // @Summary ListConnectorProvidersMeta is a platform-wide capability read; no tenant scope applies
-// @Description ListConnectorProvidersMeta is a platform-wide capability read; no tenant scope applies.。需要权限 read:connector（由 accessRules 强制）。成功返回 []connector.Meta
+// @Description ListConnectorProvidersMeta is a platform-wide capability read; no tenant scope applies.。需要权限 read:connector（由 accessRules 强制）。成功返回 []connector.Meta。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID listConnectorProvidersMeta
 // @Security BearerAuth
 // @Success 200 {object} ListConnectorProvidersMetaEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/connectors/providers/meta [get]
 func contractListConnectorProvidersMetaEnvelope() {}
 
 // contractTestConnectorEnvelope documents POST /api/v1/connectors/test.
 //
 // @Summary TestConnector probes an unsaved provider/spec/credential triple (wizard validation); the persisted probe lives at POST /connectors/:id/test
-// @Description TestConnector probes an unsaved provider/spec/credential triple (wizard validation); the persisted probe lives at POST /connectors/:id/test.。需要权限 manage:connector（由 accessRules 强制）。请求体类型 TestConnectorRequest。成功返回 TestConnectorResponse。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Description TestConnector probes an unsaved provider/spec/credential triple (wizard validation); the persisted probe lives at POST /connectors/:id/test.。需要权限 manage:connector（由 accessRules 强制）。请求体类型 TestConnectorRequest。成功返回 TestConnectorResponse。声明了 4 个业务错误码：40060(400)、40305(403)、40332(502)、40333(400)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID testConnector
 // @Security BearerAuth
 // @Accept json
 // @Param body body TestConnectorRequest true "请求体（TestConnectorRequest）"
 // @Success 200 {object} TestConnectorEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40060"
+// @Failure 400 {object} docs.Envelope "错误码 40060 / 40333"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 40332"
 // @Router /api/v1/connectors/test [post]
 func contractTestConnectorEnvelope() {}
 
 // contractDeleteConnectorEnvelope documents DELETE /api/v1/connectors/{id}.
 //
 // @Summary Delete Connector
-// @Description 需要权限 manage:connector（由 accessRules 强制）。成功返回 DeleteConnectorResponse
+// @Description 需要权限 manage:connector（由 accessRules 强制）。成功返回 DeleteConnectorResponse。声明了 3 个业务错误码：40305(403)、40330(404)、40339(409)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID deleteConnector
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteConnectorEnvelope
 // @Success 202 {object} DeleteConnectorEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
+// @Failure 409 {object} docs.Envelope "错误码 40339"
 // @Router /api/v1/connectors/{id} [delete]
 func contractDeleteConnectorEnvelope() {}
 
 // contractGetConnectorEnvelope documents GET /api/v1/connectors/{id}.
 //
 // @Summary Get Connector
-// @Description 需要权限 read:connector（由 accessRules 强制）。成功返回 *model.Connector
+// @Description 需要权限 read:connector（由 accessRules 强制）。成功返回 *model.Connector。声明了 2 个业务错误码：40305(403)、40330(404)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID getConnector
 // @Security BearerAuth
@@ -7230,13 +7571,17 @@ func contractDeleteConnectorEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetConnectorEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
 // @Router /api/v1/connectors/{id} [get]
 func contractGetConnectorEnvelope() {}
 
 // contractUpdateConnectorEnvelope documents PUT /api/v1/connectors/{id}.
 //
 // @Summary Update Connector
-// @Description 需要权限 manage:connector（由 accessRules 强制）。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:connector（由 accessRules 强制）。请求体类型 connectorPayloadFromRequest。成功返回 *model.Connector。声明了 11 个业务错误码：40000(400)、40060(400)、40305(403)、40330(404)、40331(400)、40332(502)、40333(400)、40335(400)、40338(400)、40340(500)、50000(500)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID updateConnector
 // @Security BearerAuth
@@ -7245,14 +7590,19 @@ func contractGetConnectorEnvelope() {}
 // @Param body body connectorPayloadFromRequest true "请求体（connectorPayloadFromRequest）"
 // @Success 200 {object} UpdateConnectorEnvelope
 // @Success 202 {object} UpdateConnectorEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40060"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40060 / 40331 / 40333 / 40335 / 40338"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
+// @Failure 500 {object} docs.Envelope "错误码 40340 / 50000"
+// @Failure 502 {object} docs.Envelope "错误码 40332"
 // @Router /api/v1/connectors/{id} [put]
 func contractUpdateConnectorEnvelope() {}
 
 // contractSetConnectorEnabledEnvelope documents POST /api/v1/connectors/{id}/disable.
 //
 // @Summary SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths
-// @Description SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse
+// @Description SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse。声明了 3 个业务错误码：40305(403)、40330(404)、50000(500)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID setConnectorEnabled
 // @Security BearerAuth
@@ -7261,13 +7611,17 @@ func contractUpdateConnectorEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} SetConnectorEnabledEnvelope
 // @Success 202 {object} SetConnectorEnabledEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/connectors/{id}/disable [post]
 func contractSetConnectorEnabledEnvelope() {}
 
 // contractSetConnectorEnabledPostEnvelope documents POST /api/v1/connectors/{id}/enable.
 //
 // @Summary SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths
-// @Description SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse
+// @Description SetConnectorEnabled handles both POST /enable and POST /disable; the router registers the shared handler under both paths.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetConnectorEnabledResponse。声明了 3 个业务错误码：40305(403)、40330(404)、50000(500)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID setConnectorEnabledPost
 // @Security BearerAuth
@@ -7276,13 +7630,17 @@ func contractSetConnectorEnabledEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} SetConnectorEnabledPostEnvelope
 // @Success 202 {object} SetConnectorEnabledPostEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/connectors/{id}/enable [post]
 func contractSetConnectorEnabledPostEnvelope() {}
 
 // contractPreviewConnectorEnvelope documents POST /api/v1/connectors/{id}/preview.
 //
 // @Summary PreviewConnector dry-runs one scan page and reports the diff (read-only)
-// @Description PreviewConnector dry-runs one scan page and reports the diff (read-only).。需要权限 manage:connector（由 accessRules 强制）。请求体类型 PreviewConnectorRequest。成功返回 *service.ConnectorPreview
+// @Description PreviewConnector dry-runs one scan page and reports the diff (read-only).。需要权限 manage:connector（由 accessRules 强制）。请求体类型 PreviewConnectorRequest。成功返回 *service.ConnectorPreview。声明了 6 个业务错误码：40305(403)、40330(404)、40332(502)、40333(400)、40337(400)、40340(500)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID previewConnector
 // @Security BearerAuth
@@ -7292,13 +7650,19 @@ func contractSetConnectorEnabledPostEnvelope() {}
 // @Accept json
 // @Param body body PreviewConnectorRequest true "请求体（PreviewConnectorRequest）"
 // @Success 200 {object} PreviewConnectorEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40333 / 40337"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
+// @Failure 500 {object} docs.Envelope "错误码 40340"
+// @Failure 502 {object} docs.Envelope "错误码 40332"
 // @Router /api/v1/connectors/{id}/preview [post]
 func contractPreviewConnectorEnvelope() {}
 
 // contractListConnectorRunsEnvelope documents GET /api/v1/connectors/{id}/runs.
 //
 // @Summary List Connector Runs
-// @Description 需要权限 read:connector（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ConnectorRun
+// @Description 需要权限 read:connector（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ConnectorRun。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID listConnectorRuns
 // @Security BearerAuth
@@ -7308,13 +7672,16 @@ func contractPreviewConnectorEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListConnectorRunsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/connectors/{id}/runs [get]
 func contractListConnectorRunsEnvelope() {}
 
 // contractGetConnectorRunEnvelope documents GET /api/v1/connectors/{id}/runs/{runID}.
 //
 // @Summary GetConnectorRun returns one run row (doc/225 §7.2 run detail)
-// @Description GetConnectorRun returns one run row (doc/225 §7.2 run detail).。需要权限 read:connector（由 accessRules 强制）。成功返回 struct{*model.ConnectorRun; Detail map[string]any "json:\"detail\""}
+// @Description GetConnectorRun returns one run row (doc/225 §7.2 run detail).。需要权限 read:connector（由 accessRules 强制）。成功返回 struct{*model.ConnectorRun; Detail map[string]any "json:\"detail\""}。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID getConnectorRun
 // @Security BearerAuth
@@ -7323,13 +7690,17 @@ func contractListConnectorRunsEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetConnectorRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/connectors/{id}/runs/{runID} [get]
 func contractGetConnectorRunEnvelope() {}
 
 // contractSetConnectorScheduleEnvelope documents PUT /api/v1/connectors/{id}/schedule.
 //
 // @Summary SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule)
-// @Description SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule).。需要权限 manage:connector（由 accessRules 强制）。请求体类型 SetConnectorScheduleRequest。成功返回 *model.Connector。声明了 1 个业务错误码：40335(400)（括号内是 HTTP 状态）
+// @Description SetConnectorSchedule changes the period or switches between manual/interval/ daily without touching the source spec (doc/225 §7.2 PUT /schedule).。需要权限 manage:connector（由 accessRules 强制）。请求体类型 SetConnectorScheduleRequest。成功返回 *model.Connector。声明了 7 个业务错误码：40305(403)、40330(404)、40331(400)、40332(502)、40333(400)、40335(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID setConnectorSchedule
 // @Security BearerAuth
@@ -7338,14 +7709,19 @@ func contractGetConnectorRunEnvelope() {}
 // @Param body body SetConnectorScheduleRequest true "请求体（SetConnectorScheduleRequest）"
 // @Success 200 {object} SetConnectorScheduleEnvelope
 // @Success 202 {object} SetConnectorScheduleEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40335"
+// @Failure 400 {object} docs.Envelope "错误码 40331 / 40333 / 40335"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 40332"
 // @Router /api/v1/connectors/{id}/schedule [put]
 func contractSetConnectorScheduleEnvelope() {}
 
 // contractSyncConnectorNowEnvelope documents POST /api/v1/connectors/{id}/sync.
 //
 // @Summary SyncConnectorNow enqueues a durable manual sync job
-// @Description SyncConnectorNow enqueues a durable manual sync job.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncConnectorNowResponse
+// @Description SyncConnectorNow enqueues a durable manual sync job.。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncConnectorNowResponse。声明了 5 个业务错误码：40305(403)、40330(404)、40334(400)、40336(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID syncConnectorNow
 // @Security BearerAuth
@@ -7353,13 +7729,19 @@ func contractSetConnectorScheduleEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} SyncConnectorNowEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40334"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
+// @Failure 409 {object} docs.Envelope "错误码 40336"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/connectors/{id}/sync [post]
 func contractSyncConnectorNowEnvelope() {}
 
 // contractTestConnectorByIDEnvelope documents POST /api/v1/connectors/{id}/test.
 //
 // @Summary TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2)
-// @Description TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2).。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConnectorHealth
+// @Description TestConnectorByID probes a persisted connector (read-only; doc/225 §7.2).。需要权限 manage:connector（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConnectorHealth。声明了 5 个业务错误码：40305(403)、40330(404)、40332(502)、40333(400)、40340(500)（括号内是 HTTP 状态）
 // @Tags connector
 // @ID testConnectorByID
 // @Security BearerAuth
@@ -7369,6 +7751,12 @@ func contractSyncConnectorNowEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} TestConnectorByIDEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40333"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 40330"
+// @Failure 500 {object} docs.Envelope "错误码 40340"
+// @Failure 502 {object} docs.Envelope "错误码 40332"
 // @Router /api/v1/connectors/{id}/test [post]
 func contractTestConnectorByIDEnvelope() {}
 
@@ -7399,6 +7787,7 @@ func contractListConversationContextDecisionsEnvelope() {}
 // @Security BearerAuth
 // @Param requestId path string true "路径参数 requestId"
 // @Success 200 {object} GetConversationContextDecisionByRequestEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/conversation-context/decisions/by-request/{requestId} [get]
 func contractGetConversationContextDecisionByRequestEnvelope() {}
 
@@ -7411,26 +7800,28 @@ func contractGetConversationContextDecisionByRequestEnvelope() {}
 // @Security BearerAuth
 // @Param decisionId path string true "路径参数 decisionId"
 // @Success 200 {object} GetConversationContextDecisionEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/conversation-context/decisions/{decisionId} [get]
 func contractGetConversationContextDecisionEnvelope() {}
 
 // contractPreviewConversationContextEnvelope documents POST /api/v1/conversation-context/preview.
 //
 // @Summary preview Conversation Context
-// @Description 需要权限 read:context-decision（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationContextPreview
+// @Description 需要权限 read:context-decision（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationContextPreview。声明了 1 个业务错误码：40130(400)（括号内是 HTTP 状态）
 // @Tags context-decision
 // @ID previewConversationContext
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} PreviewConversationContextEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40130"
 // @Router /api/v1/conversation-context/preview [post]
 func contractPreviewConversationContextEnvelope() {}
 
 // contractListConversationAssistantsEnvelope documents GET /api/v1/conversation/assistants.
 //
 // @Summary ListConversationAssistants returns executable Chat/Agent assistants
-// @Description ListConversationAssistants returns executable Chat/Agent assistants.。需要权限 read:assistant（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.ConversationAssistant
+// @Description ListConversationAssistants returns executable Chat/Agent assistants.。需要权限 read:assistant（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.ConversationAssistant。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID listConversationAssistants
 // @Security BearerAuth
@@ -7439,13 +7830,15 @@ func contractPreviewConversationContextEnvelope() {}
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Param query query string false "查询参数 query"
 // @Success 200 {object} ListConversationAssistantsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/conversation/assistants [get]
 func contractListConversationAssistantsEnvelope() {}
 
 // contractUpdateConversationAssistantEnvelope documents PUT /api/v1/conversation/assistants/{kind}/{targetId}.
 //
 // @Summary UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in
-// @Description UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateConversationAssistantRequest。成功返回 *service.ConversationAssistant
+// @Description UpdateConversationAssistant maintains route metadata and tenant auto-route opt-in.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateConversationAssistantRequest。成功返回 *service.ConversationAssistant。声明了 4 个业务错误码：40110(400)、40111(400)、40112(400)、40113(400)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID updateConversationAssistant
 // @Security BearerAuth
@@ -7454,13 +7847,15 @@ func contractListConversationAssistantsEnvelope() {}
 // @Accept json
 // @Param body body service.UpdateConversationAssistantRequest true "请求体（service.UpdateConversationAssistantRequest）"
 // @Success 200 {object} UpdateConversationAssistantEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40110 / 40111 / 40112 / 40113"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/conversation/assistants/{kind}/{targetId} [put]
 func contractUpdateConversationAssistantEnvelope() {}
 
 // contractUpdateConversationAssistantGovernanceEnvelope documents PUT /api/v1/conversation/assistants/{kind}/{targetId}/governance.
 //
 // @Summary UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk)
-// @Description UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk).。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateConversationAssistantGovernanceRequest。成功返回 *service.ConversationAssistant
+// @Description UpdateConversationAssistantGovernance manages governance-only fields (governance_status, discoverable, routing_weight, owner, risk).。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateConversationAssistantGovernanceRequest。成功返回 *service.ConversationAssistant。声明了 3 个业务错误码：40110(400)、40111(400)、40112(400)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID updateConversationAssistantGovernance
 // @Security BearerAuth
@@ -7469,26 +7864,30 @@ func contractUpdateConversationAssistantEnvelope() {}
 // @Accept json
 // @Param body body service.UpdateConversationAssistantGovernanceRequest true "请求体（service.UpdateConversationAssistantGovernanceRequest）"
 // @Success 200 {object} UpdateConversationAssistantGovernanceEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40110 / 40111 / 40112"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/conversation/assistants/{kind}/{targetId}/governance [put]
 func contractUpdateConversationAssistantGovernanceEnvelope() {}
 
 // contractRouteConversationEnvelope documents POST /api/v1/conversation/route.
 //
 // @Summary RouteConversation recommends executable assistants from deterministic metadata
-// @Description RouteConversation recommends executable assistants from deterministic metadata. The response is always a suggestion in M2.。需要权限 execute:assistant（由 accessRules 强制）。请求体类型 service.RouteRequest。成功返回 *service.RouteDecisionResponse
+// @Description RouteConversation recommends executable assistants from deterministic metadata. The response is always a suggestion in M2.。需要权限 execute:assistant（由 accessRules 强制）。请求体类型 service.RouteRequest。成功返回 *service.RouteDecisionResponse。声明了 3 个业务错误码：40091(400)、40092(400)、40093(400)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID routeConversation
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.RouteRequest true "请求体（service.RouteRequest）"
 // @Success 200 {object} RouteConversationEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40091 / 40092 / 40093"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/conversation/route [post]
 func contractRouteConversationEnvelope() {}
 
 // contractBootstrapRouteSelectionEnvelope documents POST /api/v1/conversation/route-selections/{routeSelectionId}/bootstrap.
 //
 // @Summary BootstrapRouteSelection creates the target session after real-time checks
-// @Description BootstrapRouteSelection creates the target session after real-time checks.。需要权限 execute:assistant（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationBootstrapResponse
+// @Description BootstrapRouteSelection creates the target session after real-time checks.。需要权限 execute:assistant（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConversationBootstrapResponse。声明了 9 个业务错误码：40097(400)、40098(400)、40099(400)、40992(409)、40993(409)、40994(409)、41092(410)、41093(410)、50000(500)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID bootstrapRouteSelection
 // @Security BearerAuth
@@ -7496,13 +7895,18 @@ func contractRouteConversationEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} BootstrapRouteSelectionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40097 / 40098 / 40099"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40992 / 40993 / 40994"
+// @Failure 410 {object} docs.Envelope "错误码 41092 / 41093"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/conversation/route-selections/{routeSelectionId}/bootstrap [post]
 func contractBootstrapRouteSelectionEnvelope() {}
 
 // contractSelectRouteCandidateEnvelope documents POST /api/v1/conversation/route/{routeId}/select.
 //
 // @Summary SelectRouteCandidate creates a one-time selection binding
-// @Description SelectRouteCandidate creates a one-time selection binding.。需要权限 execute:assistant（由 accessRules 强制）。请求体类型 service.SelectRouteCandidateRequest。成功返回 *service.RouteSelectionResponse
+// @Description SelectRouteCandidate creates a one-time selection binding.。需要权限 execute:assistant（由 accessRules 强制）。请求体类型 service.SelectRouteCandidateRequest。成功返回 *service.RouteSelectionResponse。声明了 8 个业务错误码：40094(400)、40095(400)、40096(400)、40099(400)、40990(409)、40991(409)、41091(410)、50000(500)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID selectRouteCandidate
 // @Security BearerAuth
@@ -7510,6 +7914,11 @@ func contractBootstrapRouteSelectionEnvelope() {}
 // @Accept json
 // @Param body body service.SelectRouteCandidateRequest true "请求体（service.SelectRouteCandidateRequest）"
 // @Success 200 {object} SelectRouteCandidateEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40094 / 40095 / 40096 / 40099"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40990 / 40991"
+// @Failure 410 {object} docs.Envelope "错误码 41091"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/conversation/route/{routeId}/select [post]
 func contractSelectRouteCandidateEnvelope() {}
 
@@ -7529,13 +7938,14 @@ func contractListRouteEvaluationRunsEnvelope() {}
 // contractRunRouteEvaluationEnvelope documents POST /api/v1/conversation/routing/evaluations.
 //
 // @Summary RunRouteEvaluation executes the M2.5 offline discovery gate
-// @Description RunRouteEvaluation executes the M2.5 offline discovery gate.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.RouteEvaluationRequest。成功返回 *service.RouteEvaluationReport
+// @Description RunRouteEvaluation executes the M2.5 offline discovery gate.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.RouteEvaluationRequest。成功返回 *service.RouteEvaluationReport。声明了 3 个业务错误码：40100(400)、40101(400)、40102(400)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID runRouteEvaluation
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.RouteEvaluationRequest true "请求体（service.RouteEvaluationRequest）"
 // @Success 200 {object} RunRouteEvaluationEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40100 / 40101 / 40102"
 // @Router /api/v1/conversation/routing/evaluations [post]
 func contractRunRouteEvaluationEnvelope() {}
 
@@ -7548,6 +7958,7 @@ func contractRunRouteEvaluationEnvelope() {}
 // @Security BearerAuth
 // @Param runId path string true "路径参数 runId"
 // @Success 200 {object} GetRouteEvaluationRunEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/conversation/routing/evaluations/{runId} [get]
 func contractGetRouteEvaluationRunEnvelope() {}
 
@@ -7559,37 +7970,42 @@ func contractGetRouteEvaluationRunEnvelope() {}
 // @ID getTenantRoutePolicy
 // @Security BearerAuth
 // @Success 200 {object} GetTenantRoutePolicyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/conversation/routing/policy [get]
 func contractGetTenantRoutePolicyEnvelope() {}
 
 // contractSetTenantRoutePolicyEnvelope documents PUT /api/v1/conversation/routing/policy.
 //
 // @Summary SetTenantRoutePolicy updates the tenant rollout mode
-// @Description SetTenantRoutePolicy updates the tenant rollout mode.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateRoutePolicyRequest。成功返回 *service.RoutePolicyResponse
+// @Description SetTenantRoutePolicy updates the tenant rollout mode.。需要权限 manage:assistant（由 accessRules 强制）。请求体类型 service.UpdateRoutePolicyRequest。成功返回 *service.RoutePolicyResponse。声明了 2 个业务错误码：40025(400)、40147(400)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID setTenantRoutePolicy
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.UpdateRoutePolicyRequest true "请求体（service.UpdateRoutePolicyRequest）"
 // @Success 200 {object} SetTenantRoutePolicyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40025 / 40147"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/conversation/routing/policy [put]
 func contractSetTenantRoutePolicyEnvelope() {}
 
 // contractDashboardEnvelope documents GET /api/v1/dashboard.
 //
 // @Summary Dashboard returns the role-scoped operational summary
-// @Description Dashboard returns the role-scoped operational summary.。需要权限 read:dashboard（由 accessRules 强制）。成功返回 *service.DashboardSummary
+// @Description Dashboard returns the role-scoped operational summary.。需要权限 read:dashboard（由 accessRules 强制）。成功返回 *service.DashboardSummary。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags dashboard
 // @ID dashboard
 // @Security BearerAuth
 // @Success 200 {object} DashboardEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/dashboard [get]
 func contractDashboardEnvelope() {}
 
 // contractDeleteDatasetsEnvelope documents DELETE /api/v1/datasets.
 //
 // @Summary DeleteDatasets batch-deletes datasets
-// @Description DeleteDatasets batch-deletes datasets.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 DeleteDatasetsRequest。成功返回 DeleteDatasetsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteDatasets batch-deletes datasets.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 DeleteDatasetsRequest。成功返回 DeleteDatasetsResponse。声明了 5 个业务错误码：40000(400)、40011(400)、40305(403)、50000(500)、50207(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID deleteDatasets
 // @Security BearerAuth
@@ -7598,14 +8014,18 @@ func contractDashboardEnvelope() {}
 // @Accept json
 // @Param body body DeleteDatasetsRequest true "请求体（DeleteDatasetsRequest）"
 // @Success 200 {object} DeleteDatasetsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40011"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50207"
 // @Router /api/v1/datasets [delete]
 func contractDeleteDatasetsEnvelope() {}
 
 // contractListAllDatasetsEnvelope documents GET /api/v1/datasets.
 //
 // @Summary ListAllDatasets lists datasets across tenants for platform admins
-// @Description ListAllDatasets lists datasets across tenants for platform admins.。需要权限 read:dataset（由 accessRules 强制）。成功返回 []service.DatasetSummary
+// @Description ListAllDatasets lists datasets across tenants for platform admins.。需要权限 read:dataset（由 accessRules 强制）。成功返回 []service.DatasetSummary。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID listAllDatasets
 // @Security BearerAuth
@@ -7615,13 +8035,16 @@ func contractDeleteDatasetsEnvelope() {}
 // @Param created_to query string false "查询参数 created_to"
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} ListAllDatasetsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/datasets [get]
 func contractListAllDatasetsEnvelope() {}
 
 // contractCreateDatasetEnvelope documents POST /api/v1/datasets.
 //
 // @Summary CreateDataset creates a dataset for the authenticated tenant
-// @Description CreateDataset creates a dataset for the authenticated tenant.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 createDatasetRequest。成功返回 *service.DatasetSummary。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateDataset creates a dataset for the authenticated tenant.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 createDatasetRequest。成功返回 *service.DatasetSummary。声明了 7 个业务错误码：40000(400)、40911(409)、41121(400)、41140(400)、41167(400)、50000(500)、50207(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID createDataset
 // @Security BearerAuth
@@ -7631,14 +8054,17 @@ func contractListAllDatasetsEnvelope() {}
 // @Param body body createDatasetRequest true "请求体（createDatasetRequest）"
 // @Success 200 {object} CreateDatasetEnvelope
 // @Success 202 {object} CreateDatasetEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41121 / 41140 / 41167"
+// @Failure 409 {object} docs.Envelope "错误码 40911"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50207"
 // @Router /api/v1/datasets [post]
 func contractCreateDatasetEnvelope() {}
 
 // contractExportDatasetsEnvelope documents GET /api/v1/datasets/export.
 //
 // @Summary ExportDatasets streams the dataset list as CSV
-// @Description ExportDatasets streams the dataset list as CSV.。需要权限 read:dataset-export（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv
+// @Description ExportDatasets streams the dataset list as CSV.。需要权限 read:dataset-export（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv。声明了 2 个业务错误码：40104(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags dataset-export
 // @ID exportDatasets
 // @Security BearerAuth
@@ -7646,24 +8072,30 @@ func contractCreateDatasetEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Produce plain
 // @Success 200 {string} string "原始字节；媒体类型即载荷：text/csv"
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40104"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/datasets/export [get]
 func contractExportDatasetsEnvelope() {}
 
 // contractGetDatasetModelOptionsEnvelope documents GET /api/v1/datasets/model-options.
 //
 // @Summary GetDatasetModelOptions returns the tenant's chat/rerank/embedding models and defaults for the dataset config editor (embedding picker)
-// @Description GetDatasetModelOptions returns the tenant's chat/rerank/embedding models and defaults for the dataset config editor (embedding picker).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.ModelOptions
+// @Description GetDatasetModelOptions returns the tenant's chat/rerank/embedding models and defaults for the dataset config editor (embedding picker).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.ModelOptions。声明了 5 个业务错误码：40305(403)、50250(502)、50251(502)、50252(502)、50253(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID getDatasetModelOptions
 // @Security BearerAuth
 // @Success 200 {object} GetDatasetModelOptionsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50250 / 50251 / 50252 / 50253"
 // @Router /api/v1/datasets/model-options [get]
 func contractGetDatasetModelOptionsEnvelope() {}
 
 // contractDeleteDatasetEnvelope documents DELETE /api/v1/datasets/{id}.
 //
 // @Summary DeleteDataset deletes a dataset and its RAGFlow backing knowledge base
-// @Description DeleteDataset deletes a dataset and its RAGFlow backing knowledge base.。需要权限 manage:dataset（由 accessRules 强制）。成功返回 DeleteDatasetResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteDataset deletes a dataset and its RAGFlow backing knowledge base.。需要权限 manage:dataset（由 accessRules 强制）。成功返回 DeleteDatasetResponse。声明了 5 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)、50207(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID deleteDataset
 // @Security BearerAuth
@@ -7672,14 +8104,19 @@ func contractGetDatasetModelOptionsEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} DeleteDatasetEnvelope
 // @Success 202 {object} DeleteDatasetEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50207"
 // @Router /api/v1/datasets/{id} [delete]
 func contractDeleteDatasetEnvelope() {}
 
 // contractGetDatasetEnvelope documents GET /api/v1/datasets/{id}.
 //
 // @Summary GetDataset returns a single dataset bound to the authenticated tenant
-// @Description GetDataset returns a single dataset bound to the authenticated tenant.。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.DatasetSummary
+// @Description GetDataset returns a single dataset bound to the authenticated tenant.。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.DatasetSummary。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID getDataset
 // @Security BearerAuth
@@ -7687,13 +8124,17 @@ func contractDeleteDatasetEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetDatasetEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id} [get]
 func contractGetDatasetEnvelope() {}
 
 // contractUpdateDatasetEnvelope documents PUT /api/v1/datasets/{id}.
 //
 // @Summary Update Dataset
-// @Description 需要权限 manage:dataset（由 accessRules 强制）。请求体类型 updateDatasetRequest。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、41122(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:dataset（由 accessRules 强制）。请求体类型 updateDatasetRequest。成功返回 *service.DatasetSummary。声明了 7 个业务错误码：40000(400)、40147(400)、40305(403)、40911(409)、40917(409)、41122(400)、41167(400)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID updateDataset
 // @Security BearerAuth
@@ -7704,7 +8145,11 @@ func contractGetDatasetEnvelope() {}
 // @Param body body updateDatasetRequest true "请求体（updateDatasetRequest）"
 // @Success 200 {object} UpdateDatasetEnvelope
 // @Success 202 {object} UpdateDatasetEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000 / 41122"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40147 / 41122 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40911 / 40917"
 // @Router /api/v1/datasets/{id} [put]
 func contractUpdateDatasetEnvelope() {}
 
@@ -7720,6 +8165,7 @@ func contractUpdateDatasetEnvelope() {}
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Param run_id query string false "查询参数 run_id"
 // @Success 200 {object} ListArtifactProjectionsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id}/artifacts [get]
 func contractListArtifactProjectionsEnvelope() {}
 
@@ -7734,6 +8180,7 @@ func contractListArtifactProjectionsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 202 {object} ReconcileCompilationRunsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id}/compilation/reconcile [post]
 func contractReconcileCompilationRunsEnvelope() {}
 
@@ -7750,13 +8197,14 @@ func contractReconcileCompilationRunsEnvelope() {}
 // @Param profile_id query string false "查询参数 profile_id"
 // @Param state query string false "查询参数 state"
 // @Success 200 {object} ListCompilationRunsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id}/compilation/runs [get]
 func contractListCompilationRunsEnvelope() {}
 
 // contractTriggerCompilationRunEnvelope documents POST /api/v1/datasets/{id}/compilation/runs.
 //
 // @Summary trigger Compilation Run
-// @Description 需要权限 manage:compilation（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun
+// @Description 需要权限 manage:compilation（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.CompilationRun。声明了 9 个业务错误码：40120(400)、40146(400)、40973(409)、40976(409)、40978(409)、42261(422)、42930(429)、50000(500)、50202(502)（括号内是 HTTP 状态）
 // @Tags compilation
 // @ID triggerCompilationRun
 // @Security BearerAuth
@@ -7764,13 +8212,20 @@ func contractListCompilationRunsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 202 {object} TriggerCompilationRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40146"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40973 / 40976 / 40978"
+// @Failure 422 {object} docs.Envelope "错误码 42261"
+// @Failure 429 {object} docs.Envelope "错误码 42930"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50202"
 // @Router /api/v1/datasets/{id}/compilation/runs [post]
 func contractTriggerCompilationRunEnvelope() {}
 
 // contractCancelCompilationRunEnvelope documents POST /api/v1/datasets/{id}/compilation/runs/{runId}/cancel.
 //
 // @Summary cancel Compilation Run
-// @Description 需要权限 manage:compilation（由 accessRules 强制）。请求体类型 CancelCompilationRunRequest。成功返回 *model.CompilationRun
+// @Description 需要权限 manage:compilation（由 accessRules 强制）。请求体类型 CancelCompilationRunRequest。成功返回 *model.CompilationRun。声明了 2 个业务错误码：40979(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags compilation
 // @ID cancelCompilationRun
 // @Security BearerAuth
@@ -7779,13 +8234,16 @@ func contractTriggerCompilationRunEnvelope() {}
 // @Accept json
 // @Param body body CancelCompilationRunRequest true "请求体（CancelCompilationRunRequest）"
 // @Success 200 {object} CancelCompilationRunEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40979"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/datasets/{id}/compilation/runs/{runId}/cancel [post]
 func contractCancelCompilationRunEnvelope() {}
 
 // contractGetDatasetConfigEnvelope documents GET /api/v1/datasets/{id}/config.
 //
 // @Summary GetDatasetConfig returns a dataset's parsing/embedding/permission config
-// @Description GetDatasetConfig returns a dataset's parsing/embedding/permission config.。需要权限 read:dataset（由 accessRules 强制）。成功返回 *ragflow.DatasetConfig
+// @Description GetDatasetConfig returns a dataset's parsing/embedding/permission config.。需要权限 read:dataset（由 accessRules 强制）。成功返回 *ragflow.DatasetConfig。声明了 2 个业务错误码：40305(403)、50294(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID getDatasetConfig
 // @Security BearerAuth
@@ -7793,13 +8251,18 @@ func contractCancelCompilationRunEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetDatasetConfigEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50294"
 // @Router /api/v1/datasets/{id}/config [get]
 func contractGetDatasetConfigEnvelope() {}
 
 // contractUpdateDatasetConfigEnvelope documents PUT /api/v1/datasets/{id}/config.
 //
 // @Summary UpdateDatasetConfig updates a dataset's config (parser, embedding, permission)
-// @Description UpdateDatasetConfig updates a dataset's config (parser, embedding, permission).。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 ragflow.DatasetConfigUpdate。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateDatasetConfig updates a dataset's config (parser, embedding, permission).。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 ragflow.DatasetConfigUpdate。成功返回 UpdateDatasetConfigResponse。声明了 7 个业务错误码：40000(400)、40299(409)、40305(403)、41167(400)、50000(500)、50295(502)、50297(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID updateDatasetConfig
 // @Security BearerAuth
@@ -7810,14 +8273,20 @@ func contractGetDatasetConfigEnvelope() {}
 // @Param body body ragflow.DatasetConfigUpdate true "请求体（ragflow.DatasetConfigUpdate）"
 // @Success 200 {object} UpdateDatasetConfigEnvelope
 // @Success 202 {object} UpdateDatasetConfigEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40299"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50295 / 50297"
 // @Router /api/v1/datasets/{id}/config [put]
 func contractUpdateDatasetConfigEnvelope() {}
 
 // contractDeleteDocumentsEnvelope documents DELETE /api/v1/datasets/{id}/documents.
 //
 // @Summary DeleteDocuments removes documents from a dataset
-// @Description DeleteDocuments removes documents from a dataset.。需要权限 delete:own:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 DeleteDocumentsResponse。声明了 2 个业务错误码：40000(400)、40300(403)（括号内是 HTTP 状态）
+// @Description DeleteDocuments removes documents from a dataset.。需要权限 delete:own:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 DeleteDocumentsResponse。声明了 8 个业务错误码：40000(400)、40012(400)、40294(409)、40300(403)、40305(403)、41167(400)、50000(500)、50206(502)（括号内是 HTTP 状态）
 // @Tags own:document
 // @ID deleteDocuments
 // @Security BearerAuth
@@ -7828,15 +8297,20 @@ func contractUpdateDatasetConfigEnvelope() {}
 // @Param body body parseRequest true "请求体（parseRequest）"
 // @Success 200 {object} DeleteDocumentsEnvelope
 // @Success 202 {object} DeleteDocumentsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
-// @Failure 403 {object} docs.Envelope "错误码 40300"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40012 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403 / 40300 / 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40294"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50206"
 // @Router /api/v1/datasets/{id}/documents [delete]
 func contractDeleteDocumentsEnvelope() {}
 
 // contractListDocumentsEnvelope documents GET /api/v1/datasets/{id}/documents.
 //
 // @Summary ListDocuments lists documents of a dataset
-// @Description ListDocuments lists documents of a dataset.。需要权限 read:document（由 accessRules 强制）。成功返回 []service.DocumentSummary
+// @Description ListDocuments lists documents of a dataset.。需要权限 read:document（由 accessRules 强制）。成功返回 []service.DocumentSummary。声明了 3 个业务错误码：40305(403)、50000(500)、50202(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID listDocuments
 // @Security BearerAuth
@@ -7844,13 +8318,19 @@ func contractDeleteDocumentsEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} ListDocumentsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50202"
 // @Router /api/v1/datasets/{id}/documents [get]
 func contractListDocumentsEnvelope() {}
 
 // contractUploadDocumentEnvelope documents POST /api/v1/datasets/{id}/documents.
 //
 // @Summary UploadDocument uploads a document into a dataset via multipart form
-// @Description UploadDocument uploads a document into a dataset via multipart form.。需要权限 append:document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DocumentSummary。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UploadDocument uploads a document into a dataset via multipart form.。需要权限 append:document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DocumentSummary。声明了 11 个业务错误码：40000(400)、40298(409)、40299(409)、40305(403)、50201(502)、50202(502)、50211(502)、50212(502)、50296(502)、50297(502)、50298(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID uploadDocument
 // @Security BearerAuth
@@ -7861,13 +8341,18 @@ func contractListDocumentsEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UploadDocumentEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40298 / 40299"
+// @Failure 502 {object} docs.Envelope "错误码 50201 / 50202 / 50211 / 50212 / 50296 / 50297 / 50298"
 // @Router /api/v1/datasets/{id}/documents [post]
 func contractUploadDocumentEnvelope() {}
 
 // contractSetDocumentsStatusEnvelope documents POST /api/v1/datasets/{id}/documents/status.
 //
 // @Summary UpdateDataset renames a dataset
-// @Description UpdateDataset renames a dataset. SetDocumentsStatus enables or disables the selected documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 SetDocumentsStatusRequest。成功返回 SetDocumentsStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateDataset renames a dataset. SetDocumentsStatus enables or disables the selected documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 SetDocumentsStatusRequest。成功返回 SetDocumentsStatusResponse。声明了 5 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)、50208(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID setDocumentsStatus
 // @Security BearerAuth
@@ -7878,14 +8363,19 @@ func contractUploadDocumentEnvelope() {}
 // @Param body body SetDocumentsStatusRequest true "请求体（SetDocumentsStatusRequest）"
 // @Success 200 {object} SetDocumentsStatusEnvelope
 // @Success 202 {object} SetDocumentsStatusEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50208"
 // @Router /api/v1/datasets/{id}/documents/status [post]
 func contractSetDocumentsStatusEnvelope() {}
 
 // contractStopDocumentsEnvelope documents POST /api/v1/datasets/{id}/documents/stop.
 //
 // @Summary StopDocuments stops parsing for documents of a dataset
-// @Description StopDocuments stops parsing for documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 StopDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description StopDocuments stops parsing for documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 StopDocumentsResponse。声明了 5 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)、50205(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID stopDocuments
 // @Security BearerAuth
@@ -7896,14 +8386,19 @@ func contractSetDocumentsStatusEnvelope() {}
 // @Param body body parseRequest true "请求体（parseRequest）"
 // @Success 200 {object} StopDocumentsEnvelope
 // @Success 202 {object} StopDocumentsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50205"
 // @Router /api/v1/datasets/{id}/documents/stop [post]
 func contractStopDocumentsEnvelope() {}
 
 // contractDeleteDocumentChunksEnvelope documents DELETE /api/v1/datasets/{id}/documents/{docId}/chunks.
 //
 // @Summary DeleteDocumentChunks deletes the selected chunks of a document
-// @Description DeleteDocumentChunks deletes the selected chunks of a document.。需要权限 execute:document（由 accessRules 强制）。请求体类型 DeleteDocumentChunksRequest。成功返回 DeleteDocumentChunksResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteDocumentChunks deletes the selected chunks of a document.。需要权限 execute:document（由 accessRules 强制）。请求体类型 DeleteDocumentChunksRequest。成功返回 DeleteDocumentChunksResponse。声明了 4 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags document
 // @ID deleteDocumentChunks
 // @Security BearerAuth
@@ -7915,14 +8410,18 @@ func contractStopDocumentsEnvelope() {}
 // @Param body body DeleteDocumentChunksRequest true "请求体（DeleteDocumentChunksRequest）"
 // @Success 200 {object} DeleteDocumentChunksEnvelope
 // @Success 202 {object} DeleteDocumentChunksEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/datasets/{id}/documents/{docId}/chunks [delete]
 func contractDeleteDocumentChunksEnvelope() {}
 
 // contractListDocumentChunksEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/chunks.
 //
 // @Summary ListDocumentChunks returns a document's parsed chunks for verification
-// @Description ListDocumentChunks returns a document's parsed chunks for verification.。需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.ChunkSummary
+// @Description ListDocumentChunks returns a document's parsed chunks for verification.。需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.ChunkSummary。声明了 2 个业务错误码：40305(403)、50210(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID listDocumentChunks
 // @Security BearerAuth
@@ -7933,13 +8432,18 @@ func contractDeleteDocumentChunksEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListDocumentChunksEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50210"
 // @Router /api/v1/datasets/{id}/documents/{docId}/chunks [get]
 func contractListDocumentChunksEnvelope() {}
 
 // contractSetDocumentChunksAvailableEnvelope documents PATCH /api/v1/datasets/{id}/documents/{docId}/chunks.
 //
 // @Summary SetDocumentChunksAvailable enables or disables the selected chunks
-// @Description SetDocumentChunksAvailable enables or disables the selected chunks.。需要权限 execute:document（由 accessRules 强制）。请求体类型 SetDocumentChunksAvailableRequest。成功返回 SetDocumentChunksAvailableResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description SetDocumentChunksAvailable enables or disables the selected chunks.。需要权限 execute:document（由 accessRules 强制）。请求体类型 SetDocumentChunksAvailableRequest。成功返回 SetDocumentChunksAvailableResponse。声明了 4 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags document
 // @ID setDocumentChunksAvailable
 // @Security BearerAuth
@@ -7951,14 +8455,18 @@ func contractListDocumentChunksEnvelope() {}
 // @Param body body SetDocumentChunksAvailableRequest true "请求体（SetDocumentChunksAvailableRequest）"
 // @Success 200 {object} SetDocumentChunksAvailableEnvelope
 // @Success 202 {object} SetDocumentChunksAvailableEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/datasets/{id}/documents/{docId}/chunks [patch]
 func contractSetDocumentChunksAvailableEnvelope() {}
 
 // contractAddDocumentChunkEnvelope documents POST /api/v1/datasets/{id}/documents/{docId}/chunks.
 //
 // @Summary AddDocumentChunk appends a manually authored chunk to a parsed document
-// @Description AddDocumentChunk appends a manually authored chunk to a parsed document.。需要权限 execute:document（由 accessRules 强制）。请求体类型 AddDocumentChunkRequest。成功返回 AddDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description AddDocumentChunk appends a manually authored chunk to a parsed document.。需要权限 execute:document（由 accessRules 强制）。请求体类型 AddDocumentChunkRequest。成功返回 AddDocumentChunkResponse。声明了 4 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags document
 // @ID addDocumentChunk
 // @Security BearerAuth
@@ -7970,14 +8478,18 @@ func contractSetDocumentChunksAvailableEnvelope() {}
 // @Param body body AddDocumentChunkRequest true "请求体（AddDocumentChunkRequest）"
 // @Success 200 {object} AddDocumentChunkEnvelope
 // @Success 202 {object} AddDocumentChunkEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/datasets/{id}/documents/{docId}/chunks [post]
 func contractAddDocumentChunkEnvelope() {}
 
 // contractUpdateDocumentChunkEnvelope documents PUT /api/v1/datasets/{id}/documents/{docId}/chunks/{chunkId}.
 //
 // @Summary UpdateDocumentChunk rewrites an existing chunk's editable fields
-// @Description UpdateDocumentChunk rewrites an existing chunk's editable fields.。需要权限 execute:document（由 accessRules 强制）。请求体类型 UpdateDocumentChunkRequest。成功返回 UpdateDocumentChunkResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateDocumentChunk rewrites an existing chunk's editable fields.。需要权限 execute:document（由 accessRules 强制）。请求体类型 UpdateDocumentChunkRequest。成功返回 UpdateDocumentChunkResponse。声明了 4 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags document
 // @ID updateDocumentChunk
 // @Security BearerAuth
@@ -7990,20 +8502,25 @@ func contractAddDocumentChunkEnvelope() {}
 // @Param body body UpdateDocumentChunkRequest true "请求体（UpdateDocumentChunkRequest）"
 // @Success 200 {object} UpdateDocumentChunkEnvelope
 // @Success 202 {object} UpdateDocumentChunkEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/datasets/{id}/documents/{docId}/chunks/{chunkId} [put]
 func contractUpdateDocumentChunkEnvelope() {}
 
 // contractDeleteDocumentGovernanceEnvelope documents DELETE /api/v1/datasets/{id}/documents/{docId}/governance.
 //
 // @Summary DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance
-// @Description DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance.。需要权限 manage:document-governance（由 accessRules 强制）。成功返回 DeleteDocumentGovernanceResponse
+// @Description DeleteDocumentGovernance handles DELETE /api/v1/datasets/:id/documents/:docId/governance.。需要权限 manage:document-governance（由 accessRules 强制）。成功返回 DeleteDocumentGovernanceResponse。声明了 1 个业务错误码：40321(403)（括号内是 HTTP 状态）
 // @Tags document-governance
 // @ID deleteDocumentGovernance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param docId path string true "路径参数 docId"
 // @Success 200 {object} DeleteDocumentGovernanceEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 40321"
 // @Router /api/v1/datasets/{id}/documents/{docId}/governance [delete]
 func contractDeleteDocumentGovernanceEnvelope() {}
 
@@ -8024,7 +8541,7 @@ func contractGetDocumentGovernanceEnvelope() {}
 // contractSetDocumentGovernanceEnvelope documents PUT /api/v1/datasets/{id}/documents/{docId}/governance.
 //
 // @Summary SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)
-// @Description SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.DocumentGovernanceInput。成功返回 *model.DocumentGovernance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description SetDocumentGovernance handles PUT /api/v1/datasets/:id/documents/:docId/governance (T2 文档级治理标注; doc/224 §2.1 结构性新建顶点)。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.DocumentGovernanceInput。成功返回 *model.DocumentGovernance。声明了 6 个业务错误码：40000(400)、40121(400)、40122(400)、40123(400)、40124(400)、40125(400)（括号内是 HTTP 状态）
 // @Tags document-governance
 // @ID setDocumentGovernance
 // @Security BearerAuth
@@ -8033,14 +8550,15 @@ func contractGetDocumentGovernanceEnvelope() {}
 // @Accept json
 // @Param body body service.DocumentGovernanceInput true "请求体（service.DocumentGovernanceInput）"
 // @Success 200 {object} SetDocumentGovernanceEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40121 / 40122 / 40123 / 40124 / 40125"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id}/documents/{docId}/governance [put]
 func contractSetDocumentGovernanceEnvelope() {}
 
 // contractApproveDocumentGovernanceEnvelope documents POST /api/v1/datasets/{id}/documents/{docId}/governance/{decision}.
 //
 // @Summary ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}
-// @Description ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}.。需要权限 manage:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DocumentGovernance
+// @Description ApproveDocumentGovernance handles POST /api/v1/datasets/:id/documents/:docId/governance/:decision where :decision ∈ {approve, reject}.。需要权限 manage:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DocumentGovernance。声明了 2 个业务错误码：40321(403)、40921(409)（括号内是 HTTP 状态）
 // @Tags document-governance
 // @ID approveDocumentGovernance
 // @Security BearerAuth
@@ -8050,13 +8568,16 @@ func contractSetDocumentGovernanceEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ApproveDocumentGovernanceEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 40321"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40921"
 // @Router /api/v1/datasets/{id}/documents/{docId}/governance/{decision} [post]
 func contractApproveDocumentGovernanceEnvelope() {}
 
 // contractUpdateDocumentMetadataEnvelope documents PUT /api/v1/datasets/{id}/documents/{docId}/metadata.
 //
 // @Summary UpdateDocumentMetadata replaces a document's metadata configuration
-// @Description UpdateDocumentMetadata replaces a document's metadata configuration.。需要权限 execute:document（由 accessRules 强制）。请求体类型 UpdateDocumentMetadataRequest。成功返回 UpdateDocumentMetadataResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateDocumentMetadata replaces a document's metadata configuration.。需要权限 execute:document（由 accessRules 强制）。请求体类型 UpdateDocumentMetadataRequest。成功返回 UpdateDocumentMetadataResponse。声明了 5 个业务错误码：40000(400)、40305(403)、41167(400)、50000(500)、50209(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID updateDocumentMetadata
 // @Security BearerAuth
@@ -8068,14 +8589,19 @@ func contractApproveDocumentGovernanceEnvelope() {}
 // @Param body body UpdateDocumentMetadataRequest true "请求体（UpdateDocumentMetadataRequest）"
 // @Success 200 {object} UpdateDocumentMetadataEnvelope
 // @Success 202 {object} UpdateDocumentMetadataEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50209"
 // @Router /api/v1/datasets/{id}/documents/{docId}/metadata [put]
 func contractUpdateDocumentMetadataEnvelope() {}
 
 // contractListDocumentParseAttemptsEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/parse-attempts.
 //
 // @Summary list Document Parse Attempts
-// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseAttempt
+// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseAttempt。声明了 1 个业务错误码：50202(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID listDocumentParseAttempts
 // @Security BearerAuth
@@ -8084,13 +8610,15 @@ func contractUpdateDocumentMetadataEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListDocumentParseAttemptsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50202"
 // @Router /api/v1/datasets/{id}/documents/{docId}/parse-attempts [get]
 func contractListDocumentParseAttemptsEnvelope() {}
 
 // contractGetLatestDocumentParseQualityReportEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/parse-quality-report.
 //
 // @Summary get Latest Document Parse Quality Report
-// @Description 需要权限 read:document（由 accessRules 强制）。成功返回 *model.ParseQualityReport。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Description 需要权限 read:document（由 accessRules 强制）。成功返回 *model.ParseQualityReport。声明了 1 个业务错误码：50202(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID getLatestDocumentParseQualityReport
 // @Security BearerAuth
@@ -8098,13 +8626,14 @@ func contractListDocumentParseAttemptsEnvelope() {}
 // @Param docId path string true "路径参数 docId"
 // @Success 200 {object} GetLatestDocumentParseQualityReportEnvelope
 // @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50202"
 // @Router /api/v1/datasets/{id}/documents/{docId}/parse-quality-report [get]
 func contractGetLatestDocumentParseQualityReportEnvelope() {}
 
 // contractListDocumentParseQualityReportsEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/parse-quality-reports.
 //
 // @Summary list Document Parse Quality Reports
-// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseQualityReport
+// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseQualityReport。声明了 1 个业务错误码：50202(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID listDocumentParseQualityReports
 // @Security BearerAuth
@@ -8113,13 +8642,15 @@ func contractGetLatestDocumentParseQualityReportEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListDocumentParseQualityReportsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50202"
 // @Router /api/v1/datasets/{id}/documents/{docId}/parse-quality-reports [get]
 func contractListDocumentParseQualityReportsEnvelope() {}
 
 // contractPreviewDocumentEnvelope documents GET /api/v1/datasets/{id}/documents/{docId}/preview.
 //
 // @Summary PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks
-// @Description PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks.。需要权限 read:document（由 accessRules 强制）。成功返回原始字节，媒体类型
+// @Description PreviewDocument streams a document's raw file so the original can be shown alongside its parsed chunks.。需要权限 read:document（由 accessRules 强制）。成功返回原始字节，媒体类型 。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags document
 // @ID previewDocument
 // @Security BearerAuth
@@ -8129,13 +8660,17 @@ func contractListDocumentParseQualityReportsEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Produce octet-stream
 // @Success 200 {string} string "原始字节；媒体类型即载荷："
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id}/documents/{docId}/preview [get]
 func contractPreviewDocumentEnvelope() {}
 
 // contractAutoProjectGovernanceEnvelope documents POST /api/v1/datasets/{id}/governance/auto-project.
 //
 // @Summary AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project
-// @Description AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project. governor only (execute:document-governance).。需要权限 execute:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.GovernanceAutoProjectionResult
+// @Description AutoProjectGovernance handles POST /api/v1/datasets/:id/governance/auto-project. governor only (execute:document-governance).。需要权限 execute:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.GovernanceAutoProjectionResult。声明了 6 个业务错误码：40121(400)、40122(400)、40123(400)、40124(400)、40125(400)、50202(502)（括号内是 HTTP 状态）
 // @Tags document-governance
 // @ID autoProjectGovernance
 // @Security BearerAuth
@@ -8143,13 +8678,16 @@ func contractPreviewDocumentEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} AutoProjectGovernanceEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40121 / 40122 / 40123 / 40124 / 40125"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50202"
 // @Router /api/v1/datasets/{id}/governance/auto-project [post]
 func contractAutoProjectGovernanceEnvelope() {}
 
 // contractGetDatasetGraphEnvelope documents GET /api/v1/datasets/{id}/graph.
 //
 // @Summary GetDatasetGraph returns the read-only knowledge graph for one dataset (C6)
-// @Description GetDatasetGraph returns the read-only knowledge graph for one dataset (C6).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *ragflow.DatasetKnowledgeGraph
+// @Description GetDatasetGraph returns the read-only knowledge graph for one dataset (C6).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *ragflow.DatasetKnowledgeGraph。声明了 2 个业务错误码：40305(403)、50295(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID getDatasetGraph
 // @Security BearerAuth
@@ -8157,13 +8695,18 @@ func contractAutoProjectGovernanceEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetDatasetGraphEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50295"
 // @Router /api/v1/datasets/{id}/graph [get]
 func contractGetDatasetGraphEnvelope() {}
 
 // contractListIncrementalLedgerEnvelope documents GET /api/v1/datasets/{id}/incremental.
 //
 // @Summary ListIncrementalLedger exposes the tenant's logical revision projection
-// @Description ListIncrementalLedger exposes the tenant's logical revision projection.。需要权限 read:document（由 accessRules 强制）。成功返回 []model.IncrementalLedger
+// @Description ListIncrementalLedger exposes the tenant's logical revision projection.。需要权限 read:document（由 accessRules 强制）。成功返回 []model.IncrementalLedger。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags document
 // @ID listIncrementalLedger
 // @Security BearerAuth
@@ -8171,13 +8714,16 @@ func contractGetDatasetGraphEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} ListIncrementalLedgerEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/datasets/{id}/incremental [get]
 func contractListIncrementalLedgerEnvelope() {}
 
 // contractApplyIncrementalSourceBatchEnvelope documents POST /api/v1/datasets/{id}/incremental/scan.
 //
 // @Summary ApplyIncrementalSourceBatch accepts a bounded connector snapshot
-// @Description ApplyIncrementalSourceBatch accepts a bounded connector snapshot. The batch can add/change documents and tombstone sources absent from the snapshot.。需要权限 execute:document（由 accessRules 强制）。请求体类型 incrementalScanRequest。成功返回 *service.IncrementalSourceBatch。声明了 2 个业务错误码：40000(400)、40295(400)（括号内是 HTTP 状态）
+// @Description ApplyIncrementalSourceBatch accepts a bounded connector snapshot. The batch can add/change documents and tombstone sources absent from the snapshot.。需要权限 execute:document（由 accessRules 强制）。请求体类型 incrementalScanRequest。成功返回 *service.IncrementalSourceBatch。声明了 14 个业务错误码：40000(400)、40295(400)、40297(400)、40298(409)、40299(409)、40305(403)、50201(502)、50202(502)、50206(502)、50211(502)、50212(502)、50296(502)、50297(502)、50298(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID applyIncrementalSourceBatch
 // @Security BearerAuth
@@ -8187,14 +8733,19 @@ func contractListIncrementalLedgerEnvelope() {}
 // @Accept json
 // @Param body body incrementalScanRequest true "请求体（incrementalScanRequest）"
 // @Success 200 {object} ApplyIncrementalSourceBatchEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000 / 40295"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40295 / 40297"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40298 / 40299"
+// @Failure 502 {object} docs.Envelope "错误码 50201 / 50202 / 50206 / 50211 / 50212 / 50296 / 50297 / 50298"
 // @Router /api/v1/datasets/{id}/incremental/scan [post]
 func contractApplyIncrementalSourceBatchEnvelope() {}
 
 // contractUpdateDatasetLifecycleEnvelope documents PUT /api/v1/datasets/{id}/lifecycle.
 //
 // @Summary update Dataset Lifecycle
-// @Description 需要权限 manage:knowledge-lifecycle（由 accessRules 强制）。请求体类型 service.DatasetLifecycleInput。成功返回 *service.DatasetLifecycleView。声明了 1 个业务错误码：40066(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:knowledge-lifecycle（由 accessRules 强制）。请求体类型 service.DatasetLifecycleInput。成功返回 *service.DatasetLifecycleView。声明了 4 个业务错误码：40053(400)、40054(400)、40055(400)、40066(400)（括号内是 HTTP 状态）
 // @Tags knowledge-lifecycle
 // @ID updateDatasetLifecycle
 // @Security BearerAuth
@@ -8202,14 +8753,15 @@ func contractApplyIncrementalSourceBatchEnvelope() {}
 // @Accept json
 // @Param body body service.DatasetLifecycleInput true "请求体（service.DatasetLifecycleInput）"
 // @Success 200 {object} UpdateDatasetLifecycleEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40066"
+// @Failure 400 {object} docs.Envelope "错误码 40053 / 40054 / 40055 / 40066"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id}/lifecycle [put]
 func contractUpdateDatasetLifecycleEnvelope() {}
 
 // contractParseDocumentsEnvelope documents POST /api/v1/datasets/{id}/parse.
 //
 // @Summary ParseDocuments triggers parsing for documents of a dataset
-// @Description ParseDocuments triggers parsing for documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 ParseDocumentsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ParseDocuments triggers parsing for documents of a dataset.。需要权限 execute:document（由 accessRules 强制）。请求体类型 parseRequest。成功返回 ParseDocumentsResponse。声明了 9 个业务错误码：40000(400)、40299(409)、40305(403)、41167(400)、50000(500)、50203(502)、50296(502)、50297(502)、50298(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID parseDocuments
 // @Security BearerAuth
@@ -8220,14 +8772,20 @@ func contractUpdateDatasetLifecycleEnvelope() {}
 // @Param body body parseRequest true "请求体（parseRequest）"
 // @Success 200 {object} ParseDocumentsEnvelope
 // @Success 202 {object} ParseDocumentsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40299"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50203 / 50296 / 50297 / 50298"
 // @Router /api/v1/datasets/{id}/parse [post]
 func contractParseDocumentsEnvelope() {}
 
 // contractGetDatasetParseProfileEnvelope documents GET /api/v1/datasets/{id}/parse-profile.
 //
 // @Summary GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4)
-// @Description GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.ParseProfileView
+// @Description GetDatasetParseProfile returns the dataset's current parse profile plus the write-impact pre-check the repair UI needs (doc/276 §7.4).。需要权限 read:dataset（由 accessRules 强制）。成功返回 *service.ParseProfileView。声明了 3 个业务错误码：40305(403)、50202(502)、50294(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID getDatasetParseProfile
 // @Security BearerAuth
@@ -8235,13 +8793,18 @@ func contractParseDocumentsEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetDatasetParseProfileEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50202 / 50294"
 // @Router /api/v1/datasets/{id}/parse-profile [get]
 func contractGetDatasetParseProfileEnvelope() {}
 
 // contractApplyDatasetParseProfileEnvelope documents POST /api/v1/datasets/{id}/parse-profile.
 //
 // @Summary ApplyDatasetParseProfile is the single protected channel for the `apply_parse_profile` repair action (doc/276 §7.4 / R4)
-// @Description ApplyDatasetParseProfile is the single protected channel for the `apply_parse_profile` repair action (doc/276 §7.4 / R4). It refuses to rewrite already-parsed content and refuses to touch a shared dataset without an explicit acknowledgement.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 service.ParseProfileInput。成功返回 UpdateDatasetConfigResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ApplyDatasetParseProfile is the single protected channel for the `apply_parse_profile` repair action (doc/276 §7.4 / R4). It refuses to rewrite already-parsed content and refuses to touch a shared dataset without an explicit acknowledgement.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 service.ParseProfileInput。成功返回 *service.ParseProfileView。声明了 10 个业务错误码：40000(400)、40106(400)、40305(403)、40915(409)、40917(409)、41167(400)、50202(502)、50203(502)、50294(502)、50295(502)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID applyDatasetParseProfile
 // @Security BearerAuth
@@ -8252,14 +8815,19 @@ func contractGetDatasetParseProfileEnvelope() {}
 // @Param body body service.ParseProfileInput true "请求体（service.ParseProfileInput）"
 // @Success 200 {object} ApplyDatasetParseProfileEnvelope
 // @Success 202 {object} ApplyDatasetParseProfileEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40106 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40915 / 40917"
+// @Failure 502 {object} docs.Envelope "错误码 50202 / 50203 / 50294 / 50295"
 // @Router /api/v1/datasets/{id}/parse-profile [post]
 func contractApplyDatasetParseProfileEnvelope() {}
 
 // contractListDatasetParseQualityReportsEnvelope documents GET /api/v1/datasets/{id}/parse-quality-reports.
 //
 // @Summary list Dataset Parse Quality Reports
-// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseQualityReport
+// @Description 需要权限 read:document（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.ParseQualityReport。声明了 1 个业务错误码：50202(502)（括号内是 HTTP 状态）
 // @Tags document
 // @ID listDatasetParseQualityReports
 // @Security BearerAuth
@@ -8267,13 +8835,15 @@ func contractApplyDatasetParseProfileEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListDatasetParseQualityReportsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50202"
 // @Router /api/v1/datasets/{id}/parse-quality-reports [get]
 func contractListDatasetParseQualityReportsEnvelope() {}
 
 // contractBindDatasetProjectEnvelope documents PUT /api/v1/datasets/{id}/project.
 //
 // @Summary BindDatasetProject assigns a dataset to a tenant project
-// @Description BindDatasetProject assigns a dataset to a tenant project.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 BindDatasetProjectRequest。成功返回 BindDatasetProjectResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description BindDatasetProject assigns a dataset to a tenant project.。需要权限 manage:dataset（由 accessRules 强制）。请求体类型 BindDatasetProjectRequest。成功返回 BindDatasetProjectResponse。声明了 3 个业务错误码：40000(400)、40305(403)、41167(400)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID bindDatasetProject
 // @Security BearerAuth
@@ -8284,14 +8854,17 @@ func contractListDatasetParseQualityReportsEnvelope() {}
 // @Param body body BindDatasetProjectRequest true "请求体（BindDatasetProjectRequest）"
 // @Success 200 {object} BindDatasetProjectEnvelope
 // @Success 202 {object} BindDatasetProjectEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id}/project [put]
 func contractBindDatasetProjectEnvelope() {}
 
 // contractTestDatasetRetrievalEnvelope documents POST /api/v1/datasets/{id}/retrieval-test.
 //
 // @Summary TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4)
-// @Description TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4). Read-path: read dataset + resolved tenant scope; every execution is recorded as a knowledge-ops event inside the service layer.。需要权限 read:dataset（由 accessRules 强制）。请求体类型 service.DatasetRetrievalTestInput。成功返回 *service.DatasetRetrievalTestResult。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）
+// @Description TestDatasetRetrieval runs a one-shot interactive retrieval against one dataset (C2 retrieval-test panel, 221 §5.4). Read-path: read dataset + resolved tenant scope; every execution is recorded as a knowledge-ops event inside the service layer.。需要权限 read:dataset（由 accessRules 强制）。请求体类型 service.DatasetRetrievalTestInput。成功返回 *service.DatasetRetrievalTestResult。声明了 2 个业务错误码：40120(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags dataset
 // @ID testDatasetRetrieval
 // @Security BearerAuth
@@ -8301,7 +8874,10 @@ func contractBindDatasetProjectEnvelope() {}
 // @Accept json
 // @Param body body service.DatasetRetrievalTestInput true "请求体（service.DatasetRetrievalTestInput）"
 // @Success 200 {object} TestDatasetRetrievalEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40120"
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40120"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/datasets/{id}/retrieval-test [post]
 func contractTestDatasetRetrievalEnvelope() {}
 
@@ -8323,13 +8899,14 @@ func contractListDBConnectionsEnvelope() {}
 // contractCreateDBConnectionEnvelope documents POST /api/v1/db-connections.
 //
 // @Summary create D B Connection
-// @Description 需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection
+// @Description 需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection。声明了 6 个业务错误码：40170(400)、40171(400)、40172(400)、40173(400)、40174(400)、40175(400)（括号内是 HTTP 状态）
 // @Tags db-connection
 // @ID createDBConnection
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateDBConnectionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40170 / 40171 / 40172 / 40173 / 40174 / 40175"
 // @Router /api/v1/db-connections [post]
 func contractCreateDBConnectionEnvelope() {}
 
@@ -8354,13 +8931,14 @@ func contractDeleteDBConnectionEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetDBConnectionEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/db-connections/{id} [get]
 func contractGetDBConnectionEnvelope() {}
 
 // contractUpdateDBConnectionEnvelope documents PATCH /api/v1/db-connections/{id}.
 //
 // @Summary update D B Connection
-// @Description 需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection
+// @Description 需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection。声明了 6 个业务错误码：40170(400)、40171(400)、40172(400)、40173(400)、40174(400)、40175(400)（括号内是 HTTP 状态）
 // @Tags db-connection
 // @ID updateDBConnection
 // @Security BearerAuth
@@ -8368,13 +8946,14 @@ func contractGetDBConnectionEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateDBConnectionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40170 / 40171 / 40172 / 40173 / 40174 / 40175"
 // @Router /api/v1/db-connections/{id} [patch]
 func contractUpdateDBConnectionEnvelope() {}
 
 // contractUpdateDBConnectionPutEnvelope documents PUT /api/v1/db-connections/{id}.
 //
 // @Summary update D B Connection
-// @Description 需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection
+// @Description 需要权限 manage:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.DBConnection。声明了 6 个业务错误码：40170(400)、40171(400)、40172(400)、40173(400)、40174(400)、40175(400)（括号内是 HTTP 状态）
 // @Tags db-connection
 // @ID updateDBConnectionPut
 // @Security BearerAuth
@@ -8382,13 +8961,14 @@ func contractUpdateDBConnectionEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateDBConnectionPutEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40170 / 40171 / 40172 / 40173 / 40174 / 40175"
 // @Router /api/v1/db-connections/{id} [put]
 func contractUpdateDBConnectionPutEnvelope() {}
 
 // contractTestDBConnectionEnvelope documents POST /api/v1/db-connections/{id}/test.
 //
 // @Summary test D B Connection
-// @Description 需要权限 test:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DBConnectionTestResult
+// @Description 需要权限 test:db-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.DBConnectionTestResult。声明了 4 个业务错误码：40171(400)、50200(502)、50201(502)、50300(503)（括号内是 HTTP 状态）
 // @Tags db-connection
 // @ID testDBConnection
 // @Security BearerAuth
@@ -8396,6 +8976,9 @@ func contractUpdateDBConnectionPutEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} TestDBConnectionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40171"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50201"
+// @Failure 503 {object} docs.Envelope "错误码 50300"
 // @Router /api/v1/db-connections/{id}/test [post]
 func contractTestDBConnectionEnvelope() {}
 
@@ -8421,7 +9004,7 @@ func contractListDocumentGovernanceEnvelope() {}
 // contractListEnterpriseConnectionsEnvelope documents GET /api/v1/enterprise-connections.
 //
 // @Summary List Enterprise Connections
-// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionList
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionList。声明了 2 个业务错误码：40060(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID listEnterpriseConnections
 // @Security BearerAuth
@@ -8433,27 +9016,35 @@ func contractListDocumentGovernanceEnvelope() {}
 // @Param provider query string false "查询参数 provider"
 // @Param lifecycle_status query string false "查询参数 lifecycle_status"
 // @Success 200 {object} ListEnterpriseConnectionsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40060"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections [get]
 func contractListEnterpriseConnectionsEnvelope() {}
 
 // contractCreateEnterpriseConnectionEnvelope documents POST /api/v1/enterprise-connections.
 //
 // @Summary Create Enterprise Connection
-// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.CreateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.CreateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 5 个业务错误码：40033(400)、40060(400)、40061(400)、40305(403)、50000(500)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID createEnterpriseConnection
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.CreateEnterpriseConnectionRequest true "请求体（service.CreateEnterpriseConnectionRequest）"
 // @Success 200 {object} CreateEnterpriseConnectionEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40060"
+// @Failure 400 {object} docs.Envelope "错误码 40033 / 40060 / 40061"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403 / 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/enterprise-connections [post]
 func contractCreateEnterpriseConnectionEnvelope() {}
 
 // contractGetEnterpriseConnectionEnvelope documents GET /api/v1/enterprise-connections/{id}.
 //
 // @Summary Get Enterprise Connection
-// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionView
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID getEnterpriseConnection
 // @Security BearerAuth
@@ -8461,13 +9052,17 @@ func contractCreateEnterpriseConnectionEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetEnterpriseConnectionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id} [get]
 func contractGetEnterpriseConnectionEnvelope() {}
 
 // contractUpdateEnterpriseConnectionEnvelope documents PUT /api/v1/enterprise-connections/{id}.
 //
 // @Summary Update Enterprise Connection
-// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.UpdateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.UpdateEnterpriseConnectionRequest。成功返回 *service.EnterpriseConnectionView。声明了 5 个业务错误码：40033(400)、40060(400)、40063(400)、40305(403)、50000(500)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID updateEnterpriseConnection
 // @Security BearerAuth
@@ -8475,14 +9070,18 @@ func contractGetEnterpriseConnectionEnvelope() {}
 // @Accept json
 // @Param body body service.UpdateEnterpriseConnectionRequest true "请求体（service.UpdateEnterpriseConnectionRequest）"
 // @Success 200 {object} UpdateEnterpriseConnectionEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40060"
+// @Failure 400 {object} docs.Envelope "错误码 40033 / 40060 / 40063"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/enterprise-connections/{id} [put]
 func contractUpdateEnterpriseConnectionEnvelope() {}
 
 // contractGetEnterpriseConnectionAvailabilityEnvelope documents GET /api/v1/enterprise-connections/{id}/availability.
 //
 // @Summary Get Enterprise Connection Availability
-// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseAvailabilityView
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseAvailabilityView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID getEnterpriseConnectionAvailability
 // @Security BearerAuth
@@ -8490,13 +9089,17 @@ func contractUpdateEnterpriseConnectionEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetEnterpriseConnectionAvailabilityEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id}/availability [get]
 func contractGetEnterpriseConnectionAvailabilityEnvelope() {}
 
 // contractListEnterpriseBindingsEnvelope documents GET /api/v1/enterprise-connections/{id}/bindings.
 //
 // @Summary List Enterprise Bindings
-// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.EnterpriseBindingView
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.EnterpriseBindingView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID listEnterpriseBindings
 // @Security BearerAuth
@@ -8507,13 +9110,17 @@ func contractGetEnterpriseConnectionAvailabilityEnvelope() {}
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Param lifecycle_status query string false "查询参数 lifecycle_status"
 // @Success 200 {object} ListEnterpriseBindingsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id}/bindings [get]
 func contractListEnterpriseBindingsEnvelope() {}
 
 // contractCreateEnterpriseBindingEnvelope documents POST /api/v1/enterprise-connections/{id}/bindings.
 //
 // @Summary Create Enterprise Binding
-// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.CreateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.CreateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 4 个业务错误码：40062(400)、40064(400)、40305(403)、50000(500)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID createEnterpriseBinding
 // @Security BearerAuth
@@ -8521,14 +9128,18 @@ func contractListEnterpriseBindingsEnvelope() {}
 // @Accept json
 // @Param body body service.CreateEnterpriseBindingRequest true "请求体（service.CreateEnterpriseBindingRequest）"
 // @Success 200 {object} CreateEnterpriseBindingEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40064"
+// @Failure 400 {object} docs.Envelope "错误码 40062 / 40064"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/enterprise-connections/{id}/bindings [post]
 func contractCreateEnterpriseBindingEnvelope() {}
 
 // contractGetEnterpriseBindingEnvelope documents GET /api/v1/enterprise-connections/{id}/bindings/{bindingId}.
 //
 // @Summary Get Enterprise Binding
-// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseBindingView
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID getEnterpriseBinding
 // @Security BearerAuth
@@ -8537,13 +9148,17 @@ func contractCreateEnterpriseBindingEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetEnterpriseBindingEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id}/bindings/{bindingId} [get]
 func contractGetEnterpriseBindingEnvelope() {}
 
 // contractUpdateEnterpriseBindingEnvelope documents PUT /api/v1/enterprise-connections/{id}/bindings/{bindingId}.
 //
 // @Summary Update Enterprise Binding
-// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.UpdateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.UpdateEnterpriseBindingRequest。成功返回 *service.EnterpriseBindingView。声明了 5 个业务错误码：40062(400)、40064(400)、40065(400)、40305(403)、50000(500)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID updateEnterpriseBinding
 // @Security BearerAuth
@@ -8552,14 +9167,18 @@ func contractGetEnterpriseBindingEnvelope() {}
 // @Accept json
 // @Param body body service.UpdateEnterpriseBindingRequest true "请求体（service.UpdateEnterpriseBindingRequest）"
 // @Success 200 {object} UpdateEnterpriseBindingEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40064"
+// @Failure 400 {object} docs.Envelope "错误码 40062 / 40064 / 40065"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/enterprise-connections/{id}/bindings/{bindingId} [put]
 func contractUpdateEnterpriseBindingEnvelope() {}
 
 // contractRevokeEnterpriseBindingEnvelope documents POST /api/v1/enterprise-connections/{id}/bindings/{bindingId}/revoke.
 //
 // @Summary Revoke Enterprise Binding
-// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseBindingView
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseBindingView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID revokeEnterpriseBinding
 // @Security BearerAuth
@@ -8568,13 +9187,16 @@ func contractUpdateEnterpriseBindingEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RevokeEnterpriseBindingEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id}/bindings/{bindingId}/revoke [post]
 func contractRevokeEnterpriseBindingEnvelope() {}
 
 // contractListEnterpriseBindingVersionsEnvelope documents GET /api/v1/enterprise-connections/{id}/bindings/{bindingId}/versions.
 //
 // @Summary List Enterprise Binding Versions
-// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseBindingView
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 []service.EnterpriseBindingView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID listEnterpriseBindingVersions
 // @Security BearerAuth
@@ -8583,13 +9205,17 @@ func contractRevokeEnterpriseBindingEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} ListEnterpriseBindingVersionsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id}/bindings/{bindingId}/versions [get]
 func contractListEnterpriseBindingVersionsEnvelope() {}
 
 // contractDeprecateEnterpriseConnectionEnvelope documents POST /api/v1/enterprise-connections/{id}/deprecate.
 //
 // @Summary Deprecate Enterprise Connection
-// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView。声明了 3 个业务错误码：40069(400)、40305(403)、40969(409)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID deprecateEnterpriseConnection
 // @Security BearerAuth
@@ -8597,13 +9223,18 @@ func contractListEnterpriseBindingVersionsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} DeprecateEnterpriseConnectionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40069"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40969"
 // @Router /api/v1/enterprise-connections/{id}/deprecate [post]
 func contractDeprecateEnterpriseConnectionEnvelope() {}
 
 // contractGetEnterpriseConnectionHealthEnvelope documents GET /api/v1/enterprise-connections/{id}/health.
 //
 // @Summary Get Enterprise Connection Health
-// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionHealthView
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionHealthView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID getEnterpriseConnectionHealth
 // @Security BearerAuth
@@ -8611,13 +9242,17 @@ func contractDeprecateEnterpriseConnectionEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetEnterpriseConnectionHealthEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id}/health [get]
 func contractGetEnterpriseConnectionHealthEnvelope() {}
 
 // contractRetireEnterpriseConnectionEnvelope documents POST /api/v1/enterprise-connections/{id}/retire.
 //
 // @Summary Retire Enterprise Connection
-// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionView。声明了 3 个业务错误码：40069(400)、40305(403)、40969(409)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID retireEnterpriseConnection
 // @Security BearerAuth
@@ -8625,13 +9260,18 @@ func contractGetEnterpriseConnectionHealthEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RetireEnterpriseConnectionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40069"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40969"
 // @Router /api/v1/enterprise-connections/{id}/retire [post]
 func contractRetireEnterpriseConnectionEnvelope() {}
 
 // contractRotateEnterpriseConnectionCredentialEnvelope documents POST /api/v1/enterprise-connections/{id}/rotate-credential.
 //
 // @Summary Rotate Enterprise Connection Credential
-// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.RotateEnterpriseConnectionCredentialRequest。成功返回 *service.EnterpriseConnectionView。声明了 1 个业务错误码：40069(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:enterprise-connection（由 accessRules 强制）。请求体类型 service.RotateEnterpriseConnectionCredentialRequest。成功返回 *service.EnterpriseConnectionView。声明了 6 个业务错误码：40033(400)、40067(400)、40069(400)、40305(403)、50000(500)、50269(502)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID rotateEnterpriseConnectionCredential
 // @Security BearerAuth
@@ -8639,14 +9279,19 @@ func contractRetireEnterpriseConnectionEnvelope() {}
 // @Accept json
 // @Param body body service.RotateEnterpriseConnectionCredentialRequest true "请求体（service.RotateEnterpriseConnectionCredentialRequest）"
 // @Success 200 {object} RotateEnterpriseConnectionCredentialEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40069"
+// @Failure 400 {object} docs.Envelope "错误码 40033 / 40067 / 40069"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50269"
 // @Router /api/v1/enterprise-connections/{id}/rotate-credential [post]
 func contractRotateEnterpriseConnectionCredentialEnvelope() {}
 
 // contractTestEnterpriseConnectionEnvelope documents POST /api/v1/enterprise-connections/{id}/test.
 //
 // @Summary Test Enterprise Connection
-// @Description 需要权限 test:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionHealthView
+// @Description 需要权限 test:enterprise-connection（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EnterpriseConnectionHealthView。声明了 3 个业务错误码：40033(400)、40067(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID testEnterpriseConnection
 // @Security BearerAuth
@@ -8656,13 +9301,17 @@ func contractRotateEnterpriseConnectionCredentialEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} TestEnterpriseConnectionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40033 / 40067"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id}/test [post]
 func contractTestEnterpriseConnectionEnvelope() {}
 
 // contractListEnterpriseConnectionVersionsEnvelope documents GET /api/v1/enterprise-connections/{id}/versions.
 //
 // @Summary List Enterprise Connection Versions
-// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 *service.EnterpriseConnectionView
+// @Description 需要权限 read:enterprise-connection（由 accessRules 强制）。成功返回 []model.EnterpriseConnectionVersion。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags enterprise-connection
 // @ID listEnterpriseConnectionVersions
 // @Security BearerAuth
@@ -8670,18 +9319,24 @@ func contractTestEnterpriseConnectionEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} ListEnterpriseConnectionVersionsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/enterprise-connections/{id}/versions [get]
 func contractListEnterpriseConnectionVersionsEnvelope() {}
 
 // contractGetEvalCaseEvidenceEnvelope documents GET /api/v1/eval-cases/{id}/evidence.
 //
 // @Summary get Eval Case Evidence
-// @Description 需要权限 read:eval-set（由 accessRules 强制）。成功返回 *repository.EvidenceSnapshotBundle
+// @Description 需要权限 read:eval-set（由 accessRules 强制）。成功返回 *repository.EvidenceSnapshotBundle。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）
 // @Tags eval-set
 // @ID getEvalCaseEvidence
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetEvalCaseEvidenceEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/eval-cases/{id}/evidence [get]
 func contractGetEvalCaseEvidenceEnvelope() {}
 
@@ -8697,13 +9352,14 @@ func contractGetEvalCaseEvidenceEnvelope() {}
 // @Param body body service.EvidenceSnapshotInput true "请求体（service.EvidenceSnapshotInput）"
 // @Success 200 {object} UpdateEvalCaseEvidenceEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/eval-cases/{id}/evidence [put]
 func contractUpdateEvalCaseEvidenceEnvelope() {}
 
 // contractRevalidateEvalCaseEvidenceEnvelope documents POST /api/v1/eval-cases/{id}/revalidate.
 //
 // @Summary revalidate Eval Case Evidence
-// @Description 需要权限 execute:eval-set（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.EvidenceSnapshotBundle
+// @Description 需要权限 execute:eval-set（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.EvidenceSnapshotBundle。声明了 2 个业务错误码：40090(400)、40996(409)（括号内是 HTTP 状态）
 // @Tags eval-set
 // @ID revalidateEvalCaseEvidence
 // @Security BearerAuth
@@ -8711,6 +9367,9 @@ func contractUpdateEvalCaseEvidenceEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RevalidateEvalCaseEvidenceEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40996"
 // @Router /api/v1/eval-cases/{id}/revalidate [post]
 func contractRevalidateEvalCaseEvidenceEnvelope() {}
 
@@ -8733,27 +9392,28 @@ func contractListEvalSetsEnvelope() {}
 // contractCreateEvalSetEnvelope documents POST /api/v1/eval-sets.
 //
 // @Summary create Eval Set
-// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 1 个业务错误码：40067(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 5 个业务错误码：40042(400)、40056(400)、40057(400)、40058(400)、40067(400)（括号内是 HTTP 状态）
 // @Tags eval-set
 // @ID createEvalSet
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.EvalSetInput true "请求体（service.EvalSetInput）"
 // @Success 200 {object} CreateEvalSetEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40067"
+// @Failure 400 {object} docs.Envelope "错误码 40042 / 40056 / 40057 / 40058 / 40067"
 // @Router /api/v1/eval-sets [post]
 func contractCreateEvalSetEnvelope() {}
 
 // contractGenerateMissingTemplateEvalSetsEnvelope documents POST /api/v1/eval-sets/generate-from-templates.
 //
 // @Summary generate Missing Template Eval Sets
-// @Description 需要权限 manage:eval-set（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 GenerateMissingTemplateEvalSetsResponse
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 GenerateMissingTemplateEvalSetsResponse。声明了 2 个业务错误码：40044(400)、40049(400)（括号内是 HTTP 状态）
 // @Tags eval-set
 // @ID generateMissingTemplateEvalSets
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} GenerateMissingTemplateEvalSetsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40044 / 40049"
 // @Router /api/v1/eval-sets/generate-from-templates [post]
 func contractGenerateMissingTemplateEvalSetsEnvelope() {}
 
@@ -8766,13 +9426,14 @@ func contractGenerateMissingTemplateEvalSetsEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteEvalSetEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/eval-sets/{id} [delete]
 func contractDeleteEvalSetEnvelope() {}
 
 // contractGetEvalSetEnvelope documents GET /api/v1/eval-sets/{id}.
 //
 // @Summary get Eval Set
-// @Description 需要权限 read:eval-set（由 accessRules 强制）。成功返回 GetEvalSetResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Description 需要权限 read:eval-set（由 accessRules 强制）。成功返回 GetEvalSetResponse
 // @Tags eval-set
 // @ID getEvalSet
 // @Security BearerAuth
@@ -8785,7 +9446,7 @@ func contractGetEvalSetEnvelope() {}
 // contractUpdateEvalSetEnvelope documents PUT /api/v1/eval-sets/{id}.
 //
 // @Summary update Eval Set
-// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 1 个业务错误码：40068(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 service.EvalSetInput。成功返回 *model.EvalSet。声明了 4 个业务错误码：40042(400)、40056(400)、40059(400)、40068(400)（括号内是 HTTP 状态）
 // @Tags eval-set
 // @ID updateEvalSet
 // @Security BearerAuth
@@ -8793,20 +9454,24 @@ func contractGetEvalSetEnvelope() {}
 // @Accept json
 // @Param body body service.EvalSetInput true "请求体（service.EvalSetInput）"
 // @Success 200 {object} UpdateEvalSetEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40068"
+// @Failure 400 {object} docs.Envelope "错误码 40042 / 40056 / 40059 / 40068"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/eval-sets/{id} [put]
 func contractUpdateEvalSetEnvelope() {}
 
 // contractCreateEvaluationCaseVersionEnvelope documents POST /api/v1/evaluation-case-versions.
 //
 // @Summary create Evaluation Case Version
-// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseVersion
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseVersion。声明了 3 个业务错误码：40070(400)、40072(400)、40984(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createEvaluationCaseVersion
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateEvaluationCaseVersionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40070 / 40072"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40984"
 // @Router /api/v1/evaluation-case-versions [post]
 func contractCreateEvaluationCaseVersionEnvelope() {}
 
@@ -8829,20 +9494,22 @@ func contractListEvaluationProtocolRegistrationsEnvelope() {}
 // contractRegisterEvaluationProtocolEnvelope documents POST /api/v1/evaluation-protocol-registrations.
 //
 // @Summary register Evaluation Protocol
-// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration。声明了 2 个业务错误码：40072(400)、40990(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID registerEvaluationProtocol
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RegisterEvaluationProtocolEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40072"
+// @Failure 409 {object} docs.Envelope "错误码 40990"
 // @Router /api/v1/evaluation-protocol-registrations [post]
 func contractRegisterEvaluationProtocolEnvelope() {}
 
 // contractRevokeEvaluationProtocolRegistrationEnvelope documents POST /api/v1/evaluation-protocol-registrations/{id}/revoke.
 //
 // @Summary revoke Evaluation Protocol Registration
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationProtocolRegistration。声明了 2 个业务错误码：40072(400)、40990(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID revokeEvaluationProtocolRegistration
 // @Security BearerAuth
@@ -8850,6 +9517,9 @@ func contractRegisterEvaluationProtocolEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RevokeEvaluationProtocolRegistrationEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40072"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40990"
 // @Router /api/v1/evaluation-protocol-registrations/{id}/revoke [post]
 func contractRevokeEvaluationProtocolRegistrationEnvelope() {}
 
@@ -8875,20 +9545,23 @@ func contractListEvaluationRunsEnvelope() {}
 // contractCreateEvaluationRunEnvelope documents POST /api/v1/evaluation-runs.
 //
 // @Summary create Evaluation Run
-// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun。声明了 3 个业务错误码：40070(400)、40072(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createEvaluationRun
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateEvaluationRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40070 / 40072"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/evaluation-runs [post]
 func contractCreateEvaluationRunEnvelope() {}
 
 // contractAddEvaluationCaseResultEnvelope documents POST /api/v1/evaluation-runs/{id}/case-results.
 //
 // @Summary add Evaluation Case Result
-// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseResult
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationCaseResult。声明了 3 个业务错误码：40073(400)、40985(409)、40989(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID addEvaluationCaseResult
 // @Security BearerAuth
@@ -8896,13 +9569,16 @@ func contractCreateEvaluationRunEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} AddEvaluationCaseResultEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40073"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40985 / 40989"
 // @Router /api/v1/evaluation-runs/{id}/case-results [post]
 func contractAddEvaluationCaseResultEnvelope() {}
 
 // contractCompleteEvaluationRunEnvelope documents POST /api/v1/evaluation-runs/{id}/complete.
 //
 // @Summary complete Evaluation Run
-// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun。声明了 1 个业务错误码：40073(400)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID completeEvaluationRun
 // @Security BearerAuth
@@ -8910,13 +9586,15 @@ func contractAddEvaluationCaseResultEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CompleteEvaluationRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40073"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/evaluation-runs/{id}/complete [post]
 func contractCompleteEvaluationRunEnvelope() {}
 
 // contractExecuteScopedEvaluationRunEnvelope documents POST /api/v1/evaluation-runs/{id}/execute.
 //
 // @Summary execute Scoped Evaluation Run
-// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationRun。声明了 7 个业务错误码：40072(400)、40073(400)、40077(400)、40985(409)、40989(409)、50280(502)、50282(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID executeScopedEvaluationRun
 // @Security BearerAuth
@@ -8924,19 +9602,25 @@ func contractCompleteEvaluationRunEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ExecuteScopedEvaluationRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40072 / 40073 / 40077"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40985 / 40989"
+// @Failure 502 {object} docs.Envelope "错误码 50280 / 50282"
 // @Router /api/v1/evaluation-runs/{id}/execute [post]
 func contractExecuteScopedEvaluationRunEnvelope() {}
 
 // contractCreateEvaluationSetVersionEnvelope documents POST /api/v1/evaluation-set-versions.
 //
 // @Summary create Evaluation Set Version
-// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationSetVersion
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvaluationSetVersion。声明了 3 个业务错误码：40070(400)、40072(400)、40984(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createEvaluationSetVersion
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateEvaluationSetVersionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40070 / 40072"
+// @Failure 409 {object} docs.Envelope "错误码 40984"
 // @Router /api/v1/evaluation-set-versions [post]
 func contractCreateEvaluationSetVersionEnvelope() {}
 
@@ -8962,20 +9646,23 @@ func contractListEvidenceBundlesEnvelope() {}
 // contractCreateEvidenceBundleEnvelope documents POST /api/v1/evidence-bundles.
 //
 // @Summary create Evidence Bundle
-// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvidenceBundle
+// @Description 需要权限 execute:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.EvidenceBundle。声明了 2 个业务错误码：40074(400)、40986(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createEvidenceBundle
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateEvidenceBundleEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40074"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40986"
 // @Router /api/v1/evidence-bundles [post]
 func contractCreateEvidenceBundleEnvelope() {}
 
 // contractListEvidenceSnapshotsEnvelope documents GET /api/v1/evidence-snapshots.
 //
 // @Summary list Evidence Snapshots
-// @Description 需要权限 read:evidence-snapshot（由 accessRules 强制）。成功返回分页载荷，items 元素类型 repository.EvidenceSnapshotListItem
+// @Description 需要权限 read:evidence-snapshot（由 accessRules 强制）。成功返回分页载荷，items 元素类型 repository.EvidenceSnapshotListItem。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）
 // @Tags evidence-snapshot
 // @ID listEvidenceSnapshots
 // @Security BearerAuth
@@ -8985,18 +9672,22 @@ func contractCreateEvidenceBundleEnvelope() {}
 // @Param stale_status query string false "查询参数 stale_status"
 // @Param snapshot_hash query string false "查询参数 snapshot_hash"
 // @Success 200 {object} ListEvidenceSnapshotsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
 // @Router /api/v1/evidence-snapshots [get]
 func contractListEvidenceSnapshotsEnvelope() {}
 
 // contractGetEvidenceSnapshotEnvelope documents GET /api/v1/evidence-snapshots/{id}.
 //
 // @Summary get Evidence Snapshot
-// @Description 需要权限 read:evidence-snapshot（由 accessRules 强制）。成功返回 *repository.EvidenceSnapshotBundle
+// @Description 需要权限 read:evidence-snapshot（由 accessRules 强制）。成功返回 *repository.EvidenceSnapshotBundle。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）
 // @Tags evidence-snapshot
 // @ID getEvidenceSnapshot
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetEvidenceSnapshotEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/evidence-snapshots/{id} [get]
 func contractGetEvidenceSnapshotEnvelope() {}
 
@@ -9017,13 +9708,17 @@ func contractListExecutionSnapshotsEnvelope() {}
 // contractCreateExecutionSnapshotEnvelope documents POST /api/v1/execution-snapshots.
 //
 // @Summary create Execution Snapshot
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ExecutionSnapshot
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ExecutionSnapshot。声明了 4 个业务错误码：40070(400)、40071(400)、40984(409)、50396(503)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createExecutionSnapshot
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateExecutionSnapshotEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40070 / 40071"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40984"
+// @Failure 503 {object} docs.Envelope "错误码 50396"
 // @Router /api/v1/execution-snapshots [post]
 func contractCreateExecutionSnapshotEnvelope() {}
 
@@ -9041,14 +9736,14 @@ func contractListGovernanceDictionaryEnvelope() {}
 // contractCreateGovernanceDictionaryEntryEnvelope documents POST /api/v1/governance/dictionary.
 //
 // @Summary CreateGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary
-// @Description CreateGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary. A tenant extension lands in approval pending (governor decides next).。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceDictionaryEntryInput。成功返回 *model.GovernanceDictionaryEntry。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary. A tenant extension lands in approval pending (governor decides next).。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceDictionaryEntryInput。成功返回 *model.GovernanceDictionaryEntry。声明了 3 个业务错误码：40000(400)、40131(400)、40132(400)（括号内是 HTTP 状态）
 // @Tags document-governance
 // @ID createGovernanceDictionaryEntry
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.GovernanceDictionaryEntryInput true "请求体（service.GovernanceDictionaryEntryInput）"
 // @Success 200 {object} CreateGovernanceDictionaryEntryEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40131 / 40132"
 // @Router /api/v1/governance/dictionary [post]
 func contractCreateGovernanceDictionaryEntryEnvelope() {}
 
@@ -9061,13 +9756,14 @@ func contractCreateGovernanceDictionaryEntryEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteGovernanceDictionaryEntryEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/governance/dictionary/{id} [delete]
 func contractDeleteGovernanceDictionaryEntryEnvelope() {}
 
 // contractDecideGovernanceDictionaryEntryEnvelope documents POST /api/v1/governance/dictionary/{id}/{decision}.
 //
 // @Summary DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision
-// @Description DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision. :decision ∈ {approve, reject}; governor only.。需要权限 manage:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.GovernanceDictionaryEntry。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DecideGovernanceDictionaryEntry handles POST /api/v1/governance/dictionary/:id/:decision. :decision ∈ {approve, reject}; governor only.。需要权限 manage:document-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.GovernanceDictionaryEntry。声明了 2 个业务错误码：40000(400)、40133(400)（括号内是 HTTP 状态）
 // @Tags document-governance
 // @ID decideGovernanceDictionaryEntry
 // @Security BearerAuth
@@ -9076,7 +9772,8 @@ func contractDeleteGovernanceDictionaryEntryEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} DecideGovernanceDictionaryEntryEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40133"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/governance/dictionary/{id}/{decision} [post]
 func contractDecideGovernanceDictionaryEntryEnvelope() {}
 
@@ -9106,14 +9803,14 @@ func contractListGovernanceSchemasEnvelope() {}
 // contractCreateGovernanceSchemaEnvelope documents POST /api/v1/governance/schemas.
 //
 // @Summary CreateGovernanceSchema handles POST /api/v1/governance/schemas
-// @Description CreateGovernanceSchema handles POST /api/v1/governance/schemas.。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateGovernanceSchema handles POST /api/v1/governance/schemas.。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 3 个业务错误码：40000(400)、40141(400)、40142(400)（括号内是 HTTP 状态）
 // @Tags document-governance
 // @ID createGovernanceSchema
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.GovernanceSchemaInput true "请求体（service.GovernanceSchemaInput）"
 // @Success 200 {object} CreateGovernanceSchemaEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40141 / 40142"
 // @Router /api/v1/governance/schemas [post]
 func contractCreateGovernanceSchemaEnvelope() {}
 
@@ -9126,6 +9823,7 @@ func contractCreateGovernanceSchemaEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteGovernanceSchemaEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/governance/schemas/{id} [delete]
 func contractDeleteGovernanceSchemaEnvelope() {}
 
@@ -9145,7 +9843,7 @@ func contractGetGovernanceSchemaEnvelope() {}
 // contractUpdateGovernanceSchemaEnvelope documents PUT /api/v1/governance/schemas/{id}.
 //
 // @Summary UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id
-// @Description UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id.。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateGovernanceSchema handles PUT /api/v1/governance/schemas/:id.。需要权限 manage:document-governance（由 accessRules 强制）。请求体类型 service.GovernanceSchemaInput。成功返回 *model.GovernanceSchema。声明了 3 个业务错误码：40000(400)、40141(400)、40142(400)（括号内是 HTTP 状态）
 // @Tags document-governance
 // @ID updateGovernanceSchema
 // @Security BearerAuth
@@ -9153,7 +9851,8 @@ func contractGetGovernanceSchemaEnvelope() {}
 // @Accept json
 // @Param body body service.GovernanceSchemaInput true "请求体（service.GovernanceSchemaInput）"
 // @Success 200 {object} UpdateGovernanceSchemaEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40141 / 40142"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/governance/schemas/{id} [put]
 func contractUpdateGovernanceSchemaEnvelope() {}
 
@@ -9180,7 +9879,7 @@ func contractHealthGetEnvelope() {}
 // contractDingTalkCallbackEnvelope documents POST /api/v1/im/dingtalk/callback.
 //
 // @Summary DingTalkCallback verifies the enterprise robot signature and answers text messages on the caller's sessionWebhook
-// @Description DingTalkCallback verifies the enterprise robot signature and answers text messages on the caller's sessionWebhook. Ack + background execution keeps the handler inside the platform callback timeout (doc/125 §2.4).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.CallbackAck
+// @Description DingTalkCallback verifies the enterprise robot signature and answers text messages on the caller's sessionWebhook. Ack + background execution keeps the handler inside the platform callback timeout (doc/125 §2.4).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.CallbackAck。声明了 8 个业务错误码：40060(400)、40090(400)、40320(400)、40324(400)、40924(409)、50222(502)、50230(502)、50324(503)（括号内是 HTTP 状态）
 // @Tags im
 // @ID dingTalkCallback
 // @Param timestamp query string false "查询参数 timestamp"
@@ -9188,25 +9887,37 @@ func contractHealthGetEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} DingTalkCallbackEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40060 / 40090 / 40320 / 40324"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40924"
+// @Failure 502 {object} docs.Envelope "错误码 50222 / 50230"
+// @Failure 503 {object} docs.Envelope "错误码 50324"
 // @Router /api/v1/im/dingtalk/callback [post]
 func contractDingTalkCallbackEnvelope() {}
 
 // contractFeishuCallbackEnvelope documents POST /api/v1/im/feishu/callback.
 //
 // @Summary FeishuCallback answers the url_verification handshake synchronously and acknowledges message events with 200 before executing the question in the background (the LLM completion can exceed the platform callback timeout)
-// @Description FeishuCallback answers the url_verification handshake synchronously and acknowledges message events with 200 before executing the question in the background (the LLM completion can exceed the platform callback timeout). The security contract mirrors the WeCom adapter: signature/token checks, replay window, dedupe and fail-closed identity mapping (doc/125 §2.4).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.CallbackAck
+// @Description FeishuCallback answers the url_verification handshake synchronously and acknowledges message events with 200 before executing the question in the background (the LLM completion can exceed the platform callback timeout). The security contract mirrors the WeCom adapter: signature/token checks, replay window, dedupe and fail-closed identity mapping (doc/125 §2.4).。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.CallbackAck。声明了 10 个业务错误码：40060(400)、40090(400)、40320(400)、40322(400)、40323(400)、40922(409)、50222(502)、50230(502)、50242(502)、50322(503)（括号内是 HTTP 状态）
 // @Tags im
 // @ID feishuCallback
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} FeishuCallbackEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40060 / 40090 / 40320 / 40322 / 40323"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40922"
+// @Failure 502 {object} docs.Envelope "错误码 50222 / 50230 / 50242"
+// @Failure 503 {object} docs.Envelope "错误码 50322"
 // @Router /api/v1/im/feishu/callback [post]
 func contractFeishuCallbackEnvelope() {}
 
 // contractWeComCallbackEnvelope documents GET /api/v1/im/wecom/callback.
 //
 // @Summary WeComCallback verifies the encrypted platform callback
-// @Description WeComCallback verifies the encrypted platform callback. GET handles WeCom's URL verification; POST acknowledges quickly and executes the question in the background because LLM completion can exceed the platform callback timeout.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型 text/plain
+// @Description WeComCallback verifies the encrypted platform callback. GET handles WeCom's URL verification; POST acknowledges quickly and executes the question in the background because LLM completion can exceed the platform callback timeout.。只要求登录，没有额外的 RBAC 规则。成功返回原始字节，媒体类型 text/plain。声明了 9 个业务错误码：40060(400)、40090(400)、40320(400)、40920(409)、50222(502)、50230(502)、50232(502)、50240(502)、50320(503)（括号内是 HTTP 状态）
 // @Tags im
 // @ID weComCallback
 // @Param msg_signature query string false "查询参数 msg_signature"
@@ -9215,13 +9926,19 @@ func contractFeishuCallbackEnvelope() {}
 // @Param echostr query string false "查询参数 echostr"
 // @Produce plain
 // @Success 200 {string} string "原始字节；媒体类型即载荷：text/plain"
+// @Failure 400 {object} docs.Envelope "错误码 40060 / 40090 / 40320"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40920"
+// @Failure 502 {object} docs.Envelope "错误码 50222 / 50230 / 50232 / 50240"
+// @Failure 503 {object} docs.Envelope "错误码 50320"
 // @Router /api/v1/im/wecom/callback [get]
 func contractWeComCallbackEnvelope() {}
 
 // contractWeComCallbackPostEnvelope documents POST /api/v1/im/wecom/callback.
 //
 // @Summary WeComCallback verifies the encrypted platform callback
-// @Description WeComCallback verifies the encrypted platform callback. GET handles WeCom's URL verification; POST acknowledges quickly and executes the question in the background because LLM completion can exceed the platform callback timeout.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回原始字节，媒体类型 text/plain
+// @Description WeComCallback verifies the encrypted platform callback. GET handles WeCom's URL verification; POST acknowledges quickly and executes the question in the background because LLM completion can exceed the platform callback timeout.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回原始字节，媒体类型 text/plain。声明了 9 个业务错误码：40060(400)、40090(400)、40320(400)、40920(409)、50222(502)、50230(502)、50232(502)、50240(502)、50320(503)（括号内是 HTTP 状态）
 // @Tags im
 // @ID weComCallbackPost
 // @Param msg_signature query string false "查询参数 msg_signature"
@@ -9232,38 +9949,48 @@ func contractWeComCallbackEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Produce plain
 // @Success 200 {string} string "原始字节；媒体类型即载荷：text/plain"
+// @Failure 400 {object} docs.Envelope "错误码 40060 / 40090 / 40320"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40920"
+// @Failure 502 {object} docs.Envelope "错误码 50222 / 50230 / 50232 / 50240"
+// @Failure 503 {object} docs.Envelope "错误码 50320"
 // @Router /api/v1/im/wecom/callback [post]
 func contractWeComCallbackPostEnvelope() {}
 
 // contractListAPIKeysEnvelope documents GET /api/v1/keys.
 //
 // @Summary ListAPIKeys lists the tenant's gateway keys
-// @Description ListAPIKeys lists the tenant's gateway keys.。需要权限 read:api-key（由 accessRules 强制）。成功返回 []model.APIKey
+// @Description ListAPIKeys lists the tenant's gateway keys.。需要权限 read:api-key（由 accessRules 强制）。成功返回 []model.APIKey。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags api-key
 // @ID listAPIKeys
 // @Security BearerAuth
 // @Success 200 {object} ListAPIKeysEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/keys [get]
 func contractListAPIKeysEnvelope() {}
 
 // contractCreateAPIKeyEnvelope documents POST /api/v1/keys.
 //
 // @Summary CreateAPIKey creates a gateway key and returns the raw secret once
-// @Description CreateAPIKey creates a gateway key and returns the raw secret once.。需要权限 manage:api-key（由 accessRules 强制）。请求体类型 createAPIKeyRequest。成功返回 CreateAPIKeyResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateAPIKey creates a gateway key and returns the raw secret once.。需要权限 manage:api-key（由 accessRules 强制）。请求体类型 createAPIKeyRequest。成功返回 CreateAPIKeyResponse。声明了 6 个业务错误码：40000(400)、40040(400)、40041(400)、40042(400)、40043(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags api-key
 // @ID createAPIKey
 // @Security BearerAuth
 // @Accept json
 // @Param body body createAPIKeyRequest true "请求体（createAPIKeyRequest）"
 // @Success 200 {object} CreateAPIKeyEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40040 / 40041 / 40042 / 40043"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/keys [post]
 func contractCreateAPIKeyEnvelope() {}
 
 // contractRevokeAPIKeyEnvelope documents POST /api/v1/keys/{id}/revoke.
 //
 // @Summary RevokeAPIKey disables a tenant's gateway key
-// @Description RevokeAPIKey disables a tenant's gateway key.。需要权限 manage:api-key（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RevokeAPIKeyResponse
+// @Description RevokeAPIKey disables a tenant's gateway key.。需要权限 manage:api-key（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 RevokeAPIKeyResponse。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags api-key
 // @ID revokeAPIKey
 // @Security BearerAuth
@@ -9271,13 +9998,15 @@ func contractCreateAPIKeyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RevokeAPIKeyEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/keys/{id}/revoke [post]
 func contractRevokeAPIKeyEnvelope() {}
 
 // contractRotateAPIKeyEnvelope documents POST /api/v1/keys/{id}/rotate.
 //
 // @Summary RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4)
-// @Description RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4). The raw secret is returned exactly once, like create.。需要权限 manage:api-key（由 accessRules 强制）。请求体类型 rotateAPIKeyRequest。成功返回 RotateAPIKeyResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description RotateAPIKey issues a successor key and retires the old one after a grace window (doc/301 GW-4). The raw secret is returned exactly once, like create.。需要权限 manage:api-key（由 accessRules 强制）。请求体类型 rotateAPIKeyRequest。成功返回 RotateAPIKeyResponse。声明了 7 个业务错误码：40000(400)、40040(400)、40041(400)、40042(400)、40043(400)、40305(403)、41150(409)（括号内是 HTTP 状态）
 // @Tags api-key
 // @ID rotateAPIKey
 // @Security BearerAuth
@@ -9285,7 +10014,11 @@ func contractRevokeAPIKeyEnvelope() {}
 // @Accept json
 // @Param body body rotateAPIKeyRequest true "请求体（rotateAPIKeyRequest）"
 // @Success 200 {object} RotateAPIKeyEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40040 / 40041 / 40042 / 40043"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 41150"
 // @Router /api/v1/keys/{id}/rotate [post]
 func contractRotateAPIKeyEnvelope() {}
 
@@ -9326,7 +10059,7 @@ func contractCreateDuplicateCandidateEnvelope() {}
 // contractDecideDuplicateCandidateEnvelope documents POST /api/v1/knowledge-duplicate-candidates/{id}/decision.
 //
 // @Summary Decide Duplicate Candidate
-// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.DuplicateCandidateDecision。成功返回 *model.DuplicateCandidate。声明了 1 个业务错误码：40142(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.DuplicateCandidateDecision。成功返回 *model.DuplicateCandidate。声明了 2 个业务错误码：40142(400)、40143(400)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID decideDuplicateCandidate
 // @Security BearerAuth
@@ -9334,7 +10067,8 @@ func contractCreateDuplicateCandidateEnvelope() {}
 // @Accept json
 // @Param body body service.DuplicateCandidateDecision true "请求体（service.DuplicateCandidateDecision）"
 // @Success 200 {object} DecideDuplicateCandidateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40142"
+// @Failure 400 {object} docs.Envelope "错误码 40142 / 40143"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-duplicate-candidates/{id}/decision [post]
 func contractDecideDuplicateCandidateEnvelope() {}
 
@@ -9411,7 +10145,7 @@ func contractKnowledgeHealthEnvelope() {}
 // contractKnowledgeOpsSummaryEnvelope documents GET /api/v1/knowledge-ops.
 //
 // @Summary KnowledgeOpsSummary returns aggregate KPIs for a date range
-// @Description KnowledgeOpsSummary returns aggregate KPIs for a date range.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.KnowledgeOpsSummary
+// @Description KnowledgeOpsSummary returns aggregate KPIs for a date range.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.KnowledgeOpsSummary。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID knowledgeOpsSummary
 // @Security BearerAuth
@@ -9419,13 +10153,15 @@ func contractKnowledgeHealthEnvelope() {}
 // @Param date_to query string false "查询参数 date_to"
 // @Param x_dataset_id query string false "查询参数 x_dataset_id"
 // @Success 200 {object} KnowledgeOpsSummaryEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/knowledge-ops [get]
 func contractKnowledgeOpsSummaryEnvelope() {}
 
 // contractKnowledgeOpsAnswerQualityEnvelope documents GET /api/v1/knowledge-ops/answer-quality.
 //
 // @Summary KnowledgeOpsAnswerQuality returns the Q&A proxy metrics (doc/301 §5.9 QA-3 / T20)
-// @Description KnowledgeOpsAnswerQuality returns the Q&A proxy metrics (doc/301 §5.9 QA-3 / T20). It is a *proxy* board and the shape says so: every rate travels with the counts it was derived from, `null` means "no denominator", and the `bias` block carries feedback coverage so the page can print the caveat next to the number instead of in a footnote.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *service.AnswerQualityProxyView
+// @Description KnowledgeOpsAnswerQuality returns the Q&A proxy metrics (doc/301 §5.9 QA-3 / T20). It is a *proxy* board and the shape says so: every rate travels with the counts it was derived from, `null` means "no denominator", and the `bias` block carries feedback coverage so the page can print the caveat next to the number instead of in a footnote.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *service.AnswerQualityProxyView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID knowledgeOpsAnswerQuality
 // @Security BearerAuth
@@ -9433,38 +10169,47 @@ func contractKnowledgeOpsSummaryEnvelope() {}
 // @Param date_from query string false "查询参数 date_from"
 // @Param date_to query string false "查询参数 date_to"
 // @Success 200 {object} KnowledgeOpsAnswerQualityEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/knowledge-ops/answer-quality [get]
 func contractKnowledgeOpsAnswerQualityEnvelope() {}
 
 // contractTriggerChatCitationAuditEnvelope documents POST /api/v1/knowledge-ops/citation-audit.
 //
 // @Summary TriggerChatCitationAudit runs QA-2's weekly chat citation sample for the caller's tenant (doc/301 §5.10 / T19)
-// @Description TriggerChatCitationAudit runs QA-2's weekly chat citation sample for the caller's tenant (doc/301 §5.10 / T19). The handler is thin on purpose: it authorizes, resolves the tenant and hands over. Everything else — the week boundary, the sample size, the judgement, the idempotency — belongs to the service, because a second copy of "which week is it" in a handler is a second answer waiting to disagree with the first.。需要权限 manage:knowledge-ops（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 TriggerChatCitationAuditResponse
+// @Description TriggerChatCitationAudit runs QA-2's weekly chat citation sample for the caller's tenant (doc/301 §5.10 / T19). The handler is thin on purpose: it authorizes, resolves the tenant and hands over. Everything else — the week boundary, the sample size, the judgement, the idempotency — belongs to the service, because a second copy of "which week is it" in a handler is a second answer waiting to disagree with the first.。需要权限 manage:knowledge-ops（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 TriggerChatCitationAuditResponse。声明了 3 个业务错误码：40000(400)、40305(403)、50000(500)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID triggerChatCitationAudit
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} TriggerChatCitationAuditEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/knowledge-ops/citation-audit [post]
 func contractTriggerChatCitationAuditEnvelope() {}
 
 // contractChatCitationAuditRunsEnvelope documents GET /api/v1/knowledge-ops/citation-audit/runs.
 //
 // @Summary ChatCitationAuditRuns lists the recent weekly runs of the caller's tenant
-// @Description ChatCitationAuditRuns lists the recent weekly runs of the caller's tenant.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 ChatCitationAuditRunsResponse
+// @Description ChatCitationAuditRuns lists the recent weekly runs of the caller's tenant.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 ChatCitationAuditRunsResponse。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID chatCitationAuditRuns
 // @Security BearerAuth
 // @Param limit query string false "查询参数 limit（默认 12）"
 // @Success 200 {object} ChatCitationAuditRunsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/knowledge-ops/citation-audit/runs [get]
 func contractChatCitationAuditRunsEnvelope() {}
 
 // contractChatCitationAuditFindingsEnvelope documents GET /api/v1/knowledge-ops/citation-audit/runs/{runId}/findings.
 //
 // @Summary ChatCitationAuditFindings pages one run's per-citation verdicts
-// @Description ChatCitationAuditFindings pages one run's per-citation verdicts.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 ChatCitationAuditFindingsResponse
+// @Description ChatCitationAuditFindings pages one run's per-citation verdicts.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 ChatCitationAuditFindingsResponse。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID chatCitationAuditFindings
 // @Security BearerAuth
@@ -9472,13 +10217,16 @@ func contractChatCitationAuditRunsEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 50）"
 // @Success 200 {object} ChatCitationAuditFindingsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/knowledge-ops/citation-audit/runs/{runId}/findings [get]
 func contractChatCitationAuditFindingsEnvelope() {}
 
 // contractListCompilationRecoveryEnvelope documents GET /api/v1/knowledge-ops/compilation/recovery.
 //
 // @Summary ListCompilationRecovery exposes the unknown-run governance queue
-// @Description ListCompilationRecovery exposes the unknown-run governance queue.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.CompilationRecoveryQueueItem
+// @Description ListCompilationRecovery exposes the unknown-run governance queue.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.CompilationRecoveryQueueItem。声明了 2 个业务错误码：40305(403)、50000(500)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID listCompilationRecovery
 // @Security BearerAuth
@@ -9486,13 +10234,17 @@ func contractChatCitationAuditFindingsEnvelope() {}
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Param dataset_id query string false "查询参数 dataset_id"
 // @Success 200 {object} ListCompilationRecoveryEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/knowledge-ops/compilation/recovery [get]
 func contractListCompilationRecoveryEnvelope() {}
 
 // contractRequestCompilationRecoveryApprovalEnvelope documents POST /api/v1/knowledge-ops/compilation/runs/{runId}/recovery-approval.
 //
 // @Summary RequestCompilationRecoveryApproval submits the governed recovery action
-// @Description RequestCompilationRecoveryApproval submits the governed recovery action.。需要权限 execute:compilation（由 accessRules 强制）。请求体类型 service.CompilationRecoveryApprovalRequest。成功返回 *model.Approval。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description RequestCompilationRecoveryApproval submits the governed recovery action.。需要权限 execute:compilation（由 accessRules 强制）。请求体类型 service.CompilationRecoveryApprovalRequest。成功返回 *model.Approval。声明了 8 个业务错误码：40000(400)、40087(400)、40088(400)、40152(400)、40976(409)、41167(400)、42940(429)、50000(500)（括号内是 HTTP 状态）
 // @Tags compilation
 // @ID requestCompilationRecoveryApproval
 // @Security BearerAuth
@@ -9500,7 +10252,11 @@ func contractListCompilationRecoveryEnvelope() {}
 // @Accept json
 // @Param body body service.CompilationRecoveryApprovalRequest true "请求体（service.CompilationRecoveryApprovalRequest）"
 // @Success 202 {object} RequestCompilationRecoveryApprovalEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40087 / 40088 / 40152 / 41167"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40976"
+// @Failure 429 {object} docs.Envelope "错误码 42940"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/knowledge-ops/compilation/runs/{runId}/recovery-approval [post]
 func contractRequestCompilationRecoveryApprovalEnvelope() {}
 
@@ -9515,13 +10271,14 @@ func contractRequestCompilationRecoveryApprovalEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ProbeCompilationRecoveryRunEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-ops/compilation/runs/{runId}/recovery-probe [post]
 func contractProbeCompilationRecoveryRunEnvelope() {}
 
 // contractKnowledgeOpsEventsEnvelope documents GET /api/v1/knowledge-ops/events.
 //
 // @Summary KnowledgeOpsEvents returns badcase candidates with review state
-// @Description KnowledgeOpsEvents returns badcase candidates with review state.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.KnowledgeOpsEventView
+// @Description KnowledgeOpsEvents returns badcase candidates with review state.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.KnowledgeOpsEventView。声明了 2 个业务错误码：40096(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID knowledgeOpsEvents
 // @Security BearerAuth
@@ -9537,13 +10294,16 @@ func contractProbeCompilationRecoveryRunEnvelope() {}
 // @Param attribution query string false "查询参数 attribution"
 // @Param abstain_reason query string false "查询参数 abstain_reason"
 // @Success 200 {object} KnowledgeOpsEventsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40096"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/knowledge-ops/events [get]
 func contractKnowledgeOpsEventsEnvelope() {}
 
 // contractReviewKnowledgeOpsEventEnvelope documents PATCH /api/v1/knowledge-ops/events/{id}/review.
 //
 // @Summary ReviewKnowledgeOpsEvent closes a badcase candidate
-// @Description ReviewKnowledgeOpsEvent closes a badcase candidate.。需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 knowledgeOpsReviewPayload。成功返回 ReviewKnowledgeOpsEventResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ReviewKnowledgeOpsEvent closes a badcase candidate.。需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 knowledgeOpsReviewPayload。成功返回 ReviewKnowledgeOpsEventResponse。声明了 3 个业务错误码：40000(400)、40095(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID reviewKnowledgeOpsEvent
 // @Security BearerAuth
@@ -9551,7 +10311,10 @@ func contractKnowledgeOpsEventsEnvelope() {}
 // @Accept json
 // @Param body body knowledgeOpsReviewPayload true "请求体（knowledgeOpsReviewPayload）"
 // @Success 200 {object} ReviewKnowledgeOpsEventEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40095"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-ops/events/{id}/review [patch]
 func contractReviewKnowledgeOpsEventEnvelope() {}
 
@@ -9567,24 +10330,27 @@ func contractReviewKnowledgeOpsEventEnvelope() {}
 // @Param body body ConvertBadcaseToEvalCaseRequest true "请求体（ConvertBadcaseToEvalCaseRequest）"
 // @Success 200 {object} ConvertBadcaseToEvalCaseEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40069"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-ops/events/{id}/to-eval-case [post]
 func contractConvertBadcaseToEvalCaseEnvelope() {}
 
 // contractMetricsContractEnvelope documents GET /api/v1/knowledge-ops/metrics-contract.
 //
 // @Summary MetricsContract returns the frozen metric contract board (doc/107 §3.3.2): the latest route evaluation gate plus the 30-day answer/operations KPIs
-// @Description MetricsContract returns the frozen metric contract board (doc/107 §3.3.2): the latest route evaluation gate plus the 30-day answer/operations KPIs.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *service.MetricsContractBoard
+// @Description MetricsContract returns the frozen metric contract board (doc/107 §3.3.2): the latest route evaluation gate plus the 30-day answer/operations KPIs.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *service.MetricsContractBoard。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID metricsContract
 // @Security BearerAuth
 // @Success 200 {object} MetricsContractEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/knowledge-ops/metrics-contract [get]
 func contractMetricsContractEnvelope() {}
 
 // contractKnowledgeOpsTopQueriesEnvelope documents GET /api/v1/knowledge-ops/top-queries.
 //
 // @Summary KnowledgeOpsTopQueries returns the highest-volume questions in a date range
-// @Description KnowledgeOpsTopQueries returns the highest-volume questions in a date range.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 []model.KnowledgeOpsQueryRow
+// @Description KnowledgeOpsTopQueries returns the highest-volume questions in a date range.。需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 []model.KnowledgeOpsQueryRow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID knowledgeOpsTopQueries
 // @Security BearerAuth
@@ -9592,6 +10358,8 @@ func contractMetricsContractEnvelope() {}
 // @Param date_to query string false "查询参数 date_to"
 // @Param limit query string false "查询参数 limit（默认 10）"
 // @Success 200 {object} KnowledgeOpsTopQueriesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/knowledge-ops/top-queries [get]
 func contractKnowledgeOpsTopQueriesEnvelope() {}
 
@@ -9617,26 +10385,28 @@ func contractListTraceRunsEnvelope() {}
 // contractCreateTraceRunEnvelope documents POST /api/v1/knowledge-ops/trace-runs.
 //
 // @Summary Create Trace Run
-// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.TraceRunInput。成功返回 *model.TraceRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.TraceRunInput。成功返回 *model.TraceRun。声明了 2 个业务错误码：40000(400)、40099(400)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID createTraceRun
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.TraceRunInput true "请求体（service.TraceRunInput）"
 // @Success 200 {object} CreateTraceRunEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
 // @Router /api/v1/knowledge-ops/trace-runs [post]
 func contractCreateTraceRunEnvelope() {}
 
 // contractGetTraceRunEnvelope documents GET /api/v1/knowledge-ops/trace-runs/{id}.
 //
 // @Summary Get Trace Run
-// @Description 需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.TraceRun
+// @Description 需要权限 read:knowledge-ops（由 accessRules 强制）。成功返回 *model.TraceRun。声明了 1 个业务错误码：40099(400)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID getTraceRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetTraceRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40099"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-ops/trace-runs/{id} [get]
 func contractGetTraceRunEnvelope() {}
 
@@ -9659,13 +10429,14 @@ func contractListKnowledgeProfilesEnvelope() {}
 // contractCreateKnowledgeProfileEnvelope documents POST /api/v1/knowledge-profiles.
 //
 // @Summary create Knowledge Profile
-// @Description 需要权限 manage:knowledge-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile
+// @Description 需要权限 manage:knowledge-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）
 // @Tags knowledge-profile
 // @ID createKnowledgeProfile
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateKnowledgeProfileEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120"
 // @Router /api/v1/knowledge-profiles [post]
 func contractCreateKnowledgeProfileEnvelope() {}
 
@@ -9678,6 +10449,7 @@ func contractCreateKnowledgeProfileEnvelope() {}
 // @Security BearerAuth
 // @Param profileId path string true "路径参数 profileId"
 // @Success 200 {object} DeleteKnowledgeProfileEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-profiles/{profileId} [delete]
 func contractDeleteKnowledgeProfileEnvelope() {}
 
@@ -9690,13 +10462,14 @@ func contractDeleteKnowledgeProfileEnvelope() {}
 // @Security BearerAuth
 // @Param profileId path string true "路径参数 profileId"
 // @Success 200 {object} GetKnowledgeProfileEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-profiles/{profileId} [get]
 func contractGetKnowledgeProfileEnvelope() {}
 
 // contractUpdateKnowledgeProfileEnvelope documents PUT /api/v1/knowledge-profiles/{profileId}.
 //
 // @Summary update Knowledge Profile
-// @Description 需要权限 manage:knowledge-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile
+// @Description 需要权限 manage:knowledge-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeProfile。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）
 // @Tags knowledge-profile
 // @ID updateKnowledgeProfile
 // @Security BearerAuth
@@ -9704,6 +10477,8 @@ func contractGetKnowledgeProfileEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateKnowledgeProfileEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-profiles/{profileId} [put]
 func contractUpdateKnowledgeProfileEnvelope() {}
 
@@ -9728,13 +10503,15 @@ func contractListKnowledgeStrategiesEnvelope() {}
 // contractCreateKnowledgeStrategyEnvelope documents POST /api/v1/knowledge-strategies.
 //
 // @Summary create Knowledge Strategy
-// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy
+// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy。声明了 3 个业务错误码：40120(400)、40136(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags knowledge-strategy
 // @ID createKnowledgeStrategy
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateKnowledgeStrategyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40136"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/knowledge-strategies [post]
 func contractCreateKnowledgeStrategyEnvelope() {}
 
@@ -9747,6 +10524,7 @@ func contractCreateKnowledgeStrategyEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteKnowledgeStrategyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-strategies/{id} [delete]
 func contractDeleteKnowledgeStrategyEnvelope() {}
 
@@ -9759,13 +10537,14 @@ func contractDeleteKnowledgeStrategyEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetKnowledgeStrategyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-strategies/{id} [get]
 func contractGetKnowledgeStrategyEnvelope() {}
 
 // contractUpdateKnowledgeStrategyEnvelope documents PATCH /api/v1/knowledge-strategies/{id}.
 //
 // @Summary update Knowledge Strategy
-// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy
+// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy。声明了 3 个业务错误码：40120(400)、40136(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags knowledge-strategy
 // @ID updateKnowledgeStrategy
 // @Security BearerAuth
@@ -9773,13 +10552,16 @@ func contractGetKnowledgeStrategyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateKnowledgeStrategyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40136"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/knowledge-strategies/{id} [patch]
 func contractUpdateKnowledgeStrategyEnvelope() {}
 
 // contractUpdateKnowledgeStrategyPutEnvelope documents PUT /api/v1/knowledge-strategies/{id}.
 //
 // @Summary update Knowledge Strategy
-// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy
+// @Description 需要权限 manage:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeStrategy。声明了 3 个业务错误码：40120(400)、40136(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags knowledge-strategy
 // @ID updateKnowledgeStrategyPut
 // @Security BearerAuth
@@ -9787,13 +10569,16 @@ func contractUpdateKnowledgeStrategyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateKnowledgeStrategyPutEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40136"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/knowledge-strategies/{id} [put]
 func contractUpdateKnowledgeStrategyPutEnvelope() {}
 
 // contractProbeKnowledgeStrategyEnvelope documents POST /api/v1/knowledge-strategies/{id}/probe.
 //
 // @Summary probe Knowledge Strategy
-// @Description 需要权限 execute:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeCapabilityProbe
+// @Description 需要权限 execute:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.KnowledgeCapabilityProbe。声明了 1 个业务错误码：40120(400)（括号内是 HTTP 状态）
 // @Tags knowledge-strategy
 // @ID probeKnowledgeStrategy
 // @Security BearerAuth
@@ -9801,25 +10586,30 @@ func contractUpdateKnowledgeStrategyPutEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ProbeKnowledgeStrategyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-strategies/{id}/probe [post]
 func contractProbeKnowledgeStrategyEnvelope() {}
 
 // contractGetKnowledgeStrategyQualityGateEnvelope documents GET /api/v1/knowledge-strategies/{id}/quality-gate.
 //
 // @Summary get Knowledge Strategy Quality Gate
-// @Description 需要权限 read:knowledge-strategy（由 accessRules 强制）。成功返回 *service.KnowledgeStrategyQualityGateSummary
+// @Description 需要权限 read:knowledge-strategy（由 accessRules 强制）。成功返回 *service.KnowledgeStrategyQualityGateSummary。声明了 2 个业务错误码：40120(400)、50082(500)（括号内是 HTTP 状态）
 // @Tags knowledge-strategy
 // @ID getKnowledgeStrategyQualityGate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetKnowledgeStrategyQualityGateEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50082"
 // @Router /api/v1/knowledge-strategies/{id}/quality-gate [get]
 func contractGetKnowledgeStrategyQualityGateEnvelope() {}
 
 // contractExecuteKnowledgeStrategyEnvelope documents POST /api/v1/knowledge-strategies/{id}/retrieve.
 //
 // @Summary execute Knowledge Strategy
-// @Description 需要权限 execute:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.KnowledgeStrategyExecution
+// @Description 需要权限 execute:knowledge-strategy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.KnowledgeStrategyExecution。声明了 2 个业务错误码：40120(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags knowledge-strategy
 // @ID executeKnowledgeStrategy
 // @Security BearerAuth
@@ -9827,6 +10617,9 @@ func contractGetKnowledgeStrategyQualityGateEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ExecuteKnowledgeStrategyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/knowledge-strategies/{id}/retrieve [post]
 func contractExecuteKnowledgeStrategyEnvelope() {}
 
@@ -9853,14 +10646,15 @@ func contractListKnowledgeTasksEnvelope() {}
 // contractCreateKnowledgeTaskEnvelope documents POST /api/v1/knowledge-tasks.
 //
 // @Summary Create Knowledge Task
-// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.KnowledgeTaskInput。成功返回 *model.KnowledgeTask。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.KnowledgeTaskInput。成功返回 *model.KnowledgeTask。声明了 2 个业务错误码：40000(400)、40097(400)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID createKnowledgeTask
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.KnowledgeTaskInput true "请求体（service.KnowledgeTaskInput）"
 // @Success 200 {object} CreateKnowledgeTaskEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40097"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-tasks [post]
 func contractCreateKnowledgeTaskEnvelope() {}
 
@@ -9884,13 +10678,14 @@ func contractKnowledgeTaskSummaryEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetKnowledgeTaskEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/knowledge-tasks/{id} [get]
 func contractGetKnowledgeTaskEnvelope() {}
 
 // contractUpdateKnowledgeTaskEnvelope documents PATCH /api/v1/knowledge-tasks/{id}.
 //
 // @Summary Update Knowledge Task
-// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.KnowledgeTaskUpdateInput。成功返回 *model.KnowledgeTask。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:knowledge-ops（由 accessRules 强制）。请求体类型 service.KnowledgeTaskUpdateInput。成功返回 *model.KnowledgeTask。声明了 9 个业务错误码：40000(400)、40087(400)、40088(400)、40097(400)、40098(409)、40099(400)、41167(400)、42940(429)、50000(500)（括号内是 HTTP 状态）
 // @Tags knowledge-ops
 // @ID updateKnowledgeTask
 // @Security BearerAuth
@@ -9898,7 +10693,11 @@ func contractGetKnowledgeTaskEnvelope() {}
 // @Accept json
 // @Param body body service.KnowledgeTaskUpdateInput true "请求体（service.KnowledgeTaskUpdateInput）"
 // @Success 200 {object} UpdateKnowledgeTaskEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40087 / 40088 / 40097 / 40099 / 41167"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40098"
+// @Failure 429 {object} docs.Envelope "错误码 42940"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/knowledge-tasks/{id} [patch]
 func contractUpdateKnowledgeTaskEnvelope() {}
 
@@ -9919,25 +10718,29 @@ func contractListLogicalDocumentsEnvelope() {}
 // contractCreateLogicalDocumentEnvelope documents POST /api/v1/logical-documents.
 //
 // @Summary create Logical Document
-// @Description 需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument
+// @Description 需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）
 // @Tags logical-document
 // @ID createLogicalDocument
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateLogicalDocumentEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/logical-documents [post]
 func contractCreateLogicalDocumentEnvelope() {}
 
 // contractDeleteLogicalDocumentEnvelope documents DELETE /api/v1/logical-documents/{id}.
 //
 // @Summary delete Logical Document
-// @Description 需要权限 manage:logical-document（由 accessRules 强制）。成功返回 DeleteLogicalDocumentResponse
+// @Description 需要权限 manage:logical-document（由 accessRules 强制）。成功返回 DeleteLogicalDocumentResponse。声明了 1 个业务错误码：40996(409)（括号内是 HTTP 状态）
 // @Tags logical-document
 // @ID deleteLogicalDocument
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteLogicalDocumentEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40996"
 // @Router /api/v1/logical-documents/{id} [delete]
 func contractDeleteLogicalDocumentEnvelope() {}
 
@@ -9950,13 +10753,14 @@ func contractDeleteLogicalDocumentEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetLogicalDocumentEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/logical-documents/{id} [get]
 func contractGetLogicalDocumentEnvelope() {}
 
 // contractUpdateLogicalDocumentEnvelope documents PATCH /api/v1/logical-documents/{id}.
 //
 // @Summary update Logical Document
-// @Description 需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument
+// @Description 需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）
 // @Tags logical-document
 // @ID updateLogicalDocument
 // @Security BearerAuth
@@ -9964,13 +10768,15 @@ func contractGetLogicalDocumentEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateLogicalDocumentEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/logical-documents/{id} [patch]
 func contractUpdateLogicalDocumentEnvelope() {}
 
 // contractUpdateLogicalDocumentPutEnvelope documents PUT /api/v1/logical-documents/{id}.
 //
 // @Summary update Logical Document
-// @Description 需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument
+// @Description 需要权限 manage:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.LogicalDocument。声明了 1 个业务错误码：40090(400)（括号内是 HTTP 状态）
 // @Tags logical-document
 // @ID updateLogicalDocumentPut
 // @Security BearerAuth
@@ -9978,6 +10784,8 @@ func contractUpdateLogicalDocumentEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateLogicalDocumentPutEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/logical-documents/{id} [put]
 func contractUpdateLogicalDocumentPutEnvelope() {}
 
@@ -9992,13 +10800,14 @@ func contractUpdateLogicalDocumentPutEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListLogicalDocumentPublishAttemptsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/logical-documents/{id}/publish-attempts [get]
 func contractListLogicalDocumentPublishAttemptsEnvelope() {}
 
 // contractRestoreLogicalDocumentVersionEnvelope documents POST /api/v1/logical-documents/{id}/restore.
 //
 // @Summary restore Logical Document Version
-// @Description 需要权限 execute:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult
+// @Description 需要权限 execute:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult。声明了 3 个业务错误码：40090(400)、40995(409)、40997(409)（括号内是 HTTP 状态）
 // @Tags logical-document
 // @ID restoreLogicalDocumentVersion
 // @Security BearerAuth
@@ -10006,13 +10815,16 @@ func contractListLogicalDocumentPublishAttemptsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RestoreLogicalDocumentVersionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40995 / 40997"
 // @Router /api/v1/logical-documents/{id}/restore [post]
 func contractRestoreLogicalDocumentVersionEnvelope() {}
 
 // contractSupersedeLogicalDocumentVersionEnvelope documents POST /api/v1/logical-documents/{id}/supersede.
 //
 // @Summary supersede Logical Document Version
-// @Description 需要权限 execute:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult
+// @Description 需要权限 execute:logical-document（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.VersionPublishResult。声明了 3 个业务错误码：40090(400)、40995(409)、40997(409)（括号内是 HTTP 状态）
 // @Tags logical-document
 // @ID supersedeLogicalDocumentVersion
 // @Security BearerAuth
@@ -10020,6 +10832,9 @@ func contractRestoreLogicalDocumentVersionEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} SupersedeLogicalDocumentVersionEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40090"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40995 / 40997"
 // @Router /api/v1/logical-documents/{id}/supersede [post]
 func contractSupersedeLogicalDocumentVersionEnvelope() {}
 
@@ -10034,13 +10849,14 @@ func contractSupersedeLogicalDocumentVersionEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListLogicalDocumentVersionsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/logical-documents/{id}/versions [get]
 func contractListLogicalDocumentVersionsEnvelope() {}
 
 // contractListMemoriesEnvelope documents GET /api/v1/memories.
 //
 // @Summary ListMemories returns the caller's memories
-// @Description ListMemories returns the caller's memories.。需要权限 read:memory（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.MemoryShadow
+// @Description ListMemories returns the caller's memories.。需要权限 read:memory（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.MemoryShadow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags memory
 // @ID listMemories
 // @Security BearerAuth
@@ -10051,64 +10867,79 @@ func contractListLogicalDocumentVersionsEnvelope() {}
 // @Param owner_id query string false "查询参数 owner_id"
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} ListMemoriesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/memories [get]
 func contractListMemoriesEnvelope() {}
 
 // contractCreateMemoryEnvelope documents POST /api/v1/memories.
 //
 // @Summary CreateMemory creates a memory owned by the caller's tenant
-// @Description CreateMemory creates a memory owned by the caller's tenant.。需要权限 manage:memory（由 accessRules 强制）。请求体类型 memoryCreatePayload。成功返回 *model.MemoryShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateMemory creates a memory owned by the caller's tenant.。需要权限 manage:memory（由 accessRules 强制）。请求体类型 memoryCreatePayload。成功返回 *model.MemoryShadow。声明了 7 个业务错误码：40000(400)、40095(400)、40097(400)、40098(400)、40099(400)、40305(403)、50271(502)（括号内是 HTTP 状态）
 // @Tags memory
 // @ID createMemory
 // @Security BearerAuth
 // @Accept json
 // @Param body body memoryCreatePayload true "请求体（memoryCreatePayload）"
 // @Success 200 {object} CreateMemoryEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40095 / 40097 / 40098 / 40099"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50271"
 // @Router /api/v1/memories [post]
 func contractCreateMemoryEnvelope() {}
 
 // contractMemoryModelOptionsEnvelope documents GET /api/v1/memories/model-options.
 //
 // @Summary MemoryModelOptions returns the tenant's embedding/chat models and defaults so the memory create/edit dialogs can pick real models
-// @Description MemoryModelOptions returns the tenant's embedding/chat models and defaults so the memory create/edit dialogs can pick real models.。需要权限 read:memory（由 accessRules 强制）。成功返回 *service.ModelOptions
+// @Description MemoryModelOptions returns the tenant's embedding/chat models and defaults so the memory create/edit dialogs can pick real models.。需要权限 read:memory（由 accessRules 强制）。成功返回 *service.ModelOptions。声明了 5 个业务错误码：40305(403)、50250(502)、50251(502)、50252(502)、50253(502)（括号内是 HTTP 状态）
 // @Tags memory
 // @ID memoryModelOptions
 // @Security BearerAuth
 // @Success 200 {object} MemoryModelOptionsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50250 / 50251 / 50252 / 50253"
 // @Router /api/v1/memories/model-options [get]
 func contractMemoryModelOptionsEnvelope() {}
 
 // contractDeleteMemoryEnvelope documents DELETE /api/v1/memories/{id}.
 //
 // @Summary DeleteMemory deletes a memory
-// @Description DeleteMemory deletes a memory.。需要权限 manage:memory（由 accessRules 强制）。成功返回 DeleteMemoryResponse
+// @Description DeleteMemory deletes a memory.。需要权限 manage:memory（由 accessRules 强制）。成功返回 DeleteMemoryResponse。声明了 2 个业务错误码：40305(403)、50273(502)（括号内是 HTTP 状态）
 // @Tags memory
 // @ID deleteMemory
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} DeleteMemoryEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50273"
 // @Router /api/v1/memories/{id} [delete]
 func contractDeleteMemoryEnvelope() {}
 
 // contractGetMemoryEnvelope documents GET /api/v1/memories/{id}.
 //
 // @Summary GetMemory returns a memory
-// @Description GetMemory returns a memory.。需要权限 read:memory（由 accessRules 强制）。成功返回 *model.MemoryShadow
+// @Description GetMemory returns a memory.。需要权限 read:memory（由 accessRules 强制）。成功返回 *model.MemoryShadow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags memory
 // @ID getMemory
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} GetMemoryEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memories/{id} [get]
 func contractGetMemoryEnvelope() {}
 
 // contractUpdateMemoryEnvelope documents PUT /api/v1/memories/{id}.
 //
 // @Summary UpdateMemory updates a memory
-// @Description UpdateMemory updates a memory.。需要权限 manage:memory（由 accessRules 强制）。请求体类型 memoryUpdatePayload。成功返回 *model.MemoryShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateMemory updates a memory.。需要权限 manage:memory（由 accessRules 强制）。请求体类型 memoryUpdatePayload。成功返回 *model.MemoryShadow。声明了 5 个业务错误码：40000(400)、40095(400)、40097(400)、40305(403)、50272(502)（括号内是 HTTP 状态）
 // @Tags memory
 // @ID updateMemory
 // @Security BearerAuth
@@ -10117,27 +10948,35 @@ func contractGetMemoryEnvelope() {}
 // @Accept json
 // @Param body body memoryUpdatePayload true "请求体（memoryUpdatePayload）"
 // @Success 200 {object} UpdateMemoryEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40095 / 40097"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50272"
 // @Router /api/v1/memories/{id} [put]
 func contractUpdateMemoryEnvelope() {}
 
 // contractGetMemoryConfigEnvelope documents GET /api/v1/memories/{id}/config.
 //
 // @Summary GetMemoryConfig returns the live memory config for the editor
-// @Description GetMemoryConfig returns the live memory config for the editor.。需要权限 read:memory（由 accessRules 强制）。成功返回 *ragflow.Memory
+// @Description GetMemoryConfig returns the live memory config for the editor.。需要权限 read:memory（由 accessRules 强制）。成功返回 *ragflow.Memory。声明了 2 个业务错误码：40305(403)、50270(502)（括号内是 HTTP 状态）
 // @Tags memory
 // @ID getMemoryConfig
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} GetMemoryConfigEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50270"
 // @Router /api/v1/memories/{id}/config [get]
 func contractGetMemoryConfigEnvelope() {}
 
 // contractSearchGovernedMemoryEnvelope documents POST /api/v1/memories/{id}/governed-search.
 //
 // @Summary SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read
-// @Description SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read.。需要权限 execute:memory-policy（由 accessRules 强制）。请求体类型 memoryGovernedSearchPayload。成功返回 *service.GovernedMemorySearchResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description SearchGovernedMemory runs policy-authorized memory retrieval and records an immutable context decision before the first RAGFlow read.。需要权限 execute:memory-policy（由 accessRules 强制）。请求体类型 memoryGovernedSearchPayload。成功返回 *service.GovernedMemorySearchResult。声明了 7 个业务错误码：40000(400)、40147(400)、40148(400)、40305(403)、40958(409)、50000(500)、50278(502)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID searchGovernedMemory
 // @Security BearerAuth
@@ -10145,27 +10984,37 @@ func contractGetMemoryConfigEnvelope() {}
 // @Accept json
 // @Param body body memoryGovernedSearchPayload true "请求体（memoryGovernedSearchPayload）"
 // @Success 200 {object} SearchGovernedMemoryEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40147 / 40148"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403 / 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40958"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50278"
 // @Router /api/v1/memories/{id}/governed-search [post]
 func contractSearchGovernedMemoryEnvelope() {}
 
 // contractListMemoryMessagesEnvelope documents GET /api/v1/memories/{id}/messages.
 //
 // @Summary ListMemoryMessages lists the messages of a memory
-// @Description ListMemoryMessages lists the messages of a memory.。需要权限 read:memory-content（由 accessRules 强制）。成功返回 []ragflow.MemoryMessage
+// @Description ListMemoryMessages lists the messages of a memory.。需要权限 read:memory-content（由 accessRules 强制）。成功返回 []ragflow.MemoryMessage。声明了 2 个业务错误码：40305(403)、50274(502)（括号内是 HTTP 状态）
 // @Tags memory-content
 // @ID listMemoryMessages
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} ListMemoryMessagesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50274"
 // @Router /api/v1/memories/{id}/messages [get]
 func contractListMemoryMessagesEnvelope() {}
 
 // contractAddMemoryMessageEnvelope documents POST /api/v1/memories/{id}/messages.
 //
 // @Summary AddMemoryMessage stores a message into a memory
-// @Description AddMemoryMessage stores a message into a memory.。需要权限 execute:memory-write（由 accessRules 强制）。请求体类型 memoryMessagePayload。成功返回 AddMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description AddMemoryMessage stores a message into a memory.。需要权限 execute:memory-write（由 accessRules 强制）。请求体类型 memoryMessagePayload。成功返回 AddMemoryMessageResponse。声明了 4 个业务错误码：40000(400)、40096(400)、40305(403)、50275(502)（括号内是 HTTP 状态）
 // @Tags memory-write
 // @ID addMemoryMessage
 // @Security BearerAuth
@@ -10174,14 +11023,18 @@ func contractListMemoryMessagesEnvelope() {}
 // @Accept json
 // @Param body body memoryMessagePayload true "请求体（memoryMessagePayload）"
 // @Success 200 {object} AddMemoryMessageEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40096"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50275"
 // @Router /api/v1/memories/{id}/messages [post]
 func contractAddMemoryMessageEnvelope() {}
 
 // contractSearchMemoryMessagesEnvelope documents GET /api/v1/memories/{id}/messages/search.
 //
 // @Summary SearchMemoryMessages runs a semantic retrieval against a memory
-// @Description SearchMemoryMessages runs a semantic retrieval against a memory.。需要权限 execute:memory-content（由 accessRules 强制）。成功返回 []ragflow.MemoryMessage。声明了 5 个业务错误码：40096(400)、40143(400)、40144(400)、40145(400)、40146(400)（括号内是 HTTP 状态）
+// @Description SearchMemoryMessages runs a semantic retrieval against a memory.。需要权限 execute:memory-content（由 accessRules 强制）。成功返回 []ragflow.MemoryMessage。声明了 7 个业务错误码：40096(400)、40143(400)、40144(400)、40145(400)、40146(400)、40305(403)、50278(502)（括号内是 HTTP 状态）
 // @Tags memory-content
 // @ID searchMemoryMessages
 // @Security BearerAuth
@@ -10196,13 +11049,17 @@ func contractAddMemoryMessageEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} SearchMemoryMessagesEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40096 / 40143 / 40144 / 40145 / 40146"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50278"
 // @Router /api/v1/memories/{id}/messages/search [get]
 func contractSearchMemoryMessagesEnvelope() {}
 
 // contractDeleteMemoryMessageEnvelope documents DELETE /api/v1/memories/{id}/messages/{messageId}.
 //
 // @Summary DeleteMemoryMessage forgets a memory message
-// @Description DeleteMemoryMessage forgets a memory message.。需要权限 execute:memory-forget（由 accessRules 强制）。成功返回 DeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteMemoryMessage forgets a memory message.。需要权限 execute:memory-forget（由 accessRules 强制）。成功返回 DeleteMemoryMessageResponse。声明了 5 个业务错误码：40000(400)、40305(403)、40957(409)、40958(409)、50276(502)（括号内是 HTTP 状态）
 // @Tags memory-forget
 // @ID deleteMemoryMessage
 // @Security BearerAuth
@@ -10211,13 +11068,18 @@ func contractSearchMemoryMessagesEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} DeleteMemoryMessageEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40957 / 40958"
+// @Failure 502 {object} docs.Envelope "错误码 50276"
 // @Router /api/v1/memories/{id}/messages/{messageId} [delete]
 func contractDeleteMemoryMessageEnvelope() {}
 
 // contractUpdateMemoryMessageStatusEnvelope documents PUT /api/v1/memories/{id}/messages/{messageId}.
 //
 // @Summary UpdateMemoryMessageStatus sets a message's status
-// @Description UpdateMemoryMessageStatus sets a message's status.。需要权限 manage:memory-content（由 accessRules 强制）。请求体类型 memoryMessageStatusPayload。成功返回 UpdateMemoryMessageStatusResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateMemoryMessageStatus sets a message's status.。需要权限 manage:memory-content（由 accessRules 强制）。请求体类型 memoryMessageStatusPayload。成功返回 UpdateMemoryMessageStatusResponse。声明了 5 个业务错误码：40000(400)、40305(403)、40957(409)、40958(409)、50277(502)（括号内是 HTTP 状态）
 // @Tags memory-content
 // @ID updateMemoryMessageStatus
 // @Security BearerAuth
@@ -10228,13 +11090,18 @@ func contractDeleteMemoryMessageEnvelope() {}
 // @Param body body memoryMessageStatusPayload true "请求体（memoryMessageStatusPayload）"
 // @Success 200 {object} UpdateMemoryMessageStatusEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40957 / 40958"
+// @Failure 502 {object} docs.Envelope "错误码 50277"
 // @Router /api/v1/memories/{id}/messages/{messageId} [put]
 func contractUpdateMemoryMessageStatusEnvelope() {}
 
 // contractComplianceDeleteMemoryMessageEnvelope documents POST /api/v1/memories/{id}/messages/{messageId}/compliance-delete.
 //
 // @Summary ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2)
-// @Description ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2). The reason is required in the audit entry but optional in the payload; it never carries memory content.。需要权限 manage:memory-forget（由 accessRules 强制）。请求体类型 ComplianceDeleteMemoryMessageRequest。成功返回 ComplianceDeleteMemoryMessageResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ComplianceDeleteMemoryMessage performs the admin compliance delete behind manage @ memory-forget (137 plan section 8.2). The reason is required in the audit entry but optional in the payload; it never carries memory content.。需要权限 manage:memory-forget（由 accessRules 强制）。请求体类型 ComplianceDeleteMemoryMessageRequest。成功返回 ComplianceDeleteMemoryMessageResponse。声明了 6 个业务错误码：40000(400)、40099(400)、40305(403)、40959(409)、50276(502)、50279(502)（括号内是 HTTP 状态）
 // @Tags memory-forget
 // @ID complianceDeleteMemoryMessage
 // @Security BearerAuth
@@ -10244,14 +11111,19 @@ func contractUpdateMemoryMessageStatusEnvelope() {}
 // @Accept json
 // @Param body body ComplianceDeleteMemoryMessageRequest true "请求体（ComplianceDeleteMemoryMessageRequest）"
 // @Success 200 {object} ComplianceDeleteMemoryMessageEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40959"
+// @Failure 502 {object} docs.Envelope "错误码 50276 / 50279"
 // @Router /api/v1/memories/{id}/messages/{messageId}/compliance-delete [post]
 func contractComplianceDeleteMemoryMessageEnvelope() {}
 
 // contractGetMemoryMessageContentEnvelope documents GET /api/v1/memories/{id}/messages/{messageId}/content.
 //
 // @Summary GetMemoryMessageContent returns a memory message's full content
-// @Description GetMemoryMessageContent returns a memory message's full content.。需要权限 read:memory-content（由 accessRules 强制）。成功返回 json.RawMessage。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description GetMemoryMessageContent returns a memory message's full content.。需要权限 read:memory-content（由 accessRules 强制）。成功返回 json.RawMessage。声明了 3 个业务错误码：40000(400)、40305(403)、50279(502)（括号内是 HTTP 状态）
 // @Tags memory-content
 // @ID getMemoryMessageContent
 // @Security BearerAuth
@@ -10260,13 +11132,17 @@ func contractComplianceDeleteMemoryMessageEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} GetMemoryMessageContentEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50279"
 // @Router /api/v1/memories/{id}/messages/{messageId}/content [get]
 func contractGetMemoryMessageContentEnvelope() {}
 
 // contractListMemoryOperationsEnvelope documents GET /api/v1/memory-operations.
 //
 // @Summary list Memory Operations
-// @Description 需要权限 read:memory-operation（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.MemoryOperation。声明了 1 个业务错误码：40142(400)（括号内是 HTTP 状态）
+// @Description 需要权限 read:memory-operation（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.MemoryOperation。声明了 2 个业务错误码：40141(400)、40142(400)（括号内是 HTTP 状态）
 // @Tags memory-operation
 // @ID listMemoryOperations
 // @Security BearerAuth
@@ -10280,7 +11156,8 @@ func contractGetMemoryMessageContentEnvelope() {}
 // @Param state query string false "查询参数 state"
 // @Param tombstone_active query string false "查询参数 tombstone_active"
 // @Success 200 {object} ListMemoryOperationsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40142"
+// @Failure 400 {object} docs.Envelope "错误码 40141 / 40142"
+// @Failure 403 {object} docs.Envelope "错误码 403"
 // @Router /api/v1/memory-operations [get]
 func contractListMemoryOperationsEnvelope() {}
 
@@ -10293,13 +11170,15 @@ func contractListMemoryOperationsEnvelope() {}
 // @Security BearerAuth
 // @Param operationId path string true "路径参数 operationId"
 // @Success 200 {object} GetMemoryOperationEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-operations/{operationId} [get]
 func contractGetMemoryOperationEnvelope() {}
 
 // contractTombstoneMemoryOperationEnvelope documents POST /api/v1/memory-operations/{operationId}/tombstone.
 //
 // @Summary tombstone Memory Operation
-// @Description 需要权限 execute:memory-forget（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryOperation
+// @Description 需要权限 execute:memory-forget（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryOperation。声明了 1 个业务错误码：40142(400)（括号内是 HTTP 状态）
 // @Tags memory-forget
 // @ID tombstoneMemoryOperation
 // @Security BearerAuth
@@ -10307,6 +11186,9 @@ func contractGetMemoryOperationEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} TombstoneMemoryOperationEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40142"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-operations/{operationId}/tombstone [post]
 func contractTombstoneMemoryOperationEnvelope() {}
 
@@ -10331,13 +11213,16 @@ func contractListMemoryPoliciesEnvelope() {}
 // contractCreateMemoryPolicyEnvelope documents POST /api/v1/memory-policies.
 //
 // @Summary create Memory Policy
-// @Description 需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
+// @Description 需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy。声明了 2 个业务错误码：40092(400)、40093(400)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID createMemoryPolicy
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateMemoryPolicyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40092 / 40093"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-policies [post]
 func contractCreateMemoryPolicyEnvelope() {}
 
@@ -10350,6 +11235,7 @@ func contractCreateMemoryPolicyEnvelope() {}
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
 // @Success 200 {object} DeleteMemoryPolicyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-policies/{policyId} [delete]
 func contractDeleteMemoryPolicyEnvelope() {}
 
@@ -10362,13 +11248,14 @@ func contractDeleteMemoryPolicyEnvelope() {}
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
 // @Success 200 {object} GetMemoryPolicyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-policies/{policyId} [get]
 func contractGetMemoryPolicyEnvelope() {}
 
 // contractUpdateMemoryPolicyEnvelope documents PUT /api/v1/memory-policies/{policyId}.
 //
 // @Summary update Memory Policy
-// @Description 需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
+// @Description 需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy。声明了 3 个业务错误码：40092(400)、40093(400)、40094(400)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID updateMemoryPolicy
 // @Security BearerAuth
@@ -10376,25 +11263,30 @@ func contractGetMemoryPolicyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateMemoryPolicyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40092 / 40093 / 40094"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-policies/{policyId} [put]
 func contractUpdateMemoryPolicyEnvelope() {}
 
 // contractListMemoryPolicyConsentsEnvelope documents GET /api/v1/memory-policies/{policyId}/consents.
 //
 // @Summary listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012)
-// @Description listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012). Identity and version only, never content.。需要权限 read:memory-policy（由 accessRules 强制）。成功返回 []service.MemoryPolicyConsentView
+// @Description listMemoryPolicyConsents exposes per-member consent state for a project memory policy (MEM-012). Identity and version only, never content.。需要权限 read:memory-policy（由 accessRules 强制）。成功返回 []service.MemoryPolicyConsentView。声明了 1 个业务错误码：40097(400)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID listMemoryPolicyConsents
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
 // @Success 200 {object} ListMemoryPolicyConsentsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40097"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-policies/{policyId}/consents [get]
 func contractListMemoryPolicyConsentsEnvelope() {}
 
 // contractOptInMemoryPolicyEnvelope documents POST /api/v1/memory-policies/{policyId}/opt-in.
 //
 // @Summary opt In Memory Policy
-// @Description 需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
+// @Description 需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy。声明了 4 个业务错误码：40093(400)、40094(400)、40950(409)、40957(409)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID optInMemoryPolicy
 // @Security BearerAuth
@@ -10402,13 +11294,17 @@ func contractListMemoryPolicyConsentsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} OptInMemoryPolicyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40093 / 40094"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40950 / 40957"
 // @Router /api/v1/memory-policies/{policyId}/opt-in [post]
 func contractOptInMemoryPolicyEnvelope() {}
 
 // contractOptOutMemoryPolicyEnvelope documents POST /api/v1/memory-policies/{policyId}/opt-out.
 //
 // @Summary opt Out Memory Policy
-// @Description 需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
+// @Description 需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy。声明了 4 个业务错误码：40093(400)、40094(400)、40950(409)、40957(409)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID optOutMemoryPolicy
 // @Security BearerAuth
@@ -10416,18 +11312,24 @@ func contractOptInMemoryPolicyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} OptOutMemoryPolicyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40093 / 40094"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40950 / 40957"
 // @Router /api/v1/memory-policies/{policyId}/opt-out [post]
 func contractOptOutMemoryPolicyEnvelope() {}
 
 // contractGetMemoryPolicyQualityGateEnvelope documents GET /api/v1/memory-policies/{policyId}/quality-gate.
 //
 // @Summary get Memory Policy Quality Gate
-// @Description 需要权限 read:memory-policy（由 accessRules 强制）。成功返回 *service.MemoryPolicyQualityGateSummary
+// @Description 需要权限 read:memory-policy（由 accessRules 强制）。成功返回 *service.MemoryPolicyQualityGateSummary。声明了 1 个业务错误码：50081(500)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID getMemoryPolicyQualityGate
 // @Security BearerAuth
 // @Param policyId path string true "路径参数 policyId"
 // @Success 200 {object} GetMemoryPolicyQualityGateEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50081"
 // @Router /api/v1/memory-policies/{policyId}/quality-gate [get]
 func contractGetMemoryPolicyQualityGateEnvelope() {}
 
@@ -10445,13 +11347,15 @@ func contractListMemoryPrivacyExemptionsEnvelope() {}
 // contractUpsertMemoryPrivacyExemptionsEnvelope documents PUT /api/v1/memory-privacy/pii-exemptions.
 //
 // @Summary upsertMemoryPrivacyExemptions replaces/adds tenant PII exemptions
-// @Description upsertMemoryPrivacyExemptions replaces/adds tenant PII exemptions. Requires tenant_admin or platform governance context (plan-137 §10.1 rule 15).。需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPrivacyExemption
+// @Description upsertMemoryPrivacyExemptions replaces/adds tenant PII exemptions. Requires tenant_admin or platform governance context (plan-137 §10.1 rule 15).。需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPrivacyExemption。声明了 1 个业务错误码：40096(400)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID upsertMemoryPrivacyExemptions
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpsertMemoryPrivacyExemptionsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40096"
+// @Failure 403 {object} docs.Envelope "错误码 403"
 // @Router /api/v1/memory-privacy/pii-exemptions [put]
 func contractUpsertMemoryPrivacyExemptionsEnvelope() {}
 
@@ -10464,19 +11368,23 @@ func contractUpsertMemoryPrivacyExemptionsEnvelope() {}
 // @Security BearerAuth
 // @Param exemptionId path string true "路径参数 exemptionId"
 // @Success 200 {object} DeleteMemoryPrivacyExemptionEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-privacy/pii-exemptions/{exemptionId} [delete]
 func contractDeleteMemoryPrivacyExemptionEnvelope() {}
 
 // contractPreviewMemoryPrivacyEnvelope documents POST /api/v1/memory-privacy/pii-preview.
 //
 // @Summary previewMemoryPrivacy evaluates sample text through the deterministic PII gate without persisting anything
-// @Description previewMemoryPrivacy evaluates sample text through the deterministic PII gate without persisting anything. Returns label+count and action only; exempted spans never echo raw content.。需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.MemoryPrivacyEvaluation
+// @Description previewMemoryPrivacy evaluates sample text through the deterministic PII gate without persisting anything. Returns label+count and action only; exempted spans never echo raw content.。需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.MemoryPrivacyEvaluation。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID previewMemoryPrivacy
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} PreviewMemoryPrivacyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40098"
+// @Failure 403 {object} docs.Envelope "错误码 403"
 // @Router /api/v1/memory-privacy/pii-preview [post]
 func contractPreviewMemoryPrivacyEnvelope() {}
 
@@ -10488,26 +11396,29 @@ func contractPreviewMemoryPrivacyEnvelope() {}
 // @ID getSelfMemoryPolicyTemplate
 // @Security BearerAuth
 // @Success 200 {object} GetSelfMemoryPolicyTemplateEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-privacy/self-policy-template [get]
 func contractGetSelfMemoryPolicyTemplateEnvelope() {}
 
 // contractUpdateSelfMemoryPolicyTemplateEnvelope documents PUT /api/v1/memory-privacy/self-policy-template.
 //
 // @Summary update Self Memory Policy Template
-// @Description 需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Tenant
+// @Description 需要权限 manage:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Tenant。声明了 5 个业务错误码：40025(400)、40090(400)、40091(400)、40092(400)、40147(400)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID updateSelfMemoryPolicyTemplate
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateSelfMemoryPolicyTemplateEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40025 / 40090 / 40091 / 40092 / 40147"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/memory-privacy/self-policy-template [put]
 func contractUpdateSelfMemoryPolicyTemplateEnvelope() {}
 
 // contractListModelProvidersEnvelope documents GET /api/v1/model-providers.
 //
 // @Summary ListModelProviders lists the tenant's providers with instance/model counts
-// @Description ListModelProviders lists the tenant's providers with instance/model counts.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []service.ProviderView
+// @Description ListModelProviders lists the tenant's providers with instance/model counts.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []service.ProviderView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID listModelProviders
 // @Security BearerAuth
@@ -10515,13 +11426,16 @@ func contractUpdateSelfMemoryPolicyTemplateEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Param name query string false "查询参数 name"
 // @Success 200 {object} ListModelProvidersEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/model-providers [get]
 func contractListModelProvidersEnvelope() {}
 
 // contractCreateModelProviderEnvelope documents POST /api/v1/model-providers.
 //
 // @Summary CreateModelProvider supports both the new factory-add (provider_name) and the legacy quick-add (provider_type + name + api_key)
-// @Description CreateModelProvider supports both the new factory-add (provider_name) and the legacy quick-add (provider_type + name + api_key).。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createModelProviderRequest。成功返回 *model.ModelProvider。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateModelProvider supports both the new factory-add (provider_name) and the legacy quick-add (provider_type + name + api_key).。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createModelProviderRequest。成功返回 *model.ModelProvider。声明了 6 个业务错误码：40000(400)、40030(400)、40305(403)、41167(400)、50000(500)、50204(502)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID createModelProvider
 // @Security BearerAuth
@@ -10531,61 +11445,78 @@ func contractListModelProvidersEnvelope() {}
 // @Param body body createModelProviderRequest true "请求体（createModelProviderRequest）"
 // @Success 200 {object} CreateModelProviderEnvelope
 // @Success 202 {object} CreateModelProviderEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50204"
 // @Router /api/v1/model-providers [post]
 func contractCreateModelProviderEnvelope() {}
 
 // contractListAvailableProvidersEnvelope documents GET /api/v1/model-providers/catalog.
 //
 // @Summary ListAvailableProviders returns the RAGFlow provider catalog
-// @Description ListAvailableProviders returns the RAGFlow provider catalog.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []service.CatalogProvider
+// @Description ListAvailableProviders returns the RAGFlow provider catalog.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []service.CatalogProvider。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID listAvailableProviders
 // @Security BearerAuth
 // @Success 200 {object} ListAvailableProvidersEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/model-providers/catalog [get]
 func contractListAvailableProvidersEnvelope() {}
 
 // contractGetModelDefaultsEnvelope documents GET /api/v1/model-providers/defaults.
 //
 // @Summary GetModelDefaults returns the platform default models with per-type four-state status (ok / invalid / verify_failed / unset, doc/269 §4.3)
-// @Description GetModelDefaults returns the platform default models with per-type four-state status (ok / invalid / verify_failed / unset, doc/269 §4.3). Response only exposes model identity — never provider config or API keys.。需要权限 read:model-default（由 accessRules 强制）。成功返回 []service.DefaultModelStatus
+// @Description GetModelDefaults returns the platform default models with per-type four-state status (ok / invalid / verify_failed / unset, doc/269 §4.3). Response only exposes model identity — never provider config or API keys.。需要权限 read:model-default（由 accessRules 强制）。成功返回 []service.DefaultModelStatus。声明了 2 个业务错误码：40305(403)、50293(502)（括号内是 HTTP 状态）
 // @Tags model-default
 // @ID getModelDefaults
 // @Security BearerAuth
 // @Success 200 {object} GetModelDefaultsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50293"
 // @Router /api/v1/model-providers/defaults [get]
 func contractGetModelDefaultsEnvelope() {}
 
 // contractSetModelDefaultEnvelope documents PATCH /api/v1/model-providers/defaults.
 //
 // @Summary SetModelDefault sets or clears a platform default model for a model type (doc/269 §4.3)
-// @Description SetModelDefault sets or clears a platform default model for a model type (doc/269 §4.3). The body must carry the CAS declaration expected_model_id (three-state: absent field / explicit null / exact value); the safe-write UI always sends it and the service refuses a missing declaration.。需要权限 manage:model-default（由 accessRules 强制）。请求体类型 service.SetDefaultRequest。成功返回 *service.DefaultModelWriteResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description SetModelDefault sets or clears a platform default model for a model type (doc/269 §4.3). The body must carry the CAS declaration expected_model_id (three-state: absent field / explicit null / exact value); the safe-write UI always sends it and the service refuses a missing declaration.。需要权限 manage:model-default（由 accessRules 强制）。请求体类型 service.SetDefaultRequest。成功返回 *service.DefaultModelWriteResult。声明了 11 个业务错误码：40000(400)、40032(400)、40035(400)、40037(400)、40038(400)、40305(403)、40912(409)、50000(500)、50256(502)、50257(502)、50293(502)（括号内是 HTTP 状态）
 // @Tags model-default
 // @ID setModelDefault
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.SetDefaultRequest true "请求体（service.SetDefaultRequest）"
 // @Success 200 {object} SetModelDefaultEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40032 / 40035 / 40037 / 40038"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 409 {object} docs.Envelope "错误码 40912"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50256 / 50257 / 50293"
 // @Router /api/v1/model-providers/defaults [patch]
 func contractSetModelDefaultEnvelope() {}
 
 // contractGetModelDefaultOptionsEnvelope documents GET /api/v1/model-providers/defaults/options.
 //
 // @Summary GetModelDefaultOptions returns the per-type candidate model tree for the default-model panel (doc/269 §4.4)
-// @Description GetModelDefaultOptions returns the per-type candidate model tree for the default-model panel (doc/269 §4.4). Read-only; authorized read:model-default.。需要权限 read:model-default（由 accessRules 强制）。成功返回 map[string][]service.DefaultModelOption
+// @Description GetModelDefaultOptions returns the per-type candidate model tree for the default-model panel (doc/269 §4.4). Read-only; authorized read:model-default.。需要权限 read:model-default（由 accessRules 强制）。成功返回 map[string][]service.DefaultModelOption。声明了 2 个业务错误码：40305(403)、50293(502)（括号内是 HTTP 状态）
 // @Tags model-default
 // @ID getModelDefaultOptions
 // @Security BearerAuth
 // @Success 200 {object} GetModelDefaultOptionsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50293"
 // @Router /api/v1/model-providers/defaults/options [get]
 func contractGetModelDefaultOptionsEnvelope() {}
 
 // contractDeleteModelProviderEnvelope documents DELETE /api/v1/model-providers/{id}.
 //
 // @Summary DeleteModelProvider removes a tenant's provider (local + RAGFlow)
-// @Description DeleteModelProvider removes a tenant's provider (local + RAGFlow).。需要权限 manage:model-provider（由 accessRules 强制）。成功返回 DeleteModelProviderResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteModelProvider removes a tenant's provider (local + RAGFlow).。需要权限 manage:model-provider（由 accessRules 强制）。成功返回 DeleteModelProviderResponse。声明了 3 个业务错误码：40000(400)、40305(403)、41167(400)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID deleteModelProvider
 // @Security BearerAuth
@@ -10594,26 +11525,32 @@ func contractGetModelDefaultOptionsEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} DeleteModelProviderEnvelope
 // @Success 202 {object} DeleteModelProviderEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/model-providers/{id} [delete]
 func contractDeleteModelProviderEnvelope() {}
 
 // contractGetModelProviderEnvelope documents GET /api/v1/model-providers/{id}.
 //
 // @Summary GetModelProvider returns a single provider's summary for the detail view
-// @Description GetModelProvider returns a single provider's summary for the detail view.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 *service.ProviderView
+// @Description GetModelProvider returns a single provider's summary for the detail view.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 *service.ProviderView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID getModelProvider
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetModelProviderEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/model-providers/{id} [get]
 func contractGetModelProviderEnvelope() {}
 
 // contractDeleteProviderInstancesEnvelope documents DELETE /api/v1/model-providers/{id}/instances.
 //
 // @Summary DeleteProviderInstances deletes one or more instances of a provider
-// @Description DeleteProviderInstances deletes one or more instances of a provider.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 deleteInstancesRequest。成功返回 DeleteProviderInstancesResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteProviderInstances deletes one or more instances of a provider.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 deleteInstancesRequest。成功返回 DeleteProviderInstancesResponse。声明了 4 个业务错误码：40000(400)、40030(400)、40305(403)、41167(400)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID deleteProviderInstances
 // @Security BearerAuth
@@ -10624,14 +11561,17 @@ func contractGetModelProviderEnvelope() {}
 // @Param body body deleteInstancesRequest true "请求体（deleteInstancesRequest）"
 // @Success 200 {object} DeleteProviderInstancesEnvelope
 // @Success 202 {object} DeleteProviderInstancesEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/model-providers/{id}/instances [delete]
 func contractDeleteProviderInstancesEnvelope() {}
 
 // contractListProviderInstancesEnvelope documents GET /api/v1/model-providers/{id}/instances.
 //
 // @Summary ListProviderInstances lists a provider's instances
-// @Description ListProviderInstances lists a provider's instances.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ListProviderInstances lists a provider's instances.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []model.ModelProviderInstance。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID listProviderInstances
 // @Security BearerAuth
@@ -10639,14 +11579,16 @@ func contractDeleteProviderInstancesEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} ListProviderInstancesEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/model-providers/{id}/instances [get]
 func contractListProviderInstancesEnvelope() {}
 
 // contractCreateProviderInstanceEnvelope documents POST /api/v1/model-providers/{id}/instances.
 //
 // @Summary CreateProviderInstance creates an instance + models (synced to RAGFlow)
-// @Description CreateProviderInstance creates an instance + models (synced to RAGFlow).。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateProviderInstance creates an instance + models (synced to RAGFlow).。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 9 个业务错误码：40000(400)、40030(400)、40033(400)、40040(400)、40305(403)、40940(409)、41167(400)、50000(500)、50205(502)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID createProviderInstance
 // @Security BearerAuth
@@ -10657,14 +11599,20 @@ func contractListProviderInstancesEnvelope() {}
 // @Param body body createProviderInstanceRequest true "请求体（createProviderInstanceRequest）"
 // @Success 200 {object} CreateProviderInstanceEnvelope
 // @Success 202 {object} CreateProviderInstanceEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030 / 40033 / 40040 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40940"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50205"
 // @Router /api/v1/model-providers/{id}/instances [post]
 func contractCreateProviderInstanceEnvelope() {}
 
 // contractUpdateProviderInstanceEnvelope documents PUT /api/v1/model-providers/{id}/instances/{instanceId}.
 //
 // @Summary UpdateProviderInstance updates an instance and reconciles its models
-// @Description UpdateProviderInstance updates an instance and reconciles its models.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateProviderInstance updates an instance and reconciles its models.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 *model.ModelProviderInstance。声明了 9 个业务错误码：40000(400)、40030(400)、40033(400)、40040(400)、40305(403)、40940(409)、41167(400)、50000(500)、50206(502)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID updateProviderInstance
 // @Security BearerAuth
@@ -10676,14 +11624,20 @@ func contractCreateProviderInstanceEnvelope() {}
 // @Param body body createProviderInstanceRequest true "请求体（createProviderInstanceRequest）"
 // @Success 200 {object} UpdateProviderInstanceEnvelope
 // @Success 202 {object} UpdateProviderInstanceEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030 / 40033 / 40040 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40940"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50206"
 // @Router /api/v1/model-providers/{id}/instances/{instanceId} [put]
 func contractUpdateProviderInstanceEnvelope() {}
 
 // contractDeleteProviderModelsEnvelope documents DELETE /api/v1/model-providers/{id}/instances/{instanceId}/models.
 //
 // @Summary DeleteProviderModels removes models from an instance
-// @Description DeleteProviderModels removes models from an instance.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 deleteModelsRequest。成功返回 DeleteProviderModelsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteProviderModels removes models from an instance.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 deleteModelsRequest。成功返回 DeleteProviderModelsResponse。声明了 6 个业务错误码：40000(400)、40030(400)、40305(403)、41167(400)、50000(500)、50209(502)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID deleteProviderModels
 // @Security BearerAuth
@@ -10695,14 +11649,19 @@ func contractUpdateProviderInstanceEnvelope() {}
 // @Param body body deleteModelsRequest true "请求体（deleteModelsRequest）"
 // @Success 200 {object} DeleteProviderModelsEnvelope
 // @Success 202 {object} DeleteProviderModelsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50209"
 // @Router /api/v1/model-providers/{id}/instances/{instanceId}/models [delete]
 func contractDeleteProviderModelsEnvelope() {}
 
 // contractListProviderInstanceModelsEnvelope documents GET /api/v1/model-providers/{id}/instances/{instanceId}/models.
 //
 // @Summary ListProviderInstanceModels lists models on an instance
-// @Description ListProviderInstanceModels lists models on an instance.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description ListProviderInstanceModels lists models on an instance.。需要权限 read:model-provider（由 accessRules 强制）。成功返回 []model.ModelProviderModel。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID listProviderInstanceModels
 // @Security BearerAuth
@@ -10711,14 +11670,16 @@ func contractDeleteProviderModelsEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} ListProviderInstanceModelsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 400 / 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/model-providers/{id}/instances/{instanceId}/models [get]
 func contractListProviderInstanceModelsEnvelope() {}
 
 // contractAddProviderModelEnvelope documents POST /api/v1/model-providers/{id}/instances/{instanceId}/models.
 //
 // @Summary AddProviderModel adds a model to an instance
-// @Description AddProviderModel adds a model to an instance.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 modelInfoRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description AddProviderModel adds a model to an instance.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 modelInfoRequest。成功返回 *model.ModelProviderModel。声明了 8 个业务错误码：40000(400)、40030(400)、40041(400)、40305(403)、40941(409)、41167(400)、50000(500)、50207(502)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID addProviderModel
 // @Security BearerAuth
@@ -10730,14 +11691,20 @@ func contractListProviderInstanceModelsEnvelope() {}
 // @Param body body modelInfoRequest true "请求体（modelInfoRequest）"
 // @Success 200 {object} AddProviderModelEnvelope
 // @Success 202 {object} AddProviderModelEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030 / 40041 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40941"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50207"
 // @Router /api/v1/model-providers/{id}/instances/{instanceId}/models [post]
 func contractAddProviderModelEnvelope() {}
 
 // contractUpdateProviderModelEnvelope documents PATCH /api/v1/model-providers/{id}/instances/{instanceId}/models/{modelId}.
 //
 // @Summary UpdateProviderModel patches a model's status/max_tokens/model_type
-// @Description UpdateProviderModel patches a model's status/max_tokens/model_type.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 updateModelRequest。成功返回 *model.ModelProviderModel。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateProviderModel patches a model's status/max_tokens/model_type.。需要权限 manage:model-provider（由 accessRules 强制）。请求体类型 updateModelRequest。成功返回 *model.ModelProviderModel。声明了 6 个业务错误码：40000(400)、40030(400)、40305(403)、41167(400)、50000(500)、50208(502)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID updateProviderModel
 // @Security BearerAuth
@@ -10750,14 +11717,19 @@ func contractAddProviderModelEnvelope() {}
 // @Param body body updateModelRequest true "请求体（updateModelRequest）"
 // @Success 200 {object} UpdateProviderModelEnvelope
 // @Success 202 {object} UpdateProviderModelEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50208"
 // @Router /api/v1/model-providers/{id}/instances/{instanceId}/models/{modelId} [patch]
 func contractUpdateProviderModelEnvelope() {}
 
 // contractTestProviderModelEnvelope documents POST /api/v1/model-providers/{id}/instances/{instanceId}/models/{modelId}/test.
 //
 // @Summary TestProviderModel sends a chat test message to a configured model
-// @Description TestProviderModel sends a chat test message to a configured model.。需要权限 execute:model-provider（由 accessRules 强制）。请求体类型 chatTestRequest。成功返回 string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description TestProviderModel sends a chat test message to a configured model.。需要权限 execute:model-provider（由 accessRules 强制）。请求体类型 chatTestRequest。成功返回 string。声明了 5 个业务错误码：40000(400)、40030(400)、40305(403)、41167(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID testProviderModel
 // @Security BearerAuth
@@ -10770,14 +11742,18 @@ func contractUpdateProviderModelEnvelope() {}
 // @Param body body chatTestRequest true "请求体（chatTestRequest）"
 // @Success 200 {object} TestProviderModelEnvelope
 // @Success 202 {object} TestProviderModelEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030 / 41167"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/model-providers/{id}/instances/{instanceId}/models/{modelId}/test [post]
 func contractTestProviderModelEnvelope() {}
 
 // contractVerifyProviderConnectionEnvelope documents POST /api/v1/model-providers/{id}/verify.
 //
 // @Summary VerifyProviderConnection validates an API key/base URL against RAGFlow
-// @Description VerifyProviderConnection validates an API key/base URL against RAGFlow.。需要权限 execute:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 map[string]string。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description VerifyProviderConnection validates an API key/base URL against RAGFlow.。需要权限 execute:model-provider（由 accessRules 强制）。请求体类型 createProviderInstanceRequest。成功返回 map[string]string。声明了 3 个业务错误码：40000(400)、40030(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags model-provider
 // @ID verifyProviderConnection
 // @Security BearerAuth
@@ -10787,51 +11763,64 @@ func contractTestProviderModelEnvelope() {}
 // @Accept json
 // @Param body body createProviderInstanceRequest true "请求体（createProviderInstanceRequest）"
 // @Success 200 {object} VerifyProviderConnectionEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40030"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/model-providers/{id}/verify [post]
 func contractVerifyProviderConnectionEnvelope() {}
 
 // contractListModelRoutesEnvelope documents GET /api/v1/model-routes.
 //
 // @Summary ListModelRoutes lists the tenant's routing rules
-// @Description ListModelRoutes lists the tenant's routing rules.。需要权限 read:model-route（由 accessRules 强制）。成功返回 []model.ModelRoute
+// @Description ListModelRoutes lists the tenant's routing rules.。需要权限 read:model-route（由 accessRules 强制）。成功返回 []model.ModelRoute。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags model-route
 // @ID listModelRoutes
 // @Security BearerAuth
 // @Success 200 {object} ListModelRoutesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/model-routes [get]
 func contractListModelRoutesEnvelope() {}
 
 // contractCreateModelRouteEnvelope documents POST /api/v1/model-routes.
 //
 // @Summary CreateModelRoute creates a routing rule under a tenant provider
-// @Description CreateModelRoute creates a routing rule under a tenant provider.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 createModelRouteRequest。成功返回 *model.ModelRoute。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateModelRoute creates a routing rule under a tenant provider.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 createModelRouteRequest。成功返回 *model.ModelRoute。声明了 3 个业务错误码：40000(400)、40031(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags model-route
 // @ID createModelRoute
 // @Security BearerAuth
 // @Accept json
 // @Param body body createModelRouteRequest true "请求体（createModelRouteRequest）"
 // @Success 200 {object} CreateModelRouteEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40031"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/model-routes [post]
 func contractCreateModelRouteEnvelope() {}
 
 // contractDeleteModelRouteEnvelope documents DELETE /api/v1/model-routes/{id}.
 //
 // @Summary DeleteModelRoute removes a routing rule
-// @Description DeleteModelRoute removes a routing rule.。需要权限 manage:model-route（由 accessRules 强制）。成功返回 DeleteModelRouteResponse
+// @Description DeleteModelRoute removes a routing rule.。需要权限 manage:model-route（由 accessRules 强制）。成功返回 DeleteModelRouteResponse。声明了 3 个业务错误码：40031(400)、40305(403)、50396(503)（括号内是 HTTP 状态）
 // @Tags model-route
 // @ID deleteModelRoute
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteModelRouteEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40031"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 503 {object} docs.Envelope "错误码 50396"
 // @Router /api/v1/model-routes/{id} [delete]
 func contractDeleteModelRouteEnvelope() {}
 
 // contractUpdateModelRouteEnvelope documents PUT /api/v1/model-routes/{id}.
 //
 // @Summary UpdateModelRoute edits an existing routing rule
-// @Description UpdateModelRoute edits an existing routing rule.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 updateModelRouteRequest。成功返回 *model.ModelRoute。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateModelRoute edits an existing routing rule.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 updateModelRouteRequest。成功返回 *model.ModelRoute。声明了 4 个业务错误码：40000(400)、40031(400)、40305(403)、50396(503)（括号内是 HTTP 状态）
 // @Tags model-route
 // @ID updateModelRoute
 // @Security BearerAuth
@@ -10839,14 +11828,18 @@ func contractDeleteModelRouteEnvelope() {}
 // @Accept json
 // @Param body body updateModelRouteRequest true "请求体（updateModelRouteRequest）"
 // @Success 200 {object} UpdateModelRouteEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40031"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 503 {object} docs.Envelope "错误码 50396"
 // @Router /api/v1/model-routes/{id} [put]
 func contractUpdateModelRouteEnvelope() {}
 
 // contractPinEnterpriseModelRouteEnvelope documents POST /api/v1/model-routes/{id}/enterprise-pin.
 //
 // @Summary PinEnterpriseModelRoute pins a route to exact enterprise runtime versions
-// @Description PinEnterpriseModelRoute pins a route to exact enterprise runtime versions.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 pinModelRouteRequest。成功返回 *model.ModelRouteEnterprisePin。声明了 1 个业务错误码：40065(400)（括号内是 HTTP 状态）
+// @Description PinEnterpriseModelRoute pins a route to exact enterprise runtime versions.。需要权限 manage:model-route（由 accessRules 强制）。请求体类型 pinModelRouteRequest。成功返回 *model.ModelRouteEnterprisePin。声明了 2 个业务错误码：40065(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags model-route
 // @ID pinEnterpriseModelRoute
 // @Security BearerAuth
@@ -10855,18 +11848,24 @@ func contractUpdateModelRouteEnvelope() {}
 // @Param body body pinModelRouteRequest true "请求体（pinModelRouteRequest）"
 // @Success 200 {object} PinEnterpriseModelRouteEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40065"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403 / 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/model-routes/{id}/enterprise-pin [post]
 func contractPinEnterpriseModelRouteEnvelope() {}
 
 // contractListEnterpriseModelRoutePinsEnvelope documents GET /api/v1/model-routes/{id}/enterprise-pins.
 //
 // @Summary ListEnterpriseModelRoutePins returns the route's immutable pin history
-// @Description ListEnterpriseModelRoutePins returns the route's immutable pin history.。需要权限 read:model-route（由 accessRules 强制）。成功返回 []model.ModelRouteEnterprisePin
+// @Description ListEnterpriseModelRoutePins returns the route's immutable pin history.。需要权限 read:model-route（由 accessRules 强制）。成功返回 []model.ModelRouteEnterprisePin。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags model-route
 // @ID listEnterpriseModelRoutePins
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ListEnterpriseModelRoutePinsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/model-routes/{id}/enterprise-pins [get]
 func contractListEnterpriseModelRoutePinsEnvelope() {}
 
@@ -10885,7 +11884,7 @@ func contractOnboardingReadinessEnvelope() {}
 // contractListOutboxEventsEnvelope documents GET /api/v1/outbox-events.
 //
 // @Summary list Outbox Events
-// @Description 需要权限 read:outbox-event（由 accessRules 强制）。成功返回分页载荷，items 元素类型 repository.OutboxEventView
+// @Description 需要权限 read:outbox-event（由 accessRules 强制）。成功返回分页载荷，items 元素类型 repository.OutboxEventView。声明了 1 个业务错误码：40094(400)（括号内是 HTTP 状态）
 // @Tags outbox-event
 // @ID listOutboxEvents
 // @Security BearerAuth
@@ -10895,25 +11894,28 @@ func contractOnboardingReadinessEnvelope() {}
 // @Param aggregate_type query string false "查询参数 aggregate_type"
 // @Param status query string false "查询参数 status"
 // @Success 200 {object} ListOutboxEventsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40094"
 // @Router /api/v1/outbox-events [get]
 func contractListOutboxEventsEnvelope() {}
 
 // contractGetOutboxEventEnvelope documents GET /api/v1/outbox-events/{id}.
 //
 // @Summary get Outbox Event
-// @Description 需要权限 read:outbox-event（由 accessRules 强制）。成功返回 *repository.OutboxEventView
+// @Description 需要权限 read:outbox-event（由 accessRules 强制）。成功返回 *repository.OutboxEventView。声明了 1 个业务错误码：40094(400)（括号内是 HTTP 状态）
 // @Tags outbox-event
 // @ID getOutboxEvent
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetOutboxEventEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40094"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/outbox-events/{id} [get]
 func contractGetOutboxEventEnvelope() {}
 
 // contractRetryOutboxEventEnvelope documents POST /api/v1/outbox-events/{id}/retry.
 //
 // @Summary retry Outbox Event
-// @Description 需要权限 execute:outbox-event（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.OutboxEventView
+// @Description 需要权限 execute:outbox-event（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *repository.OutboxEventView。声明了 4 个业务错误码：40094(400)、40998(409)、40999(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags outbox-event
 // @ID retryOutboxEvent
 // @Security BearerAuth
@@ -10921,6 +11923,10 @@ func contractGetOutboxEventEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RetryOutboxEventEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40094"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40998 / 40999"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/outbox-events/{id}/retry [post]
 func contractRetryOutboxEventEnvelope() {}
 
@@ -10946,32 +11952,35 @@ func contractListParserPoliciesEnvelope() {}
 // contractCreateParserPolicyEnvelope documents POST /api/v1/parser-policies.
 //
 // @Summary create Parser Policy
-// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy
+// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy。声明了 1 个业务错误码：40981(409)（括号内是 HTTP 状态）
 // @Tags parser-policy
 // @ID createParserPolicy
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateParserPolicyEnvelope
+// @Failure 409 {object} docs.Envelope "错误码 40981"
 // @Router /api/v1/parser-policies [post]
 func contractCreateParserPolicyEnvelope() {}
 
 // contractDeleteParserPolicyEnvelope documents DELETE /api/v1/parser-policies/{id}.
 //
 // @Summary delete Parser Policy
-// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。成功返回 DeleteParserPolicyResponse
+// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。成功返回 DeleteParserPolicyResponse。声明了 1 个业务错误码：40981(409)（括号内是 HTTP 状态）
 // @Tags parser-policy
 // @ID deleteParserPolicy
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteParserPolicyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40981"
 // @Router /api/v1/parser-policies/{id} [delete]
 func contractDeleteParserPolicyEnvelope() {}
 
 // contractGetParserPolicyEnvelope documents GET /api/v1/parser-policies/{id}.
 //
 // @Summary get Parser Policy
-// @Description 需要权限 read:parser-policy（由 accessRules 强制）。成功返回 *model.ParserPolicy。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Description 需要权限 read:parser-policy（由 accessRules 强制）。成功返回 *model.ParserPolicy
 // @Tags parser-policy
 // @ID getParserPolicy
 // @Security BearerAuth
@@ -10984,7 +11993,7 @@ func contractGetParserPolicyEnvelope() {}
 // contractUpdateParserPolicyEnvelope documents PATCH /api/v1/parser-policies/{id}.
 //
 // @Summary update Parser Policy
-// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy
+// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy。声明了 3 个业务错误码：40081(400)、40981(409)、50302(503)（括号内是 HTTP 状态）
 // @Tags parser-policy
 // @ID updateParserPolicy
 // @Security BearerAuth
@@ -10992,13 +12001,17 @@ func contractGetParserPolicyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateParserPolicyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40081"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40981"
+// @Failure 503 {object} docs.Envelope "错误码 50302"
 // @Router /api/v1/parser-policies/{id} [patch]
 func contractUpdateParserPolicyEnvelope() {}
 
 // contractUpdateParserPolicyPutEnvelope documents PUT /api/v1/parser-policies/{id}.
 //
 // @Summary update Parser Policy
-// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy
+// @Description 需要权限 manage:parser-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ParserPolicy。声明了 3 个业务错误码：40081(400)、40981(409)、50302(503)（括号内是 HTTP 状态）
 // @Tags parser-policy
 // @ID updateParserPolicyPut
 // @Security BearerAuth
@@ -11006,24 +12019,30 @@ func contractUpdateParserPolicyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateParserPolicyPutEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40081"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40981"
+// @Failure 503 {object} docs.Envelope "错误码 50302"
 // @Router /api/v1/parser-policies/{id} [put]
 func contractUpdateParserPolicyPutEnvelope() {}
 
 // contractListProjectsEnvelope documents GET /api/v1/projects.
 //
 // @Summary ListProjects lists the tenant's projects
-// @Description ListProjects lists the tenant's projects.。需要权限 read:project（由 accessRules 强制）。成功返回 []model.Project
+// @Description ListProjects lists the tenant's projects.。需要权限 read:project（由 accessRules 强制）。成功返回 []model.Project。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID listProjects
 // @Security BearerAuth
 // @Success 200 {object} ListProjectsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/projects [get]
 func contractListProjectsEnvelope() {}
 
 // contractCreateProjectEnvelope documents POST /api/v1/projects.
 //
 // @Summary CreateProject creates a tenant project
-// @Description CreateProject creates a tenant project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectRequest。成功返回 *model.Project。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateProject creates a tenant project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectRequest。成功返回 *model.Project。声明了 3 个业务错误码：40000(400)、40305(403)、40911(409)（括号内是 HTTP 状态）
 // @Tags project
 // @ID createProject
 // @Security BearerAuth
@@ -11031,37 +12050,46 @@ func contractListProjectsEnvelope() {}
 // @Param body body projectRequest true "请求体（projectRequest）"
 // @Success 200 {object} CreateProjectEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 409 {object} docs.Envelope "错误码 40911"
 // @Router /api/v1/projects [post]
 func contractCreateProjectEnvelope() {}
 
 // contractDeleteProjectEnvelope documents DELETE /api/v1/projects/{id}.
 //
 // @Summary DeleteProject deletes a tenant project
-// @Description DeleteProject deletes a tenant project.。需要权限 manage:project（由 accessRules 强制）。成功返回 DeleteProjectResponse
+// @Description DeleteProject deletes a tenant project.。需要权限 manage:project（由 accessRules 强制）。成功返回 DeleteProjectResponse。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID deleteProject
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteProjectEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id} [delete]
 func contractDeleteProjectEnvelope() {}
 
 // contractGetProjectEnvelope documents GET /api/v1/projects/{id}.
 //
 // @Summary GetProject returns a single tenant project (visible to project members)
-// @Description GetProject returns a single tenant project (visible to project members).。需要权限 read:project（由 accessRules 强制）。成功返回 *model.Project
+// @Description GetProject returns a single tenant project (visible to project members).。需要权限 read:project（由 accessRules 强制）。成功返回 *model.Project。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID getProject
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetProjectEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id} [get]
 func contractGetProjectEnvelope() {}
 
 // contractUpdateProjectEnvelope documents PUT /api/v1/projects/{id}.
 //
 // @Summary UpdateProject updates a tenant project's name and description
-// @Description UpdateProject updates a tenant project's name and description.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectRequest。成功返回 *model.Project。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateProject updates a tenant project's name and description.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectRequest。成功返回 *model.Project。声明了 3 个业务错误码：40000(400)、40305(403)、40911(409)（括号内是 HTTP 状态）
 // @Tags project
 // @ID updateProject
 // @Security BearerAuth
@@ -11070,25 +12098,32 @@ func contractGetProjectEnvelope() {}
 // @Param body body projectRequest true "请求体（projectRequest）"
 // @Success 200 {object} UpdateProjectEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40911"
 // @Router /api/v1/projects/{id} [put]
 func contractUpdateProjectEnvelope() {}
 
 // contractGetProjectDatasetsEnvelope documents GET /api/v1/projects/{id}/datasets.
 //
 // @Summary GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section)
-// @Description GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section).。需要权限 read:project（由 accessRules 强制）。成功返回 []service.ProjectDatasetView
+// @Description GetProjectDatasets lists all tenant datasets with their binding to the project (drives the dataset binding management section).。需要权限 read:project（由 accessRules 强制）。成功返回 []service.ProjectDatasetView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID getProjectDatasets
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetProjectDatasetsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id}/datasets [get]
 func contractGetProjectDatasetsEnvelope() {}
 
 // contractBindProjectDatasetsEnvelope documents PUT /api/v1/projects/{id}/datasets.
 //
 // @Summary BindProjectDatasets assigns the selected datasets to the project
-// @Description BindProjectDatasets assigns the selected datasets to the project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectBindRequest。成功返回 BindProjectDatasetsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description BindProjectDatasets assigns the selected datasets to the project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectBindRequest。成功返回 BindProjectDatasetsResponse。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID bindProjectDatasets
 // @Security BearerAuth
@@ -11097,25 +12132,31 @@ func contractGetProjectDatasetsEnvelope() {}
 // @Param body body projectBindRequest true "请求体（projectBindRequest）"
 // @Success 200 {object} BindProjectDatasetsEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id}/datasets [put]
 func contractBindProjectDatasetsEnvelope() {}
 
 // contractGetProjectTeamsEnvelope documents GET /api/v1/projects/{id}/teams.
 //
 // @Summary GetProjectTeams lists all tenant teams with their binding to the project
-// @Description GetProjectTeams lists all tenant teams with their binding to the project.。需要权限 read:project（由 accessRules 强制）。成功返回 []service.ProjectTeamView
+// @Description GetProjectTeams lists all tenant teams with their binding to the project.。需要权限 read:project（由 accessRules 强制）。成功返回 []service.ProjectTeamView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID getProjectTeams
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetProjectTeamsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id}/teams [get]
 func contractGetProjectTeamsEnvelope() {}
 
 // contractBindProjectTeamsEnvelope documents PUT /api/v1/projects/{id}/teams.
 //
 // @Summary BindProjectTeams replaces the project's bound teams
-// @Description BindProjectTeams replaces the project's bound teams.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectBindRequest。成功返回 BindProjectTeamsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description BindProjectTeams replaces the project's bound teams.。需要权限 manage:project（由 accessRules 强制）。请求体类型 projectBindRequest。成功返回 BindProjectTeamsResponse。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID bindProjectTeams
 // @Security BearerAuth
@@ -11124,25 +12165,31 @@ func contractGetProjectTeamsEnvelope() {}
 // @Param body body projectBindRequest true "请求体（projectBindRequest）"
 // @Success 200 {object} BindProjectTeamsEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id}/teams [put]
 func contractBindProjectTeamsEnvelope() {}
 
 // contractListProjectUsersEnvelope documents GET /api/v1/projects/{id}/users.
 //
 // @Summary ListProjectUsers lists project members
-// @Description ListProjectUsers lists project members.。需要权限 read:project（由 accessRules 强制）。成功返回 []model.User
+// @Description ListProjectUsers lists project members.。需要权限 read:project（由 accessRules 强制）。成功返回 []model.User。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID listProjectUsers
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ListProjectUsersEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id}/users [get]
 func contractListProjectUsersEnvelope() {}
 
 // contractAddProjectUserEnvelope documents POST /api/v1/projects/{id}/users.
 //
 // @Summary AddProjectUser adds a user to a project
-// @Description AddProjectUser adds a user to a project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 AddProjectUserRequest。成功返回 AddProjectUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description AddProjectUser adds a user to a project.。需要权限 manage:project（由 accessRules 强制）。请求体类型 AddProjectUserRequest。成功返回 AddProjectUserResponse。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID addProjectUser
 // @Security BearerAuth
@@ -11151,19 +12198,25 @@ func contractListProjectUsersEnvelope() {}
 // @Param body body AddProjectUserRequest true "请求体（AddProjectUserRequest）"
 // @Success 200 {object} AddProjectUserEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id}/users [post]
 func contractAddProjectUserEnvelope() {}
 
 // contractRemoveProjectUserEnvelope documents DELETE /api/v1/projects/{id}/users/{userId}.
 //
 // @Summary RemoveProjectUser removes a user from a project
-// @Description RemoveProjectUser removes a user from a project.。需要权限 manage:project（由 accessRules 强制）。成功返回 RemoveProjectUserResponse
+// @Description RemoveProjectUser removes a user from a project.。需要权限 manage:project（由 accessRules 强制）。成功返回 RemoveProjectUserResponse。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags project
 // @ID removeProjectUser
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param userId path string true "路径参数 userId"
 // @Success 200 {object} RemoveProjectUserEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/projects/{id}/users/{userId} [delete]
 func contractRemoveProjectUserEnvelope() {}
 
@@ -11185,21 +12238,21 @@ func contractListPromptPoliciesEnvelope() {}
 // contractCreatePromptPolicyEnvelope documents POST /api/v1/prompt-policies.
 //
 // @Summary create Prompt Policy
-// @Description 需要权限 manage:prompt-policy（由 accessRules 强制）。请求体类型 service.PromptPolicyInput。成功返回 *model.PromptPolicyVersion。声明了 1 个业务错误码：40065(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:prompt-policy（由 accessRules 强制）。请求体类型 service.PromptPolicyInput。成功返回 *model.PromptPolicyVersion。声明了 3 个业务错误码：40050(400)、40051(400)、40065(400)（括号内是 HTTP 状态）
 // @Tags prompt-policy
 // @ID createPromptPolicy
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.PromptPolicyInput true "请求体（service.PromptPolicyInput）"
 // @Success 200 {object} CreatePromptPolicyEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40065"
+// @Failure 400 {object} docs.Envelope "错误码 40050 / 40051 / 40065"
 // @Router /api/v1/prompt-policies [post]
 func contractCreatePromptPolicyEnvelope() {}
 
 // contractDeletePromptPolicyEnvelope documents DELETE /api/v1/prompt-policies/{id}.
 //
 // @Summary delete Prompt Policy
-// @Description 需要权限 manage:prompt-policy（由 accessRules 强制）。成功返回 DeletePromptPolicyResponse。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:prompt-policy（由 accessRules 强制）。成功返回 DeletePromptPolicyResponse
 // @Tags prompt-policy
 // @ID deletePromptPolicy
 // @Security BearerAuth
@@ -11212,7 +12265,7 @@ func contractDeletePromptPolicyEnvelope() {}
 // contractGetPromptPolicyEnvelope documents GET /api/v1/prompt-policies/{id}.
 //
 // @Summary get Prompt Policy
-// @Description 需要权限 read:prompt-policy（由 accessRules 强制）。成功返回 *model.PromptPolicyVersion。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Description 需要权限 read:prompt-policy（由 accessRules 强制）。成功返回 *model.PromptPolicyVersion
 // @Tags prompt-policy
 // @ID getPromptPolicy
 // @Security BearerAuth
@@ -11233,6 +12286,7 @@ func contractGetPromptPolicyEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RollbackPromptPolicyEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/prompt-policies/{id}/rollback [post]
 func contractRollbackPromptPolicyEnvelope() {}
 
@@ -11253,20 +12307,21 @@ func contractListQualityIssuesEnvelope() {}
 // contractCreateQualityIssueEnvelope documents POST /api/v1/quality-issues.
 //
 // @Summary create Quality Issue
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createQualityIssue
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateQualityIssueEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40070"
 // @Router /api/v1/quality-issues [post]
 func contractCreateQualityIssueEnvelope() {}
 
 // contractUpdateQualityIssueEnvelope documents POST /api/v1/quality-issues/{id}/state.
 //
 // @Summary update Quality Issue
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue。声明了 2 个业务错误码：40077(400)、40989(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID updateQualityIssue
 // @Security BearerAuth
@@ -11274,13 +12329,16 @@ func contractCreateQualityIssueEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateQualityIssueEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40077"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40989"
 // @Router /api/v1/quality-issues/{id}/state [post]
 func contractUpdateQualityIssueEnvelope() {}
 
 // contractVerifyQualityIssueEnvelope documents POST /api/v1/quality-issues/{id}/verify.
 //
 // @Summary verify Quality Issue
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityIssue。声明了 2 个业务错误码：40077(400)、40989(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID verifyQualityIssue
 // @Security BearerAuth
@@ -11288,6 +12346,9 @@ func contractUpdateQualityIssueEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} VerifyQualityIssueEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40077"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40989"
 // @Router /api/v1/quality-issues/{id}/verify [post]
 func contractVerifyQualityIssueEnvelope() {}
 
@@ -11309,32 +12370,35 @@ func contractListQualityProfilesEnvelope() {}
 // contractCreateQualityProfileEnvelope documents POST /api/v1/quality-profiles.
 //
 // @Summary create Quality Profile
-// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile
+// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile。声明了 1 个业务错误码：40981(409)（括号内是 HTTP 状态）
 // @Tags quality-profile
 // @ID createQualityProfile
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateQualityProfileEnvelope
+// @Failure 409 {object} docs.Envelope "错误码 40981"
 // @Router /api/v1/quality-profiles [post]
 func contractCreateQualityProfileEnvelope() {}
 
 // contractDeleteQualityProfileEnvelope documents DELETE /api/v1/quality-profiles/{id}.
 //
 // @Summary delete Quality Profile
-// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。成功返回 DeleteQualityProfileResponse
+// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。成功返回 DeleteQualityProfileResponse。声明了 1 个业务错误码：40981(409)（括号内是 HTTP 状态）
 // @Tags quality-profile
 // @ID deleteQualityProfile
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteQualityProfileEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40981"
 // @Router /api/v1/quality-profiles/{id} [delete]
 func contractDeleteQualityProfileEnvelope() {}
 
 // contractGetQualityProfileEnvelope documents GET /api/v1/quality-profiles/{id}.
 //
 // @Summary get Quality Profile
-// @Description 需要权限 read:quality-profile（由 accessRules 强制）。成功返回 *model.QualityProfile。声明了 1 个业务错误码：404(404)（括号内是 HTTP 状态）
+// @Description 需要权限 read:quality-profile（由 accessRules 强制）。成功返回 *model.QualityProfile
 // @Tags quality-profile
 // @ID getQualityProfile
 // @Security BearerAuth
@@ -11347,7 +12411,7 @@ func contractGetQualityProfileEnvelope() {}
 // contractUpdateQualityProfileEnvelope documents PATCH /api/v1/quality-profiles/{id}.
 //
 // @Summary update Quality Profile
-// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile
+// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile。声明了 2 个业务错误码：40082(400)、40981(409)（括号内是 HTTP 状态）
 // @Tags quality-profile
 // @ID updateQualityProfile
 // @Security BearerAuth
@@ -11355,13 +12419,16 @@ func contractGetQualityProfileEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateQualityProfileEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40082"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40981"
 // @Router /api/v1/quality-profiles/{id} [patch]
 func contractUpdateQualityProfileEnvelope() {}
 
 // contractUpdateQualityProfilePutEnvelope documents PUT /api/v1/quality-profiles/{id}.
 //
 // @Summary update Quality Profile
-// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile
+// @Description 需要权限 manage:quality-profile（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QualityProfile。声明了 2 个业务错误码：40082(400)、40981(409)（括号内是 HTTP 状态）
 // @Tags quality-profile
 // @ID updateQualityProfilePut
 // @Security BearerAuth
@@ -11369,6 +12436,9 @@ func contractUpdateQualityProfileEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateQualityProfilePutEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40082"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40981"
 // @Router /api/v1/quality-profiles/{id} [put]
 func contractUpdateQualityProfilePutEnvelope() {}
 
@@ -11391,13 +12461,15 @@ func contractListQueryTemplatesEnvelope() {}
 // contractCreateQueryTemplateEnvelope documents POST /api/v1/query-templates.
 //
 // @Summary create Query Template
-// @Description 需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate
+// @Description 需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate。声明了 4 个业务错误码：40180(400)、40181(400)、40182(400)、40199(409)（括号内是 HTTP 状态）
 // @Tags query-template
 // @ID createQueryTemplate
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateQueryTemplateEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40180 / 40181 / 40182"
+// @Failure 409 {object} docs.Envelope "错误码 40199"
 // @Router /api/v1/query-templates [post]
 func contractCreateQueryTemplateEnvelope() {}
 
@@ -11422,13 +12494,14 @@ func contractDeleteQueryTemplateEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetQueryTemplateEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/query-templates/{id} [get]
 func contractGetQueryTemplateEnvelope() {}
 
 // contractUpdateQueryTemplateEnvelope documents PATCH /api/v1/query-templates/{id}.
 //
 // @Summary update Query Template
-// @Description 需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate
+// @Description 需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate。声明了 4 个业务错误码：40180(400)、40181(400)、40182(400)、40199(409)（括号内是 HTTP 状态）
 // @Tags query-template
 // @ID updateQueryTemplate
 // @Security BearerAuth
@@ -11436,13 +12509,15 @@ func contractGetQueryTemplateEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateQueryTemplateEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40180 / 40181 / 40182"
+// @Failure 409 {object} docs.Envelope "错误码 40199"
 // @Router /api/v1/query-templates/{id} [patch]
 func contractUpdateQueryTemplateEnvelope() {}
 
 // contractUpdateQueryTemplatePutEnvelope documents PUT /api/v1/query-templates/{id}.
 //
 // @Summary update Query Template
-// @Description 需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate
+// @Description 需要权限 manage:query-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.QueryTemplate。声明了 4 个业务错误码：40180(400)、40181(400)、40182(400)、40199(409)（括号内是 HTTP 状态）
 // @Tags query-template
 // @ID updateQueryTemplatePut
 // @Security BearerAuth
@@ -11450,16 +12525,19 @@ func contractUpdateQueryTemplateEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateQueryTemplatePutEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40180 / 40181 / 40182"
+// @Failure 409 {object} docs.Envelope "错误码 40199"
 // @Router /api/v1/query-templates/{id} [put]
 func contractUpdateQueryTemplatePutEnvelope() {}
 
 // contractReadyEnvelope documents GET /api/v1/readyz.
 //
 // @Summary Ready returns 200 when dependencies are healthy, 503 otherwise (K8s readyz)
-// @Description Ready returns 200 when dependencies are healthy, 503 otherwise (K8s readyz).。只要求登录，没有额外的 RBAC 规则。成功返回 ReadyResponse
+// @Description Ready returns 200 when dependencies are healthy, 503 otherwise (K8s readyz).。只要求登录，没有额外的 RBAC 规则。成功返回 ReadyResponse。声明了 1 个业务错误码：50210(502)（括号内是 HTTP 状态）
 // @Tags readyz
 // @ID ready
 // @Success 200 {object} ReadyEnvelope
+// @Failure 502 {object} docs.Envelope "错误码 50210"
 // @Router /api/v1/readyz [get]
 func contractReadyEnvelope() {}
 
@@ -11479,13 +12557,16 @@ func contractListReleaseCandidatesEnvelope() {}
 // contractCreateReleaseCandidateEnvelope documents POST /api/v1/release-candidates.
 //
 // @Summary create Release Candidate
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseCandidate
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseCandidate。声明了 2 个业务错误码：40070(400)、40983(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createReleaseCandidate
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateReleaseCandidateEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40070"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40983"
 // @Router /api/v1/release-candidates [post]
 func contractCreateReleaseCandidateEnvelope() {}
 
@@ -11534,13 +12615,16 @@ func contractEvaluateReleaseGateEnvelope() {}
 // contractGetReleaseGateEvidenceEnvelope documents GET /api/v1/release-gates/evidence.
 //
 // @Summary get Release Gate Evidence
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.ReleaseGateEvidenceReport
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.ReleaseGateEvidenceReport。声明了 2 个业务错误码：40077(400)、50210(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID getReleaseGateEvidence
 // @Security BearerAuth
 // @Param candidate_version query string false "查询参数 candidate_version"
 // @Param candidate_id query string false "查询参数 candidate_id"
 // @Success 200 {object} GetReleaseGateEvidenceEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40077"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50210"
 // @Router /api/v1/release-gates/evidence [get]
 func contractGetReleaseGateEvidenceEnvelope() {}
 
@@ -11561,13 +12645,18 @@ func contractListReleasesEnvelope() {}
 // contractCreateReleaseEnvelope documents POST /api/v1/releases.
 //
 // @Summary create Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release。声明了 3 个业务错误码：40076(400)、40988(409)、50396(503)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createRelease
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateReleaseEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40076"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40988"
+// @Failure 503 {object} docs.Envelope "错误码 50396"
 // @Router /api/v1/releases [post]
 func contractCreateReleaseEnvelope() {}
 
@@ -11588,7 +12677,7 @@ func contractCompleteReleaseEnvelope() {}
 // contractRollbackReleaseEnvelope documents POST /api/v1/releases/{id}/rollback.
 //
 // @Summary rollback Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.Release。声明了 3 个业务错误码：40077(400)、40990(409)、40991(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID rollbackRelease
 // @Security BearerAuth
@@ -11596,18 +12685,22 @@ func contractCompleteReleaseEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RollbackReleaseEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40077"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40990 / 40991"
 // @Router /api/v1/releases/{id}/rollback [post]
 func contractRollbackReleaseEnvelope() {}
 
 // contractGetReportJobEnvelope documents GET /api/v1/report-jobs/{jobId}.
 //
 // @Summary getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the `event_seq` cursor to resume the stream from
-// @Description getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the `event_seq` cursor to resume the stream from. The job is addressed by its own id rather than "the report's latest job" because a client that reconnects is talking about one specific run: inferring it would let a snapshot of run #2 be paired with a cursor from run #1.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportJobSnapshot
+// @Description getReportJob returns the live snapshot of one report job: the truth a client refreshes with, plus the `event_seq` cursor to resume the stream from. The job is addressed by its own id rather than "the report's latest job" because a client that reconnects is talking about one specific run: inferring it would let a snapshot of run #2 be paired with a cursor from run #1.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportJobSnapshot。声明了 1 个业务错误码：44108(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID getReportJob
 // @Security BearerAuth
 // @Param jobId path string true "路径参数 jobId"
 // @Success 200 {object} GetReportJobEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 44108"
 // @Router /api/v1/report-jobs/{jobId} [get]
 func contractGetReportJobEnvelope() {}
 
@@ -11628,7 +12721,7 @@ func contractStreamReportJobEventsEnvelope() {}
 // contractRetryReportSectionEnvelope documents POST /api/v1/report-jobs/{jobId}/sections/{ord}/retry.
 //
 // @Summary retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B)
-// @Description retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B). The job and ord name one failed section of the current published revision; the service mints a `section_retry` job, marks the old row superseded and writes a fresh pending section row. The response body carries both the new job and the new section (with `job_kind`/`rewrite_reason`) so a client can render in-flight state without a follow-up GET.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RetryReportSectionResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description retryReportSection is the single-section repair route (§8.7 / §11.4, P0-B). The job and ord name one failed section of the current published revision; the service mints a `section_retry` job, marks the old row superseded and writes a fresh pending section row. The response body carries both the new job and the new section (with `job_kind`/`rewrite_reason`) so a client can render in-flight state without a follow-up GET.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RetryReportSectionResult。声明了 6 个业务错误码：44104(409)、44105(400)、44107(404)、44108(404)、44109(404)、44110(409)（括号内是 HTTP 状态）
 // @Tags report
 // @ID retryReportSection
 // @Security BearerAuth
@@ -11638,6 +12731,9 @@ func contractStreamReportJobEventsEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RetryReportSectionEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44107 / 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44104 / 44110"
 // @Router /api/v1/report-jobs/{jobId}/sections/{ord}/retry [post]
 func contractRetryReportSectionEnvelope() {}
 
@@ -11665,6 +12761,7 @@ func contractGetReportMetricsTrendEnvelope() {}
 // @ID getReportRetention
 // @Security BearerAuth
 // @Success 200 {object} GetReportRetentionEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 403"
 // @Router /api/v1/report-retention [get]
 func contractGetReportRetentionEnvelope() {}
 
@@ -11679,6 +12776,7 @@ func contractGetReportRetentionEnvelope() {}
 // @Param body body service.TenantReportPolicyRequest true "请求体（service.TenantReportPolicyRequest）"
 // @Success 200 {object} PutReportRetentionEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
 // @Router /api/v1/report-retention [put]
 func contractPutReportRetentionEnvelope() {}
 
@@ -11725,7 +12823,7 @@ func contractUpdateReportTemplateEnvelope() {}
 // contractCapabilityCheckReportTemplateEnvelope documents POST /api/v1/report-templates/{key}/capability-check.
 //
 // @Summary capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract
-// @Description capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract. Read-only, mirroring the scenario-wizard check: it discloses verdicts (satisfied / repairable / probe_limited / blocked) and never repairs anything. Only `blocked` blocks creation — the create-time recheck re-runs the same evaluation server-side and answers 44102 then.。需要权限 read:report-template（由 accessRules 强制）。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description capabilityCheckReportTemplate probes the supplied datasets against the report template's knowledge contract. Read-only, mirroring the scenario-wizard check: it discloses verdicts (satisfied / repairable / probe_limited / blocked) and never repairs anything. Only `blocked` blocks creation — the create-time recheck re-runs the same evaluation server-side and answers 44102 then.。需要权限 read:report-template（由 accessRules 强制）。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 2 个业务错误码：40000(400)、40105(400)（括号内是 HTTP 状态）
 // @Tags report-template
 // @ID capabilityCheckReportTemplate
 // @Security BearerAuth
@@ -11733,14 +12831,15 @@ func contractUpdateReportTemplateEnvelope() {}
 // @Accept json
 // @Param body body service.CapabilityCheckInput true "请求体（service.CapabilityCheckInput）"
 // @Success 200 {object} CapabilityCheckReportTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40105"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/report-templates/{key}/capability-check [post]
 func contractCapabilityCheckReportTemplateEnvelope() {}
 
 // contractCloneReportTemplateEnvelope documents POST /api/v1/report-templates/{key}/clone.
 //
 // @Summary clone Report Template
-// @Description 需要权限 manage:report-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CloneReportTemplateResult
+// @Description 需要权限 manage:report-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CloneReportTemplateResult。声明了 1 个业务错误码：44101(404)（括号内是 HTTP 状态）
 // @Tags report-template
 // @ID cloneReportTemplate
 // @Security BearerAuth
@@ -11748,13 +12847,14 @@ func contractCapabilityCheckReportTemplateEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CloneReportTemplateEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 44101"
 // @Router /api/v1/report-templates/{key}/clone [post]
 func contractCloneReportTemplateEnvelope() {}
 
 // contractRetireReportTemplateEnvelope documents POST /api/v1/report-templates/{key}/retire.
 //
 // @Summary retireReportTemplate takes the newest workspace version out of service
-// @Description retireReportTemplate takes the newest workspace version out of service. It is not a delete: the row stays so historical reports keep their provenance.。需要权限 manage:report-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportTemplateMutationResult
+// @Description retireReportTemplate takes the newest workspace version out of service. It is not a delete: the row stays so historical reports keep their provenance.。需要权限 manage:report-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportTemplateMutationResult。声明了 1 个业务错误码：44101(404)（括号内是 HTTP 状态）
 // @Tags report-template
 // @ID retireReportTemplate
 // @Security BearerAuth
@@ -11762,6 +12862,7 @@ func contractCloneReportTemplateEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RetireReportTemplateEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 44101"
 // @Router /api/v1/report-templates/{key}/retire [post]
 func contractRetireReportTemplateEnvelope() {}
 
@@ -11782,20 +12883,25 @@ func contractListReportsEnvelope() {}
 // contractCreateReportEnvelope documents POST /api/v1/reports.
 //
 // @Summary createReport starts one report run
-// @Description createReport starts one report run. The `Idempotency-Key` header is request identity, not a content fingerprint (doc/288 §7.7): the same key must return the same report and job, a different key must be allowed to ask the same question again. The service owns the validation (44114 for missing/malformed) and the replay, so the handler passes the raw header through and reports whatever the service decided — including `created=false` on a replay, which the UI needs to distinguish from a fresh run. 202, not 200: the aggregate exists but the content does not. Answering 200 would claim a finished report and make the first `GET /reports/:id` look like a regression.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CreateReportResult
+// @Description createReport starts one report run. The `Idempotency-Key` header is request identity, not a content fingerprint (doc/288 §7.7): the same key must return the same report and job, a different key must be allowed to ask the same question again. The service owns the validation (44114 for missing/malformed) and the replay, so the handler passes the raw header through and reports whatever the service decided — including `created=false` on a replay, which the UI needs to distinguish from a fresh run. 202, not 200: the aggregate exists but the content does not. Answering 200 would claim a finished report and make the first `GET /reports/:id` look like a regression.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.CreateReportResult。声明了 6 个业务错误码：40105(400)、44104(409)、44105(400)、44108(404)、44109(404)、50000(500)（括号内是 HTTP 状态）
 // @Tags report
 // @ID createReport
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 202 {object} CreateReportEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40105 / 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404 / 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/reports [post]
 func contractCreateReportEnvelope() {}
 
 // contractDeleteReportEnvelope documents DELETE /api/v1/reports/{id}.
 //
 // @Summary deleteReport closes a report and opens its 7-day recovery window
-// @Description deleteReport closes a report and opens its 7-day recovery window.。需要权限 delete:own:report（由 accessRules 强制）。请求体类型 deleteReportRequest。成功返回 DeleteReportResponse。声明了 2 个业务错误码：40070(400)、44105(400)（括号内是 HTTP 状态）
+// @Description deleteReport closes a report and opens its 7-day recovery window.。需要权限 delete:own:report（由 accessRules 强制）。请求体类型 deleteReportRequest。成功返回 DeleteReportResponse。声明了 5 个业务错误码：40070(400)、40305(403)、44105(400)、44108(404)、44109(404)（括号内是 HTTP 状态）
 // @Tags own:report
 // @ID deleteReport
 // @Security BearerAuth
@@ -11805,25 +12911,29 @@ func contractCreateReportEnvelope() {}
 // @Param body body deleteReportRequest true "请求体（deleteReportRequest）"
 // @Success 200 {object} DeleteReportEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40070 / 44105"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
 // @Router /api/v1/reports/{id} [delete]
 func contractDeleteReportEnvelope() {}
 
 // contractGetReportEnvelope documents GET /api/v1/reports/{id}.
 //
 // @Summary get Report
-// @Description 需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportDetail
+// @Description 需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportDetail。声明了 1 个业务错误码：44108(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID getReport
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetReportEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 44108"
 // @Router /api/v1/reports/{id} [get]
 func contractGetReportEnvelope() {}
 
 // contractPutReportAccessEnvelope documents PUT /api/v1/reports/{id}/access.
 //
 // @Summary putReportAccess replaces one report's sharing policy (doc/296 §2.1)
-// @Description putReportAccess replaces one report's sharing policy (doc/296 §2.1). `execute:report` is the route's RBAC gate — sharing is an action on a report you own, not a governance decision — and the row-level rule (owner, or platform `manage`) lives in the service, so a colleague's report answers 44109 rather than an existence oracle. The response is the new sharing view, not 204: the panel must show what the server actually stored (a grantee the server skipped, a policy it normalised) instead of echoing what the client sent.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.SetReportAccessRequest。成功返回 *service.ReportAccessView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description putReportAccess replaces one report's sharing policy (doc/296 §2.1). `execute:report` is the route's RBAC gate — sharing is an action on a report you own, not a governance decision — and the row-level rule (owner, or platform `manage`) lives in the service, so a colleague's report answers 44109 rather than an existence oracle. The response is the new sharing view, not 204: the panel must show what the server actually stored (a grantee the server skipped, a policy it normalised) instead of echoing what the client sent.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.SetReportAccessRequest。成功返回 *service.ReportAccessView。声明了 4 个业务错误码：44105(400)、44108(404)、44109(404)、50000(500)（括号内是 HTTP 状态）
 // @Tags report
 // @ID putReportAccess
 // @Security BearerAuth
@@ -11832,13 +12942,16 @@ func contractGetReportEnvelope() {}
 // @Param body body service.SetReportAccessRequest true "请求体（service.SetReportAccessRequest）"
 // @Success 200 {object} PutReportAccessEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/reports/{id}/access [put]
 func contractPutReportAccessEnvelope() {}
 
 // contractArchiveReportEnvelope documents POST /api/v1/reports/{id}/archive.
 //
 // @Summary archiveReport puts a finished report away (doc/297 §2)
-// @Description archiveReport puts a finished report away (doc/297 §2). 200 with the detail view: the state changed on a resource that already existed, and the client's next action is to render it — the same answer `restore` gives.。需要权限 delete:own:report（由 accessRules 强制）。请求体类型 archiveReportRequest。成功返回 *service.ReportDetail。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）
+// @Description archiveReport puts a finished report away (doc/297 §2). 200 with the detail view: the state changed on a resource that already existed, and the client's next action is to render it — the same answer `restore` gives.。需要权限 delete:own:report（由 accessRules 强制）。请求体类型 archiveReportRequest。成功返回 *service.ReportDetail。声明了 3 个业务错误码：40070(400)、44104(409)、44108(404)（括号内是 HTTP 状态）
 // @Tags own:report
 // @ID archiveReport
 // @Security BearerAuth
@@ -11847,13 +12960,16 @@ func contractPutReportAccessEnvelope() {}
 // @Param body body archiveReportRequest true "请求体（archiveReportRequest）"
 // @Success 200 {object} ArchiveReportEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40070"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44108"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
 // @Router /api/v1/reports/{id}/archive [post]
 func contractArchiveReportEnvelope() {}
 
 // contractPostReportBudgetExtensionEnvelope documents POST /api/v1/reports/{id}/budget-extension.
 //
 // @Summary postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2)
-// @Description postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2). `execute:report` is the gate and ownership is the row-level rule, the same union the rest of the surface uses: raising a limit is an action on your own run, not a governance decision. When the workspace has an approval policy the answer is 200 with `status=pending_approval` — the request was accepted and nothing has changed yet, which is a different thing from a failure and must not be reported as one.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.ReportBudgetExtensionRequest。成功返回 *service.ReportBudgetExtensionView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description postReportBudgetExtension asks for more budget on a running report (doc/296 §2.2). `execute:report` is the gate and ownership is the row-level rule, the same union the rest of the surface uses: raising a limit is an action on your own run, not a governance decision. When the workspace has an approval policy the answer is 200 with `status=pending_approval` — the request was accepted and nothing has changed yet, which is a different thing from a failure and must not be reported as one.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.ReportBudgetExtensionRequest。成功返回 *service.ReportBudgetExtensionView。声明了 10 个业务错误码：40087(400)、40088(400)、41167(400)、42940(429)、44104(409)、44105(400)、44108(404)、44109(404)、44112(500)、50000(500)（括号内是 HTTP 状态）
 // @Tags report
 // @ID postReportBudgetExtension
 // @Security BearerAuth
@@ -11861,14 +12977,19 @@ func contractArchiveReportEnvelope() {}
 // @Accept json
 // @Param body body service.ReportBudgetExtensionRequest true "请求体（service.ReportBudgetExtensionRequest）"
 // @Success 200 {object} PostReportBudgetExtensionEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 400 {object} docs.Envelope "错误码 40087 / 40088 / 41167 / 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
+// @Failure 429 {object} docs.Envelope "错误码 42940"
+// @Failure 500 {object} docs.Envelope "错误码 44112 / 50000"
 // @Router /api/v1/reports/{id}/budget-extension [post]
 func contractPostReportBudgetExtensionEnvelope() {}
 
 // contractCancelReportEnvelope documents POST /api/v1/reports/{id}/cancel.
 //
 // @Summary cancelReport records the user's cancel intent for the report's current job
-// @Description cancelReport records the user's cancel intent for the report's current job. 202 rather than 200: the answer is "your intent is recorded", not "the report is cancelled". The terminal state is derived by finalize (§8.4), so a 200 here would be a promise the server cannot keep yet.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportCancelResult
+// @Description cancelReport records the user's cancel intent for the report's current job. 202 rather than 200: the answer is "your intent is recorded", not "the report is cancelled". The terminal state is derived by finalize (§8.4), so a 200 here would be a promise the server cannot keep yet.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportCancelResult。声明了 3 个业务错误码：44104(409)、44108(404)、44109(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID cancelReport
 // @Security BearerAuth
@@ -11876,13 +12997,15 @@ func contractPostReportBudgetExtensionEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 202 {object} CancelReportEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
 // @Router /api/v1/reports/{id}/cancel [post]
 func contractCancelReportEnvelope() {}
 
 // contractGetReportFollowUpsEnvelope documents GET /api/v1/reports/{id}/follow-ups.
 //
 // @Summary getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn
-// @Description getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn. `revision` absent/0 means "whatever this report currently shows", resolved from `current_revision_id` by the service — never "the highest number". A present but non-positive revision is refused with 44105 instead of being read as "current": a client that asked for `revision=0` after a regenerate would silently get the published base (or the running draft) and never learn it asked for nothing.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportFollowUpView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description getReportFollowUps answers A14's read half: the chips a reader may click to start the next turn. `revision` absent/0 means "whatever this report currently shows", resolved from `current_revision_id` by the service — never "the highest number". A present but non-positive revision is refused with 44105 instead of being read as "current": a client that asked for `revision=0` after a regenerate would silently get the published base (or the running draft) and never learn it asked for nothing.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportFollowUpView。声明了 4 个业务错误码：44105(400)、44107(404)、44108(404)、44109(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID getReportFollowUps
 // @Security BearerAuth
@@ -11891,13 +13014,14 @@ func contractCancelReportEnvelope() {}
 // @Param section_key query string false "查询参数 section_key"
 // @Success 200 {object} GetReportFollowUpsEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 404 {object} docs.Envelope "错误码 44107 / 44108 / 44109"
 // @Router /api/v1/reports/{id}/follow-ups [get]
 func contractGetReportFollowUpsEnvelope() {}
 
 // contractRestoreReportEnvelope documents POST /api/v1/reports/{id}/restore.
 //
 // @Summary restoreReport re-opens a soft-deleted report inside its recovery window (A47)
-// @Description restoreReport re-opens a soft-deleted report inside its recovery window (A47). 200 with the report detail: the restore has already happened by the time this answers, so there is nothing asynchronous to acknowledge. 409/44104 means the window closed (or the row is not deleted), which is a state answer, not a missing route — that is why it is not a 404.。需要权限 delete:own:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail
+// @Description restoreReport re-opens a soft-deleted report inside its recovery window (A47). 200 with the report detail: the restore has already happened by the time this answers, so there is nothing asynchronous to acknowledge. 409/44104 means the window closed (or the row is not deleted), which is a state answer, not a missing route — that is why it is not a 404.。需要权限 delete:own:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail。声明了 4 个业务错误码：40305(403)、44104(409)、44108(404)、44109(404)（括号内是 HTTP 状态）
 // @Tags own:report
 // @ID restoreReport
 // @Security BearerAuth
@@ -11905,25 +13029,30 @@ func contractGetReportFollowUpsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RestoreReportEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
 // @Router /api/v1/reports/{id}/restore [post]
 func contractRestoreReportEnvelope() {}
 
 // contractListReportRevisionsEnvelope documents GET /api/v1/reports/{id}/revisions.
 //
 // @Summary listReportRevisions answers the report's version history (doc/288 §7.10)
-// @Description listReportRevisions answers the report's version history (doc/288 §7.10). A superseded revision is reachable today only by guessing its number: the detail page resolves `current_revision_id`, and nothing told a client which other numbers exist. That made A41's "historical revisions stay readable" true of the API and false of the product.。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportRevisionsResponse
+// @Description listReportRevisions answers the report's version history (doc/288 §7.10). A superseded revision is reachable today only by guessing its number: the detail page resolves `current_revision_id`, and nothing told a client which other numbers exist. That made A41's "historical revisions stay readable" true of the API and false of the product.。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportRevisionsResponse。声明了 1 个业务错误码：44108(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID listReportRevisions
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ListReportRevisionsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 44108"
 // @Router /api/v1/reports/{id}/revisions [get]
 func contractListReportRevisionsEnvelope() {}
 
 // contractCreateReportRevisionEnvelope documents POST /api/v1/reports/{id}/revisions.
 //
 // @Summary createReportRevision starts one new run on an already-published report
-// @Description createReportRevision starts one new run on an already-published report. Same conditions, same report: it mints revision `current+1` from the published base and a fresh `report_generate` job in one transaction (doc/288 §7.10). The `Idempotency-Key` header is required (44114) and lives in its OWN namespace — a creation key can never replay here, and a regeneration key can never collide with the key that minted the report (§7.10 "不受创建幂等键拦截"). There is no body: P0-A's "重新生成（同条件）" has nothing a caller may change.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.RegenerateReportRequest。成功返回 *service.CreateReportResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description createReportRevision starts one new run on an already-published report. Same conditions, same report: it mints revision `current+1` from the published base and a fresh `report_generate` job in one transaction (doc/288 §7.10). The `Idempotency-Key` header is required (44114) and lives in its OWN namespace — a creation key can never replay here, and a regeneration key can never collide with the key that minted the report (§7.10 "不受创建幂等键拦截"). There is no body: P0-A's "重新生成（同条件）" has nothing a caller may change.。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.RegenerateReportRequest。成功返回 *service.CreateReportResult。声明了 5 个业务错误码：44105(400)、44108(404)、44109(404)、44110(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags report
 // @ID createReportRevision
 // @Security BearerAuth
@@ -11932,13 +13061,17 @@ func contractListReportRevisionsEnvelope() {}
 // @Param body body service.RegenerateReportRequest true "请求体（service.RegenerateReportRequest）"
 // @Success 202 {object} CreateReportRevisionEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44110"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/reports/{id}/revisions [post]
 func contractCreateReportRevisionEnvelope() {}
 
 // contractGetReportRevisionEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}.
 //
 // @Summary getReportRevision reads "second revision of report X" by its number, the historical-run view a client refreshes after reconnecting
-// @Description getReportRevision reads "second revision of report X" by its number, the historical-run view a client refreshes after reconnecting. The report row is carried in the answer (same shape as GET /reports/:id) so a caller paging through a report's revisions never has to fetch the report twice.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportDetail。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description getReportRevision reads "second revision of report X" by its number, the historical-run view a client refreshes after reconnecting. The report row is carried in the answer (same shape as GET /reports/:id) so a caller paging through a report's revisions never has to fetch the report twice.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportDetail。声明了 2 个业务错误码：44105(400)、44108(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID getReportRevision
 // @Security BearerAuth
@@ -11946,13 +13079,14 @@ func contractCreateReportRevisionEnvelope() {}
 // @Param revision path string true "路径参数 revision"
 // @Success 200 {object} GetReportRevisionEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 404 {object} docs.Envelope "错误码 44108"
 // @Router /api/v1/reports/{id}/revisions/{revision} [get]
 func contractGetReportRevisionEnvelope() {}
 
 // contractCreateReportExportEnvelope documents POST /api/v1/reports/{id}/revisions/{revision}/artifacts.
 //
 // @Summary createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12)
-// @Description createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12). The format comes from the body; there is deliberately no client-supplied idempotency key here, because the server derives it from the frozen content — the same revision exported twice is the same artifact (§7.7 rule 2), so a duplicate click can never mint two versions.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 CreateReportExportResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description createReportExport freezes one revision into a downloadable artifact (T11, doc/288 §7.7 / §12). The format comes from the body; there is deliberately no client-supplied idempotency key here, because the server derives it from the frozen content — the same revision exported twice is the same artifact (§7.7 rule 2), so a duplicate click can never mint two versions.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 CreateReportExportResponse。声明了 6 个业务错误码：40130(400)、44105(400)、44106(409)、44108(404)、44109(404)、44113(500)（括号内是 HTTP 状态）
 // @Tags report
 // @ID createReportExport
 // @Security BearerAuth
@@ -11961,14 +13095,17 @@ func contractGetReportRevisionEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateReportExportEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 400 {object} docs.Envelope "错误码 40130 / 44105"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44106"
+// @Failure 500 {object} docs.Envelope "错误码 44113"
 // @Router /api/v1/reports/{id}/revisions/{revision}/artifacts [post]
 func contractCreateReportExportEnvelope() {}
 
 // contractDownloadReportExportEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/artifacts/{artifactId}/download.
 //
 // @Summary downloadReportExport streams one frozen artifact
-// @Description downloadReportExport streams one frozen artifact. The route carries report id + revision + artifact id (§11.4): the id alone would leak through the access layer, and addressing the artifact under its revision means a stale URL fails on the revision, not on a guessable artifact id.。需要权限 read:report（由 accessRules 强制）。成功返回原始字节，媒体类型 。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description downloadReportExport streams one frozen artifact. The route carries report id + revision + artifact id (§11.4): the id alone would leak through the access layer, and addressing the artifact under its revision means a stale URL fails on the revision, not on a guessable artifact id.。需要权限 read:report（由 accessRules 强制）。成功返回原始字节，媒体类型 。声明了 4 个业务错误码：44104(409)、44105(400)、44108(404)、44109(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID downloadReportExport
 // @Security BearerAuth
@@ -11978,6 +13115,9 @@ func contractCreateReportExportEnvelope() {}
 // @Produce octet-stream
 // @Success 200 {string} string "原始字节；媒体类型即载荷："
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
 // @Router /api/v1/reports/{id}/revisions/{revision}/artifacts/{artifactId}/download [get]
 func contractDownloadReportExportEnvelope() {}
 
@@ -11999,7 +13139,7 @@ func contractListReportAssuranceRunsEnvelope() {}
 // contractPostReportAssuranceRunEnvelope documents POST /api/v1/reports/{id}/revisions/{revision}/assurance-runs.
 //
 // @Summary postReportAssuranceRun starts one run (T06)
-// @Description postReportAssuranceRun starts one run (T06). The `Idempotency-Key` header is required and its absence is 44114, decided in the service so the same rule covers every caller. 202, not 200: the run exists and has not measured anything yet, and a 200 would invite a client to read `release_eligibility` from a run that cannot have one (it is `pending`).。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description postReportAssuranceRun starts one run (T06). The `Idempotency-Key` header is required and its absence is 44114, decided in the service so the same rule covers every caller. 202, not 200: the run exists and has not measured anything yet, and a 200 would invite a client to read `release_eligibility` from a run that cannot have one (it is `pending`).。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportAssuranceRunView。声明了 9 个业务错误码：44105(400)、44108(404)、44109(404)、44114(400)、44117(400)、44118(409)、44119(409)、44123(429)、50000(500)（括号内是 HTTP 状态）
 // @Tags report
 // @ID postReportAssuranceRun
 // @Security BearerAuth
@@ -12009,14 +13149,18 @@ func contractListReportAssuranceRunsEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} PostReportAssuranceRunEnvelope
 // @Success 202 {object} PostReportAssuranceRunEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 400 {object} docs.Envelope "错误码 44105 / 44114 / 44117"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44118 / 44119"
+// @Failure 429 {object} docs.Envelope "错误码 44123"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/reports/{id}/revisions/{revision}/assurance-runs [post]
 func contractPostReportAssuranceRunEnvelope() {}
 
 // contractGetReportAssuranceRunEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/assurance-runs/{runId}.
 //
 // @Summary getReportAssuranceRun is the single-run read
-// @Description getReportAssuranceRun is the single-run read. It is polled by the workbench while a run is `queued`/`running`, so it returns the counters as they stand: a progress read that answered "not ready" would force the client to invent a poll cadence.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportAssuranceRunView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description getReportAssuranceRun is the single-run read. It is polled by the workbench while a run is `queued`/`running`, so it returns the counters as they stand: a progress read that answered "not ready" would force the client to invent a poll cadence.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportAssuranceRunView。声明了 2 个业务错误码：44105(400)、44109(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID getReportAssuranceRun
 // @Security BearerAuth
@@ -12025,13 +13169,14 @@ func contractPostReportAssuranceRunEnvelope() {}
 // @Param runId path string true "路径参数 runId"
 // @Success 200 {object} GetReportAssuranceRunEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 404 {object} docs.Envelope "错误码 44109"
 // @Router /api/v1/reports/{id}/revisions/{revision}/assurance-runs/{runId} [get]
 func contractGetReportAssuranceRunEnvelope() {}
 
 // contractPatchReportReviewFindingEnvelope documents PATCH /api/v1/reports/{id}/revisions/{revision}/findings/{findingId}.
 //
 // @Summary patchReportReviewFinding adjudicates one finding (T09)
-// @Description patchReportReviewFinding adjudicates one finding (T09). Owner-only, decided in the service; the handler's job is only to pass the three body fields through.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportReviewFindingView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description patchReportReviewFinding adjudicates one finding (T09). Owner-only, decided in the service; the handler's job is only to pass the three body fields through.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportReviewFindingView。声明了 5 个业务错误码：44104(409)、44105(400)、44108(404)、44109(404)、44120(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID patchReportReviewFinding
 // @Security BearerAuth
@@ -12042,13 +13187,15 @@ func contractGetReportAssuranceRunEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} PatchReportReviewFindingEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109 / 44120"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
 // @Router /api/v1/reports/{id}/revisions/{revision}/findings/{findingId} [patch]
 func contractPatchReportReviewFindingEnvelope() {}
 
 // contractConfirmReportOutlineEnvelope documents POST /api/v1/reports/{id}/revisions/{revision}/outline/confirm.
 //
 // @Summary confirmReportOutline records the reviewer's outline and arms the writing attempt
-// @Description confirmReportOutline records the reviewer's outline and arms the writing attempt. The revision is in the path rather than inferred from "the latest revision": a confirmation is addressed to one specific structure, and inferring it would let a client that lagged behind a regeneration approve the wrong outline. 202, not 200: sections exist but no content does. The same reasoning as `createReport` — 200 would claim a written report.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConfirmReportOutlineResult。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description confirmReportOutline records the reviewer's outline and arms the writing attempt. The revision is in the path rather than inferred from "the latest revision": a confirmation is addressed to one specific structure, and inferring it would let a client that lagged behind a regeneration approve the wrong outline. 202, not 200: sections exist but no content does. The same reasoning as `createReport` — 200 would claim a written report.。需要权限 execute:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ConfirmReportOutlineResult。声明了 4 个业务错误码：44104(409)、44105(400)、44108(404)、44109(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID confirmReportOutline
 // @Security BearerAuth
@@ -12058,13 +13205,16 @@ func contractPatchReportReviewFindingEnvelope() {}
 // @Param body body object false "本接口不接受请求体"
 // @Success 202 {object} ConfirmReportOutlineEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44108 / 44109"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
 // @Router /api/v1/reports/{id}/revisions/{revision}/outline/confirm [post]
 func contractConfirmReportOutlineEnvelope() {}
 
 // contractGetReportReviewEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/review.
 //
 // @Summary getReportReview is the workbench projection (T08/T09)
-// @Description getReportReview is the workbench projection (T08/T09). Pagination is by cursor (`section_cursor`, `finding_cursor`), never by offset: an offset shifts when a partial retry rewrites a section, and the reviewer would silently scroll past claims.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportReviewView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description getReportReview is the workbench projection (T08/T09). Pagination is by cursor (`section_cursor`, `finding_cursor`), never by offset: an offset shifts when a partial retry rewrites a section, and the reviewer would silently scroll past claims.。需要权限 read:report（由 accessRules 强制）。成功返回 *service.ReportReviewView。声明了 2 个业务错误码：44105(400)、44108(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID getReportReview
 // @Security BearerAuth
@@ -12075,13 +13225,14 @@ func contractConfirmReportOutlineEnvelope() {}
 // @Param finding_cursor query string false "查询参数 finding_cursor"
 // @Success 200 {object} GetReportReviewEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 404 {object} docs.Envelope "错误码 44108"
 // @Router /api/v1/reports/{id}/revisions/{revision}/review [get]
 func contractGetReportReviewEnvelope() {}
 
 // contractListReportSectionsEnvelope documents GET /api/v1/reports/{id}/revisions/{revision}/sections.
 //
 // @Summary listReportSections is the reading surface: one revision's sections with bodies
-// @Description listReportSections is the reading surface: one revision's sections with bodies. Without it a report could only be read as an exported file, which is why the centre had a drawer with statuses and no text (doc/44 「好用」 gap #4).。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportSectionsResponse。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description listReportSections is the reading surface: one revision's sections with bodies. Without it a report could only be read as an exported file, which is why the centre had a drawer with statuses and no text (doc/44 「好用」 gap #4).。需要权限 read:report（由 accessRules 强制）。成功返回 ListReportSectionsResponse。声明了 2 个业务错误码：44105(400)、44108(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID listReportSections
 // @Security BearerAuth
@@ -12089,18 +13240,21 @@ func contractGetReportReviewEnvelope() {}
 // @Param revision path string true "路径参数 revision"
 // @Success 200 {object} ListReportSectionsEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 404 {object} docs.Envelope "错误码 44108"
 // @Router /api/v1/reports/{id}/revisions/{revision}/sections [get]
 func contractListReportSectionsEnvelope() {}
 
 // contractDeleteReportScheduleEnvelope documents DELETE /api/v1/reports/{id}/schedule.
 //
 // @Summary deleteReportSchedule removes the plan
-// @Description deleteReportSchedule removes the plan. 204 either way: the caller's intent was "this report does not run on a timer", and after the call it does not. Deleting twice is therefore not an error, which keeps a retried request harmless.。需要权限 execute:report（由 accessRules 强制）
+// @Description deleteReportSchedule removes the plan. 204 either way: the caller's intent was "this report does not run on a timer", and after the call it does not. Deleting twice is therefore not an error, which keeps a retried request harmless.。需要权限 execute:report（由 accessRules 强制）。声明了 1 个业务错误码：44109(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID deleteReportSchedule
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 204 "无响应体"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44109"
 // @Router /api/v1/reports/{id}/schedule [delete]
 func contractDeleteReportScheduleEnvelope() {}
 
@@ -12113,13 +13267,14 @@ func contractDeleteReportScheduleEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetReportScheduleEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 403"
 // @Router /api/v1/reports/{id}/schedule [get]
 func contractGetReportScheduleEnvelope() {}
 
 // contractPutReportScheduleEnvelope documents PUT /api/v1/reports/{id}/schedule.
 //
 // @Summary putReportSchedule creates or replaces the plan (idempotent on the report)
-// @Description putReportSchedule creates or replaces the plan (idempotent on the report). 201 on the first arming, 200 afterwards, so a client can tell "armed" from "changed".。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.ReportScheduleRequest。成功返回 *service.ReportScheduleView。声明了 1 个业务错误码：44105(400)（括号内是 HTTP 状态）
+// @Description putReportSchedule creates or replaces the plan (idempotent on the report). 201 on the first arming, 200 afterwards, so a client can tell "armed" from "changed".。需要权限 execute:report（由 accessRules 强制）。请求体类型 service.ReportScheduleRequest。成功返回 *service.ReportScheduleView。声明了 2 个业务错误码：44105(400)、44109(404)（括号内是 HTTP 状态）
 // @Tags report
 // @ID putReportSchedule
 // @Security BearerAuth
@@ -12129,13 +13284,15 @@ func contractGetReportScheduleEnvelope() {}
 // @Success 200 {object} PutReportScheduleEnvelope
 // @Success 201 {object} PutReportScheduleEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 44105"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44109"
 // @Router /api/v1/reports/{id}/schedule [put]
 func contractPutReportScheduleEnvelope() {}
 
 // contractUnarchiveReportEnvelope documents POST /api/v1/reports/{id}/unarchive.
 //
 // @Summary unarchiveReport returns a report to the daily list
-// @Description unarchiveReport returns a report to the daily list. No body: the only thing to say is "not archived any more".。需要权限 delete:own:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail
+// @Description unarchiveReport returns a report to the daily list. No body: the only thing to say is "not archived any more".。需要权限 delete:own:report（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ReportDetail。声明了 2 个业务错误码：44104(409)、44108(404)（括号内是 HTTP 状态）
 // @Tags own:report
 // @ID unarchiveReport
 // @Security BearerAuth
@@ -12143,6 +13300,9 @@ func contractPutReportScheduleEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UnarchiveReportEnvelope
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 44108"
+// @Failure 409 {object} docs.Envelope "错误码 44104"
 // @Router /api/v1/reports/{id}/unarchive [post]
 func contractUnarchiveReportEnvelope() {}
 
@@ -12165,28 +13325,30 @@ func contractListScenarioTemplatesEnvelope() {}
 // contractCreateScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets.
 //
 // @Summary create Scenario Template
-// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 7 个业务错误码：40041(400)、40042(400)、40043(400)、40045(400)、40046(400)、40060(400)、40901(409)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID createScenarioTemplate
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.ScenarioTemplateInput true "请求体（service.ScenarioTemplateInput）"
 // @Success 200 {object} CreateScenarioTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40060"
+// @Failure 400 {object} docs.Envelope "错误码 40041 / 40042 / 40043 / 40045 / 40046 / 40060"
+// @Failure 409 {object} docs.Envelope "错误码 40901"
 // @Router /api/v1/scenario-template-assets [post]
 func contractCreateScenarioTemplateEnvelope() {}
 
 // contractImportScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/import.
 //
 // @Summary import Scenario Template
-// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40062(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset。声明了 7 个业务错误码：40045(400)、40046(400)、40047(400)、40062(400)、40116(400)、40901(409)、40914(409)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID importScenarioTemplate
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ImportScenarioTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40062"
+// @Failure 400 {object} docs.Envelope "错误码 40045 / 40046 / 40047 / 40062 / 40116"
+// @Failure 409 {object} docs.Envelope "错误码 40901 / 40914"
 // @Router /api/v1/scenario-template-assets/import [post]
 func contractImportScenarioTemplateEnvelope() {}
 
@@ -12199,6 +13361,7 @@ func contractImportScenarioTemplateEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ArchiveScenarioTemplateEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/scenario-template-assets/{id} [delete]
 func contractArchiveScenarioTemplateEnvelope() {}
 
@@ -12213,13 +13376,14 @@ func contractArchiveScenarioTemplateEnvelope() {}
 // @Param version query string false "查询参数 version"
 // @Success 200 {object} GetScenarioTemplateEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40061"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/scenario-template-assets/{id} [get]
 func contractGetScenarioTemplateEnvelope() {}
 
 // contractUpdateScenarioTemplateEnvelope documents PUT /api/v1/scenario-template-assets/{id}.
 //
 // @Summary update Scenario Template
-// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40060(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInput。成功返回 *model.ScenarioTemplateAsset。声明了 6 个业务错误码：40041(400)、40042(400)、40043(400)、40060(400)、40918(409)、41110(400)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID updateScenarioTemplate
 // @Security BearerAuth
@@ -12227,14 +13391,16 @@ func contractGetScenarioTemplateEnvelope() {}
 // @Accept json
 // @Param body body service.ScenarioTemplateInput true "请求体（service.ScenarioTemplateInput）"
 // @Success 200 {object} UpdateScenarioTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40060"
+// @Failure 400 {object} docs.Envelope "错误码 40041 / 40042 / 40043 / 40060 / 41110"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40918"
 // @Router /api/v1/scenario-template-assets/{id} [put]
 func contractUpdateScenarioTemplateEnvelope() {}
 
 // contractCapabilityCheckScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/capability-check.
 //
 // @Summary capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract
-// @Description capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract. Read-only: it never repairs anything.。需要权限 read:scenario-template（由 accessRules 强制）。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description capabilityCheckScenarioTemplate probes the supplied datasets against the template's knowledge contract. Read-only: it never repairs anything.。需要权限 read:scenario-template（由 accessRules 强制）。请求体类型 service.CapabilityCheckInput。成功返回 *service.CapabilityCheckView。声明了 3 个业务错误码：40000(400)、40044(400)、40105(400)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID capabilityCheckScenarioTemplate
 // @Security BearerAuth
@@ -12242,14 +13408,15 @@ func contractUpdateScenarioTemplateEnvelope() {}
 // @Accept json
 // @Param body body service.CapabilityCheckInput true "请求体（service.CapabilityCheckInput）"
 // @Success 200 {object} CapabilityCheckScenarioTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40044 / 40105"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/scenario-template-assets/{id}/capability-check [post]
 func contractCapabilityCheckScenarioTemplateEnvelope() {}
 
 // contractCopyScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/copy.
 //
 // @Summary copy Scenario Template
-// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 CopyScenarioTemplateRequest。成功返回 *model.ScenarioTemplateAsset。声明了 1 个业务错误码：40063(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 CopyScenarioTemplateRequest。成功返回 *model.ScenarioTemplateAsset。声明了 5 个业务错误码：40045(400)、40046(400)、40048(400)、40063(400)、40901(409)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID copyScenarioTemplate
 // @Security BearerAuth
@@ -12257,14 +13424,17 @@ func contractCapabilityCheckScenarioTemplateEnvelope() {}
 // @Accept json
 // @Param body body CopyScenarioTemplateRequest true "请求体（CopyScenarioTemplateRequest）"
 // @Success 200 {object} CopyScenarioTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40063"
+// @Failure 400 {object} docs.Envelope "错误码 40045 / 40046 / 40048 / 40063"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40901"
 // @Router /api/v1/scenario-template-assets/{id}/copy [post]
 func contractCopyScenarioTemplateEnvelope() {}
 
 // contractCreateEvalSetFromTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/eval-set.
 //
 // @Summary create Eval Set From Template
-// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 CreateEvalSetFromTemplateRequest。成功返回 *model.EvalSet。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:eval-set（由 accessRules 强制）。请求体类型 CreateEvalSetFromTemplateRequest。成功返回 *model.EvalSet。声明了 5 个业务错误码：40044(400)、40049(400)、40057(400)、40058(400)、40064(400)（括号内是 HTTP 状态）
 // @Tags eval-set
 // @ID createEvalSetFromTemplate
 // @Security BearerAuth
@@ -12272,28 +13442,30 @@ func contractCopyScenarioTemplateEnvelope() {}
 // @Accept json
 // @Param body body CreateEvalSetFromTemplateRequest true "请求体（CreateEvalSetFromTemplateRequest）"
 // @Success 200 {object} CreateEvalSetFromTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40064"
+// @Failure 400 {object} docs.Envelope "错误码 40044 / 40049 / 40057 / 40058 / 40064"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/scenario-template-assets/{id}/eval-set [post]
 func contractCreateEvalSetFromTemplateEnvelope() {}
 
 // contractExportScenarioTemplateEnvelope documents GET /api/v1/scenario-template-assets/{id}/export.
 //
 // @Summary export Scenario Template
-// @Description 需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioTemplateExport。声明了 1 个业务错误码：40061(400)（括号内是 HTTP 状态）
+// @Description 需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioTemplateExport。声明了 3 个业务错误码：40043(400)、40044(400)、40061(400)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID exportScenarioTemplate
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param version query string false "查询参数 version"
 // @Success 200 {object} ExportScenarioTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40061"
+// @Failure 400 {object} docs.Envelope "错误码 40043 / 40044 / 40061"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/scenario-template-assets/{id}/export [get]
 func contractExportScenarioTemplateEnvelope() {}
 
 // contractForkScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/fork.
 //
 // @Summary forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1)
-// @Description forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1). Forking is explicit: instantiation never forks implicitly.。需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset
+// @Description forkScenarioTemplate copies a platform baseline into the caller's workspace (doc/276 §7.1). Forking is explicit: instantiation never forks implicitly.。需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset。声明了 6 个业务错误码：40044(400)、40045(400)、40046(400)、40107(400)、40108(400)、40901(409)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID forkScenarioTemplate
 // @Security BearerAuth
@@ -12301,6 +13473,9 @@ func contractExportScenarioTemplateEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ForkScenarioTemplateEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40044 / 40045 / 40046 / 40107 / 40108"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40901"
 // @Router /api/v1/scenario-template-assets/{id}/fork [post]
 func contractForkScenarioTemplateEnvelope() {}
 
@@ -12313,13 +13488,14 @@ func contractForkScenarioTemplateEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ScenarioTemplateHealthEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/scenario-template-assets/{id}/health [get]
 func contractScenarioTemplateHealthEnvelope() {}
 
 // contractInstantiateScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/instantiate.
 //
 // @Summary instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3)
-// @Description instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3). The idempotency key comes from the header only — never from the body.。需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.UnifiedInstantiateInput。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description instantiateScenarioTemplate is the single orchestration entry point for all three forms (doc/276 §7.5 / C3). The idempotency key comes from the header only — never from the body.。需要权限 manage:scenario-template（由 accessRules 强制）。请求体类型 service.UnifiedInstantiateInput。成功返回 *service.UnifiedInstantiateResult。声明了 17 个业务错误码：40000(400)、40088(400)、40093(400)、40400(404)、40916(409)、41101(400)、41102(400)、41103(400)、41104(400)、41105(400)、41106(400)、41111(400)、41120(400)、42200(422)、42231(422)、50200(502)、50281(502)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID instantiateScenarioTemplate
 // @Security BearerAuth
@@ -12327,14 +13503,19 @@ func contractScenarioTemplateHealthEnvelope() {}
 // @Accept json
 // @Param body body service.UnifiedInstantiateInput true "请求体（service.UnifiedInstantiateInput）"
 // @Success 200 {object} InstantiateScenarioTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40088 / 40093 / 41101 / 41102 / 41103 / 41104 / 41105 / 41106 / 41111 / 41120"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404 / 40400"
+// @Failure 409 {object} docs.Envelope "错误码 40916"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50281"
 // @Router /api/v1/scenario-template-assets/{id}/instantiate [post]
 func contractInstantiateScenarioTemplateEnvelope() {}
 
 // contractInstantiateChatFromScenarioTemplateEnvelope documents POST /api/v1/scenario-template-assets/{id}/instantiate-chat.
 //
 // @Summary instantiate Chat From Scenario Template
-// @Description 需要权限 manage:chat（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInstantiationInput。成功返回 *service.DatasetSummary。声明了 2 个业务错误码：40000(400)、40065(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:chat（由 accessRules 强制）。请求体类型 service.ScenarioTemplateInstantiationInput。成功返回 *service.ScenarioTemplateInstantiationResult。声明了 7 个业务错误码：40011(400)、40065(400)、41103(400)、41104(400)、41111(400)、41120(400)、41121(400)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID instantiateChatFromScenarioTemplate
 // @Security BearerAuth
@@ -12342,14 +13523,16 @@ func contractInstantiateScenarioTemplateEnvelope() {}
 // @Accept json
 // @Param body body service.ScenarioTemplateInstantiationInput true "请求体（service.ScenarioTemplateInstantiationInput）"
 // @Success 200 {object} InstantiateChatFromScenarioTemplateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000 / 40065"
+// @Failure 400 {object} docs.Envelope "错误码 40011 / 40065 / 41103 / 41104 / 41111 / 41120 / 41121"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/scenario-template-assets/{id}/instantiate-chat [post]
 func contractInstantiateChatFromScenarioTemplateEnvelope() {}
 
 // contractCreateTemplateReleaseCandidateEnvelope documents POST /api/v1/scenario-template-assets/{id}/release-candidate.
 //
 // @Summary create Template Release Candidate
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。请求体类型 service.ScenarioTemplateReleaseCandidateInput。成功返回 *service.ScenarioTemplateReleaseCandidateResult。声明了 1 个业务错误码：40070(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。请求体类型 service.ScenarioTemplateReleaseCandidateInput。成功返回 *service.ScenarioTemplateReleaseCandidateResult。声明了 7 个业务错误码：40044(400)、40058(400)、40070(400)、40071(400)、40072(400)、40983(409)、40984(409)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID createTemplateReleaseCandidate
 // @Security BearerAuth
@@ -12357,7 +13540,9 @@ func contractInstantiateChatFromScenarioTemplateEnvelope() {}
 // @Accept json
 // @Param body body service.ScenarioTemplateReleaseCandidateInput true "请求体（service.ScenarioTemplateReleaseCandidateInput）"
 // @Success 200 {object} CreateTemplateReleaseCandidateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40070"
+// @Failure 400 {object} docs.Envelope "错误码 40044 / 40058 / 40070 / 40071 / 40072"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40983 / 40984"
 // @Router /api/v1/scenario-template-assets/{id}/release-candidate [post]
 func contractCreateTemplateReleaseCandidateEnvelope() {}
 
@@ -12375,7 +13560,7 @@ func contractListScenarioTemplateBaselinesEnvelope() {}
 // contractPublishScenarioTemplateBaselineEnvelope documents POST /api/v1/scenario-template-baseline/{key}/publish.
 //
 // @Summary publishScenarioTemplateBaseline appends a version to a platform baseline
-// @Description publishScenarioTemplateBaseline appends a version to a platform baseline. It is platform-admin only: workspaces fork instead of publishing.。需要权限 manage:scenario-template-baseline（由 accessRules 强制）。请求体类型 service.BaselinePublishInput。成功返回 PublishScenarioTemplateBaselineResponse。声明了 1 个业务错误码：40064(400)（括号内是 HTTP 状态）
+// @Description publishScenarioTemplateBaseline appends a version to a platform baseline. It is platform-admin only: workspaces fork instead of publishing.。需要权限 manage:scenario-template-baseline（由 accessRules 强制）。请求体类型 service.BaselinePublishInput。成功返回 PublishScenarioTemplateBaselineResponse。声明了 6 个业务错误码：40044(400)、40064(400)、40109(400)、40114(400)、40115(400)、40918(409)（括号内是 HTTP 状态）
 // @Tags scenario-template-baseline
 // @ID publishScenarioTemplateBaseline
 // @Security BearerAuth
@@ -12383,7 +13568,9 @@ func contractListScenarioTemplateBaselinesEnvelope() {}
 // @Accept json
 // @Param body body service.BaselinePublishInput true "请求体（service.BaselinePublishInput）"
 // @Success 200 {object} PublishScenarioTemplateBaselineEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40064"
+// @Failure 400 {object} docs.Envelope "错误码 40044 / 40064 / 40109 / 40114 / 40115"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40918"
 // @Router /api/v1/scenario-template-baseline/{key}/publish [post]
 func contractPublishScenarioTemplateBaselineEnvelope() {}
 
@@ -12401,18 +13588,19 @@ func contractListScenarioTemplateCatalogEnvelope() {}
 // contractListScenarioTemplateSkeletonsEnvelope documents GET /api/v1/scenario-template-skeletons.
 //
 // @Summary listScenarioTemplateSkeletons mirrors the four upstream catalogues read-only (doc/276 §8.4)
-// @Description listScenarioTemplateSkeletons mirrors the four upstream catalogues read-only (doc/276 §8.4). Nothing is stored: the wizard previews a skeleton and imports it explicitly.。需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioSkeletonCatalog
+// @Description listScenarioTemplateSkeletons mirrors the four upstream catalogues read-only (doc/276 §8.4). Nothing is stored: the wizard previews a skeleton and imports it explicitly.。需要权限 read:scenario-template（由 accessRules 强制）。成功返回 *service.ScenarioSkeletonCatalog。声明了 1 个业务错误码：50303(503)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID listScenarioTemplateSkeletons
 // @Security BearerAuth
 // @Success 200 {object} ListScenarioTemplateSkeletonsEnvelope
+// @Failure 503 {object} docs.Envelope "错误码 50303"
 // @Router /api/v1/scenario-template-skeletons [get]
 func contractListScenarioTemplateSkeletonsEnvelope() {}
 
 // contractImportScenarioTemplateSkeletonEnvelope documents POST /api/v1/scenario-template-skeletons/{id}/import.
 //
 // @Summary importScenarioTemplateSkeleton materialises one skeleton as a workspace draft
-// @Description importScenarioTemplateSkeleton materialises one skeleton as a workspace draft. The draft is intentionally incomplete-friendly; publish validation is stricter than create validation, so an unreviewed draft cannot go live.。需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset
+// @Description importScenarioTemplateSkeleton materialises one skeleton as a workspace draft. The draft is intentionally incomplete-friendly; publish validation is stricter than create validation, so an unreviewed draft cannot go live.。需要权限 manage:scenario-template（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ScenarioTemplateAsset。声明了 5 个业务错误码：40045(400)、40046(400)、40901(409)、41112(400)、41113(400)（括号内是 HTTP 状态）
 // @Tags scenario-template
 // @ID importScenarioTemplateSkeleton
 // @Security BearerAuth
@@ -12420,13 +13608,16 @@ func contractListScenarioTemplateSkeletonsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ImportScenarioTemplateSkeletonEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40045 / 40046 / 41112 / 41113"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40901"
 // @Router /api/v1/scenario-template-skeletons/{id}/import [post]
 func contractImportScenarioTemplateSkeletonEnvelope() {}
 
 // contractListSearchAppsEnvelope documents GET /api/v1/search-apps.
 //
 // @Summary List Search Apps
-// @Description 需要权限 read:search-app（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.SearchAppShadow
+// @Description 需要权限 read:search-app（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.SearchAppShadow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID listSearchApps
 // @Security BearerAuth
@@ -12438,63 +13629,82 @@ func contractImportScenarioTemplateSkeletonEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} ListSearchAppsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/search-apps [get]
 func contractListSearchAppsEnvelope() {}
 
 // contractCreateSearchAppEnvelope documents POST /api/v1/search-apps.
 //
 // @Summary CreateSearchApp creates a Search App owned by the caller's tenant
-// @Description CreateSearchApp creates a Search App owned by the caller's tenant.。需要权限 manage:search-app（由 accessRules 强制）。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateSearchApp creates a Search App owned by the caller's tenant.。需要权限 manage:search-app（由 accessRules 强制）。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 8 个业务错误码：40000(400)、40092(400)、40093(400)、40099(400)、40305(403)、41141(409)、50248(502)、50263(502)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID createSearchApp
 // @Security BearerAuth
 // @Accept json
 // @Param body body searchAppPayload true "请求体（searchAppPayload）"
 // @Success 200 {object} CreateSearchAppEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40092 / 40093 / 40099"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 41141"
+// @Failure 502 {object} docs.Envelope "错误码 50248 / 50263"
 // @Router /api/v1/search-apps [post]
 func contractCreateSearchAppEnvelope() {}
 
 // contractSearchAppDatasetOptionsEnvelope documents GET /api/v1/search-apps/dataset-options.
 //
 // @Summary SearchAppDatasetOptions returns the datasets that can be bound to a Search App for the current governance scope: linked rgx_dataset_link rows first, raw engine datasets as fallback (doc/252 §向导数据面)
-// @Description SearchAppDatasetOptions returns the datasets that can be bound to a Search App for the current governance scope: linked rgx_dataset_link rows first, raw engine datasets as fallback (doc/252 §向导数据面). The picker keeps engine ids out of the UI by favouring link_id/name references.。需要权限 read:search-app（由 accessRules 强制）。成功返回 []service.SearchAppDatasetOption
+// @Description SearchAppDatasetOptions returns the datasets that can be bound to a Search App for the current governance scope: linked rgx_dataset_link rows first, raw engine datasets as fallback (doc/252 §向导数据面). The picker keeps engine ids out of the UI by favouring link_id/name references.。需要权限 read:search-app（由 accessRules 强制）。成功返回 []service.SearchAppDatasetOption。声明了 2 个业务错误码：40305(403)、50248(502)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID searchAppDatasetOptions
 // @Security BearerAuth
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} SearchAppDatasetOptionsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50248"
 // @Router /api/v1/search-apps/dataset-options [get]
 func contractSearchAppDatasetOptionsEnvelope() {}
 
 // contractSearchAppModelOptionsEnvelope documents GET /api/v1/search-apps/model-options.
 //
 // @Summary ListSearchApps returns the caller's Search Apps (platform scope=all for all)
-// @Description ListSearchApps returns the caller's Search Apps (platform scope=all for all). SearchAppModelOptions returns the tenant's chat/rerank models and defaults so the Search App config can pick a real LLM (chat_id) and rerank model.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *service.ModelOptions
+// @Description ListSearchApps returns the caller's Search Apps (platform scope=all for all). SearchAppModelOptions returns the tenant's chat/rerank models and defaults so the Search App config can pick a real LLM (chat_id) and rerank model.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *service.ModelOptions。声明了 5 个业务错误码：40305(403)、50250(502)、50251(502)、50252(502)、50253(502)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID searchAppModelOptions
 // @Security BearerAuth
 // @Success 200 {object} SearchAppModelOptionsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50250 / 50251 / 50252 / 50253"
 // @Router /api/v1/search-apps/model-options [get]
 func contractSearchAppModelOptionsEnvelope() {}
 
 // contractDeleteSearchAppEnvelope documents DELETE /api/v1/search-apps/{id}.
 //
 // @Summary DeleteSearchApp deletes a Search App
-// @Description DeleteSearchApp deletes a Search App.。需要权限 manage:search-app（由 accessRules 强制）。成功返回 DeleteSearchAppResponse
+// @Description DeleteSearchApp deletes a Search App.。需要权限 manage:search-app（由 accessRules 强制）。成功返回 DeleteSearchAppResponse。声明了 2 个业务错误码：40305(403)、50263(502)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID deleteSearchApp
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteSearchAppEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50263"
 // @Router /api/v1/search-apps/{id} [delete]
 func contractDeleteSearchAppEnvelope() {}
 
 // contractGetSearchAppEnvelope documents GET /api/v1/search-apps/{id}.
 //
 // @Summary GetSearchApp returns a Search App
-// @Description GetSearchApp returns a Search App.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *model.SearchAppShadow
+// @Description GetSearchApp returns a Search App.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID getSearchApp
 // @Security BearerAuth
@@ -12502,13 +13712,17 @@ func contractDeleteSearchAppEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetSearchAppEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/search-apps/{id} [get]
 func contractGetSearchAppEnvelope() {}
 
 // contractUpdateSearchAppEnvelope documents PUT /api/v1/search-apps/{id}.
 //
 // @Summary UpdateSearchApp updates a Search App (name and search_config)
-// @Description UpdateSearchApp updates a Search App (name and search_config).。需要权限 manage:search-app（由 accessRules 强制）。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateSearchApp updates a Search App (name and search_config).。需要权限 manage:search-app（由 accessRules 强制）。请求体类型 searchAppPayload。成功返回 *model.SearchAppShadow。声明了 6 个业务错误码：40000(400)、40092(400)、40099(400)、40305(403)、41141(409)、50248(502)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID updateSearchApp
 // @Security BearerAuth
@@ -12516,14 +13730,19 @@ func contractGetSearchAppEnvelope() {}
 // @Accept json
 // @Param body body searchAppPayload true "请求体（searchAppPayload）"
 // @Success 200 {object} UpdateSearchAppEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40092 / 40099"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 41141"
+// @Failure 502 {object} docs.Envelope "错误码 50248"
 // @Router /api/v1/search-apps/{id} [put]
 func contractUpdateSearchAppEnvelope() {}
 
 // contractSearchAppCompletionEnvelope documents POST /api/v1/search-apps/{id}/completion.
 //
 // @Summary SearchAppCompletion runs a retrieval against a Search App for debugging
-// @Description SearchAppCompletion runs a retrieval against a Search App for debugging.。需要权限 execute:search-app（由 accessRules 强制）。请求体类型 searchAppCompletePayload。成功返回 *ragflow.SearchAppCompletionResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description SearchAppCompletion runs a retrieval against a Search App for debugging.。需要权限 execute:search-app（由 accessRules 强制）。请求体类型 searchAppCompletePayload。成功返回 *ragflow.SearchAppCompletionResult。声明了 4 个业务错误码：40000(400)、40094(400)、40305(403)、50265(502)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID searchAppCompletion
 // @Security BearerAuth
@@ -12531,14 +13750,18 @@ func contractUpdateSearchAppEnvelope() {}
 // @Accept json
 // @Param body body searchAppCompletePayload true "请求体（searchAppCompletePayload）"
 // @Success 200 {object} SearchAppCompletionEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40094"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50265"
 // @Router /api/v1/search-apps/{id}/completion [post]
 func contractSearchAppCompletionEnvelope() {}
 
 // contractStreamSearchAppCompletionEnvelope documents POST /api/v1/search-apps/{id}/completion/stream.
 //
 // @Summary StreamSearchAppCompletion proxies the Search App SSE completion to the client
-// @Description StreamSearchAppCompletion proxies the Search App SSE completion to the client.。需要权限 execute:search-app（由 accessRules 强制）。请求体类型 searchAppCompletePayload。成功返回原始字节，媒体类型 text/event-stream。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description StreamSearchAppCompletion proxies the Search App SSE completion to the client.。需要权限 execute:search-app（由 accessRules 强制）。请求体类型 searchAppCompletePayload。成功返回原始字节，媒体类型 text/event-stream。声明了 4 个业务错误码：40000(400)、40094(400)、40305(403)、50265(502)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID streamSearchAppCompletion
 // @Security BearerAuth
@@ -12547,14 +13770,18 @@ func contractSearchAppCompletionEnvelope() {}
 // @Param body body searchAppCompletePayload true "请求体（searchAppCompletePayload）"
 // @Produce plain
 // @Success 200 {string} string "原始字节；媒体类型即载荷：text/event-stream"
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40094"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50265"
 // @Router /api/v1/search-apps/{id}/completion/stream [post]
 func contractStreamSearchAppCompletionEnvelope() {}
 
 // contractGetSearchAppConfigEnvelope documents GET /api/v1/search-apps/{id}/config.
 //
 // @Summary GetSearchAppConfig returns the live RAGFlow-side search_config for prefill
-// @Description GetSearchAppConfig returns the live RAGFlow-side search_config for prefill.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *ragflow.SearchApp
+// @Description GetSearchAppConfig returns the live RAGFlow-side search_config for prefill.。需要权限 read:search-app（由 accessRules 强制）。成功返回 *ragflow.SearchApp。声明了 2 个业务错误码：40305(403)、50262(502)（括号内是 HTTP 状态）
 // @Tags search-app
 // @ID getSearchAppConfig
 // @Security BearerAuth
@@ -12562,6 +13789,11 @@ func contractStreamSearchAppCompletionEnvelope() {}
 // @Param scope query string false "查询参数 scope"
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Success 200 {object} GetSearchAppConfigEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 400"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 502 {object} docs.Envelope "错误码 50262"
 // @Router /api/v1/search-apps/{id}/config [get]
 func contractGetSearchAppConfigEnvelope() {}
 
@@ -12581,13 +13813,16 @@ func contractListSelfMemoryPoliciesEnvelope() {}
 // contractCreateSelfMemoryPolicyEnvelope documents POST /api/v1/self/memory-policies.
 //
 // @Summary create Self Memory Policy
-// @Description 需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy
+// @Description 需要权限 execute:memory-policy（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.MemoryPolicy。声明了 5 个业务错误码：40092(400)、40093(400)、40951(409)、40952(409)、40953(409)（括号内是 HTTP 状态）
 // @Tags memory-policy
 // @ID createSelfMemoryPolicy
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateSelfMemoryPolicyEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40092 / 40093"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40951 / 40952 / 40953"
 // @Router /api/v1/self/memory-policies [post]
 func contractCreateSelfMemoryPolicyEnvelope() {}
 
@@ -12611,13 +13846,15 @@ func contractListSourceRoutingRulesEnvelope() {}
 // contractCreateSourceRoutingRuleEnvelope documents POST /api/v1/source-routing-rules.
 //
 // @Summary create Source Routing Rule
-// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule
+// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule。声明了 3 个业务错误码：40135(400)、40136(400)、40137(404)（括号内是 HTTP 状态）
 // @Tags source-routing-rule
 // @ID createSourceRoutingRule
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateSourceRoutingRuleEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40135 / 40136"
+// @Failure 404 {object} docs.Envelope "错误码 40137"
 // @Router /api/v1/source-routing-rules [post]
 func contractCreateSourceRoutingRuleEnvelope() {}
 
@@ -12642,13 +13879,14 @@ func contractDeleteSourceRoutingRuleEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetSourceRoutingRuleEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/source-routing-rules/{id} [get]
 func contractGetSourceRoutingRuleEnvelope() {}
 
 // contractUpdateSourceRoutingRuleEnvelope documents PATCH /api/v1/source-routing-rules/{id}.
 //
 // @Summary update Source Routing Rule
-// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule
+// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule。声明了 3 个业务错误码：40135(400)、40136(400)、40137(404)（括号内是 HTTP 状态）
 // @Tags source-routing-rule
 // @ID updateSourceRoutingRule
 // @Security BearerAuth
@@ -12656,13 +13894,15 @@ func contractGetSourceRoutingRuleEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateSourceRoutingRuleEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40135 / 40136"
+// @Failure 404 {object} docs.Envelope "错误码 40137"
 // @Router /api/v1/source-routing-rules/{id} [patch]
 func contractUpdateSourceRoutingRuleEnvelope() {}
 
 // contractUpdateSourceRoutingRulePutEnvelope documents PUT /api/v1/source-routing-rules/{id}.
 //
 // @Summary update Source Routing Rule
-// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule
+// @Description 需要权限 manage:source-routing-rule（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.SourceRoutingRule。声明了 3 个业务错误码：40135(400)、40136(400)、40137(404)（括号内是 HTTP 状态）
 // @Tags source-routing-rule
 // @ID updateSourceRoutingRulePut
 // @Security BearerAuth
@@ -12670,6 +13910,8 @@ func contractUpdateSourceRoutingRuleEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateSourceRoutingRulePutEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40135 / 40136"
+// @Failure 404 {object} docs.Envelope "错误码 40137"
 // @Router /api/v1/source-routing-rules/{id} [put]
 func contractUpdateSourceRoutingRulePutEnvelope() {}
 
@@ -12700,31 +13942,35 @@ func contractHeadStaticLogosFilepathEnvelope() {}
 // contractListSystemCapabilitiesEnvelope documents GET /api/v1/system/capabilities.
 //
 // @Summary List System Capabilities
-// @Description 需要权限 read:system（由 accessRules 强制）。成功返回 service.RAGFlowCapabilityReport
+// @Description 需要权限 read:system（由 accessRules 强制）。成功返回 service.RAGFlowCapabilityReport。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags system
 // @ID listSystemCapabilities
 // @Security BearerAuth
 // @Success 200 {object} ListSystemCapabilitiesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/system/capabilities [get]
 func contractListSystemCapabilitiesEnvelope() {}
 
 // contractVerifySystemCapabilitiesEnvelope documents POST /api/v1/system/capabilities/verify.
 //
 // @Summary Verify System Capabilities
-// @Description 需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 service.RAGFlowCapabilityReport
+// @Description 需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 service.RAGFlowCapabilityReport。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags system
 // @ID verifySystemCapabilities
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} VerifySystemCapabilitiesEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/system/capabilities/verify [post]
 func contractVerifySystemCapabilitiesEnvelope() {}
 
 // contractSystemConfigViewEnvelope documents GET /api/v1/system/config.
 //
 // @Summary SystemConfigView returns the current connection settings with secrets masked
-// @Description SystemConfigView returns the current connection settings with secrets masked. RBAC restricts this to platform admins (system resource).。需要权限 read:system（由 accessRules 强制）。成功返回 docs.FreeFormObject。声明了 1 个业务错误码：500(500)（括号内是 HTTP 状态）
+// @Description SystemConfigView returns the current connection settings with secrets masked. RBAC restricts this to platform admins (system resource).。需要权限 read:system（由 accessRules 强制）。成功返回 docs.FreeFormObject
 // @Tags system
 // @ID systemConfigView
 // @Security BearerAuth
@@ -12736,7 +13982,7 @@ func contractSystemConfigViewEnvelope() {}
 // contractSystemConfigApplyEnvelope documents POST /api/v1/system/config/apply.
 //
 // @Summary SystemConfigApply persists the submitted settings and hot-swaps the running engine (in-place reconnect, same as the first-run wizard)
-// @Description SystemConfigApply persists the submitted settings and hot-swaps the running engine (in-place reconnect, same as the first-run wizard).。需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SystemConfigApplyResponse。声明了 3 个业务错误码：500(500)、40000(400)、40005(400)（括号内是 HTTP 状态）
+// @Description SystemConfigApply persists the submitted settings and hot-swaps the running engine (in-place reconnect, same as the first-run wizard).。需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SystemConfigApplyResponse。声明了 2 个业务错误码：40000(400)、40005(400)（括号内是 HTTP 状态）
 // @Tags system
 // @ID systemConfigApply
 // @Security BearerAuth
@@ -12751,7 +13997,7 @@ func contractSystemConfigApplyEnvelope() {}
 // contractSystemConfigPreflightEnvelope documents POST /api/v1/system/config/preflight.
 //
 // @Summary SystemConfigPreflight validates the proposed database/RAGFlow settings without persisting anything
-// @Description SystemConfigPreflight validates the proposed database/RAGFlow settings without persisting anything.。需要权限 read:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.FreeFormObject。声明了 3 个业务错误码：500(500)、40000(400)、40005(400)（括号内是 HTTP 状态）
+// @Description SystemConfigPreflight validates the proposed database/RAGFlow settings without persisting anything.。需要权限 read:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.FreeFormObject。声明了 2 个业务错误码：40000(400)、40005(400)（括号内是 HTTP 状态）
 // @Tags system
 // @ID systemConfigPreflight
 // @Security BearerAuth
@@ -12766,7 +14012,7 @@ func contractSystemConfigPreflightEnvelope() {}
 // contractSystemConfigPublicKeyEnvelope documents GET /api/v1/system/config/public-key.
 //
 // @Summary SystemConfigPublicKey returns the RSA public key used to encrypt secrets submitted to the protected config endpoints
-// @Description SystemConfigPublicKey returns the RSA public key used to encrypt secrets submitted to the protected config endpoints.。需要权限 read:system（由 accessRules 强制）。成功返回 SystemConfigPublicKeyResponse。声明了 1 个业务错误码：500(500)（括号内是 HTTP 状态）
+// @Description SystemConfigPublicKey returns the RSA public key used to encrypt secrets submitted to the protected config endpoints.。需要权限 read:system（由 accessRules 强制）。成功返回 SystemConfigPublicKeyResponse
 // @Tags system
 // @ID systemConfigPublicKey
 // @Security BearerAuth
@@ -12778,23 +14024,29 @@ func contractSystemConfigPublicKeyEnvelope() {}
 // contractSystemHealthEnvelope documents GET /api/v1/system/health.
 //
 // @Summary SystemHealth returns engine and dependency health
-// @Description SystemHealth returns engine and dependency health.。需要权限 read:system-health（由 accessRules 强制）。成功返回 map[string]string
+// @Description SystemHealth returns engine and dependency health.。需要权限 read:system-health（由 accessRules 强制）。成功返回 map[string]string。声明了 2 个业务错误码：40305(403)、50210(502)（括号内是 HTTP 状态）
 // @Tags system-health
 // @ID systemHealth
 // @Security BearerAuth
 // @Success 200 {object} SystemHealthEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 502 {object} docs.Envelope "错误码 50210"
 // @Router /api/v1/system/health [get]
 func contractSystemHealthEnvelope() {}
 
 // contractGetResourceSyncArtifactEnvelope documents GET /api/v1/system/ragflow/sync/artifacts/{id}.
 //
 // @Summary Get Resource Sync Artifact
-// @Description 需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 *model.ResourceSyncArtifact
+// @Description 需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 *model.ResourceSyncArtifact。声明了 2 个业务错误码：40099(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID getResourceSyncArtifact
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetResourceSyncArtifactEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40099"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/system/ragflow/sync/artifacts/{id} [get]
 func contractGetResourceSyncArtifactEnvelope() {}
 
@@ -12812,14 +14064,14 @@ func contractListResourceSyncTenantMappingsEnvelope() {}
 // contractUpsertResourceSyncTenantMappingEnvelope documents POST /api/v1/system/ragflow/sync/mappings.
 //
 // @Summary Upsert Resource Sync Tenant Mapping
-// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncMappingRequest。成功返回 *model.ResourceSyncTenantMapping。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncMappingRequest。成功返回 *model.ResourceSyncTenantMapping。声明了 2 个业务错误码：40000(400)、40099(400)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID upsertResourceSyncTenantMapping
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.ResourceSyncMappingRequest true "请求体（service.ResourceSyncMappingRequest）"
 // @Success 200 {object} UpsertResourceSyncTenantMappingEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
 // @Router /api/v1/system/ragflow/sync/mappings [post]
 func contractUpsertResourceSyncTenantMappingEnvelope() {}
 
@@ -12838,20 +14090,24 @@ func contractDeleteResourceSyncTenantMappingEnvelope() {}
 // contractReconcileResourceSyncEnvelope documents POST /api/v1/system/ragflow/sync/reconcile.
 //
 // @Summary Reconcile Resource Sync
-// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 ReconcileResourceSyncRequest。成功返回 *model.SyncRun
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 ReconcileResourceSyncRequest。成功返回 *model.SyncRun。声明了 8 个业务错误码：40099(400)、40900(409)、50000(500)、50208(502)、50245(502)、50260(502)、50280(502)、50292(502)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID reconcileResourceSync
 // @Security BearerAuth
 // @Accept json
 // @Param body body ReconcileResourceSyncRequest true "请求体（ReconcileResourceSyncRequest）"
 // @Success 200 {object} ReconcileResourceSyncEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40099"
+// @Failure 409 {object} docs.Envelope "错误码 40900"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50208 / 50245 / 50260 / 50280 / 50292"
 // @Router /api/v1/system/ragflow/sync/reconcile [post]
 func contractReconcileResourceSyncEnvelope() {}
 
 // contractListResourceSyncRelinkResourceOptionsEnvelope documents GET /api/v1/system/ragflow/sync/relink/resource-options.
 //
 // @Summary List Resource Sync Relink Resource Options
-// @Description 需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceSyncRelinkResourceOptionsResponse
+// @Description 需要权限 read:ragflow-sync（由 accessRules 强制）。成功返回 ListResourceSyncRelinkResourceOptionsResponse。声明了 1 个业务错误码：40099(400)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID listResourceSyncRelinkResourceOptions
 // @Security BearerAuth
@@ -12862,6 +14118,7 @@ func contractReconcileResourceSyncEnvelope() {}
 // @Param tenant_id query string false "查询参数 tenant_id"
 // @Param query query string false "查询参数 query"
 // @Success 200 {object} ListResourceSyncRelinkResourceOptionsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40099"
 // @Router /api/v1/system/ragflow/sync/relink/resource-options [get]
 func contractListResourceSyncRelinkResourceOptionsEnvelope() {}
 
@@ -12898,7 +14155,7 @@ func contractListResourceSyncResourcesEnvelope() {}
 // contractResolveResourceSyncConflictEnvelope documents POST /api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/conflicts/resolve.
 //
 // @Summary Resolve Resource Sync Conflict
-// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncConflictRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncConflictRequest。成功返回 *model.ResourceBinding。声明了 4 个业务错误码：40000(400)、40099(400)、40900(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID resolveResourceSyncConflict
 // @Security BearerAuth
@@ -12908,14 +14165,17 @@ func contractListResourceSyncResourcesEnvelope() {}
 // @Accept json
 // @Param body body service.ResourceSyncConflictRequest true "请求体（service.ResourceSyncConflictRequest）"
 // @Success 200 {object} ResolveResourceSyncConflictEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40900"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/conflicts/resolve [post]
 func contractResolveResourceSyncConflictEnvelope() {}
 
 // contractRelinkResourceSyncEnvelope documents POST /api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/relink.
 //
 // @Summary Relink Resource Sync
-// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncRelinkRequest。成功返回 *model.ResourceBinding。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncRelinkRequest。成功返回 *model.ResourceBinding。声明了 3 个业务错误码：40000(400)、40099(400)、40900(409)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID relinkResourceSync
 // @Security BearerAuth
@@ -12925,7 +14185,9 @@ func contractResolveResourceSyncConflictEnvelope() {}
 // @Accept json
 // @Param body body service.ResourceSyncRelinkRequest true "请求体（service.ResourceSyncRelinkRequest）"
 // @Success 200 {object} RelinkResourceSyncEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40900"
 // @Router /api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/relink [post]
 func contractRelinkResourceSyncEnvelope() {}
 
@@ -12942,6 +14204,7 @@ func contractRelinkResourceSyncEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListResourceBindingVersionsEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/system/ragflow/sync/resources/{type}/{externalTenantId}/{id}/versions [get]
 func contractListResourceBindingVersionsEnvelope() {}
 
@@ -12968,13 +14231,14 @@ func contractListResourceSyncRunsEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetResourceSyncRunEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/system/ragflow/sync/runs/{id} [get]
 func contractGetResourceSyncRunEnvelope() {}
 
 // contractAssignResourceSyncItemsEnvelope documents POST /api/v1/system/ragflow/sync/runs/{id}/assign.
 //
 // @Summary Assign Resource Sync Items
-// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncItemAssignmentRequest。成功返回 *service.ResourceSyncItemAssignmentResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncItemAssignmentRequest。成功返回 *service.ResourceSyncItemAssignmentResult。声明了 3 个业务错误码：40000(400)、40099(400)、40900(409)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID assignResourceSyncItems
 // @Security BearerAuth
@@ -12982,14 +14246,16 @@ func contractGetResourceSyncRunEnvelope() {}
 // @Accept json
 // @Param body body service.ResourceSyncItemAssignmentRequest true "请求体（service.ResourceSyncItemAssignmentRequest）"
 // @Success 200 {object} AssignResourceSyncItemsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40900"
 // @Router /api/v1/system/ragflow/sync/runs/{id}/assign [post]
 func contractAssignResourceSyncItemsEnvelope() {}
 
 // contractImportResourceSyncEnvelope documents POST /api/v1/system/ragflow/sync/runs/{id}/import.
 //
 // @Summary Import Resource Sync
-// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncImportRequest。成功返回 *model.SyncRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncImportRequest。成功返回 *model.SyncRun。声明了 3 个业务错误码：40000(400)、40900(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID importResourceSync
 // @Security BearerAuth
@@ -12998,6 +14264,9 @@ func contractAssignResourceSyncItemsEnvelope() {}
 // @Param body body service.ResourceSyncImportRequest true "请求体（service.ResourceSyncImportRequest）"
 // @Success 200 {object} ImportResourceSyncEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40900"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/system/ragflow/sync/runs/{id}/import [post]
 func contractImportResourceSyncEnvelope() {}
 
@@ -13018,14 +14287,16 @@ func contractListResourceSyncRunItemsEnvelope() {}
 // contractScanResourceSyncEnvelope documents POST /api/v1/system/ragflow/sync/scan.
 //
 // @Summary Scan Resource Sync
-// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 ScanResourceSyncRequest。成功返回 *model.SyncRun。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 ScanResourceSyncRequest。成功返回 *model.SyncRun。声明了 8 个业务错误码：40000(400)、40099(400)、40900(409)、50208(502)、50245(502)、50260(502)、50280(502)、50292(502)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID scanResourceSync
 // @Security BearerAuth
 // @Accept json
 // @Param body body ScanResourceSyncRequest true "请求体（ScanResourceSyncRequest）"
 // @Success 200 {object} ScanResourceSyncEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
+// @Failure 409 {object} docs.Envelope "错误码 40900"
+// @Failure 502 {object} docs.Envelope "错误码 50208 / 50245 / 50260 / 50280 / 50292"
 // @Router /api/v1/system/ragflow/sync/scan [post]
 func contractScanResourceSyncEnvelope() {}
 
@@ -13043,32 +14314,34 @@ func contractResourceSyncSettingViewEnvelope() {}
 // contractResourceSyncSettingUpdateEnvelope documents PATCH /api/v1/system/ragflow/sync/settings.
 //
 // @Summary Resource Sync Setting Update
-// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncSettingUpdate。成功返回 *service.ResourceSyncSettingView。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:ragflow-sync（由 accessRules 强制）。请求体类型 service.ResourceSyncSettingUpdate。成功返回 *service.ResourceSyncSettingView。声明了 3 个业务错误码：40000(400)、40099(400)、50000(500)（括号内是 HTTP 状态）
 // @Tags ragflow-sync
 // @ID resourceSyncSettingUpdate
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.ResourceSyncSettingUpdate true "请求体（service.ResourceSyncSettingUpdate）"
 // @Success 200 {object} ResourceSyncSettingUpdateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40099"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/system/ragflow/sync/settings [patch]
 func contractResourceSyncSettingUpdateEnvelope() {}
 
 // contractSystemSettingsViewEnvelope documents GET /api/v1/system/settings.
 //
 // @Summary System Settings View
-// @Description 需要权限 read:system（由 accessRules 强制）。成功返回 *service.SystemSettingsView
+// @Description 需要权限 read:system（由 accessRules 强制）。成功返回 *service.SystemSettingsView。声明了 1 个业务错误码：50000(500)（括号内是 HTTP 状态）
 // @Tags system
 // @ID systemSettingsView
 // @Security BearerAuth
 // @Success 200 {object} SystemSettingsViewEnvelope
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/system/settings [get]
 func contractSystemSettingsViewEnvelope() {}
 
 // contractSystemSettingsUpdateEnvelope documents PATCH /api/v1/system/settings.
 //
 // @Summary System Settings Update
-// @Description 需要权限 manage:system（由 accessRules 强制）。请求体类型 service.SystemSettingsPatchRequest。成功返回 *model.SettingRevision。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:system（由 accessRules 强制）。请求体类型 service.SystemSettingsPatchRequest。成功返回 *model.SettingRevision。声明了 4 个业务错误码：40098(400)、40901(409)、40902(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags system
 // @ID systemSettingsUpdate
 // @Security BearerAuth
@@ -13076,6 +14349,9 @@ func contractSystemSettingsViewEnvelope() {}
 // @Param body body service.SystemSettingsPatchRequest true "请求体（service.SystemSettingsPatchRequest）"
 // @Success 200 {object} SystemSettingsUpdateEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40098"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 409 {object} docs.Envelope "错误码 40901 / 40902"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/system/settings [patch]
 func contractSystemSettingsUpdateEnvelope() {}
 
@@ -13101,13 +14377,14 @@ func contractListSystemSettingRevisionsEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetSystemSettingRevisionEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/system/settings/revisions/{id} [get]
 func contractGetSystemSettingRevisionEnvelope() {}
 
 // contractRollbackSystemSettingRevisionEnvelope documents POST /api/v1/system/settings/revisions/{id}/rollback.
 //
 // @Summary Rollback System Setting Revision
-// @Description 需要权限 manage:system（由 accessRules 强制）。请求体类型 RollbackSystemSettingRevisionRequest。成功返回 *model.SettingRevision。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:system（由 accessRules 强制）。请求体类型 RollbackSystemSettingRevisionRequest。成功返回 *model.SettingRevision。声明了 4 个业务错误码：40098(400)、40901(409)、40902(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags system
 // @ID rollbackSystemSettingRevision
 // @Security BearerAuth
@@ -13116,26 +14393,31 @@ func contractGetSystemSettingRevisionEnvelope() {}
 // @Param body body RollbackSystemSettingRevisionRequest true "请求体（RollbackSystemSettingRevisionRequest）"
 // @Success 200 {object} RollbackSystemSettingRevisionEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40098"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40901 / 40902"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/system/settings/revisions/{id}/rollback [post]
 func contractRollbackSystemSettingRevisionEnvelope() {}
 
 // contractReportRuntimeSettingStateEnvelope documents POST /api/v1/system/settings/runtime/report.
 //
 // @Summary Report Runtime Setting State
-// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.RuntimeSettingStateReport。成功返回 *model.RuntimeSettingInstanceState。声明了 1 个业务错误码：40098(400)（括号内是 HTTP 状态）
+// @Description 只要求登录，没有额外的 RBAC 规则。请求体类型 service.RuntimeSettingStateReport。成功返回 *model.RuntimeSettingInstanceState。声明了 3 个业务错误码：40098(400)、40099(400)、40901(409)（括号内是 HTTP 状态）
 // @Tags system
 // @ID reportRuntimeSettingState
 // @Accept json
 // @Param body body service.RuntimeSettingStateReport true "请求体（service.RuntimeSettingStateReport）"
 // @Success 200 {object} ReportRuntimeSettingStateEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40098"
+// @Failure 400 {object} docs.Envelope "错误码 40098 / 40099"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40901"
 // @Router /api/v1/system/settings/runtime/report [post]
 func contractReportRuntimeSettingStateEnvelope() {}
 
 // contractUpdateSystemSettingSecretEnvelope documents POST /api/v1/system/settings/secrets/{key}.
 //
 // @Summary Update System Setting Secret
-// @Description 需要权限 manage:system（由 accessRules 强制）。请求体类型 service.SystemSettingSecretRequest。成功返回 *model.SettingRevision。声明了 2 个业务错误码：500(500)、40098(400)（括号内是 HTTP 状态）
+// @Description 需要权限 manage:system（由 accessRules 强制）。请求体类型 service.SystemSettingSecretRequest。成功返回 *model.SettingRevision。声明了 4 个业务错误码：40098(400)、40901(409)、40902(409)、50000(500)（括号内是 HTTP 状态）
 // @Tags system
 // @ID updateSystemSettingSecret
 // @Security BearerAuth
@@ -13144,20 +14426,22 @@ func contractReportRuntimeSettingStateEnvelope() {}
 // @Param body body service.SystemSettingSecretRequest true "请求体（service.SystemSettingSecretRequest）"
 // @Success 200 {object} UpdateSystemSettingSecretEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40098"
-// @Failure 500 {object} docs.Envelope "错误码 500"
+// @Failure 409 {object} docs.Envelope "错误码 40901 / 40902"
+// @Failure 500 {object} docs.Envelope "错误码 500 / 50000"
 // @Router /api/v1/system/settings/secrets/{key} [post]
 func contractUpdateSystemSettingSecretEnvelope() {}
 
 // contractSetupAdminEnvelope documents POST /api/v1/system/setup/admin.
 //
 // @Summary SetupAdmin creates the first platform admin
-// @Description SetupAdmin creates the first platform admin. It is only effective before the system is initialized.。只要求登录，没有额外的 RBAC 规则。请求体类型 setupAdminRequest。成功返回 SetupAdminResponse。声明了 2 个业务错误码：500(500)、40000(400)（括号内是 HTTP 状态）
+// @Description SetupAdmin creates the first platform admin. It is only effective before the system is initialized.。只要求登录，没有额外的 RBAC 规则。请求体类型 setupAdminRequest。成功返回 SetupAdminResponse。声明了 4 个业务错误码：40000(400)、40001(400)、40002(400)、40901(409)（括号内是 HTTP 状态）
 // @Tags system
 // @ID setupAdmin
 // @Accept json
 // @Param body body setupAdminRequest true "请求体（setupAdminRequest）"
 // @Success 200 {object} SetupAdminEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40001 / 40002"
+// @Failure 409 {object} docs.Envelope "错误码 40901"
 // @Failure 500 {object} docs.Envelope "错误码 500"
 // @Router /api/v1/system/setup/admin [post]
 func contractSetupAdminEnvelope() {}
@@ -13165,7 +14449,7 @@ func contractSetupAdminEnvelope() {}
 // contractSetupApplyEnvelope documents POST /api/v1/system/setup/apply.
 //
 // @Summary SetupApply persists the wizard configuration and hot-swaps the running engine
-// @Description SetupApply persists the wizard configuration and hot-swaps the running engine.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetupApplyResponse。声明了 3 个业务错误码：500(500)、40000(400)、40004(400)（括号内是 HTTP 状态）
+// @Description SetupApply persists the wizard configuration and hot-swaps the running engine.。只要求登录，没有额外的 RBAC 规则。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SetupApplyResponse。声明了 2 个业务错误码：40000(400)、40004(400)（括号内是 HTTP 状态）
 // @Tags system
 // @ID setupApply
 // @Accept json
@@ -13179,20 +14463,20 @@ func contractSetupApplyEnvelope() {}
 // contractPreflightEnvelope documents POST /api/v1/system/setup/preflight.
 //
 // @Summary Preflight validates a proposed RAGFlow connection without persisting any secret, so the operator can confirm the endpoint before finalizing config
-// @Description Preflight validates a proposed RAGFlow connection without persisting any secret, so the operator can confirm the endpoint before finalizing config.。只要求登录，没有额外的 RBAC 规则。请求体类型 preflightRequest。成功返回 *service.PreflightResult。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description Preflight validates a proposed RAGFlow connection without persisting any secret, so the operator can confirm the endpoint before finalizing config.。只要求登录，没有额外的 RBAC 规则。请求体类型 preflightRequest。成功返回 *service.PreflightResult。声明了 2 个业务错误码：40000(400)、40003(400)（括号内是 HTTP 状态）
 // @Tags system
 // @ID preflight
 // @Accept json
 // @Param body body preflightRequest true "请求体（preflightRequest）"
 // @Success 200 {object} PreflightEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40003"
 // @Router /api/v1/system/setup/preflight [post]
 func contractPreflightEnvelope() {}
 
 // contractSetupPublicKeyEnvelope documents GET /api/v1/system/setup/public-key.
 //
 // @Summary SetupPublicKey returns the RSA public key used by the setup wizard to encrypt secrets submitted to preflight/apply
-// @Description SetupPublicKey returns the RSA public key used by the setup wizard to encrypt secrets submitted to preflight/apply.。只要求登录，没有额外的 RBAC 规则。成功返回 SetupPublicKeyResponse。声明了 1 个业务错误码：500(500)（括号内是 HTTP 状态）
+// @Description SetupPublicKey returns the RSA public key used by the setup wizard to encrypt secrets submitted to preflight/apply.。只要求登录，没有额外的 RBAC 规则。成功返回 SetupPublicKeyResponse
 // @Tags system
 // @ID setupPublicKey
 // @Success 200 {object} SetupPublicKeyEnvelope
@@ -13213,7 +14497,7 @@ func contractSetupStatusEnvelope() {}
 // contractReconcileGatewayBillingEnvelope documents POST /api/v1/system/usage/reconcile.
 //
 // @Summary ReconcileGatewayBilling runs the daily check on demand for one UTC day (default: the previous completed day)
-// @Description ReconcileGatewayBilling runs the daily check on demand for one UTC day (default: the previous completed day). It is `manage/system` because it walks every tenant's ledgers, not one tenant's.。需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ReconcileGatewayBillingResponse
+// @Description ReconcileGatewayBilling runs the daily check on demand for one UTC day (default: the previous completed day). It is `manage/system` because it walks every tenant's ledgers, not one tenant's.。需要权限 manage:system（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 ReconcileGatewayBillingResponse。声明了 2 个业务错误码：40095(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags system
 // @ID reconcileGatewayBilling
 // @Security BearerAuth
@@ -13221,40 +14505,49 @@ func contractSetupStatusEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ReconcileGatewayBillingEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40095"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/system/usage/reconcile [post]
 func contractReconcileGatewayBillingEnvelope() {}
 
 // contractDeleteTasksEnvelope documents DELETE /api/v1/tasks.
 //
 // @Summary DeleteTasks batch-deletes terminal task history records
-// @Description DeleteTasks batch-deletes terminal task history records.。需要权限 manage:task（由 accessRules 强制）。请求体类型 DeleteTasksRequest。成功返回 DeleteTasksResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description DeleteTasks batch-deletes terminal task history records.。需要权限 manage:task（由 accessRules 强制）。请求体类型 DeleteTasksRequest。成功返回 DeleteTasksResponse。声明了 4 个业务错误码：40000(400)、40089(400)、40305(403)、40910(409)（括号内是 HTTP 状态）
 // @Tags task
 // @ID deleteTasks
 // @Security BearerAuth
 // @Accept json
 // @Param body body DeleteTasksRequest true "请求体（DeleteTasksRequest）"
 // @Success 200 {object} DeleteTasksEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40089"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40910"
 // @Router /api/v1/tasks [delete]
 func contractDeleteTasksEnvelope() {}
 
 // contractListTasksEnvelope documents GET /api/v1/tasks.
 //
 // @Summary ListTasks returns the tenant's operator task queue
-// @Description ListTasks returns the tenant's operator task queue.。需要权限 read:task（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Task
+// @Description ListTasks returns the tenant's operator task queue.。需要权限 read:task（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Task。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags task
 // @ID listTasks
 // @Security BearerAuth
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListTasksEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/tasks [get]
 func contractListTasksEnvelope() {}
 
 // contractListJobsEnvelope documents GET /api/v1/tasks/jobs.
 //
 // @Summary ListJobs returns a page of the tenant's async job execution records (worker observability; doc/33 A2)
-// @Description ListJobs returns a page of the tenant's async job execution records (worker observability; doc/33 A2). kind/status query filters narrow the view.。需要权限 read:task（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Job
+// @Description ListJobs returns a page of the tenant's async job execution records (worker observability; doc/33 A2). kind/status query filters narrow the view.。需要权限 read:task（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.Job。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags task
 // @ID listJobs
 // @Security BearerAuth
@@ -13263,26 +14556,31 @@ func contractListTasksEnvelope() {}
 // @Param kind query string false "查询参数 kind"
 // @Param status query string false "查询参数 status"
 // @Success 200 {object} ListJobsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/tasks/jobs [get]
 func contractListJobsEnvelope() {}
 
 // contractSyncTasksEnvelope documents POST /api/v1/tasks/sync.
 //
 // @Summary SyncTasks schedules a RAGFlow progress-sync job on the async worker (A2): the sync runs off the request path and its outcome is observable on GET /tasks/jobs with retry/backoff covered by the worker
-// @Description SyncTasks schedules a RAGFlow progress-sync job on the async worker (A2): the sync runs off the request path and its outcome is observable on GET /tasks/jobs with retry/backoff covered by the worker.。需要权限 execute:task（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncTasksResponse
+// @Description SyncTasks schedules a RAGFlow progress-sync job on the async worker (A2): the sync runs off the request path and its outcome is observable on GET /tasks/jobs with retry/backoff covered by the worker.。需要权限 execute:task（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 SyncTasksResponse。声明了 2 个业务错误码：40305(403)、50000(500)（括号内是 HTTP 状态）
 // @Tags task
 // @ID syncTasks
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} SyncTasksEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/tasks/sync [post]
 func contractSyncTasksEnvelope() {}
 
 // contractListTeamsEnvelope documents GET /api/v1/teams.
 //
 // @Summary ListTeams lists the tenant's teams the caller may see (admin: all; others: teams they own or belong to)
-// @Description ListTeams lists the tenant's teams the caller may see (admin: all; others: teams they own or belong to).。需要权限 read:team（由 accessRules 强制）。成功返回 []service.TeamView
+// @Description ListTeams lists the tenant's teams the caller may see (admin: all; others: teams they own or belong to).。需要权限 read:team（由 accessRules 强制）。成功返回 []service.TeamView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags team
 // @ID listTeams
 // @Security BearerAuth
@@ -13290,13 +14588,15 @@ func contractSyncTasksEnvelope() {}
 // @Param created_from query string false "查询参数 created_from"
 // @Param created_to query string false "查询参数 created_to"
 // @Success 200 {object} ListTeamsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/teams [get]
 func contractListTeamsEnvelope() {}
 
 // contractCreateTeamEnvelope documents POST /api/v1/teams.
 //
 // @Summary CreateTeam creates a tenant team; the owner (if any) becomes team_admin
-// @Description CreateTeam creates a tenant team; the owner (if any) becomes team_admin.。需要权限 manage:team（由 accessRules 强制）。请求体类型 teamRequest。成功返回 *model.Team。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description CreateTeam creates a tenant team; the owner (if any) becomes team_admin.。需要权限 manage:team（由 accessRules 强制）。请求体类型 teamRequest。成功返回 *model.Team。声明了 3 个业务错误码：40000(400)、40305(403)、40911(409)（括号内是 HTTP 状态）
 // @Tags team
 // @ID createTeam
 // @Security BearerAuth
@@ -13304,37 +14604,45 @@ func contractListTeamsEnvelope() {}
 // @Param body body teamRequest true "请求体（teamRequest）"
 // @Success 200 {object} CreateTeamEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 409 {object} docs.Envelope "错误码 40911"
 // @Router /api/v1/teams [post]
 func contractCreateTeamEnvelope() {}
 
 // contractDeleteTeamEnvelope documents DELETE /api/v1/teams/{id}.
 //
 // @Summary DeleteTeam deletes a tenant team
-// @Description DeleteTeam deletes a tenant team.。需要权限 manage:team（由 accessRules 强制）。成功返回 DeleteTeamResponse
+// @Description DeleteTeam deletes a tenant team.。需要权限 manage:team（由 accessRules 强制）。成功返回 DeleteTeamResponse。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags team
 // @ID deleteTeam
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} DeleteTeamEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/teams/{id} [delete]
 func contractDeleteTeamEnvelope() {}
 
 // contractGetTeamEnvelope documents GET /api/v1/teams/{id}.
 //
 // @Summary GetTeam returns a single team with tenant/owner names
-// @Description GetTeam returns a single team with tenant/owner names.。需要权限 read:team（由 accessRules 强制）。成功返回 *service.TeamView
+// @Description GetTeam returns a single team with tenant/owner names.。需要权限 read:team（由 accessRules 强制）。成功返回 *service.TeamView。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags team
 // @ID getTeam
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetTeamEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/teams/{id} [get]
 func contractGetTeamEnvelope() {}
 
 // contractUpdateTeamEnvelope documents PUT /api/v1/teams/{id}.
 //
 // @Summary UpdateTeam updates a tenant team (owner transfer reassigns team_admin)
-// @Description UpdateTeam updates a tenant team (owner transfer reassigns team_admin).。需要权限 manage:team（由 accessRules 强制）。请求体类型 teamRequest。成功返回 *model.Team。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description UpdateTeam updates a tenant team (owner transfer reassigns team_admin).。需要权限 manage:team（由 accessRules 强制）。请求体类型 teamRequest。成功返回 *model.Team。声明了 3 个业务错误码：40000(400)、40305(403)、40911(409)（括号内是 HTTP 状态）
 // @Tags team
 // @ID updateTeam
 // @Security BearerAuth
@@ -13343,25 +14651,32 @@ func contractGetTeamEnvelope() {}
 // @Param body body teamRequest true "请求体（teamRequest）"
 // @Success 200 {object} UpdateTeamEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40911"
 // @Router /api/v1/teams/{id} [put]
 func contractUpdateTeamEnvelope() {}
 
 // contractListTeamProjectsEnvelope documents GET /api/v1/teams/{id}/projects.
 //
 // @Summary ListTeamProjects returns the projects authorized to a tenant team
-// @Description ListTeamProjects returns the projects authorized to a tenant team.。需要权限 read:team（由 accessRules 强制）。成功返回 []model.Project
+// @Description ListTeamProjects returns the projects authorized to a tenant team.。需要权限 read:team（由 accessRules 强制）。成功返回 []model.Project。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags team
 // @ID listTeamProjects
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ListTeamProjectsEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/teams/{id}/projects [get]
 func contractListTeamProjectsEnvelope() {}
 
 // contractBindTeamProjectsEnvelope documents PUT /api/v1/teams/{id}/projects.
 //
 // @Summary BindTeamProjects replaces the projects authorized to a tenant team
-// @Description BindTeamProjects replaces the projects authorized to a tenant team.。需要权限 manage:team（由 accessRules 强制）。请求体类型 BindTeamProjectsRequest。成功返回 BindTeamProjectsResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description BindTeamProjects replaces the projects authorized to a tenant team.。需要权限 manage:team（由 accessRules 强制）。请求体类型 BindTeamProjectsRequest。成功返回 BindTeamProjectsResponse。声明了 3 个业务错误码：40000(400)、40060(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags team
 // @ID bindTeamProjects
 // @Security BearerAuth
@@ -13369,26 +14684,32 @@ func contractListTeamProjectsEnvelope() {}
 // @Accept json
 // @Param body body BindTeamProjectsRequest true "请求体（BindTeamProjectsRequest）"
 // @Success 200 {object} BindTeamProjectsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40060"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/teams/{id}/projects [put]
 func contractBindTeamProjectsEnvelope() {}
 
 // contractListTeamUsersEnvelope documents GET /api/v1/teams/{id}/users.
 //
 // @Summary ListTeamUsers lists the members of a team
-// @Description ListTeamUsers lists the members of a team.。需要权限 read:team（由 accessRules 强制）。成功返回 []model.User
+// @Description ListTeamUsers lists the members of a team.。需要权限 read:team（由 accessRules 强制）。成功返回 []model.User。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags team
 // @ID listTeamUsers
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} ListTeamUsersEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/teams/{id}/users [get]
 func contractListTeamUsersEnvelope() {}
 
 // contractAddTeamUserEnvelope documents POST /api/v1/teams/{id}/users.
 //
 // @Summary AddTeamUser binds a user to a team (owner or tenant admin only)
-// @Description AddTeamUser binds a user to a team (owner or tenant admin only).。需要权限 manage:team（由 accessRules 强制）。请求体类型 AddTeamUserRequest。成功返回 AddTeamUserResponse。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description AddTeamUser binds a user to a team (owner or tenant admin only).。需要权限 manage:team（由 accessRules 强制）。请求体类型 AddTeamUserRequest。成功返回 AddTeamUserResponse。声明了 2 个业务错误码：40000(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags team
 // @ID addTeamUser
 // @Security BearerAuth
@@ -13397,26 +14718,32 @@ func contractListTeamUsersEnvelope() {}
 // @Param body body AddTeamUserRequest true "请求体（AddTeamUserRequest）"
 // @Success 200 {object} AddTeamUserEnvelope
 // @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/teams/{id}/users [post]
 func contractAddTeamUserEnvelope() {}
 
 // contractRemoveTeamUserEnvelope documents DELETE /api/v1/teams/{id}/users/{userId}.
 //
 // @Summary RemoveTeamUser unbinds a user from a team (owner or tenant admin only)
-// @Description RemoveTeamUser unbinds a user from a team (owner or tenant admin only).。需要权限 manage:team（由 accessRules 强制）。成功返回 RemoveTeamUserResponse
+// @Description RemoveTeamUser unbinds a user from a team (owner or tenant admin only).。需要权限 manage:team（由 accessRules 强制）。成功返回 RemoveTeamUserResponse。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags team
 // @ID removeTeamUser
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Param userId path string true "路径参数 userId"
 // @Success 200 {object} RemoveTeamUserEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/teams/{id}/users/{userId} [delete]
 func contractRemoveTeamUserEnvelope() {}
 
 // contractListTemplateInstancesEnvelope documents GET /api/v1/template-instances.
 //
 // @Summary list Template Instances
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.TemplateInstanceView
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 service.TemplateInstanceView。声明了 1 个业务错误码：50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID listTemplateInstances
 // @Security BearerAuth
@@ -13425,38 +14752,48 @@ func contractRemoveTeamUserEnvelope() {}
 // @Param project_id query string false "查询参数 project_id"
 // @Param status query string false "查询参数 status"
 // @Success 200 {object} ListTemplateInstancesEnvelope
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/template-instances [get]
 func contractListTemplateInstancesEnvelope() {}
 
 // contractInstantiateTemplateInstanceEnvelope documents POST /api/v1/template-instances.
 //
 // @Summary instantiate Template Instance
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceView
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceView。声明了 9 个业务错误码：40400(404)、40930(409)、41103(400)、41104(400)、41120(400)、42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID instantiateTemplateInstance
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} InstantiateTemplateInstanceEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 41103 / 41104 / 41120"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404 / 40400"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/template-instances [post]
 func contractInstantiateTemplateInstanceEnvelope() {}
 
 // contractGetTemplateInstanceEnvelope documents GET /api/v1/template-instances/{id}.
 //
 // @Summary get Template Instance
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.TemplateInstanceView
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.TemplateInstanceView。声明了 2 个业务错误码：42200(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID getTemplateInstance
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetTemplateInstanceEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 422 {object} docs.Envelope "错误码 42200"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/template-instances/{id} [get]
 func contractGetTemplateInstanceEnvelope() {}
 
 // contractDryRunTemplateInstanceEnvelope documents POST /api/v1/template-instances/{id}/dry-run.
 //
 // @Summary dry Run Template Instance
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceDryRunReport
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TemplateInstanceDryRunReport。声明了 2 个业务错误码：41103(400)、41104(400)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID dryRunTemplateInstance
 // @Security BearerAuth
@@ -13464,13 +14801,16 @@ func contractGetTemplateInstanceEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} DryRunTemplateInstanceEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 41103 / 41104"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/template-instances/{id}/dry-run [post]
 func contractDryRunTemplateInstanceEnvelope() {}
 
 // contractEvaluateTemplateInstanceEnvelope documents POST /api/v1/template-instances/{id}/evaluate.
 //
 // @Summary evaluate Template Instance
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ScenarioTemplateReleaseCandidateResult
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ScenarioTemplateReleaseCandidateResult。声明了 5 个业务错误码：40070(400)、40071(400)、40983(409)、42200(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID evaluateTemplateInstance
 // @Security BearerAuth
@@ -13478,25 +14818,31 @@ func contractDryRunTemplateInstanceEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} EvaluateTemplateInstanceEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40070 / 40071"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40983"
+// @Failure 422 {object} docs.Envelope "错误码 42200"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/template-instances/{id}/evaluate [post]
 func contractEvaluateTemplateInstanceEnvelope() {}
 
 // contractGetTemplateInstanceHealthEnvelope documents GET /api/v1/template-instances/{id}/health.
 //
 // @Summary get Template Instance Health
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.TemplateInstanceHealthView
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回 *service.TemplateInstanceHealthView。声明了 1 个业务错误码：50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID getTemplateInstanceHealth
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetTemplateInstanceHealthEnvelope
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/template-instances/{id}/health [get]
 func contractGetTemplateInstanceHealthEnvelope() {}
 
 // contractReleaseTemplateInstanceEnvelope documents POST /api/v1/template-instances/{id}/release.
 //
 // @Summary release Template Instance
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease。声明了 5 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID releaseTemplateInstance
 // @Security BearerAuth
@@ -13504,13 +14850,17 @@ func contractGetTemplateInstanceHealthEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ReleaseTemplateInstanceEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/template-instances/{id}/release [post]
 func contractReleaseTemplateInstanceEnvelope() {}
 
 // contractListTemplateInstanceReleasesEnvelope documents GET /api/v1/template-instances/{id}/releases.
 //
 // @Summary list Template Instance Releases
-// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AssistantRelease
+// @Description 需要权限 read:release-governance（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.AssistantRelease。声明了 2 个业务错误码：42200(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID listTemplateInstanceReleases
 // @Security BearerAuth
@@ -13518,13 +14868,16 @@ func contractReleaseTemplateInstanceEnvelope() {}
 // @Param page query string false "查询参数 page（默认 1）"
 // @Param page_size query string false "查询参数 page_size（默认 20）"
 // @Success 200 {object} ListTemplateInstanceReleasesEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 422 {object} docs.Envelope "错误码 42200"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/template-instances/{id}/releases [get]
 func contractListTemplateInstanceReleasesEnvelope() {}
 
 // contractActivateTemplateInstanceReleaseEnvelope documents POST /api/v1/template-instances/{id}/releases/{releaseId}/activate.
 //
 // @Summary activate Template Instance Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation。声明了 5 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID activateTemplateInstanceRelease
 // @Security BearerAuth
@@ -13533,13 +14886,17 @@ func contractListTemplateInstanceReleasesEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ActivateTemplateInstanceReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200"
 // @Router /api/v1/template-instances/{id}/releases/{releaseId}/activate [post]
 func contractActivateTemplateInstanceReleaseEnvelope() {}
 
 // contractReconcileTemplateInstanceReleaseEnvelope documents POST /api/v1/template-instances/{id}/releases/{releaseId}/reconcile.
 //
 // @Summary reconcile Template Instance Release
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AssistantRelease。声明了 6 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)、50230(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID reconcileTemplateInstanceRelease
 // @Security BearerAuth
@@ -13548,13 +14905,17 @@ func contractActivateTemplateInstanceReleaseEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ReconcileTemplateInstanceReleaseEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50230"
 // @Router /api/v1/template-instances/{id}/releases/{releaseId}/reconcile [post]
 func contractReconcileTemplateInstanceReleaseEnvelope() {}
 
 // contractRollbackTemplateInstanceEnvelope documents POST /api/v1/template-instances/{id}/rollback.
 //
 // @Summary rollback Template Instance
-// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation
+// @Description 需要权限 manage:release-governance（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ReleaseOperation。声明了 7 个业务错误码：40930(409)、42200(422)、42230(422)、42231(422)、50200(502)、50230(502)、50241(502)（括号内是 HTTP 状态）
 // @Tags release-governance
 // @ID rollbackTemplateInstance
 // @Security BearerAuth
@@ -13562,6 +14923,10 @@ func contractReconcileTemplateInstanceReleaseEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RollbackTemplateInstanceEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40930"
+// @Failure 422 {object} docs.Envelope "错误码 42200 / 42230 / 42231"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50230 / 50241"
 // @Router /api/v1/template-instances/{id}/rollback [post]
 func contractRollbackTemplateInstanceEnvelope() {}
 
@@ -13584,13 +14949,15 @@ func contractListToolRegistriesEnvelope() {}
 // contractCreateToolRegistryEnvelope documents POST /api/v1/tool-registry.
 //
 // @Summary create Tool Registry
-// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry
+// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry。声明了 6 个业务错误码：40120(400)、40129(400)、40130(400)、40192(400)、40194(400)、40996(409)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID createToolRegistry
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateToolRegistryEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40129 / 40130 / 40192 / 40194"
+// @Failure 409 {object} docs.Envelope "错误码 40996"
 // @Router /api/v1/tool-registry [post]
 func contractCreateToolRegistryEnvelope() {}
 
@@ -13615,13 +14982,14 @@ func contractDeleteToolRegistryEnvelope() {}
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetToolRegistryEnvelope
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/tool-registry/{id} [get]
 func contractGetToolRegistryEnvelope() {}
 
 // contractUpdateToolRegistryEnvelope documents PATCH /api/v1/tool-registry/{id}.
 //
 // @Summary update Tool Registry
-// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry
+// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry。声明了 6 个业务错误码：40120(400)、40129(400)、40130(400)、40192(400)、40194(400)、40996(409)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID updateToolRegistry
 // @Security BearerAuth
@@ -13629,13 +14997,15 @@ func contractGetToolRegistryEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateToolRegistryEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40129 / 40130 / 40192 / 40194"
+// @Failure 409 {object} docs.Envelope "错误码 40996"
 // @Router /api/v1/tool-registry/{id} [patch]
 func contractUpdateToolRegistryEnvelope() {}
 
 // contractUpdateToolRegistryPutEnvelope documents PUT /api/v1/tool-registry/{id}.
 //
 // @Summary update Tool Registry
-// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry
+// @Description 需要权限 manage:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.ToolRegistry。声明了 6 个业务错误码：40120(400)、40129(400)、40130(400)、40192(400)、40194(400)、40996(409)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID updateToolRegistryPut
 // @Security BearerAuth
@@ -13643,13 +15013,15 @@ func contractUpdateToolRegistryEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} UpdateToolRegistryPutEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40129 / 40130 / 40192 / 40194"
+// @Failure 409 {object} docs.Envelope "错误码 40996"
 // @Router /api/v1/tool-registry/{id} [put]
 func contractUpdateToolRegistryPutEnvelope() {}
 
 // contractExecuteToolRegistryEnvelope documents POST /api/v1/tool-registry/{id}/execute.
 //
 // @Summary execute Tool Registry
-// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ToolExecutionResult
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.ToolExecutionResult。声明了 14 个业务错误码：40120(400)、40121(400)、40129(400)、40130(400)、40131(400)、40132(400)、40133(400)、40134(400)、40183(400)、40193(400)、40996(409)、50200(502)、50201(502)、50300(503)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID executeToolRegistry
 // @Security BearerAuth
@@ -13657,19 +15029,28 @@ func contractUpdateToolRegistryPutEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ExecuteToolRegistryEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40121 / 40129 / 40130 / 40131 / 40132 / 40133 / 40134 / 40183 / 40193"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40996"
+// @Failure 502 {object} docs.Envelope "错误码 50200 / 50201"
+// @Failure 503 {object} docs.Envelope "错误码 50300"
 // @Router /api/v1/tool-registry/{id}/execute [post]
 func contractExecuteToolRegistryEnvelope() {}
 
 // contractCreateRoutedAnswerRunEnvelope documents POST /api/v1/tool-routing/answer-runs.
 //
 // @Summary create Routed Answer Run
-// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AnswerRun
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *model.AnswerRun。声明了 3 个业务错误码：40120(400)、40310(403)、40997(409)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID createRoutedAnswerRun
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CreateRoutedAnswerRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120"
+// @Failure 403 {object} docs.Envelope "错误码 40310"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40997"
 // @Router /api/v1/tool-routing/answer-runs [post]
 func contractCreateRoutedAnswerRunEnvelope() {}
 
@@ -13688,7 +15069,7 @@ func contractListRoutedEvidenceFactsEnvelope() {}
 // contractRegisterRoutedEvidenceFactsEnvelope documents POST /api/v1/tool-routing/answer-runs/{answerRunId}/evidence-facts.
 //
 // @Summary register Routed Evidence Facts
-// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EvidenceFactRegistrationResult
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.EvidenceFactRegistrationResult。声明了 3 个业务错误码：40089(400)、40091(400)、40998(409)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID registerRoutedEvidenceFacts
 // @Security BearerAuth
@@ -13696,116 +15077,139 @@ func contractListRoutedEvidenceFactsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} RegisterRoutedEvidenceFactsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40089 / 40091"
+// @Failure 409 {object} docs.Envelope "错误码 40998"
 // @Router /api/v1/tool-routing/answer-runs/{answerRunId}/evidence-facts [post]
 func contractRegisterRoutedEvidenceFactsEnvelope() {}
 
 // contractGetRoutedFactGuardOverviewEnvelope documents GET /api/v1/tool-routing/answer-runs/{answerRunId}/fact-guard.
 //
 // @Summary get Routed Fact Guard Overview
-// @Description 需要权限 read:tool-registry（由 accessRules 强制）。成功返回 *service.FactGuardOverview
+// @Description 需要权限 read:tool-registry（由 accessRules 强制）。成功返回 *service.FactGuardOverview。声明了 1 个业务错误码：50000(500)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID getRoutedFactGuardOverview
 // @Security BearerAuth
 // @Param answerRunId path string true "路径参数 answerRunId"
 // @Success 200 {object} GetRoutedFactGuardOverviewEnvelope
+// @Failure 500 {object} docs.Envelope "错误码 50000"
 // @Router /api/v1/tool-routing/answer-runs/{answerRunId}/fact-guard [get]
 func contractGetRoutedFactGuardOverviewEnvelope() {}
 
 // contractExecutePlannedRoutedMixedToolAnswerEnvelope documents POST /api/v1/tool-routing/planned-mixed-tool-answers.
 //
 // @Summary execute Planned Routed Mixed Tool Answer
-// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedMixedToolAnswerResult
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedMixedToolAnswerResult。声明了 8 个业务错误码：40120(400)、40131(400)、40310(403)、40996(409)、40997(409)、50289(502)、50299(502)、50301(502)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID executePlannedRoutedMixedToolAnswer
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ExecutePlannedRoutedMixedToolAnswerEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40131"
+// @Failure 403 {object} docs.Envelope "错误码 40310"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40996 / 40997"
+// @Failure 502 {object} docs.Envelope "错误码 50289 / 50299 / 50301"
 // @Router /api/v1/tool-routing/planned-mixed-tool-answers [post]
 func contractExecutePlannedRoutedMixedToolAnswerEnvelope() {}
 
 // contractExecuteRoutedMixedToolAnswerEnvelope documents POST /api/v1/tool-routing/routed-mixed-tool-answers.
 //
 // @Summary execute Routed Mixed Tool Answer
-// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedMixedToolAnswerResult
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedMixedToolAnswerResult。声明了 2 个业务错误码：40120(400)、40131(400)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID executeRoutedMixedToolAnswer
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ExecuteRoutedMixedToolAnswerEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40131"
 // @Router /api/v1/tool-routing/routed-mixed-tool-answers [post]
 func contractExecuteRoutedMixedToolAnswerEnvelope() {}
 
 // contractExecuteRoutedSQLToolAnswerEnvelope documents POST /api/v1/tool-routing/routed-sql-answer.
 //
 // @Summary execute Routed S Q L Tool Answer
-// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedSQLToolAnswerResult
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedSQLToolAnswerResult。声明了 7 个业务错误码：40120(400)、40121(400)、40122(400)、40123(400)、40131(400)、40132(501)、40997(409)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID executeRoutedSQLToolAnswer
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ExecuteRoutedSQLToolAnswerEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40121 / 40122 / 40123 / 40131"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40997"
+// @Failure 501 {object} docs.Envelope "错误码 40132"
 // @Router /api/v1/tool-routing/routed-sql-answer [post]
 func contractExecuteRoutedSQLToolAnswerEnvelope() {}
 
 // contractExecuteRoutedSQLMultiSubqueryAnswerEnvelope documents POST /api/v1/tool-routing/routed-sql-answers.
 //
 // @Summary execute Routed S Q L Multi Subquery Answer
-// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedSQLMultiSubqueryAnswerResult
+// @Description 需要权限 execute:tool-registry（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.RoutedSQLMultiSubqueryAnswerResult。声明了 7 个业务错误码：40120(400)、40121(400)、40122(400)、40123(400)、40131(400)、40132(501)、40997(409)（括号内是 HTTP 状态）
 // @Tags tool-registry
 // @ID executeRoutedSQLMultiSubqueryAnswer
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} ExecuteRoutedSQLMultiSubqueryAnswerEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40120 / 40121 / 40122 / 40123 / 40131"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40997"
+// @Failure 501 {object} docs.Envelope "错误码 40132"
 // @Router /api/v1/tool-routing/routed-sql-answers [post]
 func contractExecuteRoutedSQLMultiSubqueryAnswerEnvelope() {}
 
 // contractListTrialRunsEnvelope documents GET /api/v1/trial-runs.
 //
 // @Summary list Trial Runs
-// @Description 需要权限 read:trial-run（由 accessRules 强制）。成功返回 ListTrialRunsResponse
+// @Description 需要权限 read:trial-run（由 accessRules 强制）。成功返回 ListTrialRunsResponse。声明了 1 个业务错误码：40121(400)（括号内是 HTTP 状态）
 // @Tags trial-run
 // @ID listTrialRuns
 // @Security BearerAuth
 // @Param scenario_template_id query string false "查询参数 scenario_template_id"
 // @Param assistant_id query string false "查询参数 assistant_id"
 // @Success 200 {object} ListTrialRunsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40121"
 // @Router /api/v1/trial-runs [get]
 func contractListTrialRunsEnvelope() {}
 
 // contractCreateTrialRunEnvelope documents POST /api/v1/trial-runs.
 //
 // @Summary create Trial Run
-// @Description 需要权限 execute:trial-run（由 accessRules 强制）。请求体类型 service.TrialRunInput。成功返回 *service.TrialRunView。声明了 1 个业务错误码：40123(400)（括号内是 HTTP 状态）
+// @Description 需要权限 execute:trial-run（由 accessRules 强制）。请求体类型 service.TrialRunInput。成功返回 *service.TrialRunView。声明了 14 个业务错误码：40044(400)、40058(400)、40072(400)、40121(400)、40122(400)、40123(400)、40940(409)、40941(409)、40942(409)、40943(409)、40944(409)、40945(409)、40984(409)、50090(500)（括号内是 HTTP 状态）
 // @Tags trial-run
 // @ID createTrialRun
 // @Security BearerAuth
 // @Accept json
 // @Param body body service.TrialRunInput true "请求体（service.TrialRunInput）"
 // @Success 200 {object} CreateTrialRunEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40123"
+// @Failure 400 {object} docs.Envelope "错误码 40044 / 40058 / 40072 / 40121 / 40122 / 40123"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40940 / 40941 / 40942 / 40943 / 40944 / 40945 / 40984"
+// @Failure 500 {object} docs.Envelope "错误码 50090"
 // @Router /api/v1/trial-runs [post]
 func contractCreateTrialRunEnvelope() {}
 
 // contractGetTrialRunEnvelope documents GET /api/v1/trial-runs/{id}.
 //
 // @Summary get Trial Run
-// @Description 需要权限 read:trial-run（由 accessRules 强制）。成功返回 *service.TrialRunView
+// @Description 需要权限 read:trial-run（由 accessRules 强制）。成功返回 *service.TrialRunView。声明了 1 个业务错误码：40121(400)（括号内是 HTTP 状态）
 // @Tags trial-run
 // @ID getTrialRun
 // @Security BearerAuth
 // @Param id path string true "路径参数 id"
 // @Success 200 {object} GetTrialRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40121"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/trial-runs/{id} [get]
 func contractGetTrialRunEnvelope() {}
 
 // contractCancelTrialRunEnvelope documents POST /api/v1/trial-runs/{id}/cancel.
 //
 // @Summary cancel Trial Run
-// @Description 需要权限 execute:trial-run（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TrialRunView
+// @Description 需要权限 execute:trial-run（由 accessRules 强制）。本接口不接受请求体，服务端会忽略请求体内容。成功返回 *service.TrialRunView。声明了 1 个业务错误码：40121(400)（括号内是 HTTP 状态）
 // @Tags trial-run
 // @ID cancelTrialRun
 // @Security BearerAuth
@@ -13813,18 +15217,22 @@ func contractGetTrialRunEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} CancelTrialRunEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40121"
+// @Failure 404 {object} docs.Envelope "错误码 404"
 // @Router /api/v1/trial-runs/{id}/cancel [post]
 func contractCancelTrialRunEnvelope() {}
 
 // contractUsageEnvelope documents GET /api/v1/usage.
 //
 // @Summary Usage returns metered usage rows, optionally filtered by date
-// @Description Usage returns metered usage rows, optionally filtered by date.。需要权限 read:usage（由 accessRules 强制）。成功返回 []model.QuotaUsage
+// @Description Usage returns metered usage rows, optionally filtered by date.。需要权限 read:usage（由 accessRules 强制）。成功返回 []model.QuotaUsage。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags usage
 // @ID usage
 // @Security BearerAuth
 // @Param date query string false "查询参数 date"
 // @Success 200 {object} UsageEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/usage [get]
 func contractUsageEnvelope() {}
 
@@ -13849,7 +15257,7 @@ func contractOperationalAttributionEnvelope() {}
 // contractUsageDetailEnvelope documents GET /api/v1/usage/details.
 //
 // @Summary UsageDetail returns a page of per-request metering detail rows (model, scenario, session, dataset)
-// @Description UsageDetail returns a page of per-request metering detail rows (model, scenario, session, dataset). Platform admins may request scope=all.。需要权限 read:usage（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.CostMetric
+// @Description UsageDetail returns a page of per-request metering detail rows (model, scenario, session, dataset). Platform admins may request scope=all.。需要权限 read:usage（由 accessRules 强制）。成功返回分页载荷，items 元素类型 model.CostMetric。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags usage
 // @ID usageDetail
 // @Security BearerAuth
@@ -13866,21 +15274,25 @@ func contractOperationalAttributionEnvelope() {}
 // @Param date_from query string false "查询参数 date_from"
 // @Param date_to query string false "查询参数 date_to"
 // @Success 200 {object} UsageDetailEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/usage/details [get]
 func contractUsageDetailEnvelope() {}
 
 // contractExportUsageReportEnvelope documents GET /api/v1/usage/export.
 //
 // @Summary ExportUsageReport returns the usage report as CSV
-// @Description ExportUsageReport returns the usage report as CSV.。需要权限 read:usage-export（由 accessRules 强制）。成功返回 []service.UsageReportRow
+// @Description ExportUsageReport returns the usage report as CSV.。需要权限 read:usage-export（由 accessRules 强制）。成功返回原始字节，媒体类型 text/csv。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags usage-export
 // @ID exportUsageReport
 // @Security BearerAuth
 // @Param scope query string false "查询参数 scope"
 // @Param from query string false "查询参数 from"
 // @Param to query string false "查询参数 to"
-// @Param tenant_id query string false "查询参数 tenant_id"
-// @Success 200 {object} ExportUsageReportEnvelope
+// @Produce plain
+// @Success 200 {string} string "原始字节；媒体类型即载荷：text/csv"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/usage/export [get]
 func contractExportUsageReportEnvelope() {}
 
@@ -13899,31 +15311,36 @@ func contractUsageFilterOptionsEnvelope() {}
 // contractGatewayMeteringHealthEnvelope documents GET /api/v1/usage/metering.
 //
 // @Summary GatewayMeteringHealth reports the served requests whose metering never landed (doc/304 §4 E147): the counts by state plus the oldest unfinished intents
-// @Description GatewayMeteringHealth reports the served requests whose metering never landed (doc/304 §4 E147): the counts by state plus the oldest unfinished intents. It lives next to `/usage` because "did our books get written" is a usage question, and it is guarded by the same `read usage` capability. `scope=all` widens it across tenants and needs `governance.read tenant`, exactly like `/usage/details`: the two scopes are two answers, and a caller that may read one tenant must not read the rest by guessing a query parameter.。需要权限 read:usage（由 accessRules 强制）。成功返回 *service.GatewayMeteringHealth
+// @Description GatewayMeteringHealth reports the served requests whose metering never landed (doc/304 §4 E147): the counts by state plus the oldest unfinished intents. It lives next to `/usage` because "did our books get written" is a usage question, and it is guarded by the same `read usage` capability. `scope=all` widens it across tenants and needs `governance.read tenant`, exactly like `/usage/details`: the two scopes are two answers, and a caller that may read one tenant must not read the rest by guessing a query parameter.。需要权限 read:usage（由 accessRules 强制）。成功返回 *service.GatewayMeteringHealth。声明了 1 个业务错误码：40305(403)（括号内是 HTTP 状态）
 // @Tags usage
 // @ID gatewayMeteringHealth
 // @Security BearerAuth
 // @Param scope query string false "查询参数 scope"
 // @Success 200 {object} GatewayMeteringHealthEnvelope
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/usage/metering [get]
 func contractGatewayMeteringHealthEnvelope() {}
 
 // contractGatewayBillingReconcileRunsEnvelope documents GET /api/v1/usage/reconcile.
 //
 // @Summary GatewayBillingReconcileRuns lists the caller's tenant's recent daily runs
-// @Description GatewayBillingReconcileRuns lists the caller's tenant's recent daily runs.。需要权限 read:usage（由 accessRules 强制）。成功返回 GatewayBillingReconcileRunsResponse
+// @Description GatewayBillingReconcileRuns lists the caller's tenant's recent daily runs.。需要权限 read:usage（由 accessRules 强制）。成功返回 GatewayBillingReconcileRunsResponse。声明了 2 个业务错误码：40001(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags usage
 // @ID gatewayBillingReconcileRuns
 // @Security BearerAuth
 // @Param limit query string false "查询参数 limit（默认 14）"
 // @Success 200 {object} GatewayBillingReconcileRunsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40001"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/usage/reconcile [get]
 func contractGatewayBillingReconcileRunsEnvelope() {}
 
 // contractGatewayBillingReconcileFindingsEnvelope documents GET /api/v1/usage/reconcile/{runId}/findings.
 //
 // @Summary GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind
-// @Description GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind.。需要权限 read:usage（由 accessRules 强制）。成功返回 GatewayBillingReconcileFindingsResponse
+// @Description GatewayBillingReconcileFindings pages one run's disagreements, optionally by kind.。需要权限 read:usage（由 accessRules 强制）。成功返回 GatewayBillingReconcileFindingsResponse。声明了 3 个业务错误码：40001(400)、40096(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags usage
 // @ID gatewayBillingReconcileFindings
 // @Security BearerAuth
@@ -13931,27 +15348,32 @@ func contractGatewayBillingReconcileRunsEnvelope() {}
 // @Param limit query string false "查询参数 limit（默认 100）"
 // @Param kind query string false "查询参数 kind"
 // @Success 200 {object} GatewayBillingReconcileFindingsEnvelope
+// @Failure 400 {object} docs.Envelope "错误码 40001 / 40096"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/usage/reconcile/{runId}/findings [get]
 func contractGatewayBillingReconcileFindingsEnvelope() {}
 
 // contractRecentCrossAppSessionsEnvelope documents GET /api/v1/workbench/recent-sessions.
 //
 // @Summary Recent Cross App Sessions
-// @Description 需要权限 read:assistant（由 accessRules 强制）。成功返回 []service.RecentConversationSession。声明了 1 个业务错误码：40000(400)（括号内是 HTTP 状态）
+// @Description 需要权限 read:assistant（由 accessRules 强制）。成功返回 []service.RecentConversationSession。声明了 3 个业务错误码：40000(400)、40096(400)、40305(403)（括号内是 HTTP 状态）
 // @Tags assistant
 // @ID recentCrossAppSessions
 // @Security BearerAuth
 // @Param limit query string false "查询参数 limit（默认 20）"
 // @Param search query string false "查询参数 search"
 // @Success 200 {object} RecentCrossAppSessionsEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40096"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 40305"
 // @Router /api/v1/workbench/recent-sessions [get]
 func contractRecentCrossAppSessionsEnvelope() {}
 
 // contractGatewayAgentEnvelope documents POST /v1/agents/{id}/completions.
 //
 // @Summary GatewayAgent exposes a controlled Agent completion path for API keys
-// @Description GatewayAgent exposes a controlled Agent completion path for API keys.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
+// @Description GatewayAgent exposes a controlled Agent completion path for API keys.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 15 个业务错误码：40000(400)、40042(400)、40075(400)、40159(400)、40162(400)、40960(409)、40980(409)、40981(409)、40982(409)、42930(429)、50000(500)、50240(502)、50241(502)、50278(502)、50289(502)（括号内是 HTTP 状态）
 // @Tags agents
 // @ID gatewayAgent
 // @Security BearerAuth
@@ -13959,32 +15381,42 @@ func contractRecentCrossAppSessionsEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} GatewayAgentEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
-// @Failure 409 {object} docs.Envelope "错误码 40981 / 40982"
-// @Failure 502 {object} docs.Envelope "错误码 50240 / 50241"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40042 / 40075 / 40159 / 40162"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40960 / 40980 / 40981 / 40982"
+// @Failure 429 {object} docs.Envelope "错误码 42930"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50240 / 50241 / 50278 / 50289"
 // @Router /v1/agents/{id}/completions [post]
 func contractGatewayAgentEnvelope() {}
 
 // contractGatewayChatEnvelope documents POST /v1/chat/completions.
 //
 // @Summary GatewayChat is the OpenAI-compatible gateway entry point
-// @Description GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
+// @Description GatewayChat is the OpenAI-compatible gateway entry point. It authenticates a tenant API key and forwards the request either to a RAGFlow chat assistant (retrieval-backed; selected by the optional chat_id/session_id extension) or to the classic model-route provider. Streaming is passed through as SSE with metering and audit.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 17 个业务错误码：40000(400)、40042(400)、40060(400)、40305(403)、40980(409)、40981(409)、40982(409)、42930(429)、50000(500)、50220(502)、50221(502)、50222(502)、50230(502)、50232(502)、50240(502)、50241(502)、50244(502)（括号内是 HTTP 状态）
 // @Tags chat
 // @ID gatewayChat
 // @Security BearerAuth
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} GatewayChatEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
-// @Failure 409 {object} docs.Envelope "错误码 40981 / 40982"
-// @Failure 502 {object} docs.Envelope "错误码 50240 / 50241"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40042 / 40060"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403 / 40305"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40980 / 40981 / 40982"
+// @Failure 429 {object} docs.Envelope "错误码 42930"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50220 / 50221 / 50222 / 50230 / 50232 / 50240 / 50241 / 50244"
 // @Router /v1/chat/completions [post]
 func contractGatewayChatEnvelope() {}
 
 // contractGatewaySearchAppEnvelope documents POST /v1/search-apps/{id}/completions.
 //
 // @Summary GatewaySearchApp exposes a controlled Search App execution path for API keys
-// @Description GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 5 个业务错误码：40000(400)、40981(409)、40982(409)、50240(502)、50241(502)（括号内是 HTTP 状态）
+// @Description GatewaySearchApp exposes a controlled Search App execution path for API keys. It applies the same production controls as /v1/chat/completions.。需要网关 API Key（Authorization: Bearer <api-key>），不走控制面 RBAC；按 key 限流。本接口不接受请求体，服务端会忽略请求体内容。成功返回 docs.UpstreamPassthrough。声明了 11 个业务错误码：40000(400)、40042(400)、40094(400)、40980(409)、40981(409)、40982(409)、42930(429)、50000(500)、50240(502)、50241(502)、50265(502)（括号内是 HTTP 状态）
 // @Tags search-apps
 // @ID gatewaySearchApp
 // @Security BearerAuth
@@ -13992,8 +15424,13 @@ func contractGatewayChatEnvelope() {}
 // @Accept json
 // @Param body body object false "本接口不接受请求体"
 // @Success 200 {object} GatewaySearchAppEnvelope
-// @Failure 400 {object} docs.Envelope "错误码 40000"
-// @Failure 409 {object} docs.Envelope "错误码 40981 / 40982"
-// @Failure 502 {object} docs.Envelope "错误码 50240 / 50241"
+// @Failure 400 {object} docs.Envelope "错误码 40000 / 40042 / 40094"
+// @Failure 401 {object} docs.Envelope "错误码 401"
+// @Failure 403 {object} docs.Envelope "错误码 403"
+// @Failure 404 {object} docs.Envelope "错误码 404"
+// @Failure 409 {object} docs.Envelope "错误码 40980 / 40981 / 40982"
+// @Failure 429 {object} docs.Envelope "错误码 42930"
+// @Failure 500 {object} docs.Envelope "错误码 50000"
+// @Failure 502 {object} docs.Envelope "错误码 50240 / 50241 / 50265"
 // @Router /v1/search-apps/{id}/completions [post]
 func contractGatewaySearchAppEnvelope() {}

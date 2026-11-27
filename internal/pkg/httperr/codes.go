@@ -90,6 +90,20 @@ const (
 	CodeRoleParentForeignTenant      = 41162 // parent belongs to another tenant
 	CodeRoleScopeChangeWithChildren  = 41163 // scope change would orphan the role's children
 	CodeRolePermissionOutsideCatalog = 41164 // submitted rule is not in the permission catalog
+
+	// Tenant lifecycle (41165-41169). 40003 and 40004 were overloaded: setup.go already
+	// answers 40003 for "base_url and api_key are required" and 40004 for "account does
+	// not exist", while tenant.go reused both for "the platform tenant is immutable" and
+	// "this tenant still owns resources". One code, one meaning is the rule the web
+	// client maps sentences by, so the tenant pair moves into this block (doc/315 review).
+	CodeTenantPlatformImmutable = 41165 // the platform tenant cannot be renamed, disabled or deleted
+	CodeTenantNotEmpty          = 41166 // the tenant still owns users/teams/datasets and force was not given
+	// 41167 is the approval gate. It used to be 40086, which role inheritance had already
+	// claimed for "parent role not found": the console offered "父角色不存在" for a tenant
+	// whose approval workflow was simply switched off. The two meanings are different
+	// parties (a role edit / an operation that needs a second pair of eyes), so they get
+	// different codes rather than a shared sentence.
+	CodeApprovalWorkflowDisabled = 41167 // the operation needs the approval workflow, which is disabled
 )
 
 // Declaration documents one code: what it means and who may emit it.
@@ -130,4 +144,7 @@ var Declared = []Declaration{
 	{CodeRoleParentForeignTenant, "role_parent_foreign_tenant", "父角色属于其他租户"},
 	{CodeRoleScopeChangeWithChildren, "role_scope_change_with_children", "角色仍有子角色，改作用域前要先把子角色挂到其他父级"},
 	{CodeRolePermissionOutsideCatalog, "role_permission_outside_catalog", "提交的权限项不在权限目录内"},
+	{CodeTenantPlatformImmutable, "tenant_platform_immutable", "平台工作区不可改名、停用或删除"},
+	{CodeTenantNotEmpty, "tenant_not_empty", "工作区仍有用户/团队/数据集，未指定 force 时不可删除"},
+	{CodeApprovalWorkflowDisabled, "approval_workflow_disabled", "该操作需要审批流，但审批流未启用"},
 }

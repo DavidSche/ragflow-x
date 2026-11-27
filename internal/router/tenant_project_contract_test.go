@@ -220,8 +220,8 @@ func TestP0_TENANT_001_TenantLifecycleIsScopedAndProtected(t *testing.T) {
 
 	resp, payload = app.doAuth(t, http.MethodDelete, "/api/v1/tenants/"+created.Data.ID, token, nil)
 	requireTenantProjectStatus(t, resp, payload, http.StatusBadRequest)
-	if code := errorCode(t, payload); code != 40004 {
-		t.Fatalf("non-forced tenant delete error code = %d, want 40004", code)
+	if code := errorCode(t, payload); code != 41166 {
+		t.Fatalf("non-forced tenant delete error code = %d, want 41166 (tenant_not_empty; 40004 belongs to the setup wizard)", code)
 	}
 
 	resp, payload = app.doAuth(t, http.MethodPost, "/api/v1/tenants", token, []byte(`{"name":"tenant-contract-other"}`))

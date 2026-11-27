@@ -214,8 +214,8 @@ func TestSensitiveConnectorRequiresApproval(t *testing.T) {
 	}
 	_, _, err = svc.ApprovalGateForce(context.Background(), "u1", model.ApprovalObjectConnector, model.ApprovalActionCreate, "new:s3", map[string]any{"sensitive": true}, "")
 	he, ok := err.(*httperr.Error)
-	if !ok || he.Code != 40086 {
-		t.Fatalf("forced gate with approval disabled = %v, want 40086", err)
+	if !ok || he.Code != httperr.CodeApprovalWorkflowDisabled {
+		t.Fatalf("forced gate with approval disabled = %v, want httperr.CodeApprovalWorkflowDisabled", err)
 	}
 }
 

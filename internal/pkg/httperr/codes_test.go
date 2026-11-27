@@ -78,6 +78,12 @@ func Test40085HasASingleOwner(t *testing.T) {
 		registry   = "internal/pkg/httperr/codes.go"
 		overloaded = "40085"
 	)
+	// prose names a code without emitting it. Swagger's generated artifacts repeat every
+	// `@Failure` description verbatim, and the hand-written contract file is exactly that
+	// description; counting their mentions as leaks made the guard fire on the document
+	// that is supposed to name the code (doc/310 T310-05). A call site in either file is
+	// not a thing that exists — they hold annotations and string literals, no handlers.
+	prose := []string{"internal/docs/", "internal/handler/openapi_routes_contracts.go"}
 	root := filepath.Join("..", "..", "..")
 	scanRoots := []string{filepath.Join(root, "internal"), filepath.Join(root, "cmd")}
 	re := regexp.MustCompile(`\b40085\b`)
@@ -103,6 +109,11 @@ func Test40085HasASingleOwner(t *testing.T) {
 				rel = filepath.ToSlash(rel)
 				if rel == registry {
 					return nil
+				}
+				for _, prefix := range prose {
+					if strings.HasPrefix(rel, prefix) || rel == prefix {
+						return nil
+					}
 				}
 				counts[rel] += n
 			}

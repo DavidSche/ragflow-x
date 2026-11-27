@@ -2,6 +2,7 @@ package docs_test
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -38,5 +39,43 @@ func TestEmbeddedSpecIsASpec(t *testing.T) {
 	}
 	if !strings.Contains(string(docs.OpenAPISpecYAML), "openapi: "+spec.OpenAPI) {
 		t.Error("embedded swagger.yaml and swagger.json disagree about the spec version")
+	}
+}
+
+// TestOfflineDeliverableIsTheSpecAndTheRenderedPage pins the decision doc/310 §22
+// T310-08 asks for. Two ways to publish an API reference with no server: ship the
+// interactive UI, or ship bytes a browser can open. This project ships the bytes —
+// `doc/specification/api/api-reference.{md,html}` are tracked and s28 proves they are
+// a fresh render of the served spec — while the UI stays a convenience of the gated
+// `/docs` surface, whose assets live in gin-swagger's own embedded copy, not here.
+//
+// The test therefore guards the shape of that sentence: this package may contain the
+// two spec artifacts and Go code, nothing else. Dropping a swagger-ui bundle next to
+// them would be changing the delivery decision, and the failure message says so
+// instead of letting a new file ride along unnoticed.
+func TestOfflineDeliverableIsTheSpecAndTheRenderedPage(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	allowed := map[string]bool{"swagger.json": true, "swagger.yaml": true}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || strings.HasSuffix(name, ".go") || strings.HasSuffix(name, ".md") {
+			continue
+		}
+		if !allowed[name] {
+			t.Errorf("internal/docs carries %q: the offline deliverable is the two spec artifacts "+
+				"plus the rendered page under doc/specification/api (doc/310 §22 T310-08). "+
+				"Shipping an interactive UI asset is a different decision — argue it there first", name)
+		}
+	}
+	for _, name := range []string{"swagger.json", "swagger.yaml"} {
+		if !allowed[name] {
+			continue
+		}
+		if _, err := os.Stat(name); err != nil {
+			t.Errorf("the embedded artifact %s is missing: the binary would serve an empty spec", name)
+		}
 	}
 }

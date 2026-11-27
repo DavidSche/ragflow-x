@@ -593,7 +593,7 @@ func validateApprovalSteps(steps []model.ApprovalStepSpec) error {
 
 func (s *Service) SubmitApproval(ctx context.Context, actorID string, req ApprovalSubmitRequest) (*model.Approval, error) {
 	if !s.currentApprovalConfig().Enabled {
-		return nil, httperr.BadRequest(40086, "approval workflow is disabled")
+		return nil, httperr.BadRequest(httperr.CodeApprovalWorkflowDisabled, "approval workflow is disabled")
 	}
 	ac, err := s.authz(ctx, actorID)
 	if err != nil {
@@ -724,7 +724,7 @@ func (s *Service) ApprovalGateForTenant(ctx context.Context, actorID, targetTena
 		return nil, false, httperr.BadRequest(40000, "target tenant is required")
 	}
 	if !s.currentApprovalConfig().Enabled {
-		return nil, false, httperr.BadRequest(40086, "approval workflow must be enabled for cross-tenant writes")
+		return nil, false, httperr.BadRequest(httperr.CodeApprovalWorkflowDisabled, "approval workflow must be enabled for cross-tenant writes")
 	}
 	if idempotencyKey == "" {
 		idempotencyKey = id.New()
@@ -753,7 +753,7 @@ func (s *Service) approvalGate(ctx context.Context, actorID, objectType, action,
 	required := force || approvalAlwaysRequired(objectType)
 	if required {
 		if !s.currentApprovalConfig().Enabled {
-			return nil, false, httperr.BadRequest(40086, "approval workflow must be enabled for governed operations")
+			return nil, false, httperr.BadRequest(httperr.CodeApprovalWorkflowDisabled, "approval workflow must be enabled for governed operations")
 		}
 	}
 	if !s.currentApprovalConfig().Enabled {

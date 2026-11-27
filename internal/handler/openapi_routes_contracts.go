@@ -75,7 +75,7 @@ func contractOidcCallback() {}
 // @Produce json
 // @Success 200 {object} handler.MeEnvelope
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/auth/me [get]
 func contractGetCurrentUser() {}
@@ -91,7 +91,7 @@ func contractGetCurrentUser() {}
 // @Param scope query string false "按作用域过滤：platform / tenant / project"
 // @Success 200 {object} handler.RoleListEnvelope
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/roles [get]
 func contractListRoles() {}
@@ -105,7 +105,7 @@ func contractListRoles() {}
 // @Produce json
 // @Success 200 {object} handler.PermissionCatalogEnvelope
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/roles/permission-catalog [get]
 func contractGetPermissionCatalog() {}
@@ -142,7 +142,7 @@ func contractGetRolePermissions() {}
 // @Param scope query string false "治理范围：all / current / specific（由权限决定是否允许）"
 // @Success 200 {object} handler.TenantPageEnvelope
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/tenants [get]
 func contractListTenants() {}
@@ -155,6 +155,8 @@ func contractListTenants() {}
 // @ID exportTenants
 // @Produce text/csv
 // @Success 200 {string} string "CSV 文件内容（Content-Disposition: attachment; filename=\"tenants.csv\"）"
+// @Failure 401 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/tenants/export [get]
 func contractExportTenants() {}
@@ -177,7 +179,7 @@ func contractExportTenants() {}
 // @Param scope query string false "all 表示跨工作区（需要平台级 governance.read）"
 // @Success 200 {object} handler.UserPageEnvelope
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/users [get]
 func contractListUsers() {}
@@ -207,8 +209,9 @@ func contractGetUserClearance() {}
 // @Produce json
 // @Param request body handler.LoginRequest true "用户名与密码"
 // @Success 200 {object} handler.LoginEnvelope
-// @Failure 400 {object} docs.Envelope "请求体不合法（缺少 username/password）"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法（缺少 username/password）"
 // @Failure 401 {object} docs.Envelope "凭据错误或账号已停用"
+// @Failure 403 {object} docs.Envelope "40301 所属工作区已停用，禁止登录"
 // @Failure 429 {object} docs.Envelope "该来源的失败次数超限，请稍后重试"
 // @Router /api/v1/auth/login [post]
 func contractAuthLogin() {}
@@ -223,7 +226,7 @@ func contractAuthLogin() {}
 // @Produce json
 // @Param request body handler.RefreshRequest false "刷新令牌（可省略，省略时用 Cookie）"
 // @Success 200 {object} handler.LogoutEnvelope
-// @Failure 400 {object} docs.Envelope "请求体不是合法 JSON"
+// @Failure 400 {object} docs.Envelope "40000 请求体不是合法 JSON"
 // @Router /api/v1/auth/logout [post]
 func contractAuthLogout() {}
 
@@ -237,8 +240,9 @@ func contractAuthLogout() {}
 // @Produce json
 // @Param request body handler.RefreshRequest true "刷新令牌（留空则用 Cookie）"
 // @Success 200 {object} handler.RefreshEnvelope
-// @Failure 400 {object} docs.Envelope "既没有 refresh_token 也没有 rgx_refresh Cookie"
+// @Failure 400 {object} docs.Envelope "40000 既没有 refresh_token 也没有 rgx_refresh Cookie"
 // @Failure 401 {object} docs.Envelope "刷新令牌无效、已旋转或已过期"
+// @Failure 403 {object} docs.Envelope "40301 所属工作区已停用，拒绝续期"
 // @Router /api/v1/auth/refresh [post]
 func contractAuthRefresh() {}
 
@@ -252,8 +256,8 @@ func contractAuthRefresh() {}
 // @Produce json
 // @Param request body handler.CreateRoleRequest true "角色名、作用域与可选父角色"
 // @Success 200 {object} handler.RoleEnvelope
-// @Failure 400 {object} docs.Envelope "请求体不合法或作用域非法"
-// @Failure 409 {object} docs.Envelope "同作用域下角色名重复"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法；40081 作用域非法；40085 不能把角色设成自己的父角色；40086 父角色不存在；41160 会造成继承成环；41161 父角色作用域不一致；41162 父角色属于其他工作区"
+// @Failure 409 {object} docs.Envelope "40911 同作用域下角色名重复"
 // @Failure 401 {object} docs.Envelope
 // @Failure 403 {object} docs.Envelope
 // @Security BearerAuth
@@ -270,9 +274,10 @@ func contractCreateRole() {}
 // @Produce json
 // @Param request body handler.CreateTenantRequest true "工作区名称与可选品牌配置"
 // @Success 200 {object} handler.TenantEnvelope
-// @Failure 400 {object} docs.Envelope "请求体不合法"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法；40025 状态取值非法；40147 编译令牌预算为负数"
+// @Failure 409 {object} docs.Envelope "40911 工作区名称已存在"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/tenants [post]
 func contractCreateTenant() {}
@@ -287,10 +292,9 @@ func contractCreateTenant() {}
 // @Produce json
 // @Param request body handler.CreateUserRequest true "新用户的用户名、密码、邮箱与角色"
 // @Success 200 {object} handler.UserEnvelope
-// @Failure 400 {object} docs.Envelope "请求体不合法，或非平台管理员指定了 tenant_id"
-// @Failure 409 {object} docs.Envelope "用户名已存在"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法；40020 用户名或密码缺失；40021 角色不可授予；40022 用户名已存在；40023 邮箱不合法或过长；40024 密码少于 8 位；40026 邮箱已存在"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/users [post]
 func contractCreateUser() {}
@@ -306,7 +310,8 @@ func contractCreateUser() {}
 // @Param id path string true "角色 ID"
 // @Param request body handler.UpdateRoleRequest true "要修改的字段"
 // @Success 200 {object} handler.RoleEnvelope
-// @Failure 409 {object} docs.Envelope "内置角色不可修改，或名称冲突"
+// @Failure 400 {object} docs.Envelope "40000 状态取值非法；40081 作用域非法；40082 内置角色不可修改；40085/40086 父角色相关拒绝；41160/41161/41162 父角色相关拒绝；41163 角色下仍有子角色，不能直接改作用域"
+// @Failure 409 {object} docs.Envelope "40911 同作用域下角色名重复"
 // @Failure 401 {object} docs.Envelope
 // @Failure 403 {object} docs.Envelope
 // @Security BearerAuth
@@ -324,10 +329,9 @@ func contractUpdateRole() {}
 // @Param id path string true "角色 ID"
 // @Param request body handler.SetRolePermissionsRequest true "完整的规则集合"
 // @Success 200 {object} handler.RolePermissionsEnvelope
-// @Failure 400 {object} docs.Envelope "规则不合法（未知资源或 effect 取值非法）"
-// @Failure 409 {object} docs.Envelope "内置角色的规则不可修改"
+// @Failure 400 {object} docs.Envelope "40000 规则不合法（未知资源或 effect 取值非法）；40082 内置角色的规则不可修改；41164 提交的权限项不在权限目录内"
+// @Failure 403 {object} docs.Envelope "40302 不能授予自己没有的权限"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
 // @Security BearerAuth
 // @Router /api/v1/roles/{id}/permissions [put]
 func contractSetRolePermissions() {}
@@ -342,9 +346,9 @@ func contractSetRolePermissions() {}
 // @Produce json
 // @Param request body handler.BatchTenantStatusRequest true "工作区 ID 列表与目标状态"
 // @Success 200 {object} handler.BatchTenantStatusEnvelope
-// @Failure 400 {object} docs.Envelope "ids 为空或状态取值非法"
+// @Failure 400 {object} docs.Envelope "40000 ids 为空；40025 状态取值非法；40147 编译令牌预算为负数；41165 平台工作区不可停用"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/tenants/status [put]
 func contractBatchUpdateTenantStatus() {}
@@ -360,9 +364,10 @@ func contractBatchUpdateTenantStatus() {}
 // @Param id path string true "工作区 ID"
 // @Param request body handler.UpdateTenantRequest true "要修改的设置"
 // @Success 200 {object} handler.TenantEnvelope
-// @Failure 400 {object} docs.Envelope "请求体不合法或状态取值非法"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法；40025 状态取值非法；40147 编译令牌预算为负数"
+// @Failure 409 {object} docs.Envelope "40911 工作区名称已存在"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/tenants/{id} [put]
 func contractUpdateTenant() {}
@@ -378,9 +383,10 @@ func contractUpdateTenant() {}
 // @Param id path string true "用户 ID"
 // @Param request body handler.UpdateUserRequest true "要修改的字段"
 // @Success 200 {object} handler.IDEnvelope
-// @Failure 409 {object} docs.Envelope "40906：不能修改自己的角色"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法；40020/40022/40023/40024/40026 用户名、昵称、邮箱、密码校验失败；40021 角色不可授予"
+// @Failure 409 {object} docs.Envelope "40904 目标是平台管理员；40905 会移除本工作区最后一个管理员；40906 不能修改自己的角色"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/users/{id} [put]
 func contractUpdateUser() {}
@@ -396,9 +402,9 @@ func contractUpdateUser() {}
 // @Param id path string true "用户 ID"
 // @Param request body handler.SetClearanceRequest true "目标密级"
 // @Success 200 {object} handler.ClearanceEnvelope
-// @Failure 400 {object} docs.Envelope "请求体不合法或密级取值非法"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法；40122 密级取值非法"
+// @Failure 403 {object} docs.Envelope "40321 需要治理角色（不是普通工作区管理员）"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
 // @Security BearerAuth
 // @Router /api/v1/users/{id}/clearance [put]
 func contractSetUserClearance() {}
@@ -414,10 +420,10 @@ func contractSetUserClearance() {}
 // @Param id path string true "用户 ID"
 // @Param request body handler.UserStatusRequest true "目标状态"
 // @Success 200 {object} handler.UserStatusEnvelope
-// @Failure 400 {object} docs.Envelope "请求体不合法或状态取值非法"
-// @Failure 409 {object} docs.Envelope "40907：不能修改自己的状态"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法；40025 状态取值非法"
+// @Failure 409 {object} docs.Envelope "40904 目标是平台管理员；40905 会停用本工作区最后一个管理员；40907 不能修改自己的状态"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/users/{id}/status [put]
 func contractSetUserStatus() {}
@@ -433,9 +439,10 @@ func contractSetUserStatus() {}
 // @Param id path string true "用户 ID"
 // @Param request body handler.AssignRoleRequest true "目标角色名"
 // @Success 200 {object} handler.AssignRoleEnvelope
-// @Failure 409 {object} docs.Envelope "40906 修改自己的角色；或角色不可授予"
+// @Failure 400 {object} docs.Envelope "40000 请求体不合法；40021 角色不可授予（不存在、不属于本工作区或需要平台管理员）"
+// @Failure 409 {object} docs.Envelope "40904 目标是平台管理员；40905 会移除本工作区最后一个管理员；40906 不能修改自己的角色"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/users/{id}/role [put]
 func contractSetUserRole() {}
@@ -450,9 +457,9 @@ func contractSetUserRole() {}
 // @Param id path string true "工作区 ID"
 // @Param force query bool false "true 表示连同子资源强制删除"
 // @Success 200 {object} handler.IDEnvelope
-// @Failure 409 {object} docs.Envelope "工作区仍有子资源且未指定 force"
+// @Failure 400 {object} docs.Envelope "41165 平台工作区不可删除；41166 工作区仍有用户/团队/数据集且未指定 force"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/tenants/{id} [delete]
 func contractDeleteTenant() {}
@@ -484,7 +491,7 @@ func contractDeleteRole() {}
 // @Success 200 {object} handler.IDEnvelope
 // @Failure 409 {object} docs.Envelope "40908 删除自己；40903 目标是平台管理员；40905 目标是本工作区最后一个启用中的管理员"
 // @Failure 401 {object} docs.Envelope
-// @Failure 403 {object} docs.Envelope
+// @Failure 403 {object} docs.Envelope "40305 账号被分配的角色属于其他工作区（角色归属需管理员修复）"
 // @Security BearerAuth
 // @Router /api/v1/users/{id} [delete]
 func contractDeleteUser() {}

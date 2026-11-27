@@ -30,7 +30,7 @@ Windows 下务必带 `PYTHONUTF8=1 PYTHONIOENCODING=utf-8`（脚本里有中文�
 | --- | --- | --- |
 | `RGX_E2E_BASE` | `http://192.168.4.151:19193/api/v1` | 被测网关 |
 | `RGX_E2E_TAG` | UTC 时间戳 | 资源后缀，一次运行一个 tag，互不干扰 |
-| `RGX_E2E_PLATFORM_USER/PASS` | `admin` / `RgxTest#2026a` | 只在「全新库需要建工作区用户」时用到 |
+| `RGX_E2E_PLATFORM_USER/PASS` | `admin` / 空（由部署环境提供，不入库） | 只在「全新库需要建工作区用户」时用到 |
 | `RGX_E2E_WS_USER/PASS` | `e2e-admin` / `E2e#2026pass` | 真正干活的租户管理员 |
 | `RGX_E2E_WS_NAME` | `E2E-场景模板全量验证` | 工作区名 |
 | `RGX_E2E_PROJECT` | `E2E 场景模板验证项目` | 实例归属项目 |

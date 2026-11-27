@@ -37,9 +37,18 @@ import time
 import urllib.error
 import urllib.request
 
-BASE = os.environ.get("RGX_BASE", "http://192.168.4.151:19193/api/v1")
+BASE = os.environ.get("RGX_BASE", "")
 USER = os.environ.get("RGX_VERIFY_USER", "admin")
-PASS = os.environ.get("RGX_VERIFY_PASS", "RgxTest#2026a")
+PASS = os.environ.get("RGX_VERIFY_PASS", "")
+
+# No default host and no default credential (doc/318 §十一 D-11): a drill host is configuration
+# and a password is a secret, and neither belongs in a tracked file. Refuse before the network
+# instead — the same contract the probes hold, exit 2 = "the environment refused" (doc/304 §2).
+if not BASE or not PASS:
+    sys.stderr.write(
+        "refusing: set RGX_BASE (e.g. http://<host>:19193/api/v1) and RGX_VERIFY_PASS\n"
+    )
+    sys.exit(2)
 
 
 def call(method, path, token=None, body=None, key=None, timeout=60):

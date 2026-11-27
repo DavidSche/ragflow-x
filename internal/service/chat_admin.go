@@ -548,7 +548,7 @@ func (s *Service) UpdateChatSession(ctx context.Context, tenantID, chatID, sessi
 // BatchUpdateChatStatus enables/disables chatbots the caller may manage.
 func (s *Service) BatchUpdateChatStatus(ctx context.Context, tenantID string, scopeAll bool, ids []string, status string) error {
 	if status != model.TenantStatusActive && status != model.TenantStatusDisabled {
-		return httperr.BadRequest(40002, "invalid status")
+		return httperr.BadRequest(40025, "invalid status")
 	}
 	return s.Store.BatchUpdateChatStatus(ctx, tenantID, scopeAll, ids, status)
 }
