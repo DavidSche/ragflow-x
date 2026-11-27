@@ -424,9 +424,13 @@ func assertReportSnapshotsLiveInTx(
 	if len(ids) == 0 {
 		return nil
 	}
+	// A tombstone is not inheritable evidence (doc/319 R-01): the content it froze
+	// is gone, so a section that reuses it would cite a snapshot nothing can be
+	// verified against. Counting it as live here would let the reuse path mint a
+	// section whose assurance run can only ever say `evidence_expired`.
 	var live int64
 	if err := tx.Model(&model.ReportEvidenceSnapshot{}).
-		Where("tenant_id = ? AND id IN ?", tenantID, ids).
+		Where("tenant_id = ? AND id IN ? AND purged_at IS NULL", tenantID, ids).
 		Count(&live).Error; err != nil {
 		return err
 	}
@@ -568,8 +572,19 @@ func bindReportEvidenceInTx(
 		return map[string]string{}, nil
 	}
 	if err := tx.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "chunk_id"}, {Name: "source_content_hash"}},
-		DoNothing: true,
+		Columns: []clause.Column{{Name: "tenant_id"}, {Name: "chunk_id"}, {Name: "source_content_hash"}},
+		// The dedupe identity is (chunk, source content hash), so a conflicting
+		// insert can only ever carry *identical* content; what it may change is the
+		// observation clock — and, when retention already tombstoned the row, the
+		// tombstone itself. Reviving is the honest answer (doc/319 R-01): the
+		// citation being written points at content that exists again, and leaving
+		// `purged_at` set would make that brand-new citation read as
+		// `evidence_expired`. `DoNothing` was safe only while a purge deleted the
+		// row, because there was nothing left to collide with.
+		DoUpdates: clause.AssignmentColumns([]string{
+			"content", "content_hash", "content_size", "truncated", "truncation_strategy",
+			"source_parsed_at", "expires_at", "purged_at", "purged_reason",
+		}),
 	}).Create(&evidence).Error; err != nil {
 		return nil, err
 	}

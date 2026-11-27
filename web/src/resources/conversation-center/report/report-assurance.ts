@@ -81,8 +81,26 @@ export const ASSURANCE_SCORED_VERDICTS: readonly AssuranceVerdict[] = [
   "insufficient_evidence",
 ];
 
-/** Quote traceability (§5.1.1). Existence only — never a support verdict. */
-export const QUOTE_STATUSES = ["verified", "not_found", "ambiguous", "not_provided"] as const;
+/**
+ * Quote traceability (§5.1.1). Existence only — never a support verdict.
+ *
+ * `evidence_expired` / `evidence_missing` are the two lifecycle states of a citation
+ * whose snapshot cannot be read at all (doc/319 R-01, §9.3). They are *not* quote
+ * verdicts — nothing was checked — and the server guarantees they never reach the
+ * semantic layer. They exist so the panel can stop saying "未提供引文" to an author
+ * whose citation the retention clock removed, which is a different sentence from
+ * "the evidence is gone and here is when it went".
+ *
+ * The values must stay within the model's 16-byte `quote_status` column.
+ */
+export const QUOTE_STATUSES = [
+  "verified",
+  "not_found",
+  "ambiguous",
+  "not_provided",
+  "evidence_expired",
+  "evidence_missing",
+] as const;
 export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 
 /** Finding statuses (§7.3) and the transitions the server accepts. */
@@ -435,6 +453,8 @@ export const describeQuoteStatus = (t: Translate, status: QuoteStatus | ""): str
     case "not_found":
     case "ambiguous":
     case "not_provided":
+    case "evidence_expired":
+    case "evidence_missing":
       return t(assuranceKey(`quote_${status}`));
     default:
       return t(assuranceKey("quote_unchecked"));

@@ -809,6 +809,12 @@ func (ReportCharge) TableName() string { return "rgx_report_charge" }
 // ReportEvidenceSnapshot freezes evidence CONTENT for later verification. It
 // deliberately stores no permission context: that belongs to each citation
 // (doc/288 §7.4 / 291 P0-3).
+//
+// Retention clears `content` and writes a tombstone (`purged_at`/`purged_reason`)
+// instead of deleting the row (doc/319 §9.2 方案 B, R-01). A hard delete destroyed
+// the only fact that could distinguish "this snapshot expired" from "this snapshot
+// never existed", so an assurance run could only report `not_provided` — blaming
+// the author for a citation the product itself removed.
 type ReportEvidenceSnapshot struct {
 	ID                 string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	TenantID           string     `gorm:"column:tenant_id;size:32;not null;uniqueIndex:uidx_rgx_report_evidence_dedup,priority:1" json:"tenant_id"`
@@ -827,7 +833,24 @@ type ReportEvidenceSnapshot struct {
 	SourceParsedAt     *time.Time `gorm:"column:source_parsed_at" json:"source_parsed_at"`
 	CreatedAt          time.Time  `gorm:"column:created_at;not null" json:"created_at"`
 	ExpiresAt          time.Time  `gorm:"column:expires_at;not null;index:idx_report_evidence_expires" json:"expires_at"`
+	// PurgedAt is when retention actually cleared the content; ExpiresAt is when it
+	// became due. Two facts, two columns: inferring one from the other would let an
+	// edited `retention.report_evidence_days` rewrite history.
+	PurgedAt     *time.Time `gorm:"column:purged_at;index:idx_report_evidence_purged" json:"purged_at"`
+	PurgedReason string     `gorm:"column:purged_reason;size:32" json:"purged_reason"`
 }
+
+// ReportEvidencePurgeReasons is the closed set for `purged_reason`.
+const (
+	// ReportEvidencePurgeRetentionExpired is the only reason written today: the
+	// snapshot's own clock ran out (doc/288 §7.6).
+	ReportEvidencePurgeRetentionExpired = "retention_expired"
+)
+
+// Purged reports whether retention already cleared this snapshot's content. The
+// tombstone row stays readable so the *reason* a citation is unverifiable remains
+// answerable long after the content is gone.
+func (s ReportEvidenceSnapshot) Purged() bool { return s.PurgedAt != nil }
 
 // Evidence truncation strategies (doc/288 §7.5 / A33). The set is closed for the
 // same reason every other report enum is: a free-form string in the column would let

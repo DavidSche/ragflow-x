@@ -416,10 +416,20 @@ func purgeReportRows(tx *gorm.DB, tenantID, reportID string) error {
 	return nil
 }
 
-// PurgeExpiredReportEvidence deletes evidence snapshots past their own clock and
-// reports the per-tenant count. Citations reference snapshots by id; the report
-// page keeps rendering the frozen snippet, so deleting the snapshot only flips
-// `evidence_verifiable` to false (doc/288 §7.5).
+// PurgeExpiredReportEvidence clears evidence snapshots past their own clock and
+// reports the per-tenant count of snapshots *newly* purged.
+//
+// Clearing, not deleting (doc/319 R-01 / 方案 B). Citations reference snapshots by
+// id; the report page keeps rendering the frozen snippet, so a purge flips
+// `evidence_verifiable` to false (doc/288 §7.5). A hard delete also removed the
+// only fact that could answer *why* a citation is no longer verifiable, which is
+// what made `evidence_expired` indistinguishable from `no_citation`. The row —
+// identity columns, `expires_at`, and now `purged_at`/`purged_reason` — stays; the
+// content goes.
+//
+// The `purged_at IS NULL` predicates make a second pass a no-op *and* keep
+// `retention.purge` honest: `RowsAffected` counts rows that still held content,
+// never rows that were already tombstones.
 func (s *store) PurgeExpiredReportEvidence(ctx context.Context, now time.Time, limit int) (map[string]int64, error) {
 	counts := map[string]int64{}
 	if limit <= 0 {
@@ -429,6 +439,7 @@ func (s *store) PurgeExpiredReportEvidence(ctx context.Context, now time.Time, l
 	if err := s.WithContext(ctx).
 		Select("id", "tenant_id").
 		Where("expires_at <= ?", now).
+		Where("purged_at IS NULL").
 		Order("expires_at ASC").
 		Limit(limit).
 		Find(&snapshots).Error; err != nil {
@@ -437,16 +448,23 @@ func (s *store) PurgeExpiredReportEvidence(ctx context.Context, now time.Time, l
 	if len(snapshots) == 0 {
 		return counts, nil
 	}
-	// Delete per tenant and count RowsAffected: a batch-wide delete would have to
-	// assume every listed row was still there, and a concurrent pass would then
+	// Purge per tenant and count RowsAffected: a batch-wide update would have to
+	// assume every listed row was still unpurged, and a concurrent pass would then
 	// inflate the retention.purge audit.
 	grouped := map[string][]string{}
 	for _, snapshot := range snapshots {
 		grouped[snapshot.TenantID] = append(grouped[snapshot.TenantID], snapshot.ID)
 	}
 	for tenantID, ids := range grouped {
-		result := s.WithContext(ctx).Where("tenant_id = ? AND id IN ?", tenantID, ids).
-			Delete(&model.ReportEvidenceSnapshot{})
+		result := s.WithContext(ctx).
+			Model(&model.ReportEvidenceSnapshot{}).
+			Where("tenant_id = ? AND id IN ? AND purged_at IS NULL", tenantID, ids).
+			Updates(map[string]interface{}{
+				"content":       "",
+				"content_size":  int64(0),
+				"purged_at":     now,
+				"purged_reason": model.ReportEvidencePurgeRetentionExpired,
+			})
 		if result.Error != nil {
 			return nil, result.Error
 		}

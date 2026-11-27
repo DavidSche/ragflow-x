@@ -1133,6 +1133,10 @@ const enMessages = {
       quote_not_found: "Quote is not in the evidence snapshot (fabricated or misquoted)",
       quote_ambiguous: "Quote matches several places — cannot be uniquely located",
       quote_not_provided: "No quote provided",
+      quote_evidence_expired:
+        "The cited evidence snapshot passed its retention window and was cleared — re-cite the passage to review this claim",
+      quote_evidence_missing:
+        "The cited evidence snapshot cannot be found at all (no purge record) — this should not happen in normal operation",
       quote_unchecked: "Quote not checked",
       quota_shortfall: "%{period} review allowance has %{remaining} tokens left; one call needs at least %{min} (limit %{limit}, used %{used}, in flight %{pending})",
     },

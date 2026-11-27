@@ -1103,6 +1103,8 @@ const zhMessages = {
       quote_not_found: "引文不在证据快照中（疑似编造或称引）",
       quote_ambiguous: "引文存在多处匹配，无法唯一定位",
       quote_not_provided: "未提供引文",
+      quote_evidence_expired: "所引证据快照已过保留期并被清理（可重新取回来源后补引用再复核）",
+      quote_evidence_missing: "所引证据快照缺失且无清理记录（正常流程不应出现）",
       quote_unchecked: "未检查引文",
       quota_shortfall: "%{period} 月度复核额度剩余 %{remaining} tokens，单次调用至少需要 %{min} tokens（上限 %{limit}，已用 %{used}，在途 %{pending}）",
     },

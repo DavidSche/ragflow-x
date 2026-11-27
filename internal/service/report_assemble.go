@@ -573,7 +573,11 @@ func (s *Service) buildReportEvidenceAppendix(
 	}
 	for _, citation := range citations {
 		snapshot, ok := byID[citation.EvidenceSnapshotID]
-		if !ok {
+		if !ok || snapshot.Purged() {
+			// A tombstone is present but its content is gone (doc/319 R-01). Reading
+			// `ok` alone would append an empty evidence entry to the appendix — an
+			// export that looks complete and cites nothing, which is worse than the
+			// 44116 refusal this branch already produces.
 			return nil, false, errReportEvidenceExpired(citation.SectionOrd, citation.Ord)
 		}
 		appendix = append(appendix, reportEvidenceEntry{

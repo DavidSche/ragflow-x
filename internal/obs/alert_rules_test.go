@@ -242,6 +242,13 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 			expression: `sum(increase(ragflow_x_report_assurance_claim_quote_status_total{quote_status="not_found"}[6h])) >= 3`,
 			pendingFor: "0m", severity: "warning",
 		},
+		// doc/319 R-01: the expired-share alert. The quorum clause is part of the
+		// pinned expression, not a detail: drop it and one expired citation in a quiet
+		// six hours is 100 percent.
+		"AssuranceEvidenceExpiredShare": {
+			expression: `sum(increase(ragflow_x_report_assurance_claim_quote_status_total{quote_status="evidence_expired"}[6h])) >= 3 and sum(increase(ragflow_x_report_assurance_claim_quote_status_total{quote_status="evidence_expired"}[6h])) / clamp_min(sum(increase(ragflow_x_report_assurance_claim_quote_status_total[6h])), 1) > 0.2`,
+			pendingFor: "30m", severity: "warning",
+		},
 		// doc/301 §5.10 GW-3 / T21 gateway billing reconciliation. Two alerts, pinned
 		// separately because they answer different questions, and because losing the
 		// `checked_total` quorum clause would still parse while turning a single
@@ -289,6 +296,7 @@ func TestOBS_003_PrometheusAlertRulesMatchOperationalThresholds(t *testing.T) {
 		"AssuranceSettlementDriftHigh":    "doc/operations/runbooks/ReportAssuranceRunbook.md",
 		"AssuranceOpenHighFindings":       "doc/operations/runbooks/ReportAssuranceRunbook.md",
 		"AssuranceQuoteNotFound":          "doc/operations/runbooks/ReportAssuranceRunbook.md",
+		"AssuranceEvidenceExpiredShare":   "doc/operations/runbooks/ReportAssuranceRunbook.md",
 		"GatewayBillingReconcileMismatch": "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
 		"GatewayBillingReconcileFailed":   "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
 		"GatewayRouteLatencyHigh":         "doc/operations/runbooks/GatewayPerformanceRunbook.md",

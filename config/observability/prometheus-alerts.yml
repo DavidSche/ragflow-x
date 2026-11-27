@@ -416,6 +416,23 @@ groups:
           description: "At least three claims in six hours were quoted with text the snapshot cannot locate (doc/301 section 5.1). Each one is a `quote_unverifiable` finding. A handful is a model doing its own paraphrase; a cluster means the review prompt or the snapshot excerpt logic drifted, and every verdict from that window should be treated as unverified."
           runbook: "doc/operations/runbooks/ReportAssuranceRunbook.md"
 
+      # doc/319 R-01. A *share*, not a count, and the count clause is what keeps the
+      # ratio honest: without the quorum a single expired citation in a quiet hour is
+      # 100% and pages. This alert does not say the model misbehaved — it says the
+      # evidence clock and the report clock disagree, which is a configuration fact
+      # an operator can fix. It deliberately has no `tenant_id` label for the same
+      # reason as the other assurance alerts (the plan defines no such dimension).
+      - alert: AssuranceEvidenceExpiredShare
+        expr: "sum(increase(ragflow_x_report_assurance_claim_quote_status_total{quote_status=\"evidence_expired\"}[6h])) >= 3 and sum(increase(ragflow_x_report_assurance_claim_quote_status_total{quote_status=\"evidence_expired\"}[6h])) / clamp_min(sum(increase(ragflow_x_report_assurance_claim_quote_status_total[6h])), 1) > 0.2"
+        for: 30m
+        labels:
+          severity: warning
+          service: ragflow-x
+        annotations:
+          summary: "More than a fifth of reviewed claims cite evidence that retention already cleared"
+          description: "In the last six hours at least three claims, and more than 20 percent of all reviewed claims, carried `quote_status=evidence_expired` (doc/319 R-01 / doc/301 section 5.1). The snapshot existed and passed its window, so the run records `insufficient_evidence` without calling the model and raises a medium `traceability` finding: nothing is wrong with the author, and nothing is wrong with the judge either. What is wrong is the setting: `report.evidence_retention_days` is shorter than the report retention, or a draft sat unpublished across the boundary. Re-citing is the only repair for an affected claim; changing the retention now does not rewrite the runs that already expired."
+          runbook: "doc/operations/runbooks/ReportAssuranceRunbook.md"
+
       # Gateway billing self-consistency (doc/301 §5.10 GW-3 / T21). Two alerts, and
       # they answer two different questions: "did the four ledgers disagree" and "did
       # the check even run". A single alert over both would let a permanently failing

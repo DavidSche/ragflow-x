@@ -12,7 +12,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { tZh, translateFor } from "../../../test/translate";
 import { AssuranceReviewPanel } from "./AssuranceReviewPanel";
-import type { ReportReview, ReviewFinding } from "./report-assurance";
+import type { QuoteStatus, ReportReview, ReviewFinding } from "./report-assurance";
 
 // Resolve through the shipped dictionary: an assertion stays human-readable Chinese
 // and still fails when a key is missing or its wording changes. The locale is
@@ -165,6 +165,55 @@ describe("AssuranceReviewPanel", () => {
     // point: whichever one the panel prints as the quote must NOT be highlighted.
     const nodes = screen.getAllByText("毛利率为 31%");
     expect(nodes.some((node) => node.className.includes("line-through"))).toBe(true);
+  });
+
+  // doc/319 R-01: the panel used to have one sentence for "nothing was checked" —
+  // "未提供引文" — and the server produced exactly that status whenever retention had
+  // deleted the snapshot. Both halves of the old behaviour accused the author of a
+  // citation the product itself removed, so each new state gets its own wording and
+  // the third (the author really did not cite) must stay distinguishable.
+  it("tells an expired snapshot apart from a missing quote", async () => {
+    const claimsOf = (status: QuoteStatus, id: string) => [
+      {
+        ord: 1,
+        section_key: status,
+        title: status,
+        requires_evidence: true,
+        claims: [
+          {
+            id,
+            ord: 1,
+            claim_text: `论断 ${id}`,
+            support_verdict: "insufficient_evidence" as const,
+            quote_status: status,
+            quote_text: "",
+            quote_span_end: 0,
+            matched_snapshot_id: "",
+            cache_hit: false,
+          },
+        ],
+      },
+    ];
+    render(
+      <AssuranceReviewPanel
+        load={async () =>
+          reviewOf({
+            sections: [
+              ...claimsOf("evidence_expired", "c3"),
+              ...claimsOf("evidence_missing", "c4"),
+              ...claimsOf("not_provided", "c5"),
+            ],
+          })}
+      />,
+    );
+    expect(await screen.findByTestId("claim-quote-c3")).toHaveTextContent("保留期");
+    expect(screen.getByTestId("claim-quote-c4")).toHaveTextContent("缺失");
+    expect(screen.getByTestId("claim-quote-c5")).toHaveTextContent("未提供引文");
+    // Three different facts, three different sentences: if any pair collapsed the
+    // panel would be back to telling the author they cited nothing.
+    expect(screen.getByTestId("claim-quote-c3").textContent).not.toBe(
+      screen.getByTestId("claim-quote-c5").textContent,
+    );
   });
 
   it("surfaces the small-denominator caveat next to the coverage figure", async () => {

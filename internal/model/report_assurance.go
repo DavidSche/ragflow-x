@@ -157,23 +157,38 @@ func ReportNotEvaluatedReasons() []string {
 
 // Insufficient-evidence reasons (doc/301 §5.2.1).
 const (
-	ReportInsufficientNoCitation   = "no_citation"
-	ReportInsufficientExpired      = "evidence_expired"
-	ReportInsufficientTruncated    = "truncated"
-	ReportInsufficientTimeUnknown  = "time_unknown"
-	ReportQuoteStatusVerified      = "verified"
-	ReportQuoteStatusNotFound      = "not_found"
-	ReportQuoteStatusAmbiguous     = "ambiguous"
-	ReportQuoteStatusNotProvided   = "not_provided"
-	ReportRelevanceOnTopic         = "on_topic"
-	ReportRelevanceOffTopic        = "off_topic"
-	ReportStructurePassed          = "passed"
-	ReportStructureFailed          = "failed"
-	ReportStructureNotApplicable   = "not_applicable"
-	ReportEvaluationMethodRule     = "deterministic"
-	ReportEvaluationMethodSemantic = "semantic"
-	ReportEvaluationMethodCross    = "cross_model"
-	ReportEvaluationMethodHuman    = "human"
+	ReportInsufficientNoCitation  = "no_citation"
+	ReportInsufficientExpired     = "evidence_expired"
+	ReportInsufficientTruncated   = "truncated"
+	ReportInsufficientTimeUnknown = "time_unknown"
+	// ReportInsufficientEvidenceMissing is `evidence_missing`: the cited snapshot
+	// cannot be read and there is no tombstone saying why. It is a different answer
+	// from `evidence_expired` (aged out, explained) and from `no_citation` (nobody
+	// cited anything), and it is the one that needs an operator (doc/319 R-01).
+	ReportInsufficientEvidenceMissing = "evidence_missing"
+	ReportQuoteStatusVerified         = "verified"
+	ReportQuoteStatusNotFound         = "not_found"
+	ReportQuoteStatusAmbiguous        = "ambiguous"
+	ReportQuoteStatusNotProvided      = "not_provided"
+	// ReportQuoteStatusEvidenceExpired / …Missing are the two lifecycle states of
+	// a citation whose snapshot cannot be read at all (doc/319 §9.3). Before them
+	// both cases collapsed into `not_provided`, which reads as "the author gave no
+	// quote" — a false accusation the product itself caused by purging the row.
+	//
+	// Both values are exactly 16 bytes because `quote_status` is `size:16`; the
+	// PostgreSQL column is `varchar(16)` and a longer word fails only there, never
+	// on SQLite. `TestReportClosedSetsFitTheirColumns` guards the widths.
+	ReportQuoteStatusEvidenceExpired = "evidence_expired"
+	ReportQuoteStatusEvidenceMissing = "evidence_missing"
+	ReportRelevanceOnTopic           = "on_topic"
+	ReportRelevanceOffTopic          = "off_topic"
+	ReportStructurePassed            = "passed"
+	ReportStructureFailed            = "failed"
+	ReportStructureNotApplicable     = "not_applicable"
+	ReportEvaluationMethodRule       = "deterministic"
+	ReportEvaluationMethodSemantic   = "semantic"
+	ReportEvaluationMethodCross      = "cross_model"
+	ReportEvaluationMethodHuman      = "human"
 )
 
 // ReportEvaluationMethods is the closed set of evaluation methods, ordered
@@ -191,7 +206,8 @@ func ReportEvaluationMethods() []string {
 func ReportInsufficientReasons() []string {
 	return []string{
 		ReportInsufficientNoCitation, ReportInsufficientExpired,
-		ReportInsufficientTruncated, ReportInsufficientTimeUnknown,
+		ReportInsufficientEvidenceMissing, ReportInsufficientTruncated,
+		ReportInsufficientTimeUnknown,
 	}
 }
 
@@ -201,7 +217,21 @@ func ReportQuoteStatuses() []string {
 	return []string{
 		ReportQuoteStatusVerified, ReportQuoteStatusNotFound,
 		ReportQuoteStatusAmbiguous, ReportQuoteStatusNotProvided,
+		ReportQuoteStatusEvidenceExpired, ReportQuoteStatusEvidenceMissing,
 	}
+}
+
+// ReportQuoteStatusUnreadable reports whether the mechanical layer found nothing
+// it could read at all, so no semantic layer may be paid for (doc/319 §8
+// invariant 2). `not_found` belongs here for a different reason — the snapshot is
+// readable but the quote is not in it — and both readings agree on the effect:
+// a prompt with an empty 【证据原文】 would buy an unattributable verdict.
+func ReportQuoteStatusUnreadable(status string) bool {
+	switch status {
+	case ReportQuoteStatusNotFound, ReportQuoteStatusEvidenceExpired, ReportQuoteStatusEvidenceMissing:
+		return true
+	}
+	return false
 }
 
 // Independence scale (doc/301 §5.4). Ordered strongest to weakest; the stored

@@ -244,13 +244,25 @@ func TestReportExportRefusesToLoseEvidence(t *testing.T) {
 	if _, err := fx.svc.Store.PurgeExpiredReportEvidence(ctx, time.Now().UTC().AddDate(2, 0, 0), 1000); err != nil {
 		t.Fatal(err)
 	}
-	var remaining int64
+	// Retention clears the content and keeps a tombstone (doc/319 R-01), so "nothing
+	// left" now means "nothing still readable" — asserting the row count would pin the
+	// pre-tombstone hard delete instead of the property the export depends on.
+	var readable int64
 	if err := fx.gdb.Model(&model.ReportEvidenceSnapshot{}).
-		Where("tenant_id = ?", fx.tenantID).Count(&remaining).Error; err != nil {
+		Where("tenant_id = ? AND purged_at IS NULL", fx.tenantID).Count(&readable).Error; err != nil {
 		t.Fatal(err)
 	}
-	if remaining != 0 {
-		t.Fatalf("the fixture must purge every snapshot, %d left", remaining)
+	if readable != 0 {
+		t.Fatalf("the fixture must purge every snapshot, %d still readable", readable)
+	}
+	var tombstoned int64
+	if err := fx.gdb.Model(&model.ReportEvidenceSnapshot{}).
+		Where("tenant_id = ? AND purged_at IS NOT NULL", fx.tenantID).Count(&tombstoned).Error; err != nil {
+		t.Fatal(err)
+	}
+	if tombstoned == 0 {
+		t.Fatal("retention must leave a tombstone: without it the export refusal cannot " +
+			"say *why* the evidence is gone")
 	}
 
 	// A new export is refused: 409 / 44116, never an empty appendix.

@@ -26,8 +26,14 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
-// verdictSupportRank orders the support axis. `abstained` sits below `unsupported`
-// because it asserts nothing; `conflicting` is the strongest negative.
+// verdictSupportRank orders the *certainty* axis. `abstained` sits below
+// `unsupported` because it asserts nothing; `conflicting` is the strongest negative.
+//
+// Certainty alone cannot police the clamp (doc/319 R-02): `abstained` ranking below
+// `unsupported` meant "a rejection was washed into an abstention" read as a legal
+// descent, and the 144-cell sweep stayed green while `reportClampVerdict` rewrote
+// every model-judged `unsupported` on a `not_provided` quote. Direction is the
+// missing dimension, and it is asserted separately below.
 func verdictSupportRank(verdict string) int {
 	switch verdict {
 	case "":
@@ -50,12 +56,34 @@ func verdictSupportRank(verdict string) int {
 	return 0
 }
 
+// verdictDirection is the axis the rank above cannot see: a verdict either rejects
+// the claim (-1), certifies it (+1), or declines to say (0).
+//
+// Sliding *along* the certainty axis is what a weak quote may cause. Crossing from
+// -1 to 0 is not a weakening, it is an erasure: the conclusion and the finding that
+// `reportAssuranceFindingOfFor` derives from it both disappear (doc/319 R-02).
+func verdictDirection(verdict string) int {
+	switch verdict {
+	case model.ReportVerdictUnsupported, model.ReportVerdictConflicting, model.ReportVerdictOutdated:
+		return -1
+	case model.ReportVerdictPartiallySupported, model.ReportVerdictSupported:
+		return 1
+	}
+	return 0 // abstained / insufficient_evidence / not_required / not_evaluated
+}
+
 func TestNoVerdictReachesSupportedWithoutAVerifiedQuote(t *testing.T) {
 	quoteStates := []reportQuoteCheck{
 		{Status: reportQuoteVerified},
 		{Status: reportQuoteAmbiguous},
 		{Status: reportQuoteNotFound},
 		{Status: reportQuoteNotProvided},
+		// The two lifecycle states of an unreadable snapshot (doc/319 R-01). They are
+		// unreachable from the pipeline — the run closes them before the semantic layer
+		// is chosen — which is exactly why the clamp's own handling of them has to be
+		// asserted here rather than inferred from the pipeline's behaviour.
+		{Status: reportQuoteEvidenceExpired},
+		{Status: reportQuoteEvidenceMissing},
 	}
 	verdicts := []string{
 		model.ReportVerdictSupported, model.ReportVerdictPartiallySupported,
@@ -77,12 +105,23 @@ func TestNoVerdictReachesSupportedWithoutAVerifiedQuote(t *testing.T) {
 					if verdictSupportRank(got) > verdictSupportRank(verdict) {
 						t.Fatalf("%s: clamp raised %s to %s", name, verdict, got)
 					}
+					if verdictDirection(got) > verdictDirection(verdict) {
+						t.Fatalf("%s: clamp moved %s up the direction axis to %s", name, verdict, got)
+					}
+					// A rejection may weaken towards "declines to say" only by naming a
+					// reason; what it may never do is leave the negative side, because that
+					// is where the finding lives.
+					if verdictDirection(verdict) < 0 && verdictDirection(got) >= 0 {
+						t.Fatalf("%s: clamp took %s off the negative side (%s): a quote problem "+
+							"may weaken certainty, never erase a conclusion or its finding",
+							name, verdict, got)
+					}
 				}
 			}
 		}
 	}
-	// 4 quote states × 6 verdicts × 3 claim types × 2 evidence flags.
-	if scanned != 144 {
-		t.Fatalf("scanned %d cells, want 144: the cross product shrank and the gate is weaker than it reads", scanned)
+	// 6 quote states × 6 verdicts × 3 claim types × 2 evidence flags.
+	if scanned != 216 {
+		t.Fatalf("scanned %d cells, want 216: the cross product shrank and the gate is weaker than it reads", scanned)
 	}
 }

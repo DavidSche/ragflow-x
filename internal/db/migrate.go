@@ -3822,6 +3822,30 @@ var migrations = []Migration{
 			return quarantineUnownedLegacyRoles(tx)
 		},
 	},
+	{
+		Version: 194,
+		Name:    "report_evidence_tombstone",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/319 R-01 / 方案 B: retention cleared evidence snapshots by deleting
+			// the row, which destroyed the only fact that could tell "this snapshot
+			// expired" from "this snapshot never existed". An assurance run could only
+			// answer `not_provided` — blaming the author for a citation the product
+			// itself had removed — and `evidence_expired` was a closed-set value with
+			// no producer anywhere in the codebase.
+			//
+			// Two additive columns keep the fact: `purged_at` is when the content was
+			// actually cleared, `purged_reason` is why. `expires_at` stays as the
+			// original due time, so the two facts cannot be inferred from each other;
+			// that is what makes the classification survive an edit to
+			// `retention.report_evidence_days`.
+			//
+			// Nothing is backfilled: rows deleted by an older release have no
+			// tombstone and will keep reporting `evidence_missing`, which is the
+			// honest answer for them (we cannot prove they ever existed). A re-run is
+			// a no-op.
+			return tx.AutoMigrate(&model.ReportEvidenceSnapshot{})
+		},
+	},
 }
 
 // backfillKnowledgeOpsAbstainReason projects `answerability_json.abstain_reason`

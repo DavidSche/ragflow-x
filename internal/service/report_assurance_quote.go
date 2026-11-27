@@ -6,6 +6,8 @@ import (
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
 // quoteCaseFolder is真 case folding, not `strings.ToLower`: folding expands `ß` to
@@ -30,12 +32,34 @@ var quoteCaseFolder = cases.Fold()
 // Quote statuses surfaced by this layer. `ambiguous` exists because guessing is
 // worse than admitting uncertainty: a highlight drawn at a drifted offset points
 // the reviewer at the wrong sentence, which is more damaging than no highlight.
+//
+// The four values are *bound* to the model's closed set rather than repeated as
+// literals: `quote_status` is a `size:16` column validated against
+// `model.ReportQuoteStatuses()`, so a spelling that only agrees with itself would
+// be rejected by the store instead of by the compiler.
+//
+// `evidence_expired` and `evidence_missing` (doc/319 R-01) are the two states of a
+// citation whose snapshot cannot be read at all. They are not quote verdicts: no
+// quote was ever checked, because the snapshot is a tombstone or is absent.
 const (
-	reportQuoteVerified    = "verified"
-	reportQuoteNotFound    = "not_found"
-	reportQuoteAmbiguous   = "ambiguous"
-	reportQuoteNotProvided = "not_provided"
+	reportQuoteVerified        = model.ReportQuoteStatusVerified
+	reportQuoteNotFound        = model.ReportQuoteStatusNotFound
+	reportQuoteAmbiguous       = model.ReportQuoteStatusAmbiguous
+	reportQuoteNotProvided     = model.ReportQuoteStatusNotProvided
+	reportQuoteEvidenceExpired = model.ReportQuoteStatusEvidenceExpired
+	reportQuoteEvidenceMissing = model.ReportQuoteStatusEvidenceMissing
 )
+
+// reportQuoteBlocksSemantic answers "may the semantic layer be paid for?".
+//
+// Two different reasons, one answer. `not_found` means the snapshot is readable and
+// the quote is not in it; the other two mean there is no snapshot content to read.
+// In all three an empty 【证据原文】 would be sent, and a verdict produced from it is
+// unattributable — it cannot be reproduced and it cannot be blamed on the model
+// (doc/319 §8 invariant 2).
+func reportQuoteBlocksSemantic(status string) bool {
+	return model.ReportQuoteStatusUnreadable(status)
+}
 
 // Span map states. `partial` means the normalized match cut through an expansion
 // (casefolding `ß` → `ss`, NFKC collapsing a compatibility char), so the original
@@ -264,7 +288,14 @@ func reportClampVerdict(verdict string, check reportQuoteCheck, claimType string
 	case reportQuoteVerified:
 		return verdict, ""
 	case reportQuoteNotFound:
-		// Always an abstain + finding: the quote was fabricated.
+		// A fabricated quote is a finding against the citation, never a licence to
+		// delete a verdict the evaluator reached. A `conflicting` claim whose quote
+		// was not in the snapshot is still contradicted by the passage the reviewer
+		// will open: turning that into `abstained` removes the conclusion AND the
+		// finding that would have flagged the fabrication (doc/319 R-02).
+		if reportVerdictClampProtects(verdict) {
+			return verdict, ""
+		}
 		return "abstained", "quote_not_found"
 	case reportQuoteAmbiguous:
 		// Two places in the snapshot match, so "an excerpt exists" is true and "this
@@ -272,12 +303,52 @@ func reportClampVerdict(verdict string, check reportQuoteCheck, claimType string
 		// and not enough to run the semantic layer against a guessed passage, so an
 		// abstaining evaluator keeps its abstain and `input_invalid` names why.
 		return capVerdict(verdict, "partially_supported"), reportAbstainFor(verdict, "input_invalid")
+	case reportQuoteEvidenceExpired, reportQuoteEvidenceMissing:
+		// Unreachable from the pipeline: `executeReportAssuranceWith` closes these
+		// before the semantic layer is chosen. Kept explicit so a future caller cannot
+		// route an unreadable snapshot through the weak-quote caps and get a
+		// `partially_supported` out of evidence nobody could open.
+		if reportVerdictClampProtects(verdict) {
+			return verdict, ""
+		}
+		return "abstained", "no_quote"
 	default: // not_provided
+		// Same rule as `not_found`, and this is the reachable half: the semantic
+		// layer runs on `not_provided`, so an evaluator that judged `unsupported`
+		// from the claim's own context used to be rewritten into `abstained` **and**
+		// lose its finding, leaving a `succeeded` run with zero findings that
+		// nonetheless contained a claim the model had rejected (doc/319 R-02).
+		if reportVerdictClampProtects(verdict) {
+			return verdict, ""
+		}
 		if claimType == "fact" && requiresEvidence {
 			return "abstained", "no_quote"
 		}
 		return capVerdict(verdict, "partially_supported"), reportAbstainFor(verdict, "no_quote")
 	}
+}
+
+// reportVerdictClampProtects reports whether the quote layer must leave a verdict
+// exactly as the evaluator returned it (doc/319 R-02, invariant 3).
+//
+// The clamp exists to stop a weak quote from *certifying*. It has no business
+// touching a negative conclusion: `unsupported`, `conflicting` and `outdated` are
+// judgements about the claim that a missing quote cannot undo, and `insufficient`
+// is already the honest "the evidence does not support this" answer. Lowering any
+// of them to `abstained` also silently drops the finding that `reportFindingOfFor`
+// derives from the verdict, which is how a rejected claim disappeared from the
+// review workspace.
+//
+// The pre-R-02 guard could not see this: it compared positions on a single support
+// axis where `abstained` sits *below* `unsupported`, so "judged" → "did not judge"
+// registered as a legal decrease.
+func reportVerdictClampProtects(verdict string) bool {
+	switch verdict {
+	case model.ReportVerdictUnsupported, model.ReportVerdictConflicting,
+		model.ReportVerdictOutdated, model.ReportVerdictInsufficient:
+		return true
+	}
+	return false
 }
 
 // reportAbstainFor returns `reason` only when `verdict` is already an abstain.

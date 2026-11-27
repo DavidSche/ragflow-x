@@ -280,8 +280,16 @@ func TestReportRetentionClassesExpireIndependently(t *testing.T) {
 	if got := summary.ReportEvent[seed.tenantID]; got != 1 {
 		t.Fatalf("events purged = %d, want 1", got)
 	}
-	if n := countRows(t, gdb, "rgx_report_evidence_snapshot", "id = ?", seed.reportID+"-ev"); n != 0 {
-		t.Fatal("expired evidence snapshot survived")
+	// The row survives as a tombstone with no readable content (doc/319 R-01): the
+	// class still expired, but the *fact* of the expiry is what the assurance layer
+	// needs, so counting rows would assert the old hard delete.
+	if n := countRows(t, gdb, "rgx_report_evidence_snapshot",
+		"id = ? AND purged_at IS NULL", seed.reportID+"-ev"); n != 0 {
+		t.Fatal("expired evidence snapshot is still readable")
+	}
+	if n := countRows(t, gdb, "rgx_report_evidence_snapshot",
+		"id = ? AND purged_at IS NOT NULL AND content = ''", seed.reportID+"-ev"); n != 1 {
+		t.Fatal("expired evidence snapshot must remain as an empty tombstone")
 	}
 	if n := countRows(t, gdb, "rgx_report_job_event", "job_id = ?", seed.jobID); n != 0 {
 		t.Fatal("expired event survived")

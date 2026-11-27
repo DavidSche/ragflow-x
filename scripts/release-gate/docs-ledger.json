@@ -6,9 +6,9 @@
   "sources": [
     {
       "path": "doc/develop/304-v0.7实施情况与跟踪：可信证据、问答收口与网关保障.md",
-      "sha256": "51295dc3eb45e75ad8da002f105128a5837ba78aab482a6434c01d9bb8ce3a50",
-      "bytes": 630993,
-      "lines": 1037
+      "sha256": "522b21d713f8fb293b3489966122bef41c494ed0e686626ba4bf13d11e13c479",
+      "bytes": 635698,
+      "lines": 1094
     },
     {
       "path": "doc/develop/301-v0.7下一阶段工作计划：可信证据、问答收口与网关保障.md",

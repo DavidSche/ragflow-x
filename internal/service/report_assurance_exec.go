@@ -255,6 +255,22 @@ func (s *Service) executeReportAssuranceWith(
 			continue
 		}
 
+		if check.Status == reportQuoteEvidenceExpired || check.Status == reportQuoteEvidenceMissing {
+			// The snapshot cannot be read at all, so there is no prompt to send and no
+			// verdict to reach (doc/319 §8 invariant 2). Calling the model with an empty
+			// 【证据原文】 buys an unattributable verdict — and this branch used to fall
+			// through to `abstained / no_quote`, which reads as "the author cited
+			// nothing" while the honest answer is "we can no longer read what they
+			// cited". The reason travels on `insufficient_reason`, and the finding
+			// keeps the citation actionable instead of silently scoring it.
+			evaluation.SupportVerdict = model.ReportVerdictInsufficient
+			evaluation.InsufficientReason = reportEvidenceUnavailableReason(check.Status)
+			evaluation.Rationale = reportEvidenceUnavailableRationale(check.Status)
+			evaluations = append(evaluations, evaluation)
+			findings = append(findings, reportEvidenceUnavailableFinding(run, claim, check.Status))
+			continue
+		}
+
 		// ③ semantic support. It runs for every quote state except `not_found`, and the
 		// default here is `abstained`, not `supported`: if no judgement is produced the
 		// row must say "no verdict", never "supported then capped". Defaulting to
@@ -262,7 +278,7 @@ func (s *Service) executeReportAssuranceWith(
 		// without a single model call — a scored verdict with nothing behind it, which
 		// is precisely the false certification this pipeline exists to prevent.
 		verdict := model.ReportVerdictAbstained
-		if check.Status != reportQuoteNotFound {
+		if !reportQuoteBlocksSemantic(check.Status) {
 			// Name the judge *before* the call, not after it succeeds (doc/304 E141).
 			// The row has always been created with `method=deterministic`, and nothing
 			// overwrote it when the semantic layer answered, so a model verdict was
@@ -647,18 +663,30 @@ func reportAssuranceStructureVerdict(claim model.ReportClaim) string {
 // reader sees; the snapshot is the frozen content. Verifying the excerpt against the
 // snapshot is the whole point: a snippet that is not in the snapshot is an excerpt
 // that was edited after the fact.
+// The three answers it can give when nothing was verifiable are *different facts*
+// (doc/319 R-01): the author cited nothing (`not_provided`), the snapshot existed
+// and retention cleared it (`evidence_expired`), or the snapshot cannot be found at
+// all (`evidence_missing`). Returning `not_provided` for all three was the defect:
+// it accused the author of a citation the product itself had deleted, and it left
+// `insufficient_reason = evidence_expired` as a closed-set value with no producer.
 func reportAssuranceQuoteOf(
 	citations []model.ReportCitation, snapshots map[string]model.ReportEvidenceSnapshot,
 ) (reportQuoteCheck, string, []string) {
 	evidenceIDs := make([]string, 0, len(citations))
 	best := reportQuoteCheck{Status: reportQuoteNotProvided, SpanMap: reportSpanMapNone}
 	matchedSnapshot := ""
+	// Lifecycle facts are tracked apart from `best` because they are not quote
+	// verdicts: no quote was checked, so they cannot compete on the quote axis.
+	sawExpired, sawMissing := false, false
 	for _, citation := range citations {
 		evidenceIDs = append(evidenceIDs, citation.EvidenceSnapshotID)
 		snapshot, ok := snapshots[citation.EvidenceSnapshotID]
 		if !ok {
-			// The snapshot was purged by retention: the citation is unverifiable, which
-			// is `not_found` at the quote layer and `evidence_expired` when reported.
+			sawMissing = true
+			continue
+		}
+		if snapshot.Purged() {
+			sawExpired = true
 			continue
 		}
 		check := reportCheckQuote(citation.Snippet, snapshot.Content)
@@ -675,9 +703,19 @@ func reportAssuranceQuoteOf(
 			}
 		}
 	}
-	if best.Status == reportQuoteNotFound {
-		// Every citation was checked and none contained its snippet.
+	switch best.Status {
+	case reportQuoteAmbiguous, reportQuoteNotFound:
+		// Readable evidence exists, even if it only proves the excerpt moved.
 		return best, matchedSnapshot, evidenceIDs
+	}
+	// Nothing was checkable. `evidence_missing` outranks `evidence_expired` on
+	// purpose: a tombstone explains one citation, not another one's absence, and the
+	// unexplained case is the one that needs an operator rather than a re-cite.
+	if sawMissing {
+		return reportQuoteCheck{Status: reportQuoteEvidenceMissing, SpanMap: reportSpanMapNone}, "", evidenceIDs
+	}
+	if sawExpired {
+		return reportQuoteCheck{Status: reportQuoteEvidenceExpired, SpanMap: reportSpanMapNone}, "", evidenceIDs
 	}
 	return best, matchedSnapshot, evidenceIDs
 }
@@ -697,6 +735,44 @@ func reportAssuranceFindingOf(
 		Status: model.ReportFindingStatusOpen, Title: title, Detail: detail,
 		SuggestedAction: action, CreatedAt: now, UpdatedAt: now,
 	}
+}
+
+// reportEvidenceUnavailableReason maps the two unreadable-evidence states onto the
+// `insufficient_reason` closed set. They stay distinguishable all the way to the
+// reader: `evidence_expired` is a retention consequence (re-cite from the corpus),
+// `evidence_missing` is an anomaly (nothing explains it — open an incident).
+func reportEvidenceUnavailableReason(status string) string {
+	if status == reportQuoteEvidenceExpired {
+		return model.ReportInsufficientExpired
+	}
+	return model.ReportInsufficientEvidenceMissing
+}
+
+// reportEvidenceUnavailableRationale is the sentence a reviewer reads. It names the
+// fact the product can prove and never the model: no evaluator ran on this claim.
+func reportEvidenceUnavailableRationale(status string) string {
+	if status == reportQuoteEvidenceExpired {
+		return "所引证据快照已过保留期并被清理（墓碑保留了到期时间与实际清理时间），本次无法复核该断言。"
+	}
+	return "所引证据快照不存在，也没有到期墓碑说明原因，本次无法复核该断言。"
+}
+
+// reportEvidenceUnavailableFinding keeps an unreadable citation actionable. It is a
+// finding about traceability, not about the claim: nothing was judged, so the
+// category must not imply a verdict the pipeline never reached.
+func reportEvidenceUnavailableFinding(
+	run *model.ReportAssuranceRun, claim model.ReportClaim, status string,
+) model.ReportReviewFinding {
+	if status == reportQuoteEvidenceExpired {
+		return reportAssuranceFindingOf(run, claim, model.ReportFindingTraceability,
+			model.ReportSeverityMedium, "引用的证据已过保留期",
+			reportEvidenceUnavailableRationale(status),
+			"重新检索该断言的来源并补一条新引用；若来源仍在库中，重新取回会生成新的证据快照。")
+	}
+	return reportAssuranceFindingOf(run, claim, model.ReportFindingTraceability,
+		model.ReportSeverityHigh, "引用的证据快照缺失",
+		reportEvidenceUnavailableRationale(status),
+		"检查该引用的 evidence_snapshot_id 是否被越权清理或跨租户引用；此状态不应出现在正常流程中。")
 }
 
 // reportAssuranceFindingOfFor maps an unsupported/conflicting verdict to a finding.

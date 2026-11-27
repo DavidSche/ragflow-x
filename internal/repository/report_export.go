@@ -138,9 +138,10 @@ func (s *store) ListReportClaims(
 // CountUnverifiableReportEvidence answers "can the citations of this revision still
 // be re-checked?" in one query (doc/288 §7.6 / A43).
 //
-// It counts citations whose frozen snapshot is either gone (purged by the evidence
-// clock) or already past its own `expires_at`. Both mean the same thing to a reader:
-// the body and the judgement stand, but the evidence can no longer be re-opened. A
+// It counts citations whose frozen snapshot is either gone (a row deleted by an
+// older release), past its own `expires_at`, or already tombstoned by the evidence
+// clock (doc/319 R-01). All three mean the same thing to a reader: the body and the
+// judgement stand, but the evidence can no longer be re-opened. A
 // LEFT JOIN keeps this to a single round trip — hydrating every citation to count
 // them would put the whole evidence corpus on the read path of a page view.
 func (s *store) CountUnverifiableReportEvidence(
@@ -151,7 +152,7 @@ func (s *store) CountUnverifiableReportEvidence(
 		Table("rgx_report_citation AS c").
 		Joins("LEFT JOIN rgx_report_evidence_snapshot AS e ON e.id = c.evidence_snapshot_id AND e.tenant_id = c.tenant_id").
 		Where("c.tenant_id = ? AND c.revision_id = ?", tenantID, revisionID).
-		Where("e.id IS NULL OR e.expires_at <= ?", now).
+		Where("e.id IS NULL OR e.expires_at <= ? OR e.purged_at IS NOT NULL", now).
 		Count(&unverifiable).Error
 	return unverifiable, err
 }
