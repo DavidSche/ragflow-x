@@ -501,19 +501,32 @@ func (s *Service) authz(ctx context.Context, userID string) (*authzContext, erro
 			roles = append(roles, *r)
 		}
 	}
+	// A platform identity is a property of the roles the user *holds*, not of the
+	// roles it can reach by inheritance. Letting an ancestor decide this is what
+	// made `parent_id = platform_admin` a platform takeover (doc/304 §4 E175).
+	platformHeld := false
+	for _, r := range roles {
+		if r.Scope == model.RoleScopePlatform {
+			platformHeld = true
+		}
+	}
+	if !platformHeld {
+		for _, r := range roles {
+			if r.TenantID != "" && r.TenantID != u.TenantID {
+				// Only reachable through data written before role ownership existed.
+				// Fail closed and say which row, because silently ignoring it would
+				// leave a cross-tenant grant the user cannot see or report.
+				return nil, httperr.New(403, 40305, "a role assigned to this account belongs to another tenant")
+			}
+		}
+	}
 	roleIDs, err := s.expandRoles(ctx, roles)
 	if err != nil {
 		return nil, err
 	}
 	ac := &authzContext{user: u, platform: false, allow: nil, deny: nil}
-	platformRole := false
 	seen := map[string]bool{}
 	for _, rid := range roleIDs {
-		if role, rerr := s.Store.GetRole(ctx, rid); rerr != nil {
-			return nil, rerr
-		} else if role != nil && role.Scope == model.RoleScopePlatform {
-			platformRole = true
-		}
 		perms, perr := s.Store.GetPermissions(ctx, rid)
 		if perr != nil {
 			return nil, perr
@@ -531,12 +544,26 @@ func (s *Service) authz(ctx context.Context, userID string) (*authzContext, erro
 			}
 		}
 	}
-	ac.platform = platformRole && ac.evaluate("governance.manage", "tenant") == nil
+	ac.platform = platformHeld && ac.evaluate("governance.manage", "tenant") == nil
 	return ac, nil
 }
 
-// expandRoles returns the closure of role ids including inherited parents, and
-// whether any resolved role is platform scoped.
+// expandRoles returns the closure of a principal's roles including their
+// ancestors.
+//
+// An edge is honoured only when the parent is no wider than the child: same
+// scope, and either the same owner or a platform-owned (shared) row. A pair that
+// violates this is refused rather than skipped — a silently dropped edge is an
+// escalation nobody can see, and refusing keeps a row written before E175 from
+// continuing to grant what the write path now rejects.
+//
+// A role's `status` is deliberately not consulted here. Quarantine (doc/304 §4
+// E178) gates *authoring*: a tenant cannot list, read, edit or newly assign a
+// parked role, and no new child may hang off one. It must not silently change
+// what somebody can already do — an upgrade that revokes a working grant is a
+// worse failure than one that leaves it until a platform admin reviews the row.
+// Re-authorising or re-parenting the role is the platform's decision, not the
+// resolver's.
 func (s *Service) expandRoles(ctx context.Context, roles []model.Role) ([]string, error) {
 	collected := map[string]bool{}
 	queue := make([]string, 0, len(roles))
@@ -563,10 +590,21 @@ func (s *Service) expandRoles(ctx context.Context, roles []model.Role) ([]string
 		if r == nil {
 			continue
 		}
-		if r.ParentID != "" && !collected[r.ParentID] {
-			collected[r.ParentID] = true
-			queue = append(queue, r.ParentID)
+		if r.ParentID == "" || collected[r.ParentID] {
+			continue
 		}
+		parent, err := s.Store.GetRole(ctx, r.ParentID)
+		if err != nil {
+			return nil, err
+		}
+		if parent == nil {
+			continue
+		}
+		if parent.Scope != r.Scope || !roleVisibleToTenant(parent, r.TenantID) {
+			return nil, httperr.New(403, 40304, "a role inherits from a role outside its scope or tenant")
+		}
+		collected[parent.ID] = true
+		queue = append(queue, parent.ID)
 	}
 	return result, nil
 }

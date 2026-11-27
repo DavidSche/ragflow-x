@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -3775,6 +3776,52 @@ var migrations = []Migration{
 			return reconcileBuiltinPermissions(tx)
 		},
 	},
+	{
+		Version: 192,
+		Name:    "role_tenant_ownership",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/304 §4 E175: custom roles were created without an owner and read
+			// without a tenant filter, so every workspace could see, assign, edit and
+			// delete every other workspace's roles — and `parent_id = platform_admin`
+			// on a tenant-scoped role inherited platform rights. The write path now
+			// stamps the owner and refuses cross-scope/cross-tenant parents; this
+			// migration deals with the rows already written that way.
+			//
+			// Two repairs, both in the narrowing direction only: adopt a role into the
+			// workspace that holds it (when every holder agrees), and drop an
+			// inheritance edge that crosses a scope or tenant boundary. Nothing gains
+			// a permission here, and a re-run is a no-op.
+			if err := backfillRoleTenantOwnership(tx); err != nil {
+				return err
+			}
+			return pruneInvalidRoleParents(tx)
+		},
+	},
+	{
+		Version: 193,
+		Name:    "role_legacy_quarantine",
+		Migrate: func(tx *gorm.DB) error {
+			// doc/304 §4 E178: migration 192 adopted a legacy role only when every
+			// holder sat in one workspace. A role nobody held, or one whose holders
+			// spanned workspaces, kept `tenant_id = ''` — the value that means
+			// "platform-authored, shared with everyone". Any workspace admin could
+			// then hand it out. The row cannot be adopted (there is no single owner
+			// to adopt it into) and it cannot stay shared (nobody can prove the
+			// platform authored it), so it is parked instead: `status` becomes
+			// `quarantined`, which hides it from tenant lists and pickers and makes
+			// the assignment fail, while a platform admin can still see it, review
+			// its grants, and re-authorise it explicitly (PUT /roles/{id} with
+			// status=active).
+			//
+			// Grants of existing holders are *not* revoked here: this step is a
+			// marker, and silently removing a permission from a live account is a
+			// bigger change than the defect it would fix. A re-run is a no-op.
+			if err := tx.AutoMigrate(&model.Role{}); err != nil {
+				return err
+			}
+			return quarantineUnownedLegacyRoles(tx)
+		},
+	},
 }
 
 // backfillKnowledgeOpsAbstainReason projects `answerability_json.abstain_reason`
@@ -5371,9 +5418,176 @@ func PermissionCatalog() []ResourceActions {
 	return out
 }
 
+// builtinRoleIDs is the built-in lattice's fixed id set. It is repeated here
+// rather than imported from service because `db` is the lower layer: the matrix
+// that seeds these rows lives in this package, so their names do too.
+var builtinRoleIDs = []string{
+	model.RolePlatformAdmin,
+	model.RoleTenantAdmin,
+	model.RoleOperator,
+	model.RoleViewer,
+	model.RoleTeamAdmin,
+	model.RoleBusinessUser,
+}
+
+// backfillRoleTenantOwnership adopts owned roles into their holding workspace
+// (doc/304 §4 E175). Adoption happens only when every holder agrees on the
+// tenant: inventing an owner for a role nobody holds, or that is held across
+// workspaces, would decide *who may edit it* by guessing. Those rows keep an
+// empty `tenant_id`, which now means "owned by the platform": visible and
+// assignable everywhere, editable only by a platform admin.
+func backfillRoleTenantOwnership(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.Role{}) || !tx.Migrator().HasTable(&model.UserRole{}) {
+		return nil
+	}
+	var unowned []model.Role
+	if err := tx.Where("scope <> ?", model.RoleScopePlatform).
+		Where("tenant_id = ? OR tenant_id IS NULL", "").
+		Where("id NOT IN ?", builtinRoleIDs).
+		Find(&unowned).Error; err != nil {
+		return err
+	}
+	for _, r := range unowned {
+		tenantID, err := soleHolderTenant(tx, r.ID)
+		if err != nil {
+			return err
+		}
+		if tenantID == "" {
+			continue
+		}
+		if err := tx.Model(&model.Role{}).Where("id = ?", r.ID).Update("tenant_id", tenantID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// soleHolderTenant returns the one tenant whose users hold the role, or "" when
+// the holders span tenants or nobody holds it.
+func soleHolderTenant(tx *gorm.DB, roleID string) (string, error) {
+	tenants, err := roleHolderTenants(tx, roleID)
+	if err != nil {
+		return "", err
+	}
+	if len(tenants) != 1 {
+		return "", nil
+	}
+	return tenants[0], nil
+}
+
+// roleHolderTenants lists the distinct tenants whose users hold a role. It reads
+// both sources on purpose: `rgx_user_role` is authoritative, but pre-RBAC rows
+// still carry the role in the `rgx_user.role` marker, and a role whose only
+// holders are legacy marker rows looks unheld to a query that reads the
+// association table alone (doc/315 finding 2).
+func roleHolderTenants(tx *gorm.DB, roleID string) ([]string, error) {
+	seen := map[string]bool{}
+	var viaLink []string
+	if tx.Migrator().HasTable(&model.UserRole{}) {
+		if err := tx.Model(&model.UserRole{}).
+			Joins("JOIN rgx_user ON rgx_user.id = rgx_user_role.user_id").
+			Where("rgx_user_role.role_id = ? AND rgx_user.tenant_id <> ''", roleID).
+			Distinct().Pluck("rgx_user.tenant_id", &viaLink).Error; err != nil {
+			return nil, err
+		}
+	}
+	for _, tenantID := range viaLink {
+		seen[tenantID] = true
+	}
+	var viaMarker []string
+	if tx.Migrator().HasTable(&model.User{}) {
+		if err := tx.Model(&model.User{}).
+			Where("role = ? AND tenant_id <> ''", roleID).
+			Distinct().Pluck("tenant_id", &viaMarker).Error; err != nil {
+			return nil, err
+		}
+	}
+	for _, tenantID := range viaMarker {
+		seen[tenantID] = true
+	}
+	out := make([]string, 0, len(seen))
+	for tenantID := range seen {
+		out = append(out, tenantID)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// quarantineUnownedLegacyRoles parks every non-builtin, non-platform role that
+// has no owner and either no holders or holders in more than one workspace.
+// Adopting a row with exactly one holding tenant is the last step of migration
+// 192; doing it here too makes this function correct on its own.
+func quarantineUnownedLegacyRoles(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.Role{}) {
+		return nil
+	}
+	var candidates []model.Role
+	if err := tx.Where("scope <> ?", model.RoleScopePlatform).
+		Where("tenant_id = ? OR tenant_id IS NULL", "").
+		Where("id NOT IN ?", builtinRoleIDs).
+		Where("status = ? OR status = '' OR status IS NULL", model.RoleStatusActive).
+		Find(&candidates).Error; err != nil {
+		return err
+	}
+	for _, r := range candidates {
+		tenants, err := roleHolderTenants(tx, r.ID)
+		if err != nil {
+			return err
+		}
+		if len(tenants) == 1 {
+			if err := tx.Model(&model.Role{}).
+				Where("id = ? AND (tenant_id = ? OR tenant_id IS NULL)", r.ID, "").
+				Update("tenant_id", tenants[0]).Error; err != nil {
+				return err
+			}
+			continue
+		}
+		if err := tx.Model(&model.Role{}).Where("id = ?", r.ID).
+			Update("status", model.RoleStatusQuarantined).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pruneInvalidRoleParents drops inheritance edges that a widening role would
+// cross: a parent whose scope differs from the child's, or that belongs to
+// another tenant. It only ever removes an inherited permission, never adds one,
+// and it is what stops a row written before E175 from keeping its platform
+// rights after the upgrade (`expandRoles` refuses such an edge at read time, so
+// leaving it would lock the holder out entirely instead of narrowing them).
+func pruneInvalidRoleParents(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.Role{}) {
+		return nil
+	}
+	var children []model.Role
+	if err := tx.Where("parent_id IS NOT NULL AND parent_id <> ''").Find(&children).Error; err != nil {
+		return err
+	}
+	for _, child := range children {
+		var parent model.Role
+		err := tx.Where("id = ?", child.ParentID).First(&parent).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// A dangling parent inherits nothing (E155); leave the row alone so the
+			// hole stays visible to whoever edits the role next.
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		sameTenant := parent.TenantID == "" || parent.TenantID == child.TenantID
+		if parent.Scope == child.Scope && sameTenant {
+			continue
+		}
+		if err := tx.Model(&model.Role{}).Where("id = ?", child.ID).Update("parent_id", "").Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func reconcileBuiltinPermissions(tx *gorm.DB) error {
-	builtin := []string{model.RolePlatformAdmin, model.RoleTenantAdmin, model.RoleOperator, model.RoleViewer, model.RoleTeamAdmin, model.RoleBusinessUser}
-	if err := tx.Where("role_id IN ?", builtin).Delete(&model.Permission{}).Error; err != nil {
+	if err := tx.Where("role_id IN ?", builtinRoleIDs).Delete(&model.Permission{}).Error; err != nil {
 		return err
 	}
 	seen := map[string]bool{}

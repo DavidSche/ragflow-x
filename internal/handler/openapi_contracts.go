@@ -135,6 +135,9 @@ type UpdateRoleRequest struct {
 	Scope       string `json:"scope"`
 	Description string `json:"description"`
 	ParentID    string `json:"parent_id"`
+	// Status is platform-only. `active` re-authorises a role the migration had
+	// to quarantine; `quarantined` parks it again. Omitted means "unchanged".
+	Status *string `json:"status" example:"active" enums:"active,quarantined"`
 }
 
 // PermissionGrant is one policy rule inside SetRolePermissionsRequest. `effect` is

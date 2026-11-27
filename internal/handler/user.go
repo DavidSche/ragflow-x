@@ -61,7 +61,7 @@ func (h *Handler) ListRoles(c *gin.Context) {
 		Name:  c.Query("name"),
 		Scope: c.Query("scope"),
 	}
-	items, err := h.Service.ListRoles(c.Request.Context(), c.GetString(middleware.ContextRole), filter)
+	items, err := h.Service.ListRoles(c.Request.Context(), c.GetString(middleware.ContextUserID), filter)
 	if err != nil {
 		response.Err(c, err)
 		return

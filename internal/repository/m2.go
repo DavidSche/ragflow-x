@@ -16,7 +16,7 @@ import (
 // RoleRepo persists RBAC roles and their permissions.
 type RoleRepo interface {
 	GetRole(ctx context.Context, id string) (*model.Role, error)
-	GetRoleByName(ctx context.Context, name, excludeID string) (*model.Role, error)
+	GetRoleByName(ctx context.Context, name, excludeID, tenantID string) (*model.Role, error)
 	ListAllRoles(ctx context.Context, filter RoleFilter) ([]model.Role, error)
 	GetPermissions(ctx context.Context, roleID string) ([]model.Permission, error)
 	ListRolesByUser(ctx context.Context, userID string) ([]model.Role, error)
@@ -216,9 +216,20 @@ func (s *store) GetRole(ctx context.Context, id string) (*model.Role, error) {
 	return &r, err
 }
 
-func (s *store) GetRoleByName(ctx context.Context, name, excludeID string) (*model.Role, error) {
+// GetRoleByName answers "is this name taken, for this owner?". Uniqueness is per
+// owner because two tenants may each want a role called 只对话; `tenantID` also
+// matches rows with no owner (the built-ins and platform-authored roles), so a
+// custom role can never shadow a shared name in its own tenant. An empty
+// `tenantID` is the platform's own namespace: it compares against shared rows
+// only, because the platform is the one place a shared name gets decided.
+func (s *store) GetRoleByName(ctx context.Context, name, excludeID, tenantID string) (*model.Role, error) {
 	var r model.Role
 	q := s.WithContext(ctx).Where("LOWER(name) = LOWER(?)", name)
+	if tenantID == "" {
+		q = q.Where("tenant_id = ? OR tenant_id IS NULL", "")
+	} else {
+		q = q.Where("(tenant_id = ? OR tenant_id = ? OR tenant_id IS NULL)", tenantID, "")
+	}
 	if excludeID != "" {
 		q = q.Where("id <> ?", excludeID)
 	}
@@ -1016,7 +1027,14 @@ func (s *store) FailGatewayIdempotency(ctx context.Context, id, requestID, respo
 }
 
 func (s *store) UpdateRole(ctx context.Context, r *model.Role) error {
-	return s.WithContext(ctx).Model(&model.Role{}).Where("id = ?", r.ID).Select("name", "description", "scope", "parent_id").Updates(r).Error
+	// tenant_id and status are selected explicitly: a scope change clears the
+	// owner (a platform role belongs to nobody), and a re-authorisation clears a
+	// quarantine. Struct updates drop zero values, so the columns the service
+	// computed have to be named here or the write silently keeps the old row
+	// (doc/315 finding 3).
+	return s.WithContext(ctx).Model(&model.Role{}).Where("id = ?", r.ID).
+		Select("name", "description", "scope", "parent_id", "tenant_id", "status").
+		Updates(r).Error
 }
 
 func (s *store) RoleUserCount(ctx context.Context, roleID string) (int64, error) {

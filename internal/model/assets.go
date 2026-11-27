@@ -39,6 +39,17 @@ const (
 	RoleBusinessUser = "business_user"
 )
 
+// Role status values. A role is active unless a migration could not prove who
+// authored it: legacy rows with no owner and no single holding tenant are
+// marked RoleStatusQuarantined instead of staying globally assignable
+// (doc/304 §4 E178). A quarantined role is invisible and unassignable to
+// tenants; a platform admin must review it (PUT /roles/{id} with status=active)
+// before any tenant can see or hand it out again.
+const (
+	RoleStatusActive      = "active"
+	RoleStatusQuarantined = "quarantined"
+)
+
 // Role is an RBAC role, scoped to the platform or a tenant.
 type Role struct {
 	ID          string    `gorm:"column:id;primaryKey;size:64" json:"id"`
@@ -46,9 +57,16 @@ type Role struct {
 	Name        string    `gorm:"column:name;size:128;not null" json:"name"`
 	Scope       string    `gorm:"column:scope;size:32;not null" json:"scope"`
 	Description string    `gorm:"column:description;size:255" json:"description"`
+	Status      string    `gorm:"column:status;size:16;not null;default:active" json:"status"`
 	CreatedAt   time.Time `gorm:"column:created_at" json:"created_at"`
 	ParentID    string    `gorm:"column:parent_id;size:64;index" json:"parent_id"`
 	BuiltIn     bool      `gorm:"-" json:"builtin"`
+	// Owned reports whether the row belongs to the caller's tenant; Editable
+	// reports whether the caller may rewrite it. Both are derived per caller, so
+	// the console can render a shared role as read-only instead of offering a
+	// button the server refuses (doc/304 §4 E177).
+	Owned    bool `gorm:"-" json:"owned"`
+	Editable bool `gorm:"-" json:"editable"`
 }
 
 // TableName is the physical table name.

@@ -108,10 +108,10 @@ export function ConversationCenterInput({
           aria-activedescendant={activeOptionId}
           className={
             autoGrowEnabled
-              ? `min-h-16 max-h-40 w-full border-0 bg-transparent p-2 text-sm focus-visible:outline-none focus-visible:ring-0 ${
+              ? `min-h-16 max-h-40 w-full border-0 bg-transparent p-2 text-base md:text-sm focus-visible:outline-none focus-visible:ring-0 ${
                   fieldSizingSupported ? "[field-sizing:content]" : "overflow-y-auto"
                 }`
-              : "min-h-16 max-h-40 w-full resize-y border-0 bg-transparent p-2 text-sm focus-visible:outline-none focus-visible:ring-0"
+              : "min-h-16 max-h-40 w-full resize-y border-0 bg-transparent p-2 text-base md:text-sm focus-visible:outline-none focus-visible:ring-0"
           }
           aria-label={t("conversationCenter.input_placeholder")}
         />
@@ -121,6 +121,9 @@ export function ConversationCenterInput({
               type="button"
               size="icon"
               variant="ghost"
+              // doc/314 第四节末：手机上的可点区域不小于 44px。`size-9` 是 36px，
+              // 拇指点不中；`md:` 之后回到原尺寸。
+              className="max-md:size-11"
               onClick={onAttachClick}
               disabled={busy}
               aria-label={t("conversationCenter.attach")}
@@ -135,7 +138,7 @@ export function ConversationCenterInput({
                 type="button"
                 size="icon"
                 variant={voice.listening ? "default" : "ghost"}
-                className={voice.listening ? "text-destructive" : ""}
+                className={`max-md:size-11 ${voice.listening ? "text-destructive" : ""}`}
                 onClick={voice.toggle}
                 disabled={disabled}
                 aria-label={voice.listening ? t("conversationCenter.stop_voice_input") : t("conversationCenter.voice_input")}
@@ -145,9 +148,9 @@ export function ConversationCenterInput({
               </Button>
             ) : null}
             {busy ? (
-              <Button size="sm" variant="outline" onClick={onCancel}><Square className="size-4" />{t("conversationCenter.stop")}</Button>
+              <Button size="sm" variant="outline" className="max-md:min-h-11" onClick={onCancel}><Square className="size-4" />{t("conversationCenter.stop")}</Button>
             ) : null}
-            <Button size="sm" onClick={onSubmit} disabled={busy || disabled || !input.trim()}>
+            <Button size="sm" className="max-md:min-h-11 max-md:min-w-11" onClick={onSubmit} disabled={busy || disabled || !input.trim()}>
               <Send className="size-4" />{t("conversationCenter.send")}
             </Button>
           </div>

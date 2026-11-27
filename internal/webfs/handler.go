@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -102,19 +103,47 @@ func compressibleType(contentType string) bool {
 	return compressibleTypes[mt]
 }
 
+// acceptsGzip answers "may this response be gzipped?". `q` is a relative
+// preference with three decimals of precision, so `gzip;q=0`, `gzip;q=0.0`,
+// `gzip;q=0.00` and `gzip;q=0.000` are the same refusal — a substring test for
+// "q=0" gets the first one and serves the other three a 1.7 MB bundle
+// (doc/304 §4 E176). Everything else is a positive weight.
 func acceptsGzip(r *http.Request) bool {
-	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
-		token := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
-		// "gzip;q=0" means the client explicitly refuses it.
-		if !strings.EqualFold(token, "gzip") {
+	header := r.Header.Get("Accept-Encoding")
+	gzipQ, starQ := -1.0, -1.0
+	for _, part := range strings.Split(header, ",") {
+		fields := strings.Split(part, ";")
+		token := strings.ToLower(strings.TrimSpace(fields[0]))
+		if token != "gzip" && token != "*" {
 			continue
 		}
-		if strings.Contains(strings.ToLower(part), "q=0") && !strings.Contains(strings.ToLower(part), "q=0.") {
-			return false
+		q := 1.0
+		for _, param := range fields[1:] {
+			kv := strings.SplitN(strings.TrimSpace(param), "=", 2)
+			if len(kv) != 2 || !strings.EqualFold(strings.TrimSpace(kv[0]), "q") {
+				continue
+			}
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(kv[1]), 64)
+			if err != nil {
+				// An unparseable weight is not a refusal: RFC 9110 says a
+				// malformed `q` is treated as the default, and inventing a
+				// refusal here would turn a typo into an uncompressed bundle.
+				q = 1.0
+				continue
+			}
+			q = parsed
 		}
-		return true
+		if token == "gzip" {
+			gzipQ = q
+		} else {
+			starQ = q
+		}
 	}
-	return false
+	if gzipQ >= 0 {
+		return gzipQ > 0
+	}
+	// `*` covers codings that were not named explicitly, gzip included.
+	return starQ > 0
 }
 
 // gzipWriter compresses a response at the moment its status and headers are

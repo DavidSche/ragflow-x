@@ -767,6 +767,7 @@ const zhMessages = {
   // ─── Dashboard ──────────────────────────────────────────────────
   dashboard: {
     load_fail: "加载仪表板数据失败",
+    load_retry: "重试加载",
     tokens_in: "输入 Tokens",
     tokens_out: "输出 Tokens",
     requests: "请求数",
@@ -942,6 +943,8 @@ const zhMessages = {
     attachment_send_plain_text: "发送纯文本",
     agent_session_unknown: "新会话创建结果未知，请先确认会话列表后显式继续。",
     pending_conflict: "已有待执行请求，请先完成或取消。",
+    session_permission_pending:
+      "正在确认当前账号的权限，请稍后再试。",
     help: "帮助",
     help_title: "对话中心语法",
     help_body:
@@ -2559,7 +2562,13 @@ const zhMessages = {
     deny: "拒绝",
     builtin: "内置",
     builtin_note: "内置角色的权限由系统统一管理，此处不可修改。",
+    shared_readonly_note: "这是平台维护的共享角色，可以查看权限，但只有平台管理员能修改。",
     no_permissions: "尚未配置任何权限，未设置项将继承父角色。",
+    permission_view_button: "查看权限",
+    status: "状态",
+    status_active: "启用",
+    status_quarantined: "待平台确认",
+    status_hint: "历史遗留且无法确认归属的角色会被标记为「待平台确认」：工作区看不到、也分配不到它。确认归属后改为「启用」即可恢复共享。",
     res_tenant: "工作区",
     res_user: "用户",
     res_role: "角色",

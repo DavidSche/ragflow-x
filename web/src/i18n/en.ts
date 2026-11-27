@@ -788,6 +788,7 @@ const enMessages = {
   // ─── Dashboard ──────────────────────────────────────────────────
   dashboard: {
     load_fail: "Failed to load dashboard data",
+    load_retry: "Retry",
     tokens_in: "Input Tokens",
     tokens_out: "Output Tokens",
     requests: "Requests",
@@ -894,6 +895,8 @@ const enMessages = {
       "New session creation is unknown. Confirm the session list before continuing.",
     pending_conflict:
       "A request is already pending. Complete or cancel it first.",
+    session_permission_pending:
+      "Still checking your permissions — try again in a moment.",
     help: "Help",
     help_title: "Conversation Center grammar",
     help_body:
@@ -2609,8 +2612,16 @@ const enMessages = {
     builtin: "Built-in",
     builtin_note:
       "Built-in role permissions are managed by the system and cannot be changed here.",
+    shared_readonly_note:
+      "This shared role is maintained by the platform. You can inspect its permissions; only a platform admin can change them.",
     no_permissions:
       "No permissions configured yet. Unset rules inherit from the parent role.",
+    permission_view_button: "View permissions",
+    status: "Status",
+    status_active: "Active",
+    status_quarantined: "Awaiting platform review",
+    status_hint:
+      "Legacy roles the migration could not attribute to one workspace are marked \"awaiting platform review\": tenants cannot see or assign them. Confirm the owner and set Active to share them again.",
     res_tenant: "Workspace",
     res_user: "User",
     res_role: "Role",

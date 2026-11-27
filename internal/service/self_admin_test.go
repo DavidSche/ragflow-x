@@ -53,7 +53,7 @@ func TestTenantAdminCannotManagePlatformRole(t *testing.T) {
 	}
 
 	// Role picker must not expose platform-scoped roles to a tenant admin.
-	roles, err := svc.ListRoles(ctx, model.RoleTenantAdmin, repository.RoleFilter{})
+	roles, err := svc.ListRoles(ctx, admin.ID, repository.RoleFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}

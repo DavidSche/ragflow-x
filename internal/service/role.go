@@ -30,10 +30,97 @@ var roleScopes = map[string]bool{
 	"project":               true,
 }
 
-// requireRoleScopeAccess loads a role and denies non-platform users access to
-// platform-scoped roles such as the platform_admin builtin, so a tenant admin
-// can never read, edit, or configure platform role permissions.
-func (s *Service) requireRoleScopeAccess(ctx context.Context, actorID, roleID string) (*model.Role, error) {
+// roleOwnedByTenant reports whether the tenant actor owns a role row. An empty
+// `tenant_id` means "owned by the platform": the built-in lattice and any role a
+// platform admin authors are shared with every tenant, but only a platform admin
+// may edit them (doc/304 §4 E175).
+func roleOwnedByTenant(r *model.Role, tenantID string) bool {
+	return tenantID != "" && r.TenantID == tenantID
+}
+
+// roleVisibleToTenant reports whether a tenant actor may at least see and assign
+// a role: its own rows, plus the platform-owned ones. Visibility is deliberately
+// weaker than ownership — being able to hand out a shared role must not imply
+// being able to rewrite it.
+func roleVisibleToTenant(r *model.Role, tenantID string) bool {
+	return r.TenantID == "" || roleOwnedByTenant(r, tenantID)
+}
+
+// actorIdentity answers the two questions the role endpoints must not take from
+// the token: which tenant is this actor in, and may they act platform-wide.
+//
+// Both answers come from `authz`, the same resolution `/auth/me` uses. The
+// tenant is read from the store because a claim can be stale after a user is
+// moved between tenants. The platform answer must be `ac.platform` and not
+// "the actor can exercise governance.manage": a tenant-scope role may be
+// granted governance.manage on purpose (doc/304 §4 E176), so the permission
+// alone would turn a delegable grant into a platform identity and let its
+// holder author platform-scoped roles (doc/315 finding 2).
+func (s *Service) actorIdentity(ctx context.Context, actorID string) (string, bool, error) {
+	ac, err := s.authz(ctx, actorID)
+	if err != nil {
+		return "", false, err
+	}
+	return ac.user.TenantID, ac.platform, nil
+}
+
+// roleDisabled reports whether a role is parked for platform review instead of
+// being a shared role any tenant may hand out (doc/304 §4 E178).
+//
+// The empty value is treated as active on purpose: a row read from a database
+// whose column was just added must not become invisible to everyone.
+func roleDisabled(r *model.Role) bool {
+	return r != nil && r.Status == model.RoleStatusQuarantined
+}
+
+// requireRoleWritable loads a role a tenant actor may rewrite, and reports
+// whether the actor is a platform identity (which may rewrite everything).
+//
+// Two boundaries a tenant actor must never cross: platform-scoped rows are
+// platform-only, and a role owned by another tenant does not exist for them.
+//
+// The second answer is 404, not 403: confirming that an id is "somebody else's
+// role" already discloses what the tenant isolation is hiding (doc/304 §4 E139).
+// A platform-owned row is different — it is visible to everyone by design, so
+// refusing to *edit* it is an honest 403. A quarantined row is not visible to
+// tenants at all, so it is 404 for them and writable by the platform, which is
+// the only way to review and re-activate it (E178).
+func (s *Service) requireRoleWritable(ctx context.Context, actorID, roleID string) (*model.Role, bool, error) {
+	r, err := s.Store.GetRole(ctx, roleID)
+	if err != nil {
+		return nil, false, err
+	}
+	if r == nil {
+		return nil, false, httperr.NotFound("role not found")
+	}
+	tenantID, platform, err := s.actorIdentity(ctx, actorID)
+	if err != nil {
+		return nil, false, err
+	}
+	if platform {
+		return r, true, nil
+	}
+	if r.Scope == model.RoleScopePlatform {
+		return nil, false, ErrForbidden
+	}
+	if roleDisabled(r) {
+		return nil, false, httperr.NotFound("role not found")
+	}
+	if roleOwnedByTenant(r, tenantID) {
+		return r, false, nil
+	}
+	if r.TenantID == "" {
+		return nil, false, ErrForbidden
+	}
+	return nil, false, httperr.NotFound("role not found")
+}
+
+// requireRoleReadable is the read path: reading a role's policy rules is not
+// editing it. A tenant admin must be able to inspect the built-ins it can hand
+// out, otherwise the permission dialog of every shared role answers 403 and the
+// console shows an error where it should show a read-only matrix (doc/315
+// finding 1). Writes keep the ownership gate above.
+func (s *Service) requireRoleReadable(ctx context.Context, actorID, roleID string) (*model.Role, error) {
 	r, err := s.Store.GetRole(ctx, roleID)
 	if err != nil {
 		return nil, err
@@ -41,8 +128,21 @@ func (s *Service) requireRoleScopeAccess(ctx context.Context, actorID, roleID st
 	if r == nil {
 		return nil, httperr.NotFound("role not found")
 	}
-	if r.Scope == model.RoleScopePlatform && s.Authorize(ctx, actorID, "governance.manage", "tenant") != nil {
+	tenantID, platform, err := s.actorIdentity(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if platform {
+		return r, nil
+	}
+	if r.Scope == model.RoleScopePlatform {
 		return nil, ErrForbidden
+	}
+	if roleDisabled(r) {
+		return nil, httperr.NotFound("role not found")
+	}
+	if !roleVisibleToTenant(r, tenantID) {
+		return nil, httperr.NotFound("role not found")
 	}
 	return r, nil
 }
@@ -54,28 +154,43 @@ func (s *Service) CreateRole(ctx context.Context, actorID, actorRole string, req
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.Store.GetRoleByName(ctx, name, "")
+	if !roleScopes[req.Scope] {
+		return nil, httperr.BadRequest(40081, "invalid role scope")
+	}
+	tenantID, platform, err := s.actorIdentity(ctx, actorID)
+	if err != nil {
+		return nil, err
+	}
+	if req.Scope == model.RoleScopePlatform && !platform {
+		return nil, ErrForbidden
+	}
+	if err := s.Authorize(ctx, actorID, "manage", "role"); err != nil {
+		return nil, err
+	}
+	// Ownership is what keeps one tenant's custom roles out of every other
+	// tenant's list, editor and assignment picker (doc/304 §4 E175). A role the
+	// platform authors stays shared, exactly like the built-ins it sits next to.
+	owner := ""
+	if req.Scope != model.RoleScopePlatform && !platform {
+		owner = tenantID
+	}
+	existing, err := s.Store.GetRoleByName(ctx, name, "", owner)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
 		return nil, displayNameConflict("role")
 	}
-	if !roleScopes[req.Scope] {
-		return nil, httperr.BadRequest(40081, "invalid role scope")
-	}
-	if req.Scope == model.RoleScopePlatform && s.Authorize(ctx, actorID, "governance.manage", "tenant") != nil {
-		return nil, ErrForbidden
-	}
-	if err := s.Authorize(ctx, actorID, "manage", "role"); err != nil {
+	if err := s.validateRoleParent(ctx, actorID, owner, "", req.Scope, req.ParentID); err != nil {
 		return nil, err
 	}
-	if err := s.validateRoleParent(ctx, "", req.ParentID); err != nil {
-		return nil, err
-	}
+	// `status` is set here rather than left to the column default: the response of
+	// POST /roles is read by the console, and a row whose status is "" would render
+	// as neither active nor parked while GET /roles reports "active" for it.
 	r := &model.Role{
-		ID: id.New(), Name: name, Scope: req.Scope,
+		ID: id.New(), TenantID: owner, Name: name, Scope: req.Scope,
 		Description: req.Description, ParentID: req.ParentID,
+		Status: model.RoleStatusActive,
 	}
 	if err := s.Store.CreateRole(ctx, r); err != nil {
 		return nil, err
@@ -88,7 +203,7 @@ func (s *Service) DeleteRole(ctx context.Context, actorID, actorRole, roleID str
 	if err := s.Authorize(ctx, actorID, "manage", "role"); err != nil {
 		return err
 	}
-	if _, err := s.requireRoleScopeAccess(ctx, actorID, roleID); err != nil {
+	if _, _, err := s.requireRoleWritable(ctx, actorID, roleID); err != nil {
 		return err
 	}
 	if isBuiltinRole(roleID) {
@@ -111,12 +226,15 @@ func (s *Service) DeleteRole(ctx context.Context, actorID, actorRole, roleID str
 	return s.Store.DeleteRole(ctx, roleID)
 }
 
-// UpdateRoleRequest carries editable role fields.
+// UpdateRoleRequest carries editable role fields. Status is platform-only and
+// nil means "leave it alone"; it exists so a quarantined legacy role can be
+// re-authorised instead of staying dark forever (E178).
 type UpdateRoleRequest struct {
 	Name        string
 	Scope       string
 	Description string
 	ParentID    string
+	Status      *string
 }
 
 // UpdateRole edits a role name/description/scope/parent.
@@ -124,31 +242,46 @@ func (s *Service) UpdateRole(ctx context.Context, actorID, actorRole, roleID str
 	if err := s.Authorize(ctx, actorID, "manage", "role"); err != nil {
 		return nil, err
 	}
-	r, err := s.requireRoleScopeAccess(ctx, actorID, roleID)
+	r, platform, err := s.requireRoleWritable(ctx, actorID, roleID)
 	if err != nil {
 		return nil, err
 	}
 	if isBuiltinRole(r.ID) {
 		return nil, httperr.BadRequest(40082, "built-in roles cannot be modified")
 	}
-	if req.Scope != "" {
+	scopeChanged := false
+	if req.Scope != "" && req.Scope != r.Scope {
 		if !roleScopes[req.Scope] {
 			return nil, httperr.BadRequest(40081, "invalid role scope")
 		}
-		if req.Scope == model.RoleScopePlatform && s.Authorize(ctx, actorID, "governance.manage", "tenant") != nil {
+		if req.Scope == model.RoleScopePlatform && !platform {
 			return nil, ErrForbidden
 		}
-		if isBuiltinRole(roleID) && req.Scope != r.Scope {
+		if isBuiltinRole(roleID) {
 			return nil, httperr.BadRequest(40082, "cannot change scope of built-in roles")
 		}
+		// Every child of this role must sit in the same scope (E175), so changing
+		// the scope of a parent would leave edges `expandRoles` has to refuse.
+		// Refuse here instead of invalidating children in the background.
+		children, err := s.Store.RoleAsParentCount(ctx, roleID)
+		if err != nil {
+			return nil, err
+		}
+		if children > 0 {
+			return nil, httperr.BadRequest(httperr.CodeRoleScopeChangeWithChildren, "role has child roles; change their parent first")
+		}
 		r.Scope = req.Scope
+		scopeChanged = true
+		if r.Scope == model.RoleScopePlatform {
+			r.TenantID = ""
+		}
 	}
 	if req.Name != "" {
 		name, err := normalizeDisplayName(req.Name, "role name is required", 40080)
 		if err != nil {
 			return nil, err
 		}
-		existing, err := s.Store.GetRoleByName(ctx, name, roleID)
+		existing, err := s.Store.GetRoleByName(ctx, name, roleID, r.TenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -161,10 +294,38 @@ func (s *Service) UpdateRole(ctx context.Context, actorID, actorRole, roleID str
 		r.Description = req.Description
 	}
 	if req.ParentID != "" {
-		if err := s.validateRoleParent(ctx, roleID, req.ParentID); err != nil {
+		if err := s.validateRoleParent(ctx, actorID, r.TenantID, roleID, r.Scope, req.ParentID); err != nil {
 			return nil, err
 		}
 		r.ParentID = req.ParentID
+	} else if scopeChanged && r.ParentID != "" {
+		// Changing the scope re-checks the parent that is already there. The
+		// create path validates the pair, but until doc/315 finding 3 the update
+		// path did not: a tenant role could become scope=platform while keeping
+		// parent_id=tenant_admin, and the next reader had to refuse the row it
+		// had just been allowed to write (E177).
+		if err := s.validateRoleParent(ctx, actorID, r.TenantID, roleID, r.Scope, r.ParentID); err != nil {
+			return nil, err
+		}
+	}
+	if req.Status != nil {
+		if !platform {
+			return nil, ErrForbidden
+		}
+		switch *req.Status {
+		case model.RoleStatusActive, model.RoleStatusQuarantined:
+			r.Status = *req.Status
+		default:
+			return nil, httperr.BadRequest(40000, "invalid role status")
+		}
+		// Bringing a role back into service re-checks its parent: re-activating a
+		// child of a role that is itself quarantined would recreate exactly the
+		// inheritance edge `validateRoleParent` refuses to create today.
+		if r.Status == model.RoleStatusActive && r.ParentID != "" {
+			if err := s.validateRoleParent(ctx, actorID, r.TenantID, roleID, r.Scope, r.ParentID); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := s.Store.UpdateRole(ctx, r); err != nil {
 		return nil, err
@@ -172,14 +333,22 @@ func (s *Service) UpdateRole(ctx context.Context, actorID, actorRole, roleID str
 	return r, nil
 }
 
-// validateRoleParent refuses a parent that does not exist or that would make
-// the role its own ancestor. Until doc/304 §4 E155 `CreateRole` wrote
-// `req.ParentID` straight into the row without a lookup, so a typo produced a
-// role that *advertised* a parent while `expandRoles` skipped the missing row
-// and inherited nothing — the same shape as "read 0 ≠ it is empty" (E132).
+// validateRoleParent refuses a parent that does not exist, that would make the
+// role its own ancestor, that sits in another scope or tenant, or that grants
+// something the actor could not hand out themselves.
+//
+// Until doc/304 §4 E175 this checked existence and cycles only. Because `authz`
+// unions every ancestor's rules and treated *any* platform-scoped role in the
+// closure as a platform identity, `parent_id = platform_admin` on a
+// tenant-scoped role was a one-field platform takeover: `validateRole` saw a
+// tenant role, `expandRoles` walked into the platform one. The three checks
+// below close the write path; `expandRoles` re-checks the same invariant when
+// reading, so a row written before the fix cannot keep working.
+//
 // A deeper ancestor that no longer exists only ends the walk: that hole is the
-// pre-existing defect, and refusing to edit around it would make it permanent.
-func (s *Service) validateRoleParent(ctx context.Context, roleID, parentID string) error {
+// pre-existing defect (E155), and refusing to edit around it would make it
+// permanent.
+func (s *Service) validateRoleParent(ctx context.Context, actorID, childTenantID, roleID, childScope, parentID string) error {
 	if parentID == "" {
 		return nil
 	}
@@ -187,6 +356,7 @@ func (s *Service) validateRoleParent(ctx context.Context, roleID, parentID strin
 		return httperr.BadRequest(40085, "role cannot be its own parent")
 	}
 	seen := map[string]bool{parentID: true}
+	inherited := make([]model.Permission, 0, 16)
 	cursor := parentID
 	for {
 		parent, err := s.Store.GetRole(ctx, cursor)
@@ -197,10 +367,29 @@ func (s *Service) validateRoleParent(ctx context.Context, roleID, parentID strin
 			if cursor == parentID {
 				return httperr.BadRequest(40086, "parent role not found")
 			}
-			return nil
+			break
 		}
+		// A quarantined role is not a shared role: it grants nothing new until a
+		// platform admin reviews it (E178). Report it like any other missing
+		// parent so the quarantine is not advertised to tenants.
+		if roleDisabled(parent) {
+			return httperr.BadRequest(40086, "parent role not found")
+		}
+		// A parent may be equal to the child, never wider: inheritance must not
+		// move a role up the scope ladder (tenant → platform) or across tenants.
+		if parent.Scope != childScope {
+			return httperr.BadRequest(httperr.CodeRoleParentScopeMismatch, "parent role scope must match the role's scope")
+		}
+		if !roleVisibleToTenant(parent, childTenantID) {
+			return httperr.BadRequest(httperr.CodeRoleParentForeignTenant, "parent role belongs to another tenant")
+		}
+		perms, err := s.Store.GetPermissions(ctx, parent.ID)
+		if err != nil {
+			return err
+		}
+		inherited = append(inherited, perms...)
 		if parent.ParentID == "" {
-			return nil
+			break
 		}
 		if roleID != "" && parent.ParentID == roleID {
 			return httperr.BadRequest(httperr.CodeRoleParentCycle, "role parent would create an inheritance cycle")
@@ -211,6 +400,16 @@ func (s *Service) validateRoleParent(ctx context.Context, roleID, parentID strin
 		seen[parent.ParentID] = true
 		cursor = parent.ParentID
 	}
+	// The actor must be able to hand out everything the parent chain grants —
+	// the rule `SetRolePermissions` already applies to explicit grants, now
+	// applied to the inherited closure. Without it a workspace admin could attach
+	// a parent holding permissions they do not have and mint them for a member.
+	if len(inherited) > 0 {
+		if err := s.assertCanDelegate(ctx, actorID, inherited); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetRolePermissions returns a role's policy rules.
@@ -218,7 +417,7 @@ func (s *Service) GetRolePermissions(ctx context.Context, actorID, actorRole, ro
 	if err := s.Authorize(ctx, actorID, "read", "role"); err != nil {
 		return nil, err
 	}
-	if _, err := s.requireRoleScopeAccess(ctx, actorID, roleID); err != nil {
+	if _, err := s.requireRoleReadable(ctx, actorID, roleID); err != nil {
 		return nil, err
 	}
 	return s.Store.GetPermissions(ctx, roleID)
@@ -229,7 +428,7 @@ func (s *Service) SetRolePermissions(ctx context.Context, actorID, actorRole, ro
 	if err := s.Authorize(ctx, actorID, "manage", "role"); err != nil {
 		return err
 	}
-	if _, err := s.requireRoleScopeAccess(ctx, actorID, roleID); err != nil {
+	if _, _, err := s.requireRoleWritable(ctx, actorID, roleID); err != nil {
 		return err
 	}
 	if isBuiltinRole(roleID) {
@@ -238,7 +437,7 @@ func (s *Service) SetRolePermissions(ctx context.Context, actorID, actorRole, ro
 	perms := make([]model.Permission, 0, len(specs))
 	for _, sp := range specs {
 		if !isCatalogPermission(sp.Resource, sp.Action) {
-			return httperr.BadRequest(40087, "permission is outside the permission catalog")
+			return httperr.BadRequest(httperr.CodeRolePermissionOutsideCatalog, "permission is outside the permission catalog")
 		}
 		effect := sp.Effect
 		if effect != model.PermissionEffectAllow && effect != model.PermissionEffectDeny {

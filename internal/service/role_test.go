@@ -8,6 +8,19 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
+// adminIDOf returns the bootstrap platform admin's user id. The role endpoints
+// now resolve the caller's tenant and platform authority from the store, so a
+// test that passes a role name where a user id belongs is asking a different
+// question — and would read as "unauthorized" rather than "no such role".
+func adminIDOf(t *testing.T, svc *Service) string {
+	t.Helper()
+	u, err := svc.Store.GetUserByUsername(context.Background(), "admin")
+	if err != nil || u == nil {
+		t.Fatalf("bootstrap platform admin missing: %v", err)
+	}
+	return u.ID
+}
+
 func TestRoleCRUDAndScopes(t *testing.T) {
 	ctx := context.Background()
 	svc := newAuthzSvc(t)
@@ -32,7 +45,7 @@ func TestRoleCRUDAndScopes(t *testing.T) {
 	if len(perms) != 1 || perms[0].Action != "read" || perms[0].Resource != "audit" {
 		t.Fatalf("unexpected permissions: %+v", perms)
 	}
-	roles, err := svc.ListRoles(ctx, model.RolePlatformAdmin, repository.RoleFilter{})
+	roles, err := svc.ListRoles(ctx, adminIDOf(t, svc), repository.RoleFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +74,7 @@ func TestRoleCRUDAndScopes(t *testing.T) {
 func TestBuiltinRoleCatalogMatchesDoc30(t *testing.T) {
 	ctx := context.Background()
 	svc := newAuthzSvc(t)
-	roles, err := svc.ListRoles(ctx, model.RolePlatformAdmin, repository.RoleFilter{})
+	roles, err := svc.ListRoles(ctx, adminIDOf(t, svc), repository.RoleFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +107,7 @@ func TestBuiltinRoleCatalogMatchesDoc30(t *testing.T) {
 func TestRoleScopesListed(t *testing.T) {
 	ctx := context.Background()
 	svc := newAuthzSvc(t)
-	roles, err := svc.ListRoles(ctx, model.RolePlatformAdmin, repository.RoleFilter{})
+	roles, err := svc.ListRoles(ctx, adminIDOf(t, svc), repository.RoleFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -102,6 +102,7 @@ func (h *Handler) UpdateRole(c *gin.Context) {
 	roleID := c.Param("id")
 	r, err := h.Service.UpdateRole(ctx, actorID, actorRole, roleID, service.UpdateRoleRequest{
 		Name: req.Name, Scope: req.Scope, Description: req.Description, ParentID: req.ParentID,
+		Status: req.Status,
 	})
 	if err != nil {
 		response.Err(c, err)

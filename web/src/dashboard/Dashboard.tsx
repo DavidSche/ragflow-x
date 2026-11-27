@@ -123,14 +123,39 @@ function exportCsv(rows: Record<string, unknown>[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
-// useChatOnlyHomePath returns the app-root destination for a view that has no
-// dashboard of its own, or null. Kept as its own hook so the redirect can be a
-// separate component: Dashboard calls a dozen hooks, and an early `return`
-// among them would break the rules of hooks on the first render after the
-// identity resolves (doc/304 §4 E155).
-function useChatOnlyHomePath(): string | null {
-  const { data: identity } = useGetIdentity();
-  const { data: permissionsData } = usePermissions();
+// useChatOnlyHomePath says whether the app root may decide yet, and where a view
+// without a dashboard of its own belongs. Kept as its own hook so the redirect
+// can be a separate component: Dashboard calls a dozen hooks, and an early
+// `return` among them would break the rules of hooks on the first render after
+// the identity resolves (doc/304 §4 E155) — the same reason the pending state is
+// a value the caller renders, not an early return inside the content.
+interface HomeDecision {
+  ready: boolean;
+  path: string | null;
+  // `failed` is separate from `ready`: a probe that errored has answered
+  // *nothing*, and rendering the dashboard from an empty answer is the same
+  // defect as deciding while the queries are still in flight (doc/315 P3).
+  failed: boolean;
+  retry: () => void;
+}
+
+function useChatOnlyHomePath(): HomeDecision {
+  const identityQuery = useGetIdentity();
+  const permissionsQuery = usePermissions();
+  const retry = () => {
+    void identityQuery.refetch();
+    void permissionsQuery.refetch();
+  };
+  // `isPending` is react-query's "no data and no error yet". Treating that window
+  // as `role: ""` + `permissions: []` resolved every such render to read-only, so
+  // a chat-only user's first paint was the whole dashboard — the cards they
+  // cannot open, the requests they cannot make — before the redirect arrived
+  // (doc/304 §4 E176). An empty list that means "not asked yet" is not the same
+  // statement as an empty list that means "nothing granted".
+  const ready =
+    identityQuery.isPending === false && permissionsQuery.isPending === false;
+  const identity = identityQuery.data;
+  const permissionsData = permissionsQuery.data;
   const role = identity && "role" in identity ? String(identity.role ?? "") : "";
   const permissions =
     permissionsData && "permissions" in permissionsData
@@ -138,12 +163,59 @@ function useChatOnlyHomePath(): string | null {
         ? permissionsData.permissions
         : []
       : [];
-  return resolveHomePath(resolveNavigationView(role, permissions));
+  const failed =
+    identityQuery.isError === true || permissionsQuery.isError === true;
+  if (failed) return { ready: true, path: null, failed: true, retry };
+  if (!ready) return { ready: false, path: null, failed: false, retry };
+  return {
+    ready: true,
+    path: resolveHomePath(resolveNavigationView(role, permissions)),
+    failed: false,
+    retry,
+  };
 }
 
+// HomeLoading is the app root's "still deciding" state: not the dashboard,
+// because this user may not have one, and not blank, because a blank first paint
+// is indistinguishable from a broken app.
+const HomeLoading = () => (
+  <div className="p-6" aria-busy="true" data-testid="home-loading">
+    <div className="mb-6 space-y-2">
+      <Skeleton className="h-6 w-48" />
+      <Skeleton className="h-4 w-72" />
+    </div>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {[0, 1, 2, 3].map((key) => (
+        <Skeleton key={key} className="h-24 w-full" />
+      ))}
+    </div>
+  </div>
+);
+
+// HomeError is the app root's "could not decide" state. It exists so a failed
+// identity/permission probe stays visible and retryable instead of being read as
+// "this view has no dashboard" or "this view is read-only".
+const HomeError = ({ retry }: { retry: () => void }) => {
+  const t = useTranslate();
+  return (
+    <div
+      className="flex flex-col items-center gap-3 p-10 text-center"
+      role="alert"
+      data-testid="home-error"
+    >
+      <p className="text-sm font-medium">{t("dashboard.load_fail")}</p>
+      <Button variant="outline" onClick={retry}>
+        {t("dashboard.load_retry")}
+      </Button>
+    </div>
+  );
+};
+
 export const Dashboard = () => {
-  const homePath = useChatOnlyHomePath();
-  if (homePath) return <Navigate replace to={homePath} />;
+  const { ready, path, failed, retry } = useChatOnlyHomePath();
+  if (failed) return <HomeError retry={retry} />;
+  if (!ready) return <HomeLoading />;
+  if (path) return <Navigate replace to={path} />;
   return <DashboardContent />;
 };
 
@@ -255,7 +327,7 @@ const DashboardContent = () => {
   const totalEstimatedCost = usage.reduce((s, r) => s + r.estimated_cost, 0);
 
   return (
-    <>
+    <div data-testid="dashboard-content">
       <Breadcrumb>
         <BreadcrumbPage>{t("ra.page.dashboard")}</BreadcrumbPage>
       </Breadcrumb>
@@ -479,7 +551,7 @@ const DashboardContent = () => {
           </CardContent>
         </Card>
       ) : null}
-    </>
+    </div>
   );
 };
 

@@ -123,3 +123,46 @@ func Test40085HasASingleOwner(t *testing.T) {
 		t.Errorf("%s should emit %s exactly once, found %d", owner, overloaded, counts[owner])
 	}
 }
+
+// TestRoleEmitsOnlyItsOwnBlockCodes keeps the Role surface from drifting back
+// onto codes that already mean something else. The Role block is 40080-40086
+// (doc/specification/12 §2.2); everything else a role request can refuse —
+// cross-scope parent, foreign parent, children in the way, a rule outside the
+// catalog — is a 4116x precondition and must be a registered constant.
+//
+// Written after a role edit answered 40088 ("智能体 DSL 不能为空") for a parent
+// that sat in the wrong scope: the client translated a well-argued refusal into
+// a sentence about agents, because nothing stopped the service from borrowing
+// the number.
+func TestRoleEmitsOnlyItsOwnBlockCodes(t *testing.T) {
+	t.Parallel()
+	files := []string{
+		filepath.Join("..", "..", "service", "role.go"),
+		filepath.Join("..", "..", "handler", "role.go"),
+	}
+	// `httperr.BadRequest(40088, ...)` / `response.Fail(c, 40088, ...)`: a bare
+	// number in the first argument position.
+	re := regexp.MustCompile(`(?:BadRequest|Fail|Err)\((?:[a-zA-Z]+, )?(\d{5})`)
+	for _, file := range files {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for _, m := range re.FindAllStringSubmatch(string(body), -1) {
+			code, convErr := strconv.Atoi(m[1])
+			if convErr != nil {
+				t.Fatalf("parse %s: %v", m[1], convErr)
+			}
+			// 40000 / 40060 are the two documented generic buckets whose detail
+			// carries the field name (doc/specification/12 §2.2), so they are
+			// fine anywhere; anything else has to be a Role-block code.
+			if code == 40000 || code == 40060 {
+				continue
+			}
+			if code < 40080 || code > 40086 {
+				t.Errorf("%s emits bare code %d; the Role block is 40080-40086 — allocate a 4116x constant in Declared instead",
+					filepath.ToSlash(file), code)
+			}
+		}
+	}
+}

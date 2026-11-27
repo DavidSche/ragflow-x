@@ -52,13 +52,17 @@ let assistantDirectoryTargets = [
 // `denied` lets one test withhold a single resource:action pair.
 const accessState = vi.hoisted(() => ({
   pending: false,
+  // pendingKeys holds the probes that are still in flight, for the cases where
+  // only one permission must be undecided (doc/304 §4 E176).
+  pendingKeys: new Set<string>(),
   denied: new Set<string>(),
 }));
 
 vi.mock("ra-core", () => ({
   useCanAccess: (params?: { resource?: string; action?: string }) => {
-    if (accessState.pending) return { canAccess: undefined, isPending: true };
     const key = `${params?.resource ?? ""}:${params?.action ?? ""}`;
+    if (accessState.pending || accessState.pendingKeys.has(key))
+      return { canAccess: undefined, isPending: true };
     return { canAccess: !accessState.denied.has(key), isPending: false };
   },
   useGetIdentity: () => ({ data: identity, isLoading: false }),
@@ -256,6 +260,109 @@ describe("ConversationCenter chat session creation", () => {
         }),
       );
       expect(adapter.createSession).not.toHaveBeenCalled();
+      expect(adapter.start).not.toHaveBeenCalled();
+    } finally {
+      accessState.denied.delete("chats:session:create");
+    }
+  });
+});
+
+describe("ConversationCenter permission probe window", () => {
+  // doc/304 §4 E176: `canAccess` is undefined while the probe is in flight, and
+  // reading that as a refusal told a chat-only user "you have no permission" for
+  // the one permission they hold. These three cases are the same click with the
+  // probe pending, granted and refused; only the middle one may send.
+  const renderChat = () =>
+    render(
+      <MemoryRouter initialEntries={["/conversation-center?kind=chat&targetId=chat-1"]}>
+        <Routes>
+          <Route path="/conversation-center" element={<ConversationCenter />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+  const sendFirstMessage = async (container: HTMLElement) => {
+    await waitFor(() => expect(container.querySelector("textarea")).not.toBeNull());
+    const input = container.querySelector("textarea")!;
+    fireEvent.change(input, { target: { value: "帮我总结一下合同" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  };
+
+  it("reports the wait, not a denial, while session:create is still resolving", async () => {
+    notify.mockClear();
+    adapter.start.mockClear();
+    accessState.pendingKeys.add("chats:session:create");
+    try {
+      const { container } = renderChat();
+      await sendFirstMessage(container);
+
+      await waitFor(() =>
+        expect(notify).toHaveBeenCalledWith(
+          "conversationCenter.session_permission_pending",
+          { type: "warning" },
+        ),
+      );
+      expect(notify).not.toHaveBeenCalledWith(
+        "conversationCenter.chat_new_denied",
+        expect.anything(),
+      );
+      expect(adapter.start).not.toHaveBeenCalled();
+    } finally {
+      accessState.pendingKeys.delete("chats:session:create");
+    }
+  });
+
+  it("sends once the probe resolves in favour of the caller", async () => {
+    notify.mockClear();
+    adapter.start.mockClear();
+    adapter.start.mockImplementationOnce((input: { requestId: string; text: string; conversationKey: string }) => ({
+      requestId: input.requestId,
+      streamId: `stream-${input.requestId}`,
+      abort: vi.fn(),
+      events: (async function* (): AsyncGenerator<ConversationEvent> {
+        yield {
+          type: "stream.completed",
+          eventId: "granted-completed",
+          sequence: 1,
+          timestamp: new Date().toISOString(),
+          schemaVersion: 1,
+          requestId: input.requestId,
+          streamId: `stream-${input.requestId}`,
+          conversationKey: input.conversationKey,
+          target: { id: "chat-1", kind: "chat" },
+          context,
+          finalStatus: "completed" as const,
+        };
+      })(),
+    }));
+
+    const { container } = renderChat();
+    await sendFirstMessage(container);
+
+    await waitFor(() => expect(adapter.start).toHaveBeenCalled());
+    expect(notify).not.toHaveBeenCalledWith(
+      "conversationCenter.session_permission_pending",
+      expect.anything(),
+    );
+    expect(notify).not.toHaveBeenCalledWith(
+      "conversationCenter.chat_new_denied",
+      expect.anything(),
+    );
+  });
+
+  it("refuses to start a new conversation the caller may not create", async () => {
+    notify.mockClear();
+    adapter.start.mockClear();
+    accessState.denied.add("chats:session:create");
+    try {
+      const { container } = renderChat();
+      await sendFirstMessage(container);
+
+      await waitFor(() =>
+        expect(notify).toHaveBeenCalledWith("conversationCenter.chat_new_denied", {
+          type: "warning",
+        }),
+      );
       expect(adapter.start).not.toHaveBeenCalled();
     } finally {
       accessState.denied.delete("chats:session:create");

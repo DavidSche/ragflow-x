@@ -81,6 +81,15 @@ const (
 	// self-parent, and it cannot borrow 40086 ("parent role not found") because
 	// the parent is right there.
 	CodeRoleParentCycle = 41160 // chosen parent is (or becomes) a descendant of the role
+	// The rest of the role-inheritance preconditions land here for the same
+	// reason as 41160: a well-formed request that cannot be honoured. They used
+	// to be loose `4008x` literals, which meant a role edit could answer with
+	// "智能体名称不能为空" (40087) or "智能体 DSL 不能为空" (40088) — the codes were
+	// already spoken for by agents, chat, tasks and document versions.
+	CodeRoleParentScopeMismatch      = 41161 // parent sits in another scope (tenant vs platform)
+	CodeRoleParentForeignTenant      = 41162 // parent belongs to another tenant
+	CodeRoleScopeChangeWithChildren  = 41163 // scope change would orphan the role's children
+	CodeRolePermissionOutsideCatalog = 41164 // submitted rule is not in the permission catalog
 )
 
 // Declaration documents one code: what it means and who may emit it.
@@ -117,4 +126,8 @@ var Declared = []Declaration{
 	{CodeSearchAppNameTaken, "search_app_name_taken", "已存在同名搜索应用，引擎不允许重名"},
 	{CodeAPIKeyRotationConflict, "api_key_rotation_conflict", "API Key 已吊销或已轮换，不能再次轮换"},
 	{CodeRoleParentCycle, "role_parent_cycle", "父角色选择会把角色自己变成祖先（继承成环）"},
+	{CodeRoleParentScopeMismatch, "role_parent_scope_mismatch", "父角色与角色的作用域不一致（tenant / platform 不能互相继承）"},
+	{CodeRoleParentForeignTenant, "role_parent_foreign_tenant", "父角色属于其他租户"},
+	{CodeRoleScopeChangeWithChildren, "role_scope_change_with_children", "角色仍有子角色，改作用域前要先把子角色挂到其他父级"},
+	{CodeRolePermissionOutsideCatalog, "role_permission_outside_catalog", "提交的权限项不在权限目录内"},
 }

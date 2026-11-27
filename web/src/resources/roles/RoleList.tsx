@@ -19,6 +19,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { FormField, useFieldValidation } from "../../components/FormField";
 import { api, ApiError } from "../../lib/api";
 import { PermissionMatrix, type CatEntry } from "./PermissionMatrix";
+import { isRoleWritable } from "./role-editability";
 import { RoleLabel } from "@/components/admin/ReferenceLabel";
 
 interface RoleLike {
@@ -28,6 +29,12 @@ interface RoleLike {
   description?: string;
   parent_id?: string;
   builtin?: boolean;
+  status?: string;
+  // Derived per caller by the API (doc/315 finding 1). Undefined is treated as
+  // "not editable": an older server that does not send the flag must not make
+  // the console offer a button the server will refuse.
+  owned?: boolean;
+  editable?: boolean;
 }
 
 interface Perm {
@@ -98,6 +105,10 @@ const PermissionCell = () => {
   if (!record || !canManage) return null;
 
   const builtin = !!record.builtin;
+  // Reading a shared role is allowed on purpose, writing it is not: this is the
+  // same split the API enforces, so the dialog opens read-only instead of
+  // failing on save (doc/315 finding 1).
+  const writable = isRoleWritable(record);
 
   const load = async () => {
     setOpen(true);
@@ -140,9 +151,11 @@ const PermissionCell = () => {
     }
   };
 
+  const permissionLabel = writable ? t("roles.permission_button") : t("roles.permission_view_button");
+
   return (
     <>
-      <IconButtonWithTooltip label={t("roles.permission_button")} onClick={(e) => { e.stopPropagation(); void load(); }}>
+      <IconButtonWithTooltip label={permissionLabel} onClick={(e) => { e.stopPropagation(); void load(); }}>
         <ShieldCheck className="size-4" aria-hidden="true" />
       </IconButtonWithTooltip>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -165,6 +178,10 @@ const PermissionCell = () => {
                   <div className="rounded border bg-muted p-3 text-sm text-muted-foreground">
                     {t("roles.builtin_note")}
                   </div>
+                ) : !writable ? (
+                  <div className="rounded border bg-muted p-3 text-sm text-muted-foreground">
+                    {t("roles.shared_readonly_note")}
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">{t("roles.no_permissions")}</p>
                 )}
@@ -172,15 +189,15 @@ const PermissionCell = () => {
                   catalog={catalog}
                   mapState={mapState}
                   builtin={builtin}
-                  disabled={saving}
-                  onChange={builtin ? undefined : (resource, action, effect) =>
+                  disabled={saving || !writable}
+                  onChange={writable ? (resource, action, effect) =>
                     setMapState((prev) => ({ ...prev, [`${resource}|${action}`]: effect }))
-                  }
+                  : undefined}
                 />
               </div>
             )}
           </div>
-          {!builtin && (
+          {writable && (
             <div className="flex justify-end gap-2 pt-2 shrink-0">
               <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 {t("ra.action.cancel")}
@@ -217,7 +234,8 @@ const EditRoleCell = () => {
     { id: "project", name: t("roles.scope_project_full") },
   ];
   const scopeOptions = scopeChoices.filter((c) => isPlatform || c.id !== "platform");
-  if (!record || !canManage) return null;
+  const [status, setStatus] = useState(record?.status === "quarantined" ? "quarantined" : "active");
+  if (!record || !canManage || !isRoleWritable(record)) return null;
 
   const parentChoices = (data ?? [])
     .filter((r: RoleLike) => r.id !== record.id)
@@ -232,6 +250,8 @@ const EditRoleCell = () => {
         scope,
         description: descriptionField.value,
         parent_id: parentId || undefined,
+        // Platform-only: how a quarantined legacy role is put back into service.
+        ...(isPlatform ? { status } : {}),
       });
       notify(t("roles.updated"), { type: "success" });
       setOpen(false);
@@ -268,6 +288,16 @@ const EditRoleCell = () => {
             <FormField label={t("roles.description")} error={descriptionField.error}>
               <Input {...descriptionField.inputProps} />
             </FormField>
+            {isPlatform ? (
+              <div className="space-y-2">
+                <Label>{t("roles.status")}</Label>
+                <select className="w-full rounded border bg-background px-2 py-1 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}>
+                  <option value="active">{t("roles.status_active")}</option>
+                  <option value="quarantined">{t("roles.status_quarantined")}</option>
+                </select>
+                <p className="text-xs text-muted-foreground">{t("roles.status_hint")}</p>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label>{t("roles.parent_id")}</Label>
               <select className="w-full rounded border bg-background px-2 py-1 text-sm" value={parentId} onChange={(e) => setParentId(e.target.value)}>
@@ -290,13 +320,13 @@ const EditRoleCell = () => {
 
 const DeleteRoleCell = () => {
   const t = useTranslate();
-  const record = useRecordContext<{ id: string; name?: string }>();
+  const record = useRecordContext<{ id: string; name?: string; builtin?: boolean; editable?: boolean }>();
   const notify = useNotify();
   const qc = useQueryClient();
   const canManage = useCanManageRole();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  if (!record || !canManage) return null;
+  if (!record || !canManage || !isRoleWritable(record)) return null;
   const doDelete = async () => {
     setDeleting(true);
     try {
@@ -360,6 +390,9 @@ export const RoleList = () => {
           <span className="flex items-center gap-2">
             {r.name}
             {r.builtin ? <Badge variant="secondary" className="text-xs">{t("roles.builtin")}</Badge> : null}
+            {r.status === "quarantined" ? (
+              <Badge variant="outline" className="text-xs">{t("roles.status_quarantined")}</Badge>
+            ) : null}
           </span>
         )} />
         <DataTable.Col source="scope" label={t("roles.scope")} render={(r) => scopeText(t, r.scope)} />

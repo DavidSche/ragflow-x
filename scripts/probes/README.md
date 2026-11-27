@@ -18,6 +18,21 @@ own: **no tracked file may contain a credential.**
 | `t02_seed_gold_pool.py` | K1–K5: widen the candidate scan, publish one revision per template, restore the knob (doc/304 §5.3) | doc/305 §2.3 |
 | `w4_artifact_landing.py` | S1–S5: are compiled artifacts **generated / persisted / readable / on the target revision**? (doc/304 §7 item 23, W-4) | doc/304 §5.3, §7 item 23 |
 | `w4_drill.py` | the **action** half of W-4: create a revision bound to the measured corpus, stop at `awaiting_outline`, then count `location_hints` (doc/304 §4 E152) | doc/304 §5.3, doc/305 §2.50 |
+| `t27_chat_only_role.py` | S1–S6: a custom `chat`-only tenant role — configure it, read `/auth/me`, ask a question, hit the boundary (403), check the navigation view, clean up (doc/301 §10.3) | doc/304 §5.3 |
+| `t29_role_tenant_isolation.py` | S1–S8: **two workspaces**, two tenant admins, one authored role — is it stamped to its tenant, invisible to the other, 404 to the other's edit/read-grant/write-grant/delete, 403 on the platform boundary, and does inheriting `tenant_admin` grant the closure without granting a platform identity? (doc/304 §4 E175) | doc/305 §2.71 |
+| `t30_webfs_encoding.py` | S1–S7: the front door's `Accept-Encoding` negotiation — `q=0` in four spellings, positive weights, `identity`/`*;q=0`, the SPA fallback's 200, an asset's inflated bytes equalling its identity bytes, and `Vary` on every answer (doc/304 §4 E176) | doc/305 §2.71 |
+
+Two of these are deliberately different in kind:
+
+* **`t30` is read-only and needs no credential.** Only GET, so it can be run against
+  production after any deploy, and its `--selftest` runs the same seven steps against a
+  local server carrying E176's old substring rule — a green run against a host means "this
+  binary is not the broken one" only if the drill refuses the broken one.
+* **`t29` provisions and deletes two workspaces.** Like `t27` it is read-write by design;
+  unlike `t27` it needs a *platform* admin (creating a workspace is `manage|tenant`), and
+  `--keep` leaves both workspaces in place so an operator can look inside. Its cleanup
+  force-deletes the workspaces **before** the roles: the last tenant admin cannot be deleted
+  on its own (40905), and a role a member still holds refuses to be deleted (40083).
 
 ## The credential contract
 
@@ -28,9 +43,15 @@ names the variable — never a fallback to something that happens to work on the
 author's machine:
 
 ```bash
-export RGX_VERIFY_PASS=…        # console password (required by all three probes)
+export RGX_VERIFY_PASS=…        # console password (required by every probe that has an account)
 export RGX_DRILL_SSH_PASS=…     # sudo password, only for T16's psql asserts
+export RGX_BASE=…              # the host; T29 and T30 have no default for it at all
 ```
+
+`t30` is the exception that proves the rule: it needs a host and nothing else. `t29` also
+needs `RGX_VERIFY_USER` (default `admin`), because the account that creates a workspace is
+the platform admin, and the drill is about what a *tenant* admin can then do with what it
+authored.
 
 ## W-4 is four states, not one
 

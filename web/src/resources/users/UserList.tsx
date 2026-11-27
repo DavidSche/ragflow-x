@@ -28,10 +28,12 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { FormField, useFieldValidation } from "../../components/FormField";
 import { api, ApiError } from "../../lib/api";
 import { validateEmailFormat, validateUniqueUsername } from "./user-validators";
+import { assignableRoles } from "./user-roles";
 
 interface RoleLike {
   id: string;
   name: string;
+  status?: string;
 }
 
 interface TenantLike {
@@ -43,7 +45,10 @@ const RoleSelectField = () => {
   const { data } = useGetList("roles", {
     pagination: { page: 1, perPage: 200 },
   });
-  const choices = (data ?? []).map((r: RoleLike) => ({ id: r.id, name: r.name }));
+  const choices = assignableRoles((data ?? []) as RoleLike[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+  }));
   const t = useTranslate();
   return <SelectInput source="role" label={t("users.role")} choices={choices} validate={required()} />;
 };
@@ -94,7 +99,9 @@ const RoleCell = () => {
   const { data } = useGetList("roles", {
     pagination: { page: 1, perPage: 200 },
   });
-  const roles = (data ?? []) as RoleLike[];
+  // The current role stays in the list even when it is quarantined: this cell
+  // shows what the user holds, not what may be handed out next.
+  const roles = assignableRoles((data ?? []) as RoleLike[], record?.role ?? "");
   if (!record) return null;
   const onChange = async (e: ChangeEvent<HTMLSelectElement>) => {
     try {
@@ -160,7 +167,7 @@ const EditUserCell = () => {
   const { data } = useGetList("roles", {
     pagination: { page: 1, perPage: 200 },
   });
-  const roles = (data ?? []) as RoleLike[];
+  const roles = assignableRoles((data ?? []) as RoleLike[], record?.role ?? "");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const usernameField = useFieldValidation(record?.username ?? "", { required: true });

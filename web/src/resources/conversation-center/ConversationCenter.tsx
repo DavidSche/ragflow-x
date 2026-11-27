@@ -185,6 +185,16 @@ export function ConversationCenter({
   // talk" role that it cannot start a conversation, which is the one thing it
   // was granted.
   const chatSessionCreate = chatSessionCreateResult?.canAccess === true;
+  // `canAccess: undefined` while the probe is in flight is not a refusal
+  // (doc/304 §4 E176): a workspace admin who loads this screen and clicks
+  // immediately used to be told they had no permission, which is the strongest
+  // possible way to be wrong about the one permission they do hold.
+  const sessionCreatePending =
+    chatSessionCreateResult?.isPending === true ||
+    agentSessionCreateResult?.isPending === true;
+  const sessionCreateKnown =
+    chatSessionCreateResult?.isPending !== true &&
+    agentSessionCreateResult?.isPending !== true;
   const contextSourceAccess = contextSourceAccessResult?.canAccess === true;
   const [searchParams, setSearchParams] = useSearchParams();
   const initialUrlKind = searchParams.get("kind");
@@ -748,6 +758,12 @@ export function ConversationCenter({
   const resetContext = async () => {
     discardActiveRun();
     if (kind === "agent") {
+      if (!sessionCreateKnown) {
+        notify(t("conversationCenter.session_permission_pending"), {
+          type: "warning",
+        });
+        return;
+      }
       if (!agentSessionCreate || !target || !adapters.agent.createSession) {
         notify(t("conversationCenter.agent_new_denied"), { type: "warning" });
         return;
@@ -1083,6 +1099,16 @@ export function ConversationCenter({
             void submitRef.current?.(remainingText, undefined, liveTarget);
             return;
           }
+          if (
+            (liveTarget.kind === "agent" || liveTarget.kind === "chat") &&
+            !sessionCreateKnown
+          ) {
+            requestState.cancelPending();
+            notify(t("conversationCenter.session_permission_pending"), {
+              type: "warning",
+            });
+            return;
+          }
           if (liveTarget.kind === "agent" && !agentSessionCreate) {
             requestState.cancelPending();
             notify(t("conversationCenter.agent_new_denied"), {
@@ -1332,6 +1358,27 @@ export function ConversationCenter({
         type: "warning",
       });
       return;
+    }
+    // Starting a conversation and continuing one are different permissions
+    // (doc/304 §4 E155): the first message on a chat without a session opens a
+    // session server-side, so it needs `chats:session:create`. Sending without
+    // this check turned "you may not open a new thread" into an HTTP 403 in the
+    // middle of the stream — the message was already rendered as sent. The
+    // pending branch reports neither answer, because neither is known yet.
+    if (
+      targetForSubmission.kind === "chat" &&
+      (!context || context.type !== "session")
+    ) {
+      if (!sessionCreateKnown) {
+        notify(t("conversationCenter.session_permission_pending"), {
+          type: "warning",
+        });
+        return;
+      }
+      if (!chatSessionCreate) {
+        notify(t("conversationCenter.chat_new_denied"), { type: "warning" });
+        return;
+      }
     }
     if (attachments.length > 0 && !plainTextOverride) {
       if (!activePending) {
@@ -2122,8 +2169,9 @@ export function ConversationCenter({
                     size="sm"
                     variant={context ? "outline" : "default"}
                     disabled={
-                      kind === "agent" &&
-                      (!agentSessionCreate || !adapters.agent.createSession)
+                      sessionCreatePending ||
+                      (kind === "agent" &&
+                        (!agentSessionCreate || !adapters.agent.createSession))
                     }
                     aria-current={!context}
                     onClick={() => void resetContext()}

@@ -1,12 +1,18 @@
 import { Create, SelectInput, SimpleForm, TextInput } from "@/components/admin";
 import { minLength, required, useGetList, useTranslate } from "ra-core";
 import { validateEmailFormat, validateUniqueUsername } from "./user-validators";
+import { assignableRoles, type AssignableRole } from "./user-roles";
 
 const RoleField = () => {
   const { data } = useGetList("roles", {
     pagination: { page: 1, perPage: 200 },
   });
-  const choices = (data ?? []).map((r) => ({ id: r.id, name: r.name }));
+  // A quarantined role cannot be assigned (the server answers 40021), so a new
+  // user is never offered one (doc/304 §4 E178).
+  const choices = assignableRoles((data ?? []) as AssignableRole[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+  }));
   const t = useTranslate();
   return <SelectInput source="role" label={t("users.role")} choices={choices} validate={required()} />;
 };

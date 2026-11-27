@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Show } from "@/components/admin";
-import { useNotify, useRecordContext, useTranslate } from "ra-core";
+import { useCanAccess, useNotify, useRecordContext, useTranslate } from "ra-core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +37,18 @@ const SessionList = () => {
   const [editName, setEditName] = useState("");
   const [sessionFilter, setSessionFilter] = useState("");
   const t = useTranslate();
+  // Starting a conversation is `chats|session:create`, not `chats|manage`
+  // (doc/304 §4 E155). This page is the other place that mints a session, so it
+  // needs the same question the conversation centre asks: a viewer holding only
+  // `chat|read` may read this page, and must not be offered a button whose
+  // request the server refuses (doc/315 review). Pending is not a refusal: the
+  // button renders disabled until the probe answers, instead of blinking away.
+  const sessionCreateAccess = useCanAccess({
+    resource: "chats",
+    action: "session:create",
+  });
+  const canCreateSession = sessionCreateAccess.canAccess === true;
+  const sessionCreatePending = sessionCreateAccess.isPending === true;
 
   const loadSessions = async () => {
     if (!record) return;
@@ -66,6 +78,9 @@ const SessionList = () => {
     }
   };
 
+  // Every caller of this function is gated on `canCreateSession` above, so there
+  // is no second check here: a guard that can only fire when the surrounding
+  // render already refused is untestable, and untestable guards rot.
   const createSession = async (name?: string) => {
     if (!record) return;
     try {
@@ -189,9 +204,18 @@ const SessionList = () => {
                     <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => startRename(s)} title={t("chats.rename")}>
                       <Pencil className="size-3.5" />
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => void duplicate(s)} title={t("chats.duplicate")}>
-                      <Copy className="size-3.5" />
-                    </Button>
+                    {(canCreateSession || sessionCreatePending) && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6"
+                        disabled={!canCreateSession}
+                        onClick={() => void duplicate(s)}
+                        title={t("chats.duplicate")}
+                      >
+                        <Copy className="size-3.5" />
+                      </Button>
+                    )}
                     <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setConfirmSession(s)} title={t("confirm.delete_label")}>
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -202,12 +226,14 @@ const SessionList = () => {
           ))}
           {sessions.length === 0 && <div className="text-sm text-muted-foreground">{t("chats.session_empty")}</div>}
         </div>
-        <div className="flex gap-2 pt-2">
-          <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("chats.session_name_label")} />
-          <Button size="sm" variant="outline" onClick={() => void createSession()}>
-            <Plus /> {t("chats.session_new")}
-          </Button>
-        </div>
+        {(canCreateSession || sessionCreatePending) && (
+          <div className="flex gap-2 pt-2">
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("chats.session_name_label")} />
+            <Button size="sm" variant="outline" disabled={!canCreateSession} onClick={() => void createSession()}>
+              <Plus /> {t("chats.session_new")}
+            </Button>
+          </div>
+        )}
         <ConfirmDialog
           open={!!confirmSession}
           onOpenChange={(v) => !v && setConfirmSession(null)}

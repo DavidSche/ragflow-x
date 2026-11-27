@@ -48,9 +48,24 @@ func (s *Service) guardRoleMutation(ctx context.Context, u *model.User, nextRole
 }
 
 // tenantRoles is the set of roles assignable to tenant users.
-// validateRole ensures a role exists; platform roles require a platform admin,
-// other roles may be assigned arbitrarily.
-func (s *Service) validateRole(ctx context.Context, actorRole, roleID string) error {
+// validateRole ensures a role exists, that a platform role is only handed out by
+// a platform admin, and that the role is not owned by another tenant. The last
+// check arrived with doc/304 §4 E175: before it, a workspace admin could assign
+// a role another workspace had authored, which is both a cross-tenant read of
+// that role and a way to hand members whatever it grants. The refusal reuses the
+// same code and message as "no such role" on purpose — distinguishing the two
+// would tell the caller which role IDs exist elsewhere.
+//
+// `targetTenantID` is the tenant of the account that will *hold* the role, not
+// the tenant of the actor. Callers used to pass the actor's tenant, which was
+// equivalent for a workspace admin (they may only touch their own members) but
+// not for a platform admin: assigning tenant A's custom role to a member of
+// tenant B passed here, and the resulting account was then refused by `authz`
+// with 40305 on every single request (doc/315 review). The tenant of the holder
+// is the only one that decides whether the pair is coherent, so the platform
+// bypass is gone as well — a platform identity may hand out platform-scoped and
+// shared roles, never another tenant's private one.
+func (s *Service) validateRole(ctx context.Context, targetTenantID, actorRole, roleID string) error {
 	r, err := s.Store.GetRole(ctx, roleID)
 	if err != nil {
 		return err
@@ -58,9 +73,19 @@ func (s *Service) validateRole(ctx context.Context, actorRole, roleID string) er
 	if r == nil {
 		return httperr.BadRequest(40021, "role is not assignable")
 	}
+	// A quarantined role is not a shared role any more: it is waiting for a
+	// platform admin to say who authored it (doc/304 §4 E178). Refusing the
+	// assignment for every actor keeps a legacy row out of new hands without
+	// revoking what existing holders already have.
+	if roleDisabled(r) {
+		return httperr.BadRequest(40021, "role is not assignable")
+	}
 	// platform roles may only be assigned by platform admins
 	if r.Scope == model.RoleScopePlatform && actorRole != model.RolePlatformAdmin {
 		return httperr.BadRequest(40021, "platform role requires a platform admin")
+	}
+	if !roleVisibleToTenant(r, targetTenantID) {
+		return httperr.BadRequest(40021, "role is not assignable")
 	}
 	return nil
 }
@@ -84,7 +109,7 @@ func (s *Service) CreateUser(ctx context.Context, tenantID, actorRole string, re
 	if len(req.Password) < 8 {
 		return nil, httperr.BadRequest(40024, "password must be at least 8 characters")
 	}
-	if err := s.validateRole(ctx, actorRole, req.Role); err != nil {
+	if err := s.validateRole(ctx, tenantID, actorRole, req.Role); err != nil {
 		return nil, err
 	}
 	if err := s.EnsureTenantActive(ctx, tenantID); err != nil {
@@ -142,26 +167,52 @@ func (s *Service) ListUsers(ctx context.Context, tenantID string, page, pageSize
 // ListRoles returns the roles a caller may see. Filters (Name/Scope) are
 // applied on the same full role set whether or not any filter is present, so
 // filtering never changes which roles are reachable for a given actor.
-func (s *Service) ListRoles(ctx context.Context, actorRole string, filter repository.RoleFilter) ([]model.Role, error) {
+//
+// What "may see" means: a platform operator sees every row; everyone else sees
+// the platform-owned rows (built-ins and platform-authored roles, `tenant_id`
+// empty) plus their own tenant's. Another tenant's custom role is not part of the
+// answer at all — not filtered out afterwards, but never handed to the filter
+// (doc/304 §4 E175).
+func (s *Service) ListRoles(ctx context.Context, actorID string, filter repository.RoleFilter) ([]model.Role, error) {
 	roles, err := s.Store.ListAllRoles(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
-	for i := range roles {
-		roles[i].BuiltIn = isBuiltinRole(roles[i].ID)
+	tenantID, platform, err := s.actorIdentity(ctx, actorID)
+	if err != nil {
+		return nil, err
 	}
-	// Non-platform users can never see platform-scoped roles, regardless of
-	// any filter criteria.
-	if actorRole != model.RolePlatformAdmin {
-		out := roles[:0:0]
-		for _, r := range roles {
-			if r.Scope != model.RoleScopePlatform {
-				out = append(out, r)
+	out := make([]model.Role, 0, len(roles))
+	for i := range roles {
+		r := roles[i]
+		r.BuiltIn = isBuiltinRole(r.ID)
+		if r.Status == "" {
+			r.Status = model.RoleStatusActive
+		}
+		// The console needs to know, per row, whether the buttons it renders are
+		// ones the server will honour: a shared role is readable everywhere but
+		// writable only by the platform (doc/315 finding 1). Deriving it here
+		// keeps the client from re-implementing the ownership rule.
+		r.Owned = roleOwnedByTenant(&r, tenantID)
+		// A built-in is never writable by anyone, not even the platform — the write
+		// path answers 40082 — so it must not advertise itself as editable either.
+		r.Editable = !r.BuiltIn && (platform || r.Owned)
+		if !platform {
+			if r.Scope == model.RoleScopePlatform {
+				continue
+			}
+			// Quarantined legacy rows are only listed for the platform admin who
+			// has to review them (E178).
+			if roleDisabled(&r) {
+				continue
+			}
+			if !roleVisibleToTenant(&r, tenantID) {
+				continue
 			}
 		}
-		return out, nil
+		out = append(out, r)
 	}
-	return roles, nil
+	return out, nil
 }
 
 // UserSummary is a user row enriched with the owning tenant's name.
@@ -179,9 +230,6 @@ type UserSummary struct {
 // AssignRole updates a user's role. Platform admins may target any tenant;
 // tenant admins may only target users within their own tenant.
 func (s *Service) AssignRole(ctx context.Context, actorTenantID, actorRole, userID, role string) error {
-	if err := s.validateRole(ctx, actorRole, role); err != nil {
-		return err
-	}
 	u, err := s.Store.GetUser(ctx, userID)
 	if err != nil {
 		return err
@@ -191,6 +239,11 @@ func (s *Service) AssignRole(ctx context.Context, actorTenantID, actorRole, user
 	}
 	if actorRole != model.RolePlatformAdmin && u.TenantID != actorTenantID {
 		return httperr.Forbidden("cannot change role across tenants")
+	}
+	// Validate against the holder's tenant, after the cross-tenant check above
+	// has decided whether this actor may touch this account at all.
+	if err := s.validateRole(ctx, u.TenantID, actorRole, role); err != nil {
+		return err
 	}
 	if err := s.guardRoleMutation(ctx, u, role); err != nil {
 		return err
@@ -260,7 +313,7 @@ func (s *Service) UpdateUserProfile(ctx context.Context, actorTenantID, actorRol
 		u.Username = username
 	}
 	if role != "" {
-		if err := s.validateRole(ctx, actorRole, role); err != nil {
+		if err := s.validateRole(ctx, u.TenantID, actorRole, role); err != nil {
 			return err
 		}
 		if err := s.guardRoleMutation(ctx, u, role); err != nil {

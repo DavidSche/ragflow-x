@@ -64,6 +64,17 @@ README="$DIR/README.md"
 # is in the tree, compiles, refuses before the network, and carries no credential.
 # Its live reading is doc/304 §5.3, not this script's exit code.
 T27="$DIR/t27_chat_only_role.py"
+# T29 (doc/304 §4 E175): the tenant boundary between two workspaces, on a deployed
+# instance. Read-write by design (it provisions two workspaces and deletes them again), so
+# what this row holds for it is what it holds for T27 — in the tree, compiles, refuses
+# before the network, carries no credential — plus its eight-step contract, because a drill
+# that publishes seven of eight steps is a drill whose eighth nobody misses.
+T29="$DIR/t29_role_tenant_isolation.py"
+# T30 (doc/304 §4 E176): the front door's Accept-Encoding negotiation. Read-only, no
+# credential at all — and the only probe here with a `--selftest`, because its whole job is
+# to tell the fixed binary from the broken one: the selftest runs the same seven steps
+# against a local server carrying E176's old substring rule and requires a red S2.
+T30="$DIR/t30_webfs_encoding.py"
 
 # `command -v python3` on Windows can resolve to the Store alias; the first one that runs
 # `-c pass` wins. Same discipline as `pick_python()` in scripts/release-gate.sh.
@@ -81,12 +92,12 @@ say()  { printf '%s\n' "$*"; }
 bad()  { printf 'FAIL  %s\n' "$*"; fail=1; }
 good() { printf 'ok    %s\n' "$*"; }
 
-# ── selftest: seventeen mutations, each of which must be refused ─────────────────
+# ── selftest: nineteen mutations, each of which must be refused ─────────────────
 if [ "${1:-}" = "--selftest" ]; then
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
   say "selftest: can this check refuse? (a re-added password, a hidden one, a deleted step, a re-coupled pair, a gate that runs the writer, a diagnosis probe that can write, a repair predicate that widens into 'safe')"
-  cp "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T27" "$README" "$tmp"/ 2>/dev/null
+  cp "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" "$README" "$tmp"/ 2>/dev/null
 
   # ① a credential put back: a name that ends in _PASSWORD with a working literal. This is
   # the exact string v1.28 removed, and nothing about the probe's behaviour changes.
@@ -328,6 +339,35 @@ def _post_that_should_not_exist(client, path):
   fi
   say "ok      a credential literal in T27 -> refused"
 
+  # ⑱ T29's contract is eight steps, and each is a different sentence about one boundary.
+  # Losing S7 (the assignment half) would leave a drill that proves a tenant admin cannot
+  # *edit* another workspace's role while saying nothing about handing it out — the half that
+  # produced E175 in the first place.
+  sed '/("S7", "assignment:/d' "$T29" > "$tmp/t29_role_tenant_isolation.py"
+  out="$(PROBES_DIR="$tmp" bash "$0" 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 't29_role_tenant_isolation.py prints 7 steps'; then
+    say "SELFTEST FAIL: a step deleted from T29's contract went unnoticed"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a step deleted from T29's contract -> refused"
+  cp "$T29" "$tmp/t29_role_tenant_isolation.py"
+
+  # ⑲ T30's own verdict rule. Its green run is the only thing that says "this deployed
+  # binary is not the broken one", so the mutation puts the old substring rule back into the
+  # *fake* front door the selftest builds: both doors then answer alike, and a selftest that
+  # can no longer tell them apart has to notice that about itself.
+  sed 's/^                use_gzip = _parse_q(ae) and len(body) >= 1024$/                use_gzip = "gzip" in ae and len(body) >= 1024/' \
+    "$T30" > "$tmp/t30_webfs_encoding.py"
+  out="$("$PY" "$tmp/t30_webfs_encoding.py" --selftest 2>&1)"; rc=$?
+  if [ "$rc" -eq 0 ] || ! printf '%s' "$out" | grep -q 'SELFTEST FAIL'; then
+    say "SELFTEST FAIL: a T30 selftest whose two front doors behave alike was accepted"
+    say "$out"
+    exit 1
+  fi
+  say "ok      a T30 selftest that can no longer tell the two doors apart -> refused"
+  cp "$T30" "$tmp/t30_webfs_encoding.py"
+
   say "SELFTEST OK"
   exit 0
 fi
@@ -336,7 +376,7 @@ say "live probes (doc/304 §7 item 12) — tracked, hermetic half only"
 
 # ── ⓪ the files exist and compile ───────────────────────────────────────────
 missing=0
-for f in "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T27" "$README"; do
+for f in "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" "$README"; do
   if [ -f "$f" ]; then
     good "$f is in the tree"
   else
@@ -352,8 +392,8 @@ fi
 if [ -z "$PY" ]; then
   bad "no python on PATH: the probes cannot be compiled, and 'I did not compile' is not 'they compile'"
 else
-  if out="$("$PY" -m py_compile "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T27" 2>&1)"; then
-    good "all eight compile ($PY -m py_compile)"
+  if out="$("$PY" -m py_compile "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>&1)"; then
+    good "all ten compile ($PY -m py_compile)"
   else
     bad "a probe does not compile"
     printf '%s\n' "$out" | tail -5
@@ -374,10 +414,10 @@ fi
 # literal is.
 PYHIDDEN='^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN|KEY)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*os\.environ\.get\([[:space:]]*"[^"]+"[[:space:]]*,[[:space:]]*"[^"$]+'
 secret_hits="$(
-  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" 2>/dev/null || true
-    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" 2>/dev/null || true
-    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" 2>/dev/null || true
-    grep -nE "$PYHIDDEN" "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" 2>/dev/null || true
+  { grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(PASS|PASSWD|PASSWORD|SECRET|TOKEN)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"\$\{[A-Za-z_][A-Za-z0-9_]*:-[^}]'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
+    grep -nE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*(API_KEY|APIKEY|SECRET_KEY|ACCESS_KEY|ENGINE_KEY)[[:space:]]*[:=][[:space:]]*"[^"$]+"'       "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
+    grep -nE "$PYHIDDEN" "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" 2>/dev/null || true
   } | sed '/^$/d')"
 if [ -z "$secret_hits" ]; then
   good "no credential literal is assigned in any probe (the shape check, not a word list)"
@@ -387,7 +427,7 @@ else
 fi
 # The drill's own history, by name: these are the strings v1.28 removed, and a recurrence
 # means someone pasted the old `localenv` copy back in.
-hist_hits="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor|MPZMtiIw' "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$README" 2>/dev/null || true)"
+hist_hits="$(grep -nE 'RgxTest|RgxDrill|zhixiang@|lictor|MPZMtiIw' "$COMMON" "$T16" "$T02" "$W4" "$WAIT" "$WAITTEST" "$EVID" "$T27" "$T29" "$T30" "$README" 2>/dev/null || true)"
 if [ -z "$hist_hits" ]; then
   good "none of the historical drill credentials appear (RgxTest / RgxDrill / zhixiang@)"
 else
@@ -491,7 +531,8 @@ done
 
 # ── ② a missing credential is a usage sentence, before the network ──────────
 for spec in "$T16:RGX_VERIFY_PASS:--only S1" "$T02:RGX_VERIFY_PASS:" "$W4:RGX_VERIFY_PASS:--dataset ds-placeholder" \
-            "$EVID:RGX_ENGINE_KEY:--dataset ds-placeholder" "$T27:RGX_VERIFY_PASS:"; do
+            "$EVID:RGX_ENGINE_KEY:--dataset ds-placeholder" "$T27:RGX_VERIFY_PASS:" \
+            "$T29:RGX_BASE:" "$T30:RGX_BASE:"; do
   file="${spec%%:*}"; rest="${spec#*:}"; var="${rest%%:*}"; extra="${rest#*:}"
   base="$(basename "$file")"
   # `env -u` on every credential variable: the check must not depend on the operator's shell
@@ -562,9 +603,15 @@ check_offline "$T02" 5 "RGX_BASE RGX_VERIFY_PASS"
 check_offline "$W4" 5 "RGX_BASE RGX_VERIFY_PASS"
 check_offline "$EVID" 7 "RGX_ENGINE_BASE RGX_ENGINE_KEY"
 check_offline "$T27" 6 "RGX_BASE RGX_VERIFY_PASS"
+# T29 ships no `--base` default on purpose (a private drill host is not a tracked string), so
+# the missing-host case is this check's second reading: exit 2 that names RGX_BASE, before
+# any socket. Its eight steps each ask a different question about one boundary, and a
+# shortened contract is how a drill keeps printing PASS while covering less (mutation ⑱).
+check_offline "$T29" 8 "RGX_BASE RGX_VERIFY_USER RGX_VERIFY_PASS"
+check_offline "$T30" 7 "RGX_BASE"
 
 # ── ④ the pair is decoupled, and both sit on probe_common ───────────────────
-for f in "$T16" "$T02" "$W4" "$EVID" "$T27"; do
+for f in "$T16" "$T02" "$W4" "$EVID" "$T27" "$T29" "$T30"; do
   base="$(basename "$f")"
   if grep -qE '^from probe_common import|^    .*probe_common' "$f"; then
     good "$base imports probe_common"
@@ -645,6 +692,27 @@ if grep -q 'does NOT advance W-4' "$EVID"; then
   good "the probe says out loud that a named cause does not advance A/B/C/D"
 else
   bad "the probe does not separate 'cause named' from 'artifact landed'"
+fi
+
+# ── ⑨ the front-door probe can tell the fixed binary from the broken one ────
+# E176's first half is a `webfs` rule, and "the drill passed" only means something if the
+# drill refuses the old rule. `--selftest` runs the same seven steps against a local server
+# carrying that rule and requires S2 (q=0) to go red — the step, not "some failure", because
+# a typo would produce a failure too.
+out="$("$PY" "$T30" --selftest 2>&1)"; rc=$?
+if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'SELFTEST OK'; then
+  good "t30_webfs_encoding.py --selftest: the old substring rule goes red, the q-value rule passes"
+else
+  bad "t30_webfs_encoding.py --selftest failed (rc=$rc): a green live run would not prove the fix"
+  printf '%s
+' "$out" | tail -6
+fi
+# …and the live drill must stay read-only: it may not carry a writing verb, because unlike
+# T27 and T29 it is meant to be run against production after any deploy.
+if grep -qE '\.(post|put|patch|delete)\(' "$T30"; then
+  bad "t30_webfs_encoding.py can write: a front-door check must stay a GET"
+else
+  good "t30_webfs_encoding.py is GET-only (safe against a live instance)"
 fi
 
 if grep -q 'CaseSkip' "$T16"; then

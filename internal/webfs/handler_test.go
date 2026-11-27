@@ -182,6 +182,49 @@ func TestGzipRefusedWhenTheClientSaysQZero(t *testing.T) {
 	}
 }
 
+// TestGzipWeightIsParsedAsANumber pins the whole q range, because the old check
+// looked for the substring "q=0": it caught `q=0` and let `q=0.0`, `q=0.00`,
+// `q=0.000` and `Q=0.0` through as acceptances (doc/304 §4 E176). A refusal that
+// only works for one spelling is a refusal the client cannot rely on.
+func TestGzipWeightIsParsedAsANumber(t *testing.T) {
+	r := routerFor(testFS())
+	cases := []struct {
+		header string
+		want   bool
+	}{
+		{"gzip", true},
+		{"gzip;q=1", true},
+		{"gzip;q=1.0", true},
+		{"gzip;q=0.5", true},
+		{"gzip;q=0.001", true},
+		{"gzip ; q=0.5", true},
+		{"deflate, gzip;q=0.5", true},
+		{"gzip;q=0", false},
+		{"gzip;q=0.0", false},
+		{"gzip;q=0.00", false},
+		{"gzip;q=0.000", false},
+		{"gzip;Q=0.0", false},
+		{"gzip;q=0.0, deflate", false},
+		{"deflate", false},
+		{"", false},
+		{"gzip;q=abc", true},
+		{"*", true},
+		{"*;q=0", false},
+		{"gzip;q=0, *", false},
+	}
+	for _, tc := range cases {
+		rec := request(t, r, "/assets/app.js", tc.header, http.MethodGet)
+		gzipped := rec.Header().Get("Content-Encoding") == "gzip"
+		if gzipped != tc.want {
+			t.Errorf("Accept-Encoding %q: gzipped = %v, want %v", tc.header, gzipped, tc.want)
+		}
+		// A refusal must still arrive intact and un-encoded, not as an empty body.
+		if !tc.want && rec.Body.Len() == 0 {
+			t.Errorf("Accept-Encoding %q: refusal produced an empty body", tc.header)
+		}
+	}
+}
+
 func TestSPAFallbackShellIsCompressed(t *testing.T) {
 	r := routerFor(testFS())
 	rec := request(t, r, "/datasets/123", "gzip", http.MethodGet)

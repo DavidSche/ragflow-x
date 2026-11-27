@@ -180,7 +180,14 @@ export function ConversationShell({
           ) : null}
         </div>
         {afterMessages}
-        {input ? <div className="shrink-0">{input}</div> : null}
+        {input ? (
+          // doc/314 第四节末：手机上输入区不能被消息列表顶出去。壳的高度已经跟着
+          // visualViewport 走，这一层是第二道保险——消息区自己滚动时，输入区仍然
+          // 贴在可视区的底部。
+          <div className="shrink-0 max-md:sticky max-md:bottom-0 max-md:z-10 max-md:bg-background">
+            {input}
+          </div>
+        ) : null}
       </div>
     </div>
   );
