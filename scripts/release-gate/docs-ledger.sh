@@ -236,8 +236,8 @@ PY
 
 fi
 
-# The develop/ tree is gitignored (.gitignore:91), so a clean checkout — CI, or a fresh
-# clone — carries no 301/304/305 at all. Two different situations live here and they must
+# Since doc/321 the develop/ tree is tracked, so a checkout carries 301/304/305; but a tree
+# can still be handed one without them (a partial export). Two situations live here and they must
 # not share an exit code:
 #
 #   * the whole directory is absent  -> nothing was compared, nothing was violated. That

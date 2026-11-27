@@ -88,6 +88,23 @@ tmp/
 # Development docs and local test data: intentionally untracked until each
 # file is reviewed for release (see doc/126 pre-release review report).
 # Do NOT add these back in bulk; whitelist individual files after review.
+#
+# Policy change (2026-11-27, doc/321): the *engineering archive* is versioned
+# together with the code it governs. It was never "unreviewed"; it is the
+# decision record for the tracked code — which left the constraint
+# (doc/specification/) and the evidence (doc/develop/) on one developer's disk
+# while the code they explain shipped to everyone. Two sources of truth is a
+# governance defect, not a storage preference.
+#
+# Tracked now:  doc/specification/**/*.md  (long-lived contracts)
+#               doc/develop/**/*.md        (decision + implementation records)
+#               doc/develop/*.jpg          (diagrams those records cite)
+# Still local:  doc/environment/ (machine-specific; carries the real .env values),
+#               drafts, TODO.txt, rendered .docx/.pdf, performance captures.
+#
+# Before tracking, every credential literal in the corpus was redacted
+# (doc/321 §3 lists file + category, never the value) and the pre-commit
+# secret-scan applies to docs exactly as it does to code.
 /doc/*
 # `/test/*` (not `/test/`) so the reusable regression harness below can be
 # re-included: an excluded directory cannot have tracked children.
@@ -114,14 +131,25 @@ __pycache__/
 # Exception (v0.6.6): the generated API reference under doc/specification/api/ is a
 # deliverable — it is what gets sent to integrators — so it is tracked, and its freshness
 # is a gate row (s28.api-doc: regenerate, compare byte-for-byte, refuse an ignored product).
-# Only those two files are re-included: the rest of doc/specification/ stays local-only, so
-# the directory chain is un-ignored and its other files are re-excluded individually.
+# Since 2026-11-27 (doc/321) the whole specification set is tracked, not just those two
+# files: the norms are what the code is reviewed against, so they belong in the diff.
 !/doc/specification/
 /doc/specification/*
+!/doc/specification/**/*.md
 !/doc/specification/api/
 /doc/specification/api/*
 !/doc/specification/api/api-reference.md
 !/doc/specification/api/api-reference.html
+# Engineering archive (doc/321): decision records and implementation evidence.
+!/doc/develop/
+/doc/develop/*
+!/doc/develop/*.md
+!/doc/develop/*.jpg
+# Scratch notes and capture dumps stay local; the archive is the .md record.
+/doc/develop/*.txt
+# Rendered binaries are build artifacts, never repository content (doc/321).
+/doc/**/*.docx
+/doc/**/*.pdf
 # Demo videos are large binaries hosted as release assets, not repository
 # content; the markdown guides reference ./images/ only.
 /doc/user/videos/

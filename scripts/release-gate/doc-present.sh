@@ -2,8 +2,8 @@
 # doc-present.sh — the half of "it also passes in a clean clone" that CI can never have.
 #
 # doc/304 §7 item 39. `s22.clean-clone` runs `clean-clone.sh --ci`: the published checkout
-# shape, where `doc/` does not exist (.gitignore:91 is policy, not an oversight) and every
-# doc-reading row answers N/A. That is the right shape for CI and the wrong shape for the
+# shape before doc/321, where `doc/` did not exist at all and every doc-reading row answered
+# N/A. That was the right shape for the code half and the wrong shape for the
 # sentence "in a tree that carries the engineering docs, the doc rows really ran". Until now
 # the only automatic evidence for that sentence was `clean-clone.sh --selftest` mutation ③,
 # which needs a human to type it — a check whose reader is a memory.
@@ -45,7 +45,8 @@
 #     `doc/specification/12_前后端接口交互规范.md` (E123).
 #
 # Cost, measured on this machine 2026-11-24: 2m32s — one `git worktree add`, an ~850KB `doc/`
-# copy, the working-tree overlay, and the eight doc rows. The rows are cheap in a warm tree
+# overlay (a copy before doc/321, a checkout of the tracked copy after it), the working-tree
+# overlay, and the eight doc rows. The rows are cheap in a warm tree
 # (s13 10s) and not in a cold worktree (s13 95s: it compiles there), which is why this is a
 # `build`-tier row and not a `static` one: item 39's own trigger is "before every release",
 # and the pre-commit loop should not pay 2.5 minutes for a pre-release question.

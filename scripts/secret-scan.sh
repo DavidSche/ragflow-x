@@ -10,6 +10,14 @@
 # Usage:
 #   bash scripts/secret-scan.sh           # scan staged changes (pre-commit)
 #   bash scripts/secret-scan.sh --all     # scan every tracked file (CI)
+#   bash scripts/secret-scan.sh --selftest  # prove the scanner still bites (CI)
+#
+# The file list is read NUL-separated with core.quotepath=false. That is not
+# cosmetic: git C-quotes non-ASCII paths by default, so the previous reader
+# received "doc/develop/\346\225\264..." for every Chinese-named file, the
+# `[ -f "$f" ]` guard failed, and the file was skipped in silence. A tree made
+# almost entirely of Chinese-named documents therefore reported "clean" while
+# scanning seven files. `--selftest` is the control case for exactly that.
 #
 # Install as a local pre-commit hook:
 #   cp scripts/git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
@@ -18,15 +26,49 @@
 set -u
 
 MODE="${1:-staged}"
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
-# Build a temporary file list (newline-separated). A temp file avoids piping
-# git output into a consumer that exits early (e.g. `grep -q`), which can
-# stall git on some platforms when it keeps writing to a closed pipe.
+# --selftest runs two throwaway repositories through this same script: one where
+# a credential hides behind a Chinese filename (must exit 1) and one that is
+# clean (must exit 0). See the header for why the first case is the one that
+# regressed.
+if [ "$MODE" = "--selftest" ]; then
+  # Assembled at runtime: this file is exempt from its own scan, so a token
+  # spelled out here would be the one credential no scan can ever see.
+  tok="ghp_""SyntheticNotARealToken0000"
+  fails=0
+  work="$(mktemp -d)"
+  trap 'rm -rf "$work"' EXIT
+
+  mkdir -p "$work/dirty" "$work/clean"
+  ( cd "$work/dirty" && git init -q . && \
+    printf 'token: %s\n' "$tok" > "证据与凭据-中文文件名.md" && \
+    printf 'nothing here\n' > plain.md && git add -A ) >/dev/null 2>&1
+  if ( cd "$work/dirty" && bash "$SELF" ) >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: a credential behind a Chinese filename was not blocked" >&2
+    fails=$((fails + 1))
+  fi
+
+  ( cd "$work/clean" && git init -q . && \
+    printf '中文文档，没有凭据\n' > "干净-中文文件名.md" && git add -A ) >/dev/null 2>&1
+  if ! ( cd "$work/clean" && bash "$SELF" ) >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: a clean Chinese-named document was rejected" >&2
+    fails=$((fails + 1))
+  fi
+
+  if [ "$fails" -ne 0 ]; then exit 1; fi
+  echo "secret-scan: selftest ok (2/2 cases)" >&2
+  exit 0
+fi
+
+# Build a temporary file list (NUL-separated). A temp file avoids piping git
+# output into a consumer that exits early (e.g. `grep -q`), which can stall git
+# on some platforms when it keeps writing to a closed pipe.
 list_file="$(mktemp)"
 if [ "$MODE" = "staged" ]; then
-  git diff --cached --name-only --diff-filter=ACM > "$list_file"
+  git -c core.quotepath=false diff --cached --name-only -z --diff-filter=ACM > "$list_file"
 else
-  git ls-files > "$list_file"
+  git -c core.quotepath=false ls-files -z > "$list_file"
 fi
 
 if [ ! -s "$list_file" ]; then
@@ -99,11 +141,17 @@ scan_file() {
   done <<< "$aws"
 }
 
-while IFS= read -r f; do
+scanned=0
+while IFS= read -r -d '' f; do
   [ -n "$f" ] || continue
+  scanned=$((scanned + 1))
   scan_file "$f"
 done < "$list_file"
 rm -f "$list_file"
+
+# Printed so "clean" reads as "N files were looked at", not "nothing matched":
+# before the quotepath fix those two were the same sentence.
+echo "secret-scan: scanned $scanned file(s) [$MODE]" >&2
 
 if [ "$hard_failed" -ne 0 ]; then
   echo "secret-scan: FAIL (hard blocks found); fix before committing." >&2

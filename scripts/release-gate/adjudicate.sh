@@ -171,12 +171,12 @@ fi
 
 # ── ③ the manual documents the loop it asks people to run ────────────────
 if [ ! -f "$MANUAL" ]; then
-    # doc/ is gitignored (.gitignore:91): a clean checkout — CI, or a fresh clone —
+    # Not tracked (doc/321 tracks doc/specification + doc/develop only): a clean checkout — CI, or a fresh clone —
     # does not carry it at all. The comparison then did not happen, and that is a
     # different sentence from "the two agree". Exit 3 says which; the release gate
     # records it as N/A under --ci and as FAIL for any run that could tag.
     na=1
-    say "N/A   $MANUAL (doc/operations/gold-labeling-manual.md) is not in this tree: doc/ is gitignored by policy (.gitignore:91),"
+    say "N/A   $MANUAL (doc/operations/gold-labeling-manual.md) is not in this tree: only doc/specification/ and doc/develop/ are tracked (doc/321) and this document is not one of them,"
   say "      so this comparison did not run in this checkout — the code-side checks above did."
 else
   for shape in 'goldtool.exe adjudicate --stub' 'goldtool.exe adjudicate --check'; do

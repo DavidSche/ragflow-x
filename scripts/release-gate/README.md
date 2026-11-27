@@ -41,8 +41,8 @@ scripts/release-gate.sh --list=tsv                    # 同一声明，机器读
 
 ### `N/A`：一种只在 CI 里有意义的「答不了」
 
-`doc/` 被 `.gitignore:91` 排除（只放行 `doc/user/`），所以 `git clone` 出来的树里
-没有 301/304/305、没有 `doc/specification/12`、没有标注手册。有五个 static 检查是
+`doc/specification/` 与 `doc/develop/` 自 doc/321 起已入库，所以 `git clone` 的树里有 301/304/305 和
+`doc/specification/12`；但 `doc/operations/`（标注手册）与 `doc/environment/` 仍不入库。涉及后者的 static 检查是
 「拿代码和这些文档对照」，在没有文档的树上它们**答不了**，而不是**答了「一致」**。
 
 - 检查脚本遇到这种情况退出 **3**，并在日志里写明是哪个文件、为什么没有；
@@ -315,9 +315,9 @@ python E:/tmpgo/replay/e151_mut.py                      # 7 变异全 KILLED（�
 2. **覆盖由渲染器负责，不由它自述**：期望值从 **spec** 数（`get/post/put/patch/delete`），不从渲染器自己的
    JSON 读数拿。这一点是 `--selftest` 抓出来的——第一版把渲染器的 `operations` 当分母，于是「渲染器少画一个操作」
    时报 615==615，自洽且错。现在渲染器自述与 spec 不符会单独红一句。
-3. **可发货**：`git check-ignore` 必须不命中两个产品。`doc/*` 按政策被忽略（`.gitignore:91`），
-   所以在 `.gitignore` 里加了一条**只放行这两个文件**的例外（`doc/specification/` 下其余文件仍被忽略，
-   已用 `12_前后端接口交互规范.md` 和 `api/stray.txt` 验证）。发不出去的产物，就是没有读者的文档。
+3. **可发货**：`git check-ignore` 必须不命中两个产品。`doc/*` 仍是总忽略，靠 `.gitignore` 的逐条反用才入库（doc/321：
+   `doc/specification/**/*.md`、`doc/develop/*.md|*.jpg`），`doc/specification/api/` 下的非文档文件仍被忽略，
+   已用 `api/stray.txt` 验证。发不出去的产物，就是没有读者的文档。
 
 ```bash
 bash scripts/release-gate/api-doc.sh              # 检查（约 1s）

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # s19.docs-ledger-snapshot — 304 §7 item 26, route ① chosen 2026-11-23.
 #
-# The problem item 26 names: five required checks read `doc/develop/*.md`, and `doc/` is
-# gitignored (.gitignore:91), so a clean checkout — CI, a fresh clone — can only answer
+# The problem item 26 names: five required checks read `doc/develop/*.md`, and before doc/321
+# `doc/` was gitignored, so a clean checkout — CI, a fresh clone — could only answer
 # "N/A". A green CI therefore never meant "the ledger was checked"; it meant "the ledger
 # was not there to check". Both statements were true and only one of them was visible.
+# doc/321 makes the archive tracked, so the shipped checkout carries these three sources and
+# the snapshot comparison runs there; the exit-3 branch stays for trees that still lack them.
 #
 # Route ① is a *controlled snapshot*: `docs-ledger.json` is tracked, it carries the ledger
 # facts and a sha256 of each source document, and this check reads the snapshot. So:

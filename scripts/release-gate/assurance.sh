@@ -205,7 +205,7 @@ if [ -f "$SPEC_FILE" ]; then
 else
   spec_missing=1
   say "N/A   API specification (specification/12) is not in this tree ($SPEC_FILE):"
-  say "      doc/ is gitignored by policy (.gitignore:91), so the row-shaped half of"
+  say "      only doc/specification/ and doc/develop/ are tracked (doc/321) and this document is not one of them, so the row-shaped half of"
   say "      G-A4 did not run in this checkout — the other four places did."
 fi
 codes_in_role "$FEMAP_FILE" "frontend error map (report-contract.ts)" '^[[:space:]]*%s:'

@@ -14,12 +14,11 @@
 #
 #   * a clean *checkout* (nothing but what git carries) — `.github/workflows/release.yml`
 #     preflight already does this on every tag: a fresh `actions/checkout`, then
-#     `scripts/release-gate.sh --tier static --ci`. In that tree `doc/` does not exist
-#     (.gitignore:91), so the doc-reading rows answer N/A. Continuous, and it is the reader
-#     for the code half.
-#   * a clean checkout *with* the engineering docs — the case a human has to run, because
-#     `doc/` is gitignored and therefore can never be in CI. Without it, "the doc rows pass"
-#     is only ever tested in a working tree that has been accumulating edits.
+#     `scripts/release-gate.sh --tier static --ci`. Continuous, and it is the reader for the
+#     code half.
+#   * a clean checkout *with* the engineering docs — since doc/321 doc/specification/ and
+#     doc/develop/ are tracked, so CI now carries them too; this branch stays because it also
+#     overlays a *working tree* that has accumulated edits, which no checkout can reproduce.
 #
 # This script does the second one by default, and `--ci` reproduces the first so the two can
 # be compared on the same machine. What it does NOT do, said out loud:
@@ -168,7 +167,7 @@ create_worktree() {
     if [ "${#nested[@]}" -gt 0 ]; then
       fail "the doc copy nested (${nested[*]}): cp -a src dst copies into dst when dst exists; use src/. — the rows would look for the copied file and not find it (E171)"
     fi
-    say "clean-clone: copied doc/ (minus doc/user, which git carries) from the working tree"
+    say "clean-clone: copied doc/ (minus doc/user, which git carries) from the working tree onto the tracked copy"
   else
     say "clean-clone: N/A — this working tree has no doc/develop, so the doc half cannot be"
     say "  verified here. Use --ci to say that out loud, or restore doc/develop and re-run."

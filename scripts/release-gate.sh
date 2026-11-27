@@ -40,10 +40,11 @@
 #            are absent) — the run is INCOMPLETE, never silently green
 #   MISSING  a live suite script is not on this machine — also INCOMPLETE
 #   N/A      the check needs an input this tree does not carry, and this is a
-#            `--ci` run. `doc/` is gitignored by policy (.gitignore:91), so a
-#            clean checkout has no 301/304/305, no specification/12 and no
-#            labeling manual; five static checks compare code against those
-#            documents and can only answer "not here". A check script says so
+#            `--ci` run. Since doc/321 the engineering archive *is* tracked
+#            (doc/specification/, doc/develop/), so a clean checkout has 301/304/305
+#            and specification/12 -- but still no doc/operations/ labeling manual and
+#            no doc/environment/ note, because those stay machine-local. Whatever a
+#            row needs, it compares code against documents and can only answer "not here"
 #            with exit 3, and the gate is the one place that decides what that
 #            means: a `--ci` run records `N/A` and keeps the row visible; every
 #            other run turns the same exit code into **FAIL**. CI cannot run the
@@ -344,7 +345,8 @@ run_check() {
   local id="$1" t="$2" req="$3" desc="$4"
   shift 4
   # A row that reads doc/ says so, as the fifth argument: `run_check "id" "tier" 1 "desc" doc cmd...`.
-  # doc/ is gitignored by policy, so such a row answers exit 3 in a checkout and its whole point
+  # A tracked document can still be absent from a checkout (doc/operations/, doc/environment/ are
+  # machine-local, doc/321), so such a row answers exit 3 rather than "consistent" and its whole point
   # is that it *ran* somewhere; `--list=tsv` publishes this marker as a fourth column and
   # `doc-present.sh` derives its selection from it (doc/304 §4 E121). The alternative —
   # grep the command for `doc/` — cannot tell a reader from `clean-clone.sh`, which creates a
@@ -368,10 +370,10 @@ run_check() {
       if [ "$rc" = "3" ] && [ "$CI" = "1" ]; then
         status="N/A"
         # The marker has a second use here: an N/A on a doc-reading row should say *why*
-        # (doc/ is gitignored by policy) and name the row that proves it runs where doc/
+        # (the document is not tracked) and name the row that proves it runs where it exists
         # exists, or a reader reads "N/A" as "this check does not matter".
         if [ "$reads_doc" = "1" ]; then
-          note="$desc — N/A: this row reads doc/ and the checkout does not carry it (gitignored by policy); s24.doc-present is the row that proves it runs where doc/ exists"
+          note="$desc — N/A: this row reads a document the checkout does not carry (not tracked, doc/321); s24.doc-present is the row that proves it runs where the document exists"
         else
           note="$desc — not applicable in this tree (the check needs a document that is not in the checkout; see the log for which one)"
         fi
@@ -486,6 +488,13 @@ fi
 
 # ── static tier ──────────────────────────────────────────────────────────
 if tier_selected static; then
+  # s01a proves the scanner still sees what it claims to see. It exists because it did not:
+  # every Chinese-named file was C-quoted by git and skipped by `[ -f ]` in silence, so a tree
+  # of 305 Chinese-named documents scanned 7 and printed "clean". A scanner that can be blind
+  # is worse than no scanner, because it is trusted (doc/321 §4).
+  run_check "s01a.secret-scan-selftest" "static" 1 "the secret scanner still blocks a credential behind a non-ASCII filename" \
+    bash scripts/secret-scan.sh --selftest
+
   run_check "s01.secret-scan" "static" 1 "no credential material or local-env fingerprints in the tree" \
     bash scripts/secret-scan.sh --all
 
