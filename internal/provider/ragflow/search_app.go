@@ -188,7 +188,8 @@ func (c *HTTPClient) StreamSearchAppCompletion(ctx context.Context, searchAppID 
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(r)
+	// streamClient: search answers stream the same way chat answers do.
+	resp, err := c.streamClient().Do(r)
 	if err != nil {
 		return wrapError("request ragflow search stream", err)
 	}

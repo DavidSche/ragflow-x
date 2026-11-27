@@ -20,40 +20,102 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/pkg/requestid"
 )
 
+// StreamHeaderDeadline bounds the wait for SSE response *headers* only.
+//
+// It is not a cap on the answer. `/chat/completions` on the live engine returns
+// headers once the first token is ready (6.8 s to 21.2 s observed on 2026-11-27
+// under load) and then keeps the body open for as long as generation takes, so the
+// only bound a stream may have on its body is the client's own connection. See
+// `stream` in HTTPClient for what went wrong when it did not.
+const StreamHeaderDeadline = 60 * time.Second
+
 // HTTPClient talks to a real RAGFlow instance over its HTTP API (/api/v1).
 type HTTPClient struct {
 	baseURL string
 	apiKey  string
-	http    *http.Client
+	// http carries the configured whole-request budget and is used for every
+	// call that reads one response and returns.
+	http *http.Client
+	// stream is the SSE client: **no** whole-request budget, only a bounded
+	// wait for headers.
+	//
+	// Why the two clients exist. `http.Client.Timeout` covers reading the
+	// response body, so putting the interactive budget on the one client that
+	// also proxies SSE truncated every console answer in the middle of the
+	// sentence. Storage review of 2026-11-27: 6 of 6 `/api/v1/chat/completions`
+	// streams died at exactly 30.000 s (`context deadline exceeded` before
+	// headers → 502; `context canceled` mid-body → a truncated answer), which is
+	// `ragflow.timeout`'s default. `ChatToModelDeadline` below is the same
+	// lesson learned once for long-form report sections; this one is learned for
+	// streams, and has to hold for every streaming route, not one caller.
+	stream *http.Client
 	catalogCache
 }
 
 // NewHTTPClient builds a client with a default LoggingMiddleware.
 // Signature unchanged for backward compatibility.
 func NewHTTPClient(baseURL, apiKey string, timeout time.Duration, maxConns int) *HTTPClient {
+	return newHTTPClient(baseURL, apiKey, timeout, StreamHeaderDeadline, maxConns,
+		LoggingMiddleware("/providers/"))
+}
+
+// newHTTPClient is the one place the two clients and their transports are built.
+// `streamHeaderDeadline` is a parameter rather than the constant directly so a
+// test can prove the bound exists without waiting a minute for it.
+func newHTTPClient(baseURL, apiKey string, timeout, streamHeaderDeadline time.Duration,
+	maxConns int, middlewares ...RoundTripperMiddleware) *HTTPClient {
+
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 	if maxConns <= 0 {
 		maxConns = 20
 	}
-	transport := chainRoundTrippers(
-		&http.Transport{
-			MaxIdleConns:    maxConns,
-			MaxConnsPerHost: maxConns,
-			DialContext:     pinnedDialer{}.DialContext,
-		},
-		LoggingMiddleware("/providers/"),
-	)
+	if streamHeaderDeadline <= 0 {
+		streamHeaderDeadline = StreamHeaderDeadline
+	}
+	// One transport per client class: the header bound belongs to the streaming
+	// one only. Putting it on the interactive transport would refuse
+	// `/chat/completions`-style calls that legitimately answer headers late,
+	// which is exactly what `ChatToModel` does (it waits for the whole answer
+	// before the first byte, up to `ChatToModelDeadline`).
+	interactive := newProviderTransport(maxConns, 0)
+	streaming := newProviderTransport(maxConns, streamHeaderDeadline)
+
 	return &HTTPClient{
 		baseURL: baseURL,
 		apiKey:  apiKey,
 		http: &http.Client{
 			Timeout:       timeout,
-			Transport:     transport,
+			Transport:     chainRoundTrippers(interactive, middlewares...),
+			CheckRedirect: providerRedirectPolicy,
+		},
+		stream: &http.Client{
+			// Timeout 0 = no whole-request budget. The body lives as long as
+			// the engine generates and the client keeps reading.
+			Transport:     chainRoundTrippers(streaming, middlewares...),
 			CheckRedirect: providerRedirectPolicy,
 		},
 	}
+}
+
+func newProviderTransport(maxConns int, responseHeaderTimeout time.Duration) *http.Transport {
+	return &http.Transport{
+		MaxIdleConns:          maxConns,
+		MaxConnsPerHost:       maxConns,
+		DialContext:           pinnedDialer{}.DialContext,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+	}
+}
+
+// streamClient returns the SSE client, falling back to the interactive one for
+// an HTTPClient built as a struct literal (tests, and any future constructor that
+// predates `stream`): a nil pointer is a slow answer, not a panic.
+func (c *HTTPClient) streamClient() *http.Client {
+	if c.stream != nil {
+		return c.stream
+	}
+	return c.http
 }
 
 type pinnedDialer struct{}
@@ -89,28 +151,7 @@ func providerRedirectPolicy(req *http.Request, via []*http.Request) error {
 func NewHTTPClientWithMiddleware(baseURL, apiKey string, timeout time.Duration,
 	maxConns int, middlewares ...RoundTripperMiddleware) *HTTPClient {
 
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	if maxConns <= 0 {
-		maxConns = 20
-	}
-	baseTransport := &http.Transport{
-		MaxIdleConns:    maxConns,
-		MaxConnsPerHost: maxConns,
-		DialContext:     pinnedDialer{}.DialContext,
-	}
-	transport := chainRoundTrippers(baseTransport, middlewares...)
-
-	return &HTTPClient{
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		http: &http.Client{
-			Timeout:       timeout,
-			Transport:     transport,
-			CheckRedirect: providerRedirectPolicy,
-		},
-	}
+	return newHTTPClient(baseURL, apiKey, timeout, StreamHeaderDeadline, maxConns, middlewares...)
 }
 
 // Name implements the Client interface.
@@ -1113,8 +1154,6 @@ func (c *HTTPClient) ChatToModel(ctx context.Context, providerName, instanceName
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	// Long-form answers get the longer ceiling; everything else keeps the
-	// configured interactive timeout.
 	// Long-form answers get the longer ceiling; everything else keeps the
 	// configured interactive timeout.
 	if err := c.doAndParseWithClient(ctx, c.longFormClient(), http.MethodPost, "/chat/completions", bytes.NewReader(body), "application/json", &out); err != nil {

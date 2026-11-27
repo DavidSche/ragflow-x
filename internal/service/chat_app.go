@@ -187,6 +187,12 @@ func (s *Service) StreamChatAppCompletion(ctx context.Context, key *model.APIKey
 	// Always flush what the provider already produced: a partial delta and the
 	// terminal upstream error frame both belong to the client-visible stream.
 	flushErr := capture.Flush()
+	// From here on nothing is client-visible any more: the answer was either
+	// delivered or abandoned, and what remains is bookkeeping that has to be
+	// written even when the connection that started it is already gone.
+	bookCtx, bookCancel := StreamBookkeepingContext(ctx)
+	defer bookCancel()
+	ctx = bookCtx
 	if streamErr != nil || flushErr != nil || capture.sawError {
 		return 0, "text/event-stream", s.failChatAppStream(ctx, key, chatID, sessionID, requestID, question, capture, startedAt, streamErr, flushErr)
 	}
@@ -214,6 +220,13 @@ func (s *Service) StreamChatAppCompletion(ctx context.Context, key *model.APIKey
 // in-band frame the upstream did, and the gateway must not append a second
 // terminal signal on top of it.
 func (s *Service) failChatAppStream(ctx context.Context, key *model.APIKey, chatID, sessionID, requestID, question string, capture *knowledgeOpsStreamCapture, startedAt time.Time, streamErr, flushErr error) error {
+	// Detached here as well as at the call site: this function's whole job is
+	// writing down a failure, and a failure is exactly when the caller's context
+	// is likely to be dead. Depending on the caller to detach first made the
+	// record disappear for six real streams on 2026-11-27.
+	bookCtx, bookCancel := StreamBookkeepingContext(ctx)
+	defer bookCancel()
+	ctx = bookCtx
 	cause := streamErr
 	if cause == nil {
 		cause = flushErr

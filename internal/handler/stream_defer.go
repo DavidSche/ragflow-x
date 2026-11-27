@@ -1,8 +1,25 @@
 package handler
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
 )
+
+// chatStreamWriteBudget is how far forward each SSE frame pushes the
+// connection's write deadline.
+//
+// `http.Server.WriteTimeout` is an absolute deadline measured from the start of
+// the request, not an idle timeout, so a `write_timeout` tuned for interactive
+// calls (60 s by default) severs a chat answer in the middle of the sentence. Doc
+// 316 §十 records the log that showed it: six `/api/v1/chat/completions` streams
+// cut at exactly the provider budget, with the server's 60 s the next ceiling
+// waiting behind it. Extending per frame keeps a live answer alive and still
+// bounds a client that stopped reading — the same treatment report streams got in
+// `reportStreamExtendDeadline`, applied where the frames are written so both chat
+// entry points inherit it.
+const chatStreamWriteBudget = 5 * time.Minute
 
 // deferredStreamWriter postpones the 200 + `text/event-stream` commitment until
 // the first byte actually goes out.
@@ -35,13 +52,23 @@ func (d *deferredStreamWriter) commit() {
 		return
 	}
 	d.wrote = true
+	d.extendWriteDeadline()
 	d.w.Header().Set("Content-Type", "text/event-stream")
 	d.w.WriteHeader(200)
 }
 
 func (d *deferredStreamWriter) Write(p []byte) (int, error) {
 	d.commit()
+	d.extendWriteDeadline()
 	return d.w.Write(p)
+}
+
+// extendWriteDeadline pushes the connection's absolute write deadline forward by
+// one budget. Best-effort by design: httptest.ResponseRecorder has no deadlines
+// and gin may wrap a writer that cannot set them, and neither is a reason to drop
+// a frame that is otherwise ready to go.
+func (d *deferredStreamWriter) extendWriteDeadline() {
+	_ = http.NewResponseController(d.w).SetWriteDeadline(time.Now().Add(chatStreamWriteBudget))
 }
 
 // Committed reports whether the response is already pinned to 200. The handler

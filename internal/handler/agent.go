@@ -10,6 +10,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/middleware"
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
+	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
 	"github.com/ragflow-x/ragflow-x/internal/provider/ragflow"
 	"github.com/ragflow-x/ragflow-x/internal/repository"
@@ -547,6 +548,11 @@ func (h *Handler) StreamAgentChatCompletion(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Status(200)
 	if err := h.Service.StreamAgentChatCompletion(ctx, tenantID, agentID, userID, req.Messages, req.Files, c.GetString("request_id"), req.SessionID, c.Writer); err != nil {
+		// A client that walked away needs no terminal frame (doc/316 §十).
+		if c.Request.Context().Err() != nil {
+			logger.Info("agent stream abandoned by client", "tenant_id", tenantID, "user_id", userID, "agent_id", agentID, "request_id", c.GetString("request_id"))
+			return
+		}
 		// The stream already started; append an OpenAI-style error frame unless
 		// the upstream already reported the failure in-band (doc/227 C3.3).
 		if !service.IsReportedStreamFailure(err) {
@@ -560,5 +566,7 @@ func (h *Handler) StreamAgentChatCompletion(c *gin.Context) {
 		c.Writer.Flush()
 		return
 	}
-	h.RecordAudit(ctx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "agent.completion.stream", Resource: "agent", ResourceID: agentID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
+	auditCtx, auditCancel := service.StreamBookkeepingContext(ctx)
+	defer auditCancel()
+	h.RecordAudit(auditCtx, &model.AuditLog{TenantID: tenantID, UserID: userID, Action: "agent.completion.stream", Resource: "agent", ResourceID: agentID, IP: c.ClientIP(), TraceID: c.GetString("request_id")})
 }

@@ -209,6 +209,11 @@ func (h *Handler) GatewaySearchApp(c *gin.Context) {
 		}
 		// Close before Complete so the replayed bytes include the governance frame: a
 		// replay must reproduce what the live caller saw, not a shorter stream.
+		// The stream is over; the bookkeeping must not inherit the client's
+		// connection (doc/316 §十).
+		bookCtx, bookCancel := service.StreamBookkeepingContext(ctx)
+		defer bookCancel()
+		ctx = bookCtx
 		_ = stream.Close(true)
 		h.Service.CompleteGatewayIdempotency(ctx, idempotencyState, requestID, captured.String())
 		h.Service.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, h.Service.EstimateGatewayTokens(body)+int64(captured.Len()/2))
@@ -297,6 +302,11 @@ func (h *Handler) GatewayAgent(c *gin.Context) {
 			h.gatewayStreamFailed(c, key, "agent", agentID, requestID, idempotencyState, err)
 			return
 		}
+		// The stream is over; the bookkeeping must not inherit the client's
+		// connection (doc/316 §十).
+		bookCtx, bookCancel := service.StreamBookkeepingContext(ctx)
+		defer bookCancel()
+		ctx = bookCtx
 		_ = stream.Close(true)
 		h.Service.CompleteGatewayIdempotency(ctx, idempotencyState, requestID, captured.String())
 		h.Service.FinalizeGatewayQuotaWithBucket(ctx, key, requestID, h.Service.EstimateGatewayTokens(body)+int64(captured.Len()/2))
@@ -404,8 +414,19 @@ func (h *Handler) gatewayScopeFailed(c *gin.Context, ctx context.Context, key *m
 }
 
 func (h *Handler) gatewayStreamFailed(c *gin.Context, key *model.APIKey, resource, resourceID, requestID string, state *service.GatewayIdempotencyState, err error) {
+	// The request is still recorded as failed either way — an idempotency replay
+	// must not report a success that never happened. What is skipped when the
+	// client left is the noise: an ERROR line and an audit entry for a socket
+	// nobody is reading, plus a terminal frame that cannot be delivered.
+	if c.Request.Context().Err() != nil {
+		logger.Info("gateway stream abandoned by client", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", requestID, "resource", resource, "resource_id", resourceID)
+		h.Service.FailGatewayIdempotency(context.Background(), state, requestID, err.Error())
+		return
+	}
 	logger.Error("gateway stream failed", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", requestID, "error", err)
-	h.RecordAudit(c.Request.Context(), &model.AuditLog{TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.stream_error", Resource: resource, ResourceID: resourceID, DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: requestID})
+	auditCtx, auditCancel := service.StreamBookkeepingContext(c.Request.Context())
+	defer auditCancel()
+	h.RecordAudit(auditCtx, &model.AuditLog{TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.stream_error", Resource: resource, ResourceID: resourceID, DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: requestID})
 	gatewayStreamError(c.Writer, err)
 	h.Service.FailGatewayIdempotency(context.Background(), state, requestID, err.Error())
 }
@@ -419,8 +440,14 @@ func (h *Handler) gatewayChatApp(c *gin.Context, ctx context.Context, key *model
 		var captured bytes.Buffer
 		_, _, err := h.Service.StreamChatAppCompletion(ctx, key, chatID, sessionID, body, io.MultiWriter(streamWriter, &captured), requestID)
 		if err != nil {
+			if c.Request.Context().Err() != nil {
+				logger.Info("gateway chat stream abandoned by client", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", c.GetString("request_id"))
+				return
+			}
 			logger.Error("gateway chat app stream failed", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", c.GetString("request_id"), "error", err)
-			h.RecordAudit(ctx, &model.AuditLog{
+			auditCtx, auditCancel := service.StreamBookkeepingContext(ctx)
+			defer auditCancel()
+			h.RecordAudit(auditCtx, &model.AuditLog{
 				TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.stream_error", Resource: "chat", ResourceID: chatID,
 				DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 			})

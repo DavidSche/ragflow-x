@@ -518,7 +518,9 @@ func (c *HTTPClient) StreamAgentChatCompletion(ctx context.Context, req Completi
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(r)
+	// streamClient: an agent answer is an SSE body that outlives any
+	// interactive request budget (see HTTPClient.stream).
+	resp, err := c.streamClient().Do(r)
 	if err != nil {
 		return wrapError("request ragflow agent stream", err)
 	}

@@ -595,6 +595,11 @@ func (s *Service) StreamAgentChatCompletion(ctx context.Context, tenantID, agent
 	if flushErr := capture.Flush(); flushErr != nil {
 		err = flushErr
 	}
+	// The stream is over: from here the writes describe what happened. Detach
+	// them from a connection that is likely already gone (doc/316 §十).
+	bookCtx, bookCancel := StreamBookkeepingContext(ctx)
+	defer bookCancel()
+	ctx = bookCtx
 	if err != nil {
 		s.recordKnowledgeEvent(ctx, knowledgeEvent(tenantID, a.OwnerID, "agent", agentID, sessionID, requestID, question, "", 0, 0, 0, time.Since(startedAt).Milliseconds()))
 		s.recordFailedAnswerDelivery(ctx, tenantID, userID, "agent", agentID, sessionID, requestID, question, capture.answer.String(), err.Error())

@@ -10,6 +10,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/logger"
 	"github.com/ragflow-x/ragflow-x/internal/pkg/response"
+	"github.com/ragflow-x/ragflow-x/internal/service"
 )
 
 // UserChatCompletion is the JWT-authenticated chat endpoint used by the
@@ -50,8 +51,20 @@ func (h *Handler) UserChatCompletion(c *gin.Context) {
 		stream := newDeferredStreamWriter(c.Writer)
 		_, _, err := h.Service.StreamChatAppCompletion(ctx, userKey, chatID, sessionID, body, stream, requestID)
 		if err != nil {
+			// The client leaving is not a gateway failure. When the request
+			// context is already dead nothing can be written back and nothing
+			// is owed: logging it as an error (and auditing it) made a closed
+			// tab indistinguishable from a broken upstream, which is how six
+			// truncated answers of 2026-11-27 were filed before the cause was
+			// found.
+			if c.Request.Context().Err() != nil {
+				logger.Info("chat stream abandoned by client", "tenant_id", tenantID, "user_id", userID, "request_id", requestID)
+				return
+			}
 			logger.Error("workbench chat stream failed", "tenant_id", tenantID, "user_id", userID, "request_id", requestID, "error", err)
-			h.RecordAudit(ctx, &model.AuditLog{
+			auditCtx, auditCancel := service.StreamBookkeepingContext(ctx)
+			defer auditCancel()
+			h.RecordAudit(auditCtx, &model.AuditLog{
 				TenantID: tenantID, UserID: userID, Action: "gateway.stream_error", Resource: "chat", ResourceID: chatID,
 				DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 			})

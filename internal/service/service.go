@@ -254,6 +254,24 @@ func (s *Service) SetGatewayClients(cfg GatewayConfig) {
 	s.streamClient = &http.Client{Transport: tr, Timeout: cfg.StreamTimeout, CheckRedirect: s.providerRedirectPolicy}
 }
 
+// bookkeepingWriteTimeout bounds one post-stream bookkeeping write.
+const bookkeepingWriteTimeout = 15 * time.Second
+
+// streamBookkeepingContext detaches bookkeeping from the client connection
+// without removing every bound.
+//
+// A stream ends in exactly two ways, and both kill the inbound context: the
+// client closed the tab, or the provider cut the answer. The writes that follow
+// - quota release, knowledge-ops event, failed-answer snapshot, audit - describe
+// work that happened and must not inherit that death. Storage review of
+// 2026-11-27 lost all of them for six truncated streams: each one produced three
+// "context canceled" WARN lines and no record, which is the worst combination -
+// loud about the wrong thing and silent about the right one. The timeout is kept
+// so a wedged database cannot hold the handler open forever.
+func StreamBookkeepingContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), bookkeepingWriteTimeout)
+}
+
 // providerRedirectPolicy applies the same network policy to redirect targets
 // as the initially configured provider URL.
 func (s *Service) providerRedirectPolicy(req *http.Request, via []*http.Request) error {

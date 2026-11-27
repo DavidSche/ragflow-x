@@ -206,7 +206,9 @@ func (c *HTTPClient) StreamChatCompletion(ctx context.Context, chatID string, re
 	if err != nil {
 		return err
 	}
-	resp, err := c.http.Do(r)
+	// streamClient, not http: the interactive client's whole-request budget
+	// truncates SSE bodies mid-answer (see HTTPClient.stream).
+	resp, err := c.streamClient().Do(r)
 	if err != nil {
 		return wrapError("request ragflow stream", err)
 	}
