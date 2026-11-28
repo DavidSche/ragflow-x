@@ -29,12 +29,13 @@ import (
 // 200 + event-stream exactly once.
 
 type chatStreamHarness struct {
-	svc    *service.Service
-	engine *reportHandlerEngine
-	chatID string
-	sessID string
-	path   string
-	router *gin.Engine
+	svc      *service.Service
+	engine   *reportHandlerEngine
+	tenantID string
+	chatID   string
+	sessID   string
+	path     string
+	router   *gin.Engine
 }
 
 func newChatStreamHarness(t *testing.T) *chatStreamHarness {
@@ -80,7 +81,7 @@ func newChatStreamHarness(t *testing.T) *chatStreamHarness {
 	})
 	group.POST("/chat/completions", New(svc).UserChatCompletion)
 	return &chatStreamHarness{
-		svc: svc, engine: engine, chatID: chat.ID, sessID: session.ID,
+		svc: svc, engine: engine, tenantID: tenant.ID, chatID: chat.ID, sessID: session.ID,
 		path: "/api/v1/chat/completions", router: router,
 	}
 }

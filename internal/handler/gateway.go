@@ -444,6 +444,20 @@ func (h *Handler) gatewayChatApp(c *gin.Context, ctx context.Context, key *model
 				logger.Info("gateway chat stream abandoned by client", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", c.GetString("request_id"))
 				return
 			}
+			h.Service.FailGatewayIdempotency(ctx, idempotencyState, requestID, err.Error())
+			if !streamWriter.Committed() {
+				// Same split as the workbench handler: nothing was written, so
+				// this is a refused request. Audit the failure of the attempt
+				// through idempotency (above) but do not claim a delivery failed,
+				// and keep a caller's 4xx out of the ERROR stream.
+				if internal, code := streamRefusalSeverity(err); internal {
+					logger.Error("gateway chat app stream refused by an internal failure", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", c.GetString("request_id"), "code", code, "error", err)
+				} else {
+					logger.Info("gateway chat app stream refused before the first byte", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", c.GetString("request_id"), "code", code)
+				}
+				response.Err(c, err)
+				return
+			}
 			logger.Error("gateway chat app stream failed", "tenant_id", key.TenantID, "user_id", key.UserID, "key_id", key.ID, "request_id", c.GetString("request_id"), "error", err)
 			auditCtx, auditCancel := service.StreamBookkeepingContext(ctx)
 			defer auditCancel()
@@ -451,11 +465,6 @@ func (h *Handler) gatewayChatApp(c *gin.Context, ctx context.Context, key *model
 				TenantID: key.TenantID, UserID: key.UserID, Action: "gateway.stream_error", Resource: "chat", ResourceID: chatID,
 				DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 			})
-			h.Service.FailGatewayIdempotency(ctx, idempotencyState, requestID, err.Error())
-			if !streamWriter.Committed() {
-				response.Err(c, err)
-				return
-			}
 			gatewayStreamError(c.Writer, err)
 			return
 		}

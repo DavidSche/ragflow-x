@@ -61,6 +61,22 @@ func (h *Handler) UserChatCompletion(c *gin.Context) {
 				logger.Info("chat stream abandoned by client", "tenant_id", tenantID, "user_id", userID, "request_id", requestID)
 				return
 			}
+			if !stream.Committed() {
+				// Nothing was written: this was a refused request, not a broken
+				// stream, and the comment said so while the code logged it as a
+				// failure anyway. Live run of 2026-11-28 filed a documented
+				// 400/44105 (`report_context` typo, probe R25 case ②) as an ERROR
+				// line plus a `gateway.stream_error` row, an action
+				// doc/architecture/233 defines as "failed after 200 was
+				// committed". A 4xx is the caller's; a 5xx is still ours.
+				if internal, code := streamRefusalSeverity(err); internal {
+					logger.Error("workbench chat stream refused by an internal failure", "tenant_id", tenantID, "user_id", userID, "request_id", requestID, "code", code, "error", err)
+				} else {
+					logger.Info("workbench chat stream refused before the first byte", "tenant_id", tenantID, "user_id", userID, "request_id", requestID, "code", code)
+				}
+				response.Err(c, err)
+				return
+			}
 			logger.Error("workbench chat stream failed", "tenant_id", tenantID, "user_id", userID, "request_id", requestID, "error", err)
 			auditCtx, auditCancel := service.StreamBookkeepingContext(ctx)
 			defer auditCancel()
@@ -68,11 +84,6 @@ func (h *Handler) UserChatCompletion(c *gin.Context) {
 				TenantID: tenantID, UserID: userID, Action: "gateway.stream_error", Resource: "chat", ResourceID: chatID,
 				DetailJSON: err.Error(), IP: c.ClientIP(), TraceID: c.GetString("request_id"),
 			})
-			if !stream.Committed() {
-				// Nothing was written: this was a refused request, not a broken stream.
-				response.Err(c, err)
-				return
-			}
 			gatewayStreamError(c.Writer, err)
 		}
 		return

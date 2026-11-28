@@ -1,10 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/ragflow-x/ragflow-x/internal/pkg/httperr"
 )
 
 // chatStreamWriteBudget is how far forward each SSE frame pushes the
@@ -20,6 +23,23 @@ import (
 // `reportStreamExtendDeadline`, applied where the frames are written so both chat
 // entry points inherit it.
 const chatStreamWriteBudget = 5 * time.Minute
+
+// streamRefusalSeverity decides how a refusal that never became a delivery is
+// logged, and hands back the business code for the line.
+//
+// The distinction it encodes is the same one that separated the six truncated
+// streams of 2026-11-27 from a broken upstream: a 4xx is the caller's mistake (a
+// mistyped field, an unknown section, someone else's report) and does not belong
+// at ERROR; a 5xx or an unclassified transport error is still ours. The refusal
+// branch in both chat handlers has always said "this was a refused request, not
+// a broken stream" in a comment; this function is that sentence as code.
+func streamRefusalSeverity(err error) (isInternalFailure bool, code int) {
+	var he *httperr.Error
+	if errors.As(err, &he) {
+		return he.Status >= 500, he.Code
+	}
+	return true, 0
+}
 
 // deferredStreamWriter postpones the 200 + `text/event-stream` commitment until
 // the first byte actually goes out.
