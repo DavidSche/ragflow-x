@@ -41,9 +41,10 @@ scripts/release-gate.sh --list=tsv                    # 同一声明，机器读
 
 ### `N/A`：一种只在 CI 里有意义的「答不了」
 
-`doc/specification/` 与 `doc/develop/` 自 doc/321 起已入库，所以 `git clone` 的树里有 301/304/305 和
-`doc/specification/12`；但 `doc/operations/`（标注手册）与 `doc/environment/` 仍不入库。涉及后者的 static 检查是
-「拿代码和这些文档对照」，在没有文档的树上它们**答不了**，而不是**答了「一致」**。
+文档逐份审核入库（2026-11-28 政策：现行只有 `doc/specification/api/api-reference.{md,html}` 与
+`doc/user/**`），所以 `git clone` 的树里**没有** 301/304/305、没有 `doc/specification/12`、也没有
+`doc/operations/` 与 `doc/environment/`。凡是「拿代码和这些文档对照」的 static 检查，在没有文档的树上
+**答不了**，而不是**答了「一致」**。
 
 - 检查脚本遇到这种情况退出 **3**，并在日志里写明是哪个文件、为什么没有；
 - `scripts/release-gate.sh` 决定 3 的含义：`--ci` 运行记为 `N/A`（行仍在报告里，
@@ -315,9 +316,9 @@ python E:/tmpgo/replay/e151_mut.py                      # 7 变异全 KILLED（�
 2. **覆盖由渲染器负责，不由它自述**：期望值从 **spec** 数（`get/post/put/patch/delete`），不从渲染器自己的
    JSON 读数拿。这一点是 `--selftest` 抓出来的——第一版把渲染器的 `operations` 当分母，于是「渲染器少画一个操作」
    时报 615==615，自洽且错。现在渲染器自述与 spec 不符会单独红一句。
-3. **可发货**：`git check-ignore` 必须不命中两个产品。`doc/*` 仍是总忽略，靠 `.gitignore` 的逐条反用才入库（doc/321：
-   `doc/specification/**/*.md`、`doc/develop/*.md|*.jpg`），`doc/specification/api/` 下的非文档文件仍被忽略，
-   已用 `api/stray.txt` 验证。发不出去的产物，就是没有读者的文档。
+3. **可发货**：`git check-ignore` 必须不命中两个产品。`doc/*` 仍是总忽略，只有 `.gitignore` 里逐条点名的
+   文件才入库（现行只有 `doc/specification/api/api-reference.{md,html}`，其余规范正文与档案都不入库），
+   `doc/specification/api/` 下的非文档文件仍被忽略，已用 `api/stray.txt` 验证。发不出去的产物，就是没有读者的文档。
 
 ```bash
 bash scripts/release-gate/api-doc.sh              # 检查（约 1s）

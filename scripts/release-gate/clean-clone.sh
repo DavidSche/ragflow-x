@@ -16,9 +16,11 @@
 #     preflight already does this on every tag: a fresh `actions/checkout`, then
 #     `scripts/release-gate.sh --tier static --ci`. Continuous, and it is the reader for the
 #     code half.
-#   * a clean checkout *with* the engineering docs — since doc/321 doc/specification/ and
-#     doc/develop/ are tracked, so CI now carries them too; this branch stays because it also
-#     overlays a *working tree* that has accumulated edits, which no checkout can reproduce.
+#   * a clean checkout *with* the engineering docs — the documents are admitted one at a time
+#     (2026-11-28 policy: only doc/specification/api/api-reference.{md,html} and doc/user/ ship),
+#     so a checkout carries neither the specification prose nor doc/develop/, and no CI run can
+#     reach the doc-reading rows. This branch stays because it overlays a *working tree* that has
+#     accumulated edits, which no checkout can reproduce.
 #
 # This script does the second one by default, and `--ci` reproduces the first so the two can
 # be compared on the same machine. What it does NOT do, said out loud:

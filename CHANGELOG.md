@@ -5,10 +5,10 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-> 引用约定：文中 `doc/NNN`、`doc/<目录>` 为工程内部设计/性能记录编号；自 doc/321 起 `doc/specification/`
-> 与 `doc/develop/` **随仓库发布**（入库前已脱敏，机器相关的 `doc/environment/` 与渲染产物 `.docx/.pdf` 不入库），
-> 因此文中引用的规范与验收条件在 clone 里读得到；面向最终用户的文档在 [`doc/user`](./doc/user/README.md)
-> （用户手册、权限矩阵、运维 Runbook、审计链 SOP）。
+> 引用约定：文中 `doc/NNN`、`doc/<目录>` 为工程内部设计/性能记录编号，**这些文档不随仓库发布**
+> （2026-11-28 起文档逐份审核入库，现行只有 API 参考 `doc/specification/api/api-reference.{md,html}`
+> 与用户手册 `doc/user/**` 在库里），所以文中引用的规范与验收条件在 clone 里**读不到**，它们是
+> 本机档案；面向最终用户的文档在 [`doc/user`](./doc/user/README.md)。
 
 ## [Unreleased]
 
@@ -172,6 +172,7 @@
 
 ### 变更
 
+- **撤销：`doc/specification/` 正文入库，只留 API 参考**。2026-11-27 那批把整套规范与实施档案一起放进了仓库，判据写成了按目录放行（`!/doc/specification/**/*.md`、`!/doc/develop/*.md`）——这种例外的语义是「这个目录里的 md 全部入库」，于是下一个人写第 14 篇规范时不需要任何决定就入库了：它把「入库」从一个决定变成了一个目录属性。现改为**点名到文件**：索引里只留交付物 `doc/specification/api/api-reference.{md,html}`（`s28.api-doc` 逐字节比对的产物）与用户手册 `doc/user/**`；12 份规范正文移出索引、本地保留。`doc/operations/runbooks` 与 `doc/architecture/08` 同样不入库，因此 `prometheus-alerts.yml` 里 7 个 `runbook:` 目标是本地引用，`SC-DOC-003` 的 7 条基线是冻结边界、不是待还的债。连带影响照实写：凡「代码 ↔ 文档」的门禁行在干净检出上没有输入，一律落 `N/A`/`SKIP`（`s19.docs-ledger`、锚点门禁、`assurance*.sh`、`kc2-prereg.sh` 等）；`internal/model/timestamp_vocabulary_test.go` 原来在文件缺失时 `t.Fatalf`，会让 clone 的 CI 变红，现改为 `fs.ErrNotExist` 时显式 skip 并点名文件（`not checked: …`），文件在场照旧 PASS——三个方向都实测过。另把 6 个 gate 脚本与 4 处「doc/321 起规范已入库」的自述改回真实情况。
 - **撤销：`doc/develop/` 不入库（回到本地档案）**。2026-11-27 的入库尝试把一个开发者的决策与证据记录放进了仓库，实施后又发现两件事：它是写给一台机器的（引用本机路径、本机部署），以及它不是读者要照着做的东西——随代码走的应当是「读者照着做的约束」（`doc/specification/`）与「读者照着用的手册」（`doc/user/`）。现按 2026-11-28 的决定**移出索引、保留本地文件**：`.gitignore` 恢复 `/doc/develop/` 整目录忽略（判据只有这一处），`doc/specification/00` §6 改成「规范与手册入库、档案留在作者机器上」，并写清代价——`s19.docs-ledger` 与文档锚点门禁在干净检出上读不到档案，它们在那里回答「这棵树答不了」（exit 3 / SKIP）而不是「通过」，在作者本机上照旧运行。历史里的 blob 不追改（已经推送、可能有人拉过）；若要连历史一起清掉，那是另一次需要协调的 `filter-repo` 动作。
 
 - **报告导出契约升到 `report.document.v2`、渲染器升到 `export.renderer.v4`**：产物新增结论附录与一致性提示两个区块，`document_json` 里随之冻结结论条目与一致性核对结果。渲染器身份参与导出幂等键，所以旧产物不会被当成同一份内容回放——渲染器改变输出时必须改版本号，否则「同内容不重复渲染」会把新格式判成重复请求。

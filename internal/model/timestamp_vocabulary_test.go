@@ -20,6 +20,8 @@ package model
 // this gate can stay green for years instead of being disabled for noise.
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -95,6 +97,15 @@ func TestTimestampVocabularyMatchesTheModels(t *testing.T) {
 		t.Skipf("module root not found: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(timestampVocabularySpec)))
+	if errors.Is(err, fs.ErrNotExist) {
+		// Documents are admitted one at a time and this specification is not one of them
+		// (2026-11-28 policy; .gitignore is the judge), so a clone has nothing to compare
+		// against. Failing here would make every CI run red for a reason no one can fix
+		// without widening what ships; pretending to pass would be worse. The skip names
+		// the file, so "not checked" cannot be read as "checked".
+		t.Skipf("not checked: %s is not in this tree (documents are admitted one at a time; see .gitignore)",
+			timestampVocabularySpec)
+	}
 	if err != nil {
 		t.Fatalf("read %s: %v", timestampVocabularySpec, err)
 	}

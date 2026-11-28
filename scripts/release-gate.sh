@@ -42,10 +42,10 @@
 #            are absent) — the run is INCOMPLETE, never silently green
 #   MISSING  a live suite script is not on this machine — also INCOMPLETE
 #   N/A      the check needs an input this tree does not carry, and this is a
-#            `--ci` run. Since doc/321 the engineering archive *is* tracked
-#            (doc/specification/, doc/develop/), so a clean checkout has 301/304/305
-#            and specification/12 -- but still no doc/operations/ labeling manual and
-#            no doc/environment/ note, because those stay machine-local. Whatever a
+#            `--ci` run. Documents are admitted one at a time (2026-11-28 policy),
+#            and only doc/specification/api/api-reference.{md,html} and doc/user/ are
+#            admitted, so a clean checkout carries neither 301/304/305 nor
+#            specification/12 nor the doc/operations/ labeling manual. Whatever a
 #            row needs, it compares code against documents and can only answer "not here"
 #            with exit 3, and the gate is the one place that decides what that
 #            means: a `--ci` run records `N/A` and keeps the row visible; every
@@ -353,8 +353,8 @@ run_check() {
   local id="$1" t="$2" req="$3" desc="$4"
   shift 4
   # A row that reads doc/ says so, as the fifth argument: `run_check "id" "tier" 1 "desc" doc cmd...`.
-  # A tracked document can still be absent from a checkout (doc/operations/, doc/environment/ are
-  # machine-local, doc/321), so such a row answers exit 3 rather than "consistent" and its whole point
+  # A document can be absent from a checkout (documents are admitted one at a time; today only the
+  # API reference and the user manual are), so such a row answers exit 3 rather than "consistent" and its whole point
   # is that it *ran* somewhere; `--list=tsv` publishes this marker as a fourth column and
   # `doc-present.sh` derives its selection from it (doc/304 §4 E121). The alternative —
   # grep the command for `doc/` — cannot tell a reader from `clean-clone.sh`, which creates a
@@ -381,7 +381,7 @@ run_check() {
         # (the document is not tracked) and name the row that proves it runs where it exists
         # exists, or a reader reads "N/A" as "this check does not matter".
         if [ "$reads_doc" = "1" ]; then
-          note="$desc — N/A: this row reads a document the checkout does not carry (not tracked, doc/321); s24.doc-present is the row that proves it runs where the document exists"
+          note="$desc — N/A: this row reads a document the checkout does not carry (documents are admitted one at a time; see .gitignore); s24.doc-present is the row that proves it runs where the document exists"
         else
           note="$desc — not applicable in this tree (the check needs a document that is not in the checkout; see the log for which one)"
         fi

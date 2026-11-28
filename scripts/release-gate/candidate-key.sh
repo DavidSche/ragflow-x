@@ -152,11 +152,11 @@ fi
 
 # ── ③ the manual teaches the key, in the places people read ────────────────
 if [ ! -f "$MANUAL" ]; then
-  # Not tracked (doc/321 tracks doc/specification + doc/develop only): a clean checkout — CI, or a fresh clone — does not
+  # Not tracked (documents are admitted one at a time; .gitignore is the judge): a clean checkout — CI, or a fresh clone — does not
   # carry it. The comparison then did not happen, which is a different sentence from "the
   # two agree". Exit 3 says which.
   na=1
-  say "N/A   $MANUAL is not in this tree: only doc/specification/ and doc/develop/ are tracked (doc/321) and this document is not one of them,"
+  say "N/A   $MANUAL is not in this tree: documents are admitted one at a time and this one is not tracked (see .gitignore),"
   say "      so the manual half did not run in this checkout — the code-side checks above did."
 else
   if grep -qF -- 'label_without_candidate_index' "$MANUAL"; then

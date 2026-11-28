@@ -89,33 +89,31 @@ tmp/
 # file is reviewed for release (see doc/126 pre-release review report).
 # Do NOT add these back in bulk; whitelist individual files after review.
 #
-# Policy (2026-11-28, user decision — it supersedes the 2026-11-27 attempt
-# recorded in doc/321, which had put doc/develop/ under version control):
+# Policy (2026-11-28, user decision — it supersedes both earlier attempts, the
+# 2026-11-26 "docx/pdf out" rule and the 2026-11-27 "track the archive" rule):
 #
-#   the implementation archive stays local.
+#   documents are admitted one at a time, by explicit approval, and almost none are.
 #
-# doc/develop/ is a developer's decision + evidence record, written on one
-# machine, citing that machine, and edited while the work moves. It is not a
-# deliverable. What ships with the code is the long-lived contracts
-# (doc/specification/) and the user manual (doc/user/) — the two things a
-# reader of the repository is expected to act on.
+# What ships:  doc/specification/api/api-reference.{md,html}  (the integrator deliverable,
+#                                                               whose freshness is a gate row)
+#              doc/user/**                                     (the manual; README links into it)
+# What stays local: doc/specification/ prose, doc/develop/ (decision + evidence),
+#              doc/operations/ (runbooks quoting real hosts and tokens), doc/architecture/,
+#              doc/environment/, drafts, TODO.txt, rendered .docx/.pdf.
 #
-# Tracked:      doc/specification/**/*.md, doc/specification/api/api-reference.{md,html},
-#               doc/user/**                    (manual; README links into it)
-# Stay local:   doc/develop/ (decision + evidence records),
-#               doc/operations/ (runbooks; quoting real hosts and tokens),
-#               doc/environment/ (machine-specific; carries the real .env values),
-#               drafts, TODO.txt, rendered .docx/.pdf, performance captures.
+# The whitelist below therefore names two files by name rather than a pattern: a
+# `**/*.md` exception re-admits an entire directory the moment somebody writes the
+# next file into it, which is exactly how the specification set got tracked before.
+# Adding a document to the index is a red line decision recorded in AGENTS.local.md
+# ("文档入库红线"): one file, one approval, never a batch.
 #
-# Consequence, stated so it is not discovered later: a gate that compares code
-# against an engineering record (`s19.docs-ledger`, the doc-anchor gate) has
-# nothing to read on a clone. Those rows answer "this tree cannot answer"
-# (exit 3 / SKIP) there and still run on the author's tree — the same boundary
-# `doc/operations/` already lives behind. See scripts/release-gate/docs-ledger.sh.
+# Consequence, stated so it is not discovered later: a gate that compares code against
+# an engineering record (`s19.docs-ledger`, the doc-anchor gate, the timestamp-vocabulary
+# gate) has nothing to read on a clone. Those rows answer "this tree cannot answer"
+# (exit 3 / SKIP) there and still run on the author's tree.
 #
 # Credential discipline still applies to every tracked document: the pre-commit
-# secret-scan covers docs exactly as it covers code (doc/321 §3 lists file +
-# category, never the value).
+# secret-scan covers docs exactly as it covers code.
 /doc/*
 # `/test/*` (not `/test/`) so the reusable regression harness below can be
 # re-included: an excluded directory cannot have tracked children.
@@ -139,14 +137,10 @@ __pycache__/
 # release/delivery artifacts. `git add -A` will no longer pick them up.
 /doc/user/**/*.docx
 /doc/user/**/*.pdf
-# Exception (v0.6.6): the generated API reference under doc/specification/api/ is a
-# deliverable — it is what gets sent to integrators — so it is tracked, and its freshness
-# is a gate row (s28.api-doc: regenerate, compare byte-for-byte, refuse an ignored product).
-# Since 2026-11-27 (doc/321) the whole specification set is tracked, not just those two
-# files: the norms are what the code is reviewed against, so they belong in the diff.
-!/doc/specification/
-/doc/specification/*
-!/doc/specification/**/*.md
+# Exception (v0.6.6): the generated API reference is a deliverable — it is what gets sent
+# to integrators — so it is tracked, and its freshness is a gate row (s28.api-doc:
+# regenerate, compare byte-for-byte, refuse an ignored product). The specification prose
+# beside it is local (2026-11-28 policy above), so these two files are named explicitly.
 !/doc/specification/api/
 /doc/specification/api/*
 !/doc/specification/api/api-reference.md

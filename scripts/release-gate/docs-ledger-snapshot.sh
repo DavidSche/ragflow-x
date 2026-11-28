@@ -5,8 +5,10 @@
 # `doc/` was gitignored, so a clean checkout — CI, a fresh clone — could only answer
 # "N/A". A green CI therefore never meant "the ledger was checked"; it meant "the ledger
 # was not there to check". Both statements were true and only one of them was visible.
-# doc/321 makes the archive tracked, so the shipped checkout carries these three sources and
-# the snapshot comparison runs there; the exit-3 branch stays for trees that still lack them.
+# The archive is not tracked (2026-11-28 policy: documents are admitted one at a time and
+# doc/develop/ is not among them), so a shipped checkout carries none of these three sources and
+# the snapshot comparison can only run on a tree that has them; the exit-3 branch is therefore
+# the *normal* answer on a clone, not an edge case.
 #
 # Route ① is a *controlled snapshot*: `docs-ledger.json` is tracked, it carries the ledger
 # facts and a sha256 of each source document, and this check reads the snapshot. So:
