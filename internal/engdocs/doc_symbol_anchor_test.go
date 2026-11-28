@@ -187,6 +187,12 @@ func TestDocumentSymbolAnchorsResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repo root: %v", err)
 	}
+	// The anchor sources are the engineering docs, which are not part of the published
+	// repository (engdocs.Present). Reading a shipped tree instead would either fail here or —
+	// worse — pass on an empty scan, so the absence degrades to a named skip.
+	if !Present(root) {
+		t.Skip(SkipReason)
+	}
 	readFile := func(relative string) (string, bool) {
 		body, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
 		if readErr != nil {
@@ -284,5 +290,97 @@ func TestDocumentSymbolAnchorsResolve(t *testing.T) {
 	}
 	if len(problems) > 0 {
 		t.Fatalf("symbol anchors do not resolve (doc/specification/00 §5):\n  %s", strings.Join(problems, "\n  "))
+	}
+}
+
+// specTestNamePattern is the other way a living document cites a symbol: a bare
+// “ `TestSomething` “ with no file, which is how §7 of spec 16 names the case that guards
+// each contract seam. That form carries no path, so the anchor gate above never sees it — and
+// a spec that names a renamed test is the same defect one step earlier: the reader clicks the
+// name, finds nothing, and stops trusting the table.
+//
+// The scan is deliberately limited to `doc/specification`: the engineering archive is
+// append-only, so an old round record naming a test that has since been renamed is *history*,
+// not an error. Living specs have no such excuse.
+var specTestNamePattern = regexp.MustCompile("`(Test[A-Za-z0-9_]+)`")
+
+// specTestNameFloor keeps "zero names" from reading as "zero problems".
+const specTestNameFloor = 40
+
+// TestSpecTestNamesResolve requires every test name a living specification cites to exist.
+func TestSpecTestNamesResolve(t *testing.T) {
+	root, err := RepoRoot()
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+	// Same boundary as the anchor gate above: the living specs (doc/specification/<NNN>_*.md)
+	// are local-only, only doc/specification/api/api-reference.* ships.
+	if !Present(root) {
+		t.Skip(SkipReason)
+	}
+
+	var goSources strings.Builder
+	_ = filepath.WalkDir(filepath.Join(root, "internal"), func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
+			return walkErr
+		}
+		body, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		goSources.Write(body)
+		goSources.WriteString("\n")
+		return nil
+	})
+	declared := goSources.String()
+	if len(declared) < 100000 {
+		t.Fatalf("read only %d bytes of Go source: the declaration index is blind", len(declared))
+	}
+
+	type mention struct {
+		Document string
+		Name     string
+	}
+	var mentions []mention
+	seen := map[mention]bool{}
+	specification := filepath.Join(root, "doc", "specification")
+	_ = filepath.WalkDir(specification, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".md") {
+			return walkErr
+		}
+		body, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		for _, match := range specTestNamePattern.FindAllStringSubmatch(string(body), -1) {
+			found := mention{Document: filepath.ToSlash(relative), Name: match[1]}
+			if seen[found] {
+				continue
+			}
+			seen[found] = true
+			mentions = append(mentions, found)
+		}
+		return nil
+	})
+	if len(mentions) < specTestNameFloor {
+		t.Fatalf("found %d test names across doc/specification, floor is %d: the scanner or the citation habit went blind",
+			len(mentions), specTestNameFloor)
+	}
+
+	var unresolved []string
+	for _, item := range mentions {
+		if strings.Contains(declared, "func "+item.Name+"(") {
+			continue
+		}
+		unresolved = append(unresolved, item.Document+" names "+item.Name)
+	}
+	sort.Strings(unresolved)
+	if len(unresolved) > 0 {
+		t.Fatalf("%d test name(s) a living specification cites do not exist — the reader follows the name into nothing:\n  %s",
+			len(unresolved), strings.Join(unresolved, "\n  "))
 	}
 }
