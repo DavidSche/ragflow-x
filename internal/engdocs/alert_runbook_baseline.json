@@ -1,0 +1,12 @@
+{
+  "note": "runbook: targets that shipped before the gate existed; see alert_runbook_targets_test.go",
+  "untracked": [
+    "doc/architecture/08_部署运维与可观测性.md",
+    "doc/operations/runbooks/CompilationUpstreamRecoveryRunbook.md",
+    "doc/operations/runbooks/ConnectorSyncRunbook.md",
+    "doc/operations/runbooks/GatewayBillingReconcileRunbook.md",
+    "doc/operations/runbooks/GatewayPerformanceRunbook.md",
+    "doc/operations/runbooks/GovernanceMetricsRunbook.md",
+    "doc/operations/runbooks/ReportAssuranceRunbook.md"
+  ]
+}
