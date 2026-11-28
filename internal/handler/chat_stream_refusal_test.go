@@ -10,7 +10,8 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/repository"
 )
 
-// The live run of 2026-11-28 (image ragflow-x:test-deefdec-20261128) logged one
+// The live run of 2026-11-28 (image ragflow-x:test-deefdec-20261128: the short sha
+// in that tag is the pre-rewrite name of the commit now called 52ec117) logged one
 // ERROR line and one `gateway.stream_error` audit row for a request the product
 // deliberately refuses: `report_context` carried the plausible typo `section`
 // instead of `section_key` (probe R25 case ②, expecting 400/44105). The 400 was

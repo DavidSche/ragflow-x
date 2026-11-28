@@ -198,7 +198,7 @@ func TestManifestSeparatesPopulationFromPool(t *testing.T) {
 // to be read as an invitation: the flag help used to say `--pool` takes "pool JSONL
 // produced by `goldtool pool`", which is exactly the file that produced 251
 // `unlabelled_item` problems. A usage string that points at the wrong file is a doc bug
-// in the same class as `kappa --labels` without `--worksheet` (3e312f6).
+// in the same class as `kappa --labels` without `--worksheet` (66da778).
 func TestAssembleUsageNamesTheSampleNotThePool(t *testing.T) {
 	errFile, read := captureStderr(t)
 	code := runAssemble([]string{"--help"}, devnull(t), errFile)
