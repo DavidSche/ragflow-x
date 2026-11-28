@@ -290,6 +290,22 @@ const (
 	ReportFindingDisputed          = "disputed"
 )
 
+// ReportFindingCategories is the closed set of `category` values, in the order
+// the panel renders them. It exists as a function, not as twelve constants the
+// frontend happens to copy: the copy is checked against this by
+// `internal/engdocs/web_vocabulary_parity_test.go` (doc/319 §5.3 S-2), and a copy
+// nobody can compare is the way a twelfth category silently becomes a thirteenth.
+func ReportFindingCategories() []string {
+	return []string{
+		ReportFindingMissingEvidence, ReportFindingUnsupported,
+		ReportFindingContradiction, ReportFindingSourceConflict,
+		ReportFindingOverreach, ReportFindingOmission,
+		ReportFindingNumericMismatch, ReportFindingStructure,
+		ReportFindingOutdated, ReportFindingTraceability,
+		ReportFindingQuoteUnverifiable, ReportFindingDisputed,
+	}
+}
+
 // ReportFindingSources is the closed set for `source`.
 func ReportFindingSources() []string {
 	return []string{"semantic", "cross_model", "human", "rule", "traceability"}
