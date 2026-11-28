@@ -1,10 +1,12 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -299,4 +301,144 @@ func TestReportCodeTableMatchesTheFrontendContract(t *testing.T) {
 	if named != len(reportErrorCodes) {
 		t.Fatalf("read %d `codeReport…` constants but the status table has %d entries: a code was added to one place only", named, len(reportErrorCodes))
 	}
+}
+
+// reportCodesNotInMachineReadableStatus are the report codes that no operation declares with a
+// `错误码` response description, so the swagger artifact cannot confirm their HTTP status.
+//
+// This is the "incomplete document" class `cmd/apicontract -audit-hand` reports as a warning,
+// not the "a lie a client would believe" class it fails on: nothing here contradicts the status
+// table, the codes are simply reached from inside the service layer instead of from a
+// hand-written `@Failure` row. Freezing the set keeps the gap from growing quietly; the entries
+// only ever leave it by being documented.
+var reportCodesNotInMachineReadableStatus = map[int]string{
+	44102: "raised by the create-time capability recheck inside CreateReport; only the check endpoint has an annotation",
+	44103: "raised inside the generation worker (report_generate.go), never as a handler response",
+	44111: "written into the finalize decision record as a job failure code, not returned by an endpoint",
+	44115: "produced by the retention cursor gate; the export path degrades it to `reset_required` in the body",
+	44116: "produced by the assemble gate on re-export of tombstoned evidence",
+	44121: "produced by errReportAssuranceAckRequired inside the export gate",
+	44122: "produced by errReportAssuranceNotReady inside the export gate",
+}
+
+// TestSwaggerDocumentsEveryReportCodeWithTheSameHTTPStatus is P-06's fifth corner: the API
+// document. `x-error-codes` already pins *which* codes an operation can return (s33), but not
+// the status each code carries — and the status is the half a client branches on. A code
+// documented as 409 while the server answers 400 is a client that retries the wrong way.
+func TestSwaggerDocumentsEveryReportCodeWithTheSameHTTPStatus(t *testing.T) {
+	root, err := repoRootForContractTest()
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "internal", "docs", "swagger.json"))
+	if err != nil {
+		t.Fatalf("read swagger.json: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(body, &spec); err != nil {
+		t.Fatalf("swagger.json is not valid JSON: %v", err)
+	}
+
+	// The response descriptions spell the code list as "错误码 44101 / 44113" under the status
+	// that carries them. `x-error-codes` lists the same codes without statuses, which is why it
+	// cannot answer this question.
+	codesInResponse := regexp.MustCompile(`错误码\s+([0-9]+(?:\s*/\s*[0-9]+)*)`)
+	digits := regexp.MustCompile(`\d+`)
+	statuses := map[int]map[int]bool{}
+	operations := 0
+	for _, item := range spec.Paths {
+		for method, raw := range item {
+			if method == "parameters" {
+				continue
+			}
+			var op struct {
+				Responses map[string]struct {
+					Description string `json:"description"`
+				} `json:"responses"`
+			}
+			if err := json.Unmarshal(raw, &op); err != nil {
+				t.Fatalf("operation %q: %v", method, err)
+			}
+			operations++
+			for status, response := range op.Responses {
+				match := codesInResponse.FindStringSubmatch(response.Description)
+				if match == nil {
+					continue
+				}
+				statusNumber, convErr := strconv.Atoi(status)
+				if convErr != nil {
+					continue // "default" and friends
+				}
+				for _, token := range digits.FindAllString(match[1], -1) {
+					code, convErr := strconv.Atoi(token)
+					if convErr != nil {
+						continue
+					}
+					if statuses[code] == nil {
+						statuses[code] = map[int]bool{}
+					}
+					statuses[code][statusNumber] = true
+				}
+			}
+		}
+	}
+	if operations < 200 {
+		t.Fatalf("read %d operations from swagger.json: the scanner is blind", operations)
+	}
+
+	// (1) every documented report code carries exactly the status the server uses.
+	documented := 0
+	for _, code := range sortedReportCodes() {
+		seen, ok := statuses[code]
+		if !ok {
+			continue
+		}
+		documented++
+		want := reportErrorCodes[code]
+		if len(seen) != 1 {
+			t.Fatalf("code %d is documented under %d different HTTP statuses: one code, one status", code, len(seen))
+		}
+		for got := range seen {
+			if got != want {
+				t.Fatalf("code %d: the document says HTTP %d, the server answers %d", code, got, want)
+			}
+		}
+	}
+
+	// (2) the undocumented set is exactly the frozen one, so it can only shrink.
+	var undocumented []int
+	for _, code := range sortedReportCodes() {
+		if _, ok := statuses[code]; !ok {
+			undocumented = append(undocumented, code)
+		}
+	}
+	var expected []int
+	for code := range reportCodesNotInMachineReadableStatus {
+		expected = append(expected, code)
+	}
+	sort.Ints(expected)
+	if len(undocumented) != len(expected) {
+		t.Fatalf("codes absent from the document's `错误码` descriptions: got %v, frozen %v\nthe frozen list may only shrink: document the code in the operation that returns it, then delete its row",
+			undocumented, expected)
+	}
+	for i := range expected {
+		if undocumented[i] != expected[i] {
+			t.Fatalf("codes absent from the document's `错误码` descriptions: got %v, frozen %v", undocumented, expected)
+		}
+	}
+	if documented+len(undocumented) != len(reportErrorCodes) {
+		t.Fatalf("accounted for %d of %d report codes: the report family grew and nothing here noticed",
+			documented+len(undocumented), len(reportErrorCodes))
+	}
+}
+
+func sortedReportCodes() []int {
+	out := make([]int, 0, len(reportErrorCodes))
+	for code := range reportErrorCodes {
+		out = append(out, code)
+	}
+	sort.Ints(out)
+	return out
 }
