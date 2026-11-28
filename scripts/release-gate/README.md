@@ -501,6 +501,12 @@ count 变成 `count(*) ... GROUP BY id`（对），读取变成 `SELECT * ... GR
    判为 `false`（必过项被跳过则是 INCOMPLETE）。
 3. **不允许「验证 A 部署、发布 B 产物」**：线上 `index-*.js` 必须等于本次构建产出的
    那个哈希，否则 `l02.served-fingerprint` 直接 FAIL。
+3.1 **一次绿的 live 不等于这次运行没留下错误**：`l03.errors-baseline` 在套件跑之前数一遍
+   部署日志里的错误行，`l04.no-new-errors` 在跑完之后再数一遍，**差值必须是 0**——不是「总数必须是 0」，
+   因为跑了几周的部署本来就带着旧错误，本轮的主张只是「这次没新增」。两条都是必过项：
+   `RGX_GATE_LOG_CMD` 没设时它们落 `SKIP`、整轮变 INCOMPLETE，**不会**变成通过
+   （零测量不是通过）。日志在宿主机/容器/日志库里都行，因为它读的是**命令**，不是路径。
+   这条规矩的来历写在 `doc/324` §7：9/9 全绿与日志里一条 `ERROR` 可以同时成立。
 4. **真机套件脚本缺失等于阻塞，不是「跳过」**：`MISSING` 会让判定停在 INCOMPLETE。
 5. **发布跑必须从干净的树开始**：带 `--version` 时工作区有改动直接 FAIL（避免
    「验证的是未提交的内容、发的是另一个 commit」）。
@@ -520,7 +526,16 @@ export RGX_ENGINE=http://<engine>:8001        # 可选，部分套件会读
 export RGX_GATE_DEPLOY_CMD='bash localenv/151-test/deploy.sh'   # 可选：先部署再验
 export RGX_GATE_LIVE_DIR=localenv/probes      # 套件目录（默认）
 export RGX_GATE_TMP_DIR=tmp                   # 临时探针目录（默认）
+# 必填于「可发布」的 live 跑法：读部署日志的命令（l03/l04 的输入）。它是一条命令，
+# 因为日志可能在本机容器、远端宿主机或日志库里；这里只写形状，不写地址。
+export RGX_GATE_LOG_CMD='docker logs --since 30m <container>'
+export RGX_GATE_LOG_ERROR_PATTERN='"level":"ERROR"'   # 可选：计数的固定串（默认即此）
 ```
+
+`l03`/`l04` 自己的失败方向不能靠真机去证明，所以 `scripts/release-gate/log-error-delta.sh`
+带 7 个 hermetic 用例（差值、日志被截断/轮转、命令失败、命令缺失、没有基线、默认计数串
+真的能匹配），并由必过项 `s16b.log-error-delta-selftest` 跑；`s16a.probes-selftest`
+把探针契约的 20 个种植违规也放进门禁——两个 `--selftest` 以前都只靠人记得跑。
 
 完整规范（用例矩阵、每轮抓到的缺陷、证据目录）见
 `doc/environment/verification/46_发版前检查规范-门槛分级与脚本-2026-11-20.md`。

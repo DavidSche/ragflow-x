@@ -1,0 +1,50 @@
+# Probes / gate-helper self-tests — the change-triggered half of a rule that has two halves.
+#
+# `nightly.yml` re-runs these on a schedule, which catches rot that arrives without a
+# commit (a bash builtin changing behaviour, a runner's python3 moving on). The other half
+# is "the moment somebody edits the thing", and that is a path filter: a probe contract
+# edited at 15:00 should be proven able to fail at 15:00, not at 01:00 the next morning.
+#
+# Both scripts are hermetic — they copy the tree, plant violations in the copy and require
+# each to be refused. Neither contacts a host, so this workflow carries no secrets and no
+# service containers.
+name: Probe Self-Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/probes/**"
+      - "scripts/release-gate/probes.sh"
+      - "scripts/release-gate/log-error-delta.sh"
+      - ".github/workflows/probes.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/probes/**"
+      - "scripts/release-gate/probes.sh"
+      - "scripts/release-gate/log-error-delta.sh"
+      - ".github/workflows/probes.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  selftests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Probe contract self-test (20 planted violations)
+        run: bash scripts/release-gate/probes.sh --selftest
+
+      - name: Live log-delta row self-test (7 hermetic cases)
+        run: bash scripts/release-gate/log-error-delta.sh --selftest

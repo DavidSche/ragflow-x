@@ -30,7 +30,9 @@
 #           (`scripts/release-drill.sh`), and the fingerprint of what was built.
 #   live    the deployment: readyz, "is the served bundle the one I just built",
 #           then the live API/browser suites listed in
-#           `scripts/release-gate/suites.tsv`.
+#           `scripts/release-gate/suites.tsv` — and, twice around them, the
+#           deployment log: a green run is not evidence that the run left nothing
+#           behind (l03 before, l04 after; delta must be 0).
 #
 # Statuses
 # --------
@@ -74,6 +76,12 @@
 #   RGX_GATE_LIVE_DIR        where the live suites live (default localenv/probes)
 #   RGX_GATE_TMP_DIR         where the ad-hoc probes live (default tmp)
 #   RGX_GATE_MAX_AGE_HOURS   how long a report stays valid for a tag (default 72)
+#   RGX_GATE_LOG_CMD         command whose stdout is the deployment log, read before and
+#                            after the suites (l03/l04). Without it a live run cannot say
+#                            whether it left an ERROR behind, so the rows are INCOMPLETE —
+#                            never a pass (doc/324 §7.3, doc/325).
+#   RGX_GATE_LOG_ERROR_PATTERN  the fixed string counted as an error line
+#                            (default `"level":"ERROR"`, this service's JSON logs)
 #
 # Enforcement lives in `scripts/git-hooks/pre-push`: a `v*` tag will not leave
 # this machine without a PASS/A-passing report whose `git.rev` is the tagged
@@ -572,6 +580,21 @@ if tier_selected static; then
   # credential. That refusal, the `--offline` contract and the decoupling are all here.
   run_check "s16.probes-selfcheck" "static" 1 "live probes tracked + credential-free (doc/304 §7 item 12)"     bash scripts/release-gate/probes.sh
 
+  # s16 checks the probes' *shape*; it never edits one. The `--selftest` is the other half:
+  # 20 mutations planted in a copy of the tree, each of which must be refused. It ran only
+  # when a person remembered to run it, which is the same hole s01a was created to close —
+  # a check whose failing direction is never exercised is a check that can only say ok
+  # (doc/321 §4). Nightly runs it too: the strings it mutates live in files that drift.
+  run_check "s16a.probes-selftest" "static" 1 "the probe contract still refuses 20 planted violations (mutation selftest)"     bash scripts/release-gate/probes.sh --selftest
+
+  # l03/l04 read the deployment log around the live suites. On the workstation the log lives
+  # on the host, inside a container, or in a store — so their subject is a *command*, and a
+  # command that counts the wrong thing (or counts nothing at all) would quietly make every
+  # live run green. Seven hermetic cases pin its failing directions: a delta, a shrunken log,
+  # a failing command, a missing command, a compare without a baseline, the shipped default
+  # pattern (doc/325).
+  run_check "s16b.log-error-delta-selftest" "static" 1 "the live log-delta row can fail (7 hermetic cases)"     bash scripts/release-gate/log-error-delta.sh --selftest
+
   # doc/304 §7 item 25: T02's chain had one file left that a human transcribed by hand, and the
   # manual said so in as many words (`--adjudication` 是这块里唯一必须人手写的文件). The tool
   # derives it now; this row holds the two halves a `go test` cannot: that the 13 named tests are
@@ -856,6 +879,23 @@ if tier_selected live; then
         echo "served = built = $served"
       ' _ "$OUT"
 
+    # A green live run is not evidence that it left nothing behind: on 2026-11-28 a 9/9
+    # run had logged one `level=ERROR`, a refusal filed as a delivery failure (doc/324).
+    # Every other live row is HTTP-shaped, so a recovered panic, a swallowed bookkeeping
+    # failure or a refusal logs and passes. These two rows read the deployment's own log
+    # and assert the *delta* around the suites — a deployment that has been up for weeks
+    # carries old errors, and "this run added none" is the claim worth making.
+    if [ -z "${RGX_GATE_LOG_CMD:-}" ]; then
+      # Reported as SKIP, not as PASS: the rows are required, so the run comes out
+      # INCOMPLETE and cannot be `releasable`. Zero measurement is not a pass.
+      record "l03.errors-baseline" "live" "1" "SKIP" "0" "" "RGX_GATE_LOG_CMD not set: the deployment log was never read"
+      record "l04.no-new-errors" "live" "1" "SKIP" "0" "" "RGX_GATE_LOG_CMD not set: no delta could be measured"
+      printf '[SKIP] %-30s no RGX_GATE_LOG_CMD (the log is not reachable from here)
+' "l03.errors-baseline / l04.no-new-errors"
+    else
+      run_check "l03.errors-baseline" "live" 1 "count the deployment's error lines before the suites run"         bash "$ROOT/scripts/release-gate/log-error-delta.sh" baseline "$OUT"
+    fi
+
     MANIFEST="$ROOT/scripts/release-gate/suites.tsv"
     if [ ! -f "$MANIFEST" ]; then
       record "l03.suites" "live" "1" "MISSING" "0" "" "suite manifest missing: scripts/release-gate/suites.tsv"
@@ -869,6 +909,10 @@ if tier_selected live; then
         if [ "$PROFILE" != "release" ] && [ "$sprofile" = "release" ]; then continue; fi
         run_suite "$sid" "$req" "$sscript" "$sdesc" "$scmd"
       done < "$MANIFEST"
+    fi
+
+    if [ -n "${RGX_GATE_LOG_CMD:-}" ]; then
+      run_check "l04.no-new-errors" "live" 1 "the suites added no error line to the deployment log"         bash "$ROOT/scripts/release-gate/log-error-delta.sh" compare "$OUT"
     fi
   fi
 fi
