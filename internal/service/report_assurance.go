@@ -995,10 +995,17 @@ func reviewFindingViewOf(finding *model.ReportReviewFinding) *ReportReviewFindin
 	return view
 }
 
-// reportAssuranceCacheKey is the 8-component input hash of one verdict
-// (doc/301 §6.1). Every component is something that can change the verdict; a
-// ninth would be dead weight, a missing one would let two different questions share
-// a cached answer.
+// reportAssuranceCacheKey is the input hash of one verdict (doc/301 §6.1). Every
+// component is something that can change the verdict; a component that cannot change
+// it is dead weight, and a missing one lets two different questions share a cached
+// answer.
+//
+// The list is not "whatever was easy to plumb through": it must cover every field
+// `buildReportAssurancePrompt` renders, because the prompt is the question. That is
+// how `Section.Title` came to be missing while the builder's own comment claimed it
+// was "part of the cache key" (doc/319 R-04): the section key was hashed, the title
+// that goes into 【章节】 was not, so renaming a section after a run reused verdicts
+// reached under the old title.
 //
 // The components are concatenated with a length prefix so `("ab","c")` and
 // `("a","bc")` cannot collide — the classic way a naive join makes two distinct

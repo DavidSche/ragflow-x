@@ -679,4 +679,4 @@ Chat 和 Search App 支持提示词预设与参数档位，业务人员无需逐
 
 更多部署和实现细节见 [README](../../../README.md)、[内置角色权限矩阵](./permission-matrix.md)、[运维 Runbook 与故障演练 SOP](./operations-runbook-and-failure-drill-sop.md) 和 [审计链备份与修复 SOP](./audit-chain-backup-and-repair-sop.md)；工程内部设计记录（`doc/NNN` 编号）不随本仓库发布。
 
-**要对接接口的话**：[接口参考](../specification/api/api-reference.md)（[网页版](../specification/api/api-reference.html)）按路径列出每个端点的方法、参数位置、必填性与鉴权方式，由发布时的接口描述符生成，和线上服务逐字节同源。它的第一屏会自己说明覆盖率：目前是「路由契约」——请求体字段与业务语义还没有注解，不要当成完整的业务接口手册。
+**要对接接口的话**：[接口参考](../../specification/api/api-reference.md)（[网页版](../../specification/api/api-reference.html)）按路径列出每个端点的方法、参数位置、必填性与鉴权方式，由发布时的接口描述符生成，和线上服务逐字节同源。它的第一屏会自己说明覆盖率：目前是「路由契约」——请求体字段与业务语义还没有注解，不要当成完整的业务接口手册。

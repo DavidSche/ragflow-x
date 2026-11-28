@@ -53,6 +53,15 @@ const (
 	// guessing, which is the same discipline the quote layer uses.
 	chatCitationSupportedAt      = 0.5
 	chatCitationUnsupportedBelow = 0.15
+
+	// chatCitationVerbatimMinRunes is the shortest excerpt for which "the answer
+	// contains the quote" is a claim the shortcut may make. It is counted in **runes**:
+	// the number was always meant as characters (8 of them), but it was compared against
+	// `len()` — bytes — and three Chinese characters are nine bytes, so a three-rune
+	// fragment qualified and the board labelled it `answer_contains_quote` (doc/319
+	// R-05). In a product whose documents are Chinese, the byte reading lowered the bar
+	// to roughly three characters.
+	chatCitationVerbatimMinRunes = 8
 )
 
 // ChatCitationAuditSettings is the `knowledge_audit.*` slice of the system
@@ -573,7 +582,11 @@ func chatCitationSupport(answer, excerpt string) (score float64, verbatim bool) 
 	if normAnswer == "" || normExcerpt == "" {
 		return 0, false
 	}
-	if len(normExcerpt) >= 8 && strings.Contains(normAnswer, normExcerpt) {
+	// The verbatim shortcut is a stronger claim than "these bigrams overlap": it says
+	// the answer reproduces the cited text. That claim needs an excerpt long enough for
+	// "contains" to be meaningful, and "long enough" is measured in runes, not bytes
+	// (doc/319 R-05) — the excerpt is Chinese, and `len()` counts UTF-8 bytes.
+	if utf8RuneCount(normExcerpt) >= chatCitationVerbatimMinRunes && strings.Contains(normAnswer, normExcerpt) {
 		return 1, true
 	}
 	answerGrams := map[string]struct{}{}

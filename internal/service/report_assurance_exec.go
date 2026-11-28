@@ -809,8 +809,14 @@ type reportAssuranceEvaluator interface {
 	Independence() string
 }
 
-// reportAssuranceEvalInput is everything a verdict may depend on — the same eight
-// components the cache key hashes (doc/301 §6.1).
+// reportAssuranceEvalInput is everything a verdict may depend on. Which of these
+// fields enter the cache key is not a judgement call: the key must cover every field
+// `buildReportAssurancePrompt` renders, plus the identity of the judge and the policy
+// the run was requested under (doc/301 §6.1, doc/319 R-04).
+//
+// `SnapshotID` is here for traceability (the row records which snapshot was read) but
+// not in the key: the snapshot text is already hashed via `Quote`, and a re-captured
+// snapshot with identical text is the same question.
 type reportAssuranceEvalInput struct {
 	Claim      model.ReportClaim
 	Section    model.ReportSection
@@ -863,11 +869,10 @@ func (s *Service) evaluateReportClaim(
 		SnapshotID: snapshotID, CandidateCount: plan.Candidates,
 		ScanScope: reportAssuranceScanScope(run),
 	}
-	cacheKey := reportAssuranceCacheKey(
-		run.MethodVersion, evaluator.ModelID(), evaluator.PromptHash(),
-		claim.ClaimText, section.SectionKey, check.MatchedText,
-		itoa(input.CandidateCount), run.RequestedPolicy,
-	)
+	// The key covers every prompt input as well as the judge and the policy; the
+	// assembly lives in `reportAssuranceCacheKeyOf` so the guard test hashes the same
+	// list this call site uses instead of a copy of it that will drift (doc/319 R-04).
+	cacheKey := reportAssuranceCacheKeyOf(run, evaluator, claim, section, check.MatchedText, input.CandidateCount)
 	cached, err := s.Store.FindCachedEvaluation(ctx, run.TenantID, cacheKey)
 	if err != nil {
 		return reportAssuranceEvalOutcome{}, 0, 0, false, nil, err
@@ -885,6 +890,26 @@ func (s *Service) evaluateReportClaim(
 		return outcome, 0, 0, false, nil, err
 	}
 	return outcome, outcome.TokensIn, outcome.TokensOut, false, nil, nil
+}
+
+// reportAssuranceCacheKeyOf assembles the verdict cache key from the run, the judge
+// and the question.
+//
+// It exists as one function rather than as an expression at the call site for two
+// reasons. The list has to cover every field `buildReportAssurancePrompt` renders —
+// that is exactly what R-04 got wrong: `Section.Title` goes into 【章节】 and was not
+// hashed, so a renamed section reused verdicts reached under the old title. And a
+// list like this is only guardable if the guard consumes the production assembly; a
+// copy in the test would drift and stay green.
+func reportAssuranceCacheKeyOf(
+	run *model.ReportAssuranceRun, evaluator reportAssuranceEvaluator,
+	claim model.ReportClaim, section model.ReportSection, quote string, candidateCount int,
+) string {
+	return reportAssuranceCacheKey(
+		run.MethodVersion, evaluator.ModelID(), evaluator.PromptHash(),
+		claim.ClaimText, section.SectionKey, section.Title, quote,
+		itoa(candidateCount), run.RequestedPolicy,
+	)
 }
 
 // settleReportAssuranceCall reserves and settles one model call's quota

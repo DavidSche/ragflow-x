@@ -10,7 +10,7 @@ import (
 	"github.com/ragflow-x/ragflow-x/internal/model"
 )
 
-// quoteCaseFolder is真 case folding, not `strings.ToLower`: folding expands `ß` to
+// quoteCaseFolder is real case folding, not `strings.ToLower`: folding expands `ß` to
 // `ss` and `İ` to a two-rune sequence, and those expansions are exactly what makes
 // a normalized offset drift away from the original. Lowercasing would leave `ß`
 // intact, so the paths this file's tests pin could never be reached.
@@ -73,6 +73,13 @@ const (
 // reportQuoteCheck is the result of layer ①. Span is measured in **runes of the
 // original text**, never in runes of the normalized text: the UI highlights the
 // original, and normalization is exactly what makes offsets drift.
+//
+// `MatchedText` is always a bounded slice of the original snapshot: the exact hit for
+// `verified`, and the smallest original interval that covers the ambiguous match for
+// `partial`. It never runs to the end of the snapshot (doc/319 R-03): that value is
+// fed to the semantic layer as 【证据原文】, so an unbounded slice silently changed
+// the question the model was answering from "does this quote support the claim" to
+// "does the rest of this document support the claim".
 type reportQuoteCheck struct {
 	Status        string `json:"status"`
 	SpanStart     int    `json:"span_start"`
@@ -155,16 +162,24 @@ func reportCheckQuote(quote, snapshot string) reportQuoteCheck {
 
 	origStart, startAligned := mapNormBoundary(spans, first)
 	origEnd, endAligned := mapNormBoundary(spans, first+utf8RuneCount(normQuote))
+	original := []rune(snapshot)
 	if !startAligned || !endAligned {
 		// ③ the match starts or ends inside an expansion (e.g. it covers the first
-		// `s` of `ss` from `ß`). Refuse to guess.
+		// `s` of `ss` from `ß`). Refuse to guess: no span, because a highlight drawn
+		// at a reconstructed offset points the reviewer at the wrong sentence.
+		//
+		// `MatchedText` is still reported, but bounded to the original interval the
+		// normalized match actually covers. Slicing to the end of the snapshot was
+		// both a wrong answer and an expensive one: this text is what layer ③ sends as
+		// 【证据原文】, so the model was asked whether a whole tail of the document
+		// supported the claim instead of whether the quote did (doc/319 R-03).
+		coveredStart, coveredEnd := mapNormCoverage(spans, first, first+utf8RuneCount(normQuote))
 		return reportQuoteCheck{
 			Status: reportQuoteAmbiguous, SpanMap: reportSpanMapPartial,
 			Normalization: "nfkc_cf", Candidates: 1,
-			MatchedText: string([]rune(snapshot)[clamp(origStart, 0, utf8RuneCount(snapshot)):]),
+			MatchedText: string(original[clamp(coveredStart, 0, len(original)):clamp(coveredEnd, 0, len(original))]),
 		}
 	}
-	original := []rune(snapshot)
 	return reportQuoteCheck{
 		Status: reportQuoteVerified, SpanStart: origStart, SpanEnd: origEnd,
 		MatchedText: string(original[clamp(origStart, 0, len(original)):clamp(origEnd, 0, len(original))]),
@@ -239,6 +254,31 @@ func mapNormBoundary(spans []runeSpan, normIndex int) (int, bool) {
 		return last.origStart + last.origLen, true
 	}
 	return 0, false
+}
+
+// mapNormCoverage returns the smallest original rune interval [start, end) that
+// covers every normalized rune in [from, to), and `0, 0` when nothing intersects.
+//
+// It is the honest half of `mapNormBoundary`: where a boundary that falls inside an
+// expansion cannot be *resolved*, the interval containing the expansion can still be
+// *bounded*, and a bounded slice is what `MatchedText` needs (doc/319 R-03).
+func mapNormCoverage(spans []runeSpan, from, to int) (int, int) {
+	start, end := -1, -1
+	for _, span := range spans {
+		if span.normStart+span.normLen <= from || span.normStart >= to {
+			continue
+		}
+		if start < 0 || span.origStart < start {
+			start = span.origStart
+		}
+		if span.origStart+span.origLen > end {
+			end = span.origStart + span.origLen
+		}
+	}
+	if start < 0 {
+		return 0, 0
+	}
+	return start, end
 }
 
 // indexAll returns the first match index and the number of non-overlapping
