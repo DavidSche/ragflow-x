@@ -47,45 +47,62 @@ type SettingKeyMetadata struct {
 }
 
 var settingKeyPolicies = map[string]SettingSourcePolicy{
+	// The three process-level keys are read once, from the deployment file, before
+	// any request exists. `deployment_controlled` is what the panel needs in order
+	// to render them as facts rather than as settings.
 	"server.port": {
 		Source: "yaml_env", Editable: false, DatabaseOverride: false,
 		RestartRequired: true, RiskLevel: "high",
+		Impact: "changes the listen port; the process binds it before any request is served", EffectiveMode: "deployment_controlled",
 	},
 	"server.data_dir": {
 		Source: "yaml_env", Editable: false, DatabaseOverride: false,
 		RestartRequired: true, RiskLevel: "high",
+		Impact: "changes where artifacts and uploads are written", EffectiveMode: "deployment_controlled",
 	},
 	"server.log_path": {
 		Source: "yaml_env", Editable: false, DatabaseOverride: false,
 		RestartRequired: true, RiskLevel: "medium",
+		Impact: "changes where the process writes its log file", EffectiveMode: "deployment_controlled",
 	},
 	"gateway.non_stream_timeout_sec": {
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "low",
+		Impact: "bounds one non-streaming provider call; shortening it turns slow answers into 502 upstream timeouts", EffectiveMode: "hot_reload",
 	},
 	"gateway.stream_header_timeout_sec": {
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "low",
+		Impact: "bounds how long the provider may take to send the first SSE byte", EffectiveMode: "hot_reload",
 	},
 	"gateway.stream_total_timeout_sec": {
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "low",
+		Impact: "bounds the whole stream; the stream client is rebuilt with the new value immediately", EffectiveMode: "hot_reload",
 	},
 	"gateway.max_conns": {
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "medium",
+		Impact: "caps simultaneous provider connections; too low queues requests, too high saturates the upstream", EffectiveMode: "hot_reload",
 	},
 	"gateway.rate_limit_per_minute": {
+		// The per-key limiter is built once, while the router is assembled, so a
+		// database value can only take effect on the next start (doc/319 §5.3 S-4).
+		// Saying `false` here did not make it hot — it made the panel promise an
+		// effect that nothing implemented: the value was read from yaml only.
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
-		RestartRequired: false, RiskLevel: "medium",
+		RestartRequired: true, RiskLevel: "medium",
+		Impact: "caps admitted requests per minute per API key; the limiter is built at startup, so the value applies from the next start", EffectiveMode: "pending_restart",
 	},
 	"retention.audit_days": {
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "high",
+		Impact: "shortens how long audit records survive; the cleanup sweep reads the new value on its next pass", EffectiveMode: "hot_reload",
 	},
 	"retention.usage_days": {
 		Source: "yaml_env_db", Editable: true, DatabaseOverride: true,
 		RestartRequired: false, RiskLevel: "medium",
+		Impact: "shortens how long usage metering rows survive", EffectiveMode: "hot_reload",
 	},
 	// Report-class TTLs (doc/288 §7.6 / D3 v2.6). report_days and
 	// report_evidence_days are high risk because shortening them deletes
@@ -1339,6 +1356,18 @@ func (s *Service) EffectiveSystemSettingsConfig(ctx context.Context, cfg config.
 		}
 	}
 	snapshot = withDefaultSettingGroups(snapshot)
+	// Gateway: the router builds its per-key limiter from this struct once, at
+	// startup, and the provider clients take their timeouts from it. Before this
+	// block the five `gateway.*` keys were registered as database-overridable and
+	// then read from yaml only, so an operator's saved value reached nothing at all
+	// — the exact failure mode doc/319 §5.3 S-4 asks the registration gate to catch.
+	gateway := cfg.Gateway
+	gateway.NonStreamTimeoutSec = settingNumber(snapshot, "gateway", "non_stream_timeout_sec", gateway.NonStreamTimeoutSec)
+	gateway.StreamHeaderTimeoutSec = settingNumber(snapshot, "gateway", "stream_header_timeout_sec", gateway.StreamHeaderTimeoutSec)
+	gateway.StreamTimeoutSec = settingNumber(snapshot, "gateway", "stream_total_timeout_sec", gateway.StreamTimeoutSec)
+	gateway.MaxConns = settingNumber(snapshot, "gateway", "max_conns", gateway.MaxConns)
+	gateway.RateLimitPerMin = settingNumber(snapshot, "gateway", "rate_limit_per_minute", gateway.RateLimitPerMin)
+	cfg.Gateway = gateway
 	security := cfg.Security
 	security.AllowedOrigins = settingStringList(snapshot, "security", "allowed_origins", security.AllowedOrigins)
 	security.AllowedMethods = settingStringList(snapshot, "security", "allowed_methods", security.AllowedMethods)
