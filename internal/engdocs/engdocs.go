@@ -2,12 +2,13 @@
 // documentation tree (doc/develop, doc/operations/runbooks, doc/<NNN>-*.md) present next to
 // this repository?
 //
-// Only doc/user/** ships with the repository (see AGENTS.local.md, "doc git
-// boundary"). Gates that read the engineering tree therefore have to degrade to
-// an explicit skip on a checkout of the published repository, instead of turning
-// into a permanent red build that nobody can fix without widening the shipped
-// surface. A skip is loud: every helper here returns a reason the test is
-// expected to log.
+// What ships is the long-lived contracts (doc/specification/**) and the user
+// manual (doc/user/**); the implementation archive and the runbooks stay on the
+// author's machine (2026-11-28 policy, doc/specification/00 §6). Gates that read
+// the engineering tree therefore have to degrade to an explicit skip on a
+// checkout of the published repository, instead of turning into a permanent red
+// build that nobody can fix without widening the shipped surface. A skip is
+// loud: every helper here returns a reason the test is expected to log.
 package engdocs
 
 import (
@@ -55,4 +56,4 @@ func PresentFromWorkingDirectory() bool {
 // SkipReason is the message tests log when they skip because the engineering
 // docs are not shipped: it names the boundary so the skip is not mistaken for a
 // silently weakened gate.
-const SkipReason = "engineering docs (doc/develop, doc/operations/runbooks, doc/<NNN>-*.md) are not part of the published repository; only doc/user/** ships"
+const SkipReason = "engineering docs (doc/develop, doc/operations/runbooks, doc/<NNN>-*.md) are not part of the published repository; only doc/specification/** and doc/user/** ship"

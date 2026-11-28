@@ -236,9 +236,10 @@ PY
 
 fi
 
-# Since doc/321 the develop/ tree is tracked, so a checkout carries 301/304/305; but a tree
-# can still be handed one without them (a partial export). Two situations live here and they must
-# not share an exit code:
+# The develop/ tree is local-only (2026-11-28 policy: the implementation archive stays on the
+# author's machine, doc/specification/00 §6), so a clone has neither 301/304/305 nor this row's
+# subject — and a tree can also be handed one without them (a partial export). Two situations
+# live here and they must not share an exit code:
 #
 #   * the whole directory is absent  -> nothing was compared, nothing was violated. That
 #     is exit 3 ("this tree cannot answer"), which the release gate records as N/A under

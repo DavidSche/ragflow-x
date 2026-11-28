@@ -89,22 +89,33 @@ tmp/
 # file is reviewed for release (see doc/126 pre-release review report).
 # Do NOT add these back in bulk; whitelist individual files after review.
 #
-# Policy change (2026-11-27, doc/321): the *engineering archive* is versioned
-# together with the code it governs. It was never "unreviewed"; it is the
-# decision record for the tracked code — which left the constraint
-# (doc/specification/) and the evidence (doc/develop/) on one developer's disk
-# while the code they explain shipped to everyone. Two sources of truth is a
-# governance defect, not a storage preference.
+# Policy (2026-11-28, user decision — it supersedes the 2026-11-27 attempt
+# recorded in doc/321, which had put doc/develop/ under version control):
 #
-# Tracked now:  doc/specification/**/*.md  (long-lived contracts)
-#               doc/develop/**/*.md        (decision + implementation records)
-#               doc/develop/*.jpg          (diagrams those records cite)
-# Still local:  doc/environment/ (machine-specific; carries the real .env values),
+#   the implementation archive stays local.
+#
+# doc/develop/ is a developer's decision + evidence record, written on one
+# machine, citing that machine, and edited while the work moves. It is not a
+# deliverable. What ships with the code is the long-lived contracts
+# (doc/specification/) and the user manual (doc/user/) — the two things a
+# reader of the repository is expected to act on.
+#
+# Tracked:      doc/specification/**/*.md, doc/specification/api/api-reference.{md,html},
+#               doc/user/**                    (manual; README links into it)
+# Stay local:   doc/develop/ (decision + evidence records),
+#               doc/operations/ (runbooks; quoting real hosts and tokens),
+#               doc/environment/ (machine-specific; carries the real .env values),
 #               drafts, TODO.txt, rendered .docx/.pdf, performance captures.
 #
-# Before tracking, every credential literal in the corpus was redacted
-# (doc/321 §3 lists file + category, never the value) and the pre-commit
-# secret-scan applies to docs exactly as it does to code.
+# Consequence, stated so it is not discovered later: a gate that compares code
+# against an engineering record (`s19.docs-ledger`, the doc-anchor gate) has
+# nothing to read on a clone. Those rows answer "this tree cannot answer"
+# (exit 3 / SKIP) there and still run on the author's tree — the same boundary
+# `doc/operations/` already lives behind. See scripts/release-gate/docs-ledger.sh.
+#
+# Credential discipline still applies to every tracked document: the pre-commit
+# secret-scan covers docs exactly as it covers code (doc/321 §3 lists file +
+# category, never the value).
 /doc/*
 # `/test/*` (not `/test/`) so the reusable regression harness below can be
 # re-included: an excluded directory cannot have tracked children.
@@ -140,13 +151,9 @@ __pycache__/
 /doc/specification/api/*
 !/doc/specification/api/api-reference.md
 !/doc/specification/api/api-reference.html
-# Engineering archive (doc/321): decision records and implementation evidence.
-!/doc/develop/
-/doc/develop/*
-!/doc/develop/*.md
-!/doc/develop/*.jpg
-# Scratch notes and capture dumps stay local; the archive is the .md record.
-/doc/develop/*.txt
+# The implementation archive is local (2026-11-28 policy above): decision records,
+# evidence, diagrams and scratch notes under doc/develop/ are all out of the index.
+/doc/develop/
 # Rendered binaries are build artifacts, never repository content (doc/321).
 /doc/**/*.docx
 /doc/**/*.pdf
